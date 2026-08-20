@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: "Close PRs at an evidence gate or review local diffs/PRs with specialists and JSON artifacts."
+description: Close PRs at an evidence gate or review local diffs/PRs with specialists and JSON artifacts.
 ---
 
 # Code Review
@@ -41,11 +41,9 @@ Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create
 
 ### 02: T0 mechanical scope gate: resolve scope, collect diff, and classify review risk before any model-level judgment
 
-For local scopes, inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect normalized `scope`, optional
-`target`, and the literal `<run-directory>` path.
+For local scopes, inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect normalized `scope`, optional `target`, and the literal `<run-directory>` path.
 
-For PR scope, inspect `python PLUGIN_ROOT/shared/collect_pr.py --help`; collect the exact target into the literal
-`<run-directory>` path with checkout enabled.
+For PR scope, inspect `python PLUGIN_ROOT/shared/collect_pr.py --help`; collect the exact target into the literal `<run-directory>` path with checkout enabled.
 
 In runtimes with network sandboxing, execute the complete collector command with approved external network access from its first attempt under `../../shared/native-skill-contract.md`. Before requesting it, state: `Action and purpose`: collect current PR evidence; `External capability`: read-only GitHub access plus the documented local checkout; `Credential behavior`: `gh` is an opaque local credential broker; `Filesystem and worktree effects`: write collection artifacts and may update the local checkout; `Retry policy and safe denial outcome`: one classified recovery only, otherwise the review is unavailable. For a Codex exec call, set `sandbox_permissions="require_escalated"` on the collector invocation with a read-only GitHub-access justification; never enable persistent workspace network access, and never request a broad `python` approval prefix. A direct approval for `gh pr view` does not cover `gh` spawned by the collector: the outer collector command must own approval for its nested GitHub CLI, HTTPS fallback, checkout, and Git fetch traffic. The PR-review request authorizes asking for this read-only external access and the documented local checkout, but never bypassing the runtime approval prompt. Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command. Ask the user to send a new message to resume. If an agent-caused unapproved attempt returns `github-network` before any user approval request or denial, rerun that same complete collector command once through the runtime's external-network approval mechanism before producing a terminal unavailable result. This recovery exists only for that pre-denial sandbox mistake; after the user denies approval, the current turn stops and the retry is forbidden. Only after that approved collector attempt fails, external-network approval is unavailable, or the user denies it may the terminal collection-failure gate apply; never repeat more than one approved recovery attempt.
 
@@ -73,7 +71,7 @@ For retryable `github-network`, `github-rate-limit`, or `command-timeout` that r
 Use exactly one close code:
 
 | Code | Conclusive evidence | Insufficient alone |
-| --- | --- | --- |
+| -- | -- | -- |
 | `FALSE_GOAL` | The stated goal contradicts a citable invariant, specification, domain fact, or verified current behavior. | Implementation disagreement, stale wording, or an unverified claim. |
 | `BREAKING_CONDUCT` | Direct evidence that the contribution is intentionally malicious or adversarial by design, such as a backdoor, exfiltration, or supply-chain attack. | An accidental security bug, poor code, suspicion, or inferred intent. |
 | `WRONG_SCOPE` | A documented roadmap, maintainer decision, ADR, or contribution boundary directly excludes the proposed goal. | Size, mixed files, or an undocumented preference. |
@@ -87,11 +85,7 @@ A close decision requires `confidence >= 0.90`, two distinct evidence sources, a
 
 On close, skip structural context, T1, T2, specialist routing, detailed findings, severity classification, and the normal recommendation step. Write `review-notes.md` with `Review Decision: close`, source findings `not assessed`, detailed review `skipped`, the exact close reason, summary, rationale, evidence, counterevidence checked, and `GitHub mutation: not performed.` Emit `status=pass` for the successfully completed workflow, zero findings, `review_status=closed`, and `close_decision={"schema_version": 1, "code": "<CODE>", "advisory_only": true, "head_sha": "<verified PR head>", "summary": "<summary>", "rationale": "<rationale>", "evidence": [{"claim": "<observed fact>", "source": "<artifact, repository path, or authoritative URL>"}], "counterevidence_checked": ["<falsification check>"]}`. Include at least two distinct evidence entries. Omit `review_decision`, recommendations, follow-up, review routing, specialist artifacts, and every Markdown table. Run the shared gates with detailed-review checks marked not applicable and the `review` gate validating the close artifact, then run both artifact validators. This result only advises the user to close; never close, comment on, merge, or otherwise mutate GitHub.
 
-**Structural context (optional)**: after the diff is collected, also probe codemap-py once for changed-symbol blast
-radius: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category review --out <run-directory>/codemap-context.json`.
-Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with T1/T2 as scoped by `scope.txt`
-alone. Persist the diff-impact evidence once here; T2 specialist fan-out (step 04) includes
-`<run-directory>/codemap-context.json` in each triggered context pack, never a fresh per-specialist query.
+**Structural context (optional)**: after the diff is collected, also probe codemap-py once for changed-symbol blast radius: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category review --out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with T1/T2 as scoped by `scope.txt` alone. Persist the diff-impact evidence once here; T2 specialist fan-out (step 04) includes `<run-directory>/codemap-context.json` in each triggered context pack, never a fresh per-specialist query.
 
 ### 03: T1 primary diff review. Read the changed files end-to-end from the local working tree or checked-out PR branch and identify findings before considering any fix or gate outcome
 
@@ -107,7 +101,7 @@ Review axes, in order:
 Blocking defaults guide merge judgment; they are not automatic labels:
 
 | Category | Default | Nuance |
-| --- | --- | --- |
+| -- | -- | -- |
 | CI red or failing check | blocking | Only a major or required-check failure. Note a single flaky-looking rerun blip without automatically blocking. |
 | Missing test coverage for new or changed logic | blocking | Require coverage proportional to the changed contract and regression risk. |
 | Accidental security bug | blocking | Evidenced by-design harm is terminal `BREAKING_CONDUCT` at the close gate. |
@@ -151,19 +145,9 @@ Routed specialist axes:
 - `challenger`: adversarial assumptions, high findings, migration/API risks, material no-finding conclusions.
 - Conditional roles: `data-steward`, `cicd-steward`, `linting-expert`, `doc-scribe`, `oss-shepherd`, `squeezer`, `scientist`, and `web-explorer` cover named domains. `solution-architect` and `security-auditor` are Sol-pinned and never triggered by a matching domain alone: use either only when the user expressly requests Sol or selects that role, then return its bounded read-only evidence artifact to the Terra parent/session for review acceptance.
 
-Use runtime-provided subagents when independence materially helps and follow the portable route order in the shared
-orchestration policy. A built-in/default child receives the exact canonical role card before its context pack. It may
-count as independent only when it has a separate child identity/output and the artifact records the card hash, route,
-actual model, and observed controls. If no safe subagent route exists, write a labeled in-main substitute for each
-triggered role and set `fanout_substituted=true`. Substitution lowers confidence and never satisfies independence for
-critical findings.
+Use runtime-provided subagents when independence materially helps and follow the portable route order in the shared orchestration policy. A built-in/default child receives the exact canonical role card before its context pack. It may count as independent only when it has a separate child identity/output and the artifact records the card hash, route, actual model, and observed controls. If no safe subagent route exists, write a labeled in-main substitute for each triggered role and set `fanout_substituted=true`. Substitution lowers confidence and never satisfies independence for critical findings.
 
-`specialist-manifest.json` uses schema version 2: `review_run_id`, `parent_thread_id=$CODEX_THREAD_ID`,
-`review_input_sha256`, triggered passes only. Each spawn records role-card hash, route, attempted routes, fallback
-reason, requested and observed controls, parent spawn event ID, child thread ID/path, turn ID, actual model/effort,
-context/output paths/hashes, status, and transient error type when applicable. `selected_attempt` identifies completed
-output. Validator checks hash-derived child name, parent spawn, child linkage, actual model/effort, final child message,
-hashes, and provenance header against Codex rollout logs.
+`specialist-manifest.json` uses schema version 2: `review_run_id`, `parent_thread_id=$CODEX_THREAD_ID`, `review_input_sha256`, triggered passes only. Each spawn records role-card hash, route, attempted routes, fallback reason, requested and observed controls, parent spawn event ID, child thread ID/path, turn ID, actual model/effort, context/output paths/hashes, status, and transient error type when applicable. `selected_attempt` identifies completed output. Validator checks hash-derived child name, parent spawn, child linkage, actual model/effort, final child message, hashes, and provenance header against Codex rollout logs.
 
 At most two attempts/role. Retry only `timeout`, `transport_error`, or `rate_limited`; never retry deterministic findings, validation failures, completed work. Preserve completed outputs/context. Checkpoint is evidence only, never completed output/provenance replacement.
 
@@ -224,7 +208,7 @@ For an assessed `scope=pr` review, immediately before user-facing output, rebuil
 `PR Snapshot` must use this compact Markdown table in `review-notes.md` and reproduce it before findings in the final chat:
 
 | Field | Value |
-| --- | --- |
+| -- | -- |
 | PR | `[#<number> — <title>](<url>)` |
 | Author | `@<pr.json author.login>` |
 | CI | `passing`, `failing — <check names>`, `pending — <check names>`, or `unavailable` |
@@ -236,7 +220,7 @@ Read PR CI from `pr.json.statusCheckRollup`: a failing completed check makes CI 
 For every assessed non-`accept-as-is` PR decision and any `needs-more-work` decision in another scope, add a `## Review Findings and Merge Blocks` section immediately after `Decision Summary`. It is the canonical pre-merge handoff and must use this exact Markdown header and column order:
 
 | Finding / area | Required change | Evidence | Status |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | Finding ID/title and owning area, or an operational blocker | Concrete action that closes the finding or decision condition | File, command, gate, review thread, or other observed evidence | Required, Minor change, Verify, Implemented; verify, Required verification, Reject, or Not aligned |
 
 Include one non-empty row for every reported finding, unresolved blocker, failed or missing gate, and required verification. The first cell names the finding ID/title or clearly states the operational area. `Status` must make clear whether the row is required, minor, verification-only, rejected, or not aligned; `Implemented` alone is not an open action. Do not collapse distinct findings into a generic row. This table is mandatory evidence only after source assessment: an assessed non-`accept-as-is` PR artifact or any `needs-more-work` artifact fails validation when it is missing, malformed, empty, or contains a non-actionable status. The terminal review-unavailable output gate forbids tables and uses plain process diagnostic prose.

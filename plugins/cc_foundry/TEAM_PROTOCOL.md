@@ -9,7 +9,7 @@ AgentSpeak v2 compressed inter-agent messaging for Claude Code Agent Teams. ~60%
 ## Status Codes
 
 | Code | Meaning | Use when |
-| --- | --- | --- |
+| -- | -- | -- |
 | `alpha` | Starting | Beginning task |
 | `beta` | In progress | Working (append %: `beta75`) |
 | `gamma` | Blocked | Waiting on agent or task |
@@ -21,7 +21,7 @@ AgentSpeak v2 compressed inter-agent messaging for Claude Code Agent Teams. ~60%
 ## Action Symbols
 
 | Symbol | Meaning |
-| --- | --- |
+| -- | -- |
 | `+` | Added |
 | `-` | Removed |
 | `~` | Changed |
@@ -37,7 +37,7 @@ AgentSpeak v2 compressed inter-agent messaging for Claude Code Agent Teams. ~60%
 ## Priority Prefix
 
 | Prefix | Meaning |
-| --- | --- |
+| -- | -- |
 | `!!` | Urgent — requires lead attention |
 | (none) | Normal |
 | `..` | FYI only |
@@ -45,7 +45,7 @@ AgentSpeak v2 compressed inter-agent messaging for Claude Code Agent Teams. ~60%
 ## Bug Severity
 
 | Code | Meaning |
-| --- | --- |
+| -- | -- |
 | `P0` | Critical (security, data loss, crash, blocks release) |
 | `P1` | High (broken feature, bad UX) |
 | `P2` | Medium (logic bug, type mismatch) |
@@ -62,7 +62,7 @@ Status code always first. Task ID (`T#`) always precedes file shortcode.
 ## Agent Shortcodes
 
 | Code | Agent | Code | Agent |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | `SW` | sw-engineer | `PO` | perf-optimizer |
 | `SA` | solution-architect | `AR` | research:scientist |
 | `QA` | qa-specialist | `DS` | doc-scribe |
@@ -73,7 +73,7 @@ Status code always first. Task ID (`T#`) always precedes file shortcode.
 ## Project File Shortcodes (`.claude/` config)
 
 | Code | Path |
-| --- | --- |
+| -- | -- |
 | `AG` | `.claude/agents/` |
 | `SK` | `.claude/skills/` |
 | `HK` | `.claude/hooks/` |
@@ -138,7 +138,7 @@ epsilon!fail auth attempt:3/3 ?lead          # giving up, reassign
 
 ## Security in QA
 
-`foundry:qa-specialist` auto-includes OWASP Top 10 — see `<teammate_mode>` section in qa-specialist agent for scope and severity rules. No separate security agent.
+`foundry:qa-specialist` auto-includes OWASP Top 10 — see `<teammate-mode>` section in qa-specialist agent for scope and severity rules. No separate security agent.
 
 ## Result Return Protocol
 

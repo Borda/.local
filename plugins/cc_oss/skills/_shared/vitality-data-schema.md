@@ -7,7 +7,7 @@ Reference schemas for oss:gh-scraper data files.
 Each line: `{"type": "<dataset>", "repo": "<GH_OWNER>/<GH_REPO>", "timestamp": "<ANALYSIS_NOW>", "records": N, "partial": true|false, "data": <raw_json>}`
 
 | `type` | Source | Data shape |
-| --- | --- | --- |
+| -- | -- | -- |
 | `open_issues` | Group 1: open issues | array of issue objects |
 | `closed_issues` | Group 1: closed issues (3y window) | array of issue objects |
 | `open_prs` | Group 1: open PRs | array of PR objects |
@@ -34,6 +34,7 @@ Each line: `{"type": "<dataset>", "repo": "<GH_OWNER>/<GH_REPO>", "timestamp": "
 | `dependabot_config` | Group 2: Dependabot config | dependabot.yml file object (404 = not configured) |
 
 Rules:
+
 - Skip datasets returning 403, persistent 202, or empty
 - Set `"partial": true` when truncation detected (e.g. 501/201/1001 response count hit limit)
 - Set `"records"` to item count in `data`
@@ -65,5 +66,6 @@ Rules:
 ```
 
 Rules:
+
 - Replace all `<VARIABLE>` placeholders with actual computed values
 - ⚪ axes: score=-1, conf=-1, status="⚪", signal="unavailable — <reason>"

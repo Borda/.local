@@ -9,6 +9,7 @@ Trigger when: 3+ distinct method families exist AND field has no clear leading m
 **Workflow:**
 
 1. Lead completes Step 1 (codebase context) as normal
+
 > **Agent budget** — each teammate costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each teammate near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
 
 2. Spawn 2–3 **researcher** teammates, each assigned distinct method cluster
@@ -40,6 +41,7 @@ Task tracking: call TaskUpdate(in_progress) when you start your assigned task; c
 ```
 
 Lead synthesizes by reading teammate file paths from delta messages. Pre-compute:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 SPAWN_BRANCH="$(git branch --show-current 2>/dev/null | tr "/" "-" || echo "main")"  # timeout: 3000
@@ -53,6 +55,7 @@ REPORT_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti
 # Absolute path — hooks/enforce-topic-header.js reads this to gate the follow-up question
 echo "$PWD/$REPORT_OUT" > "${TMPDIR:-/tmp}/research-topic-report-file-${CSID}"
 ```
+
 For 3 teammates, spawn consolidator researcher agent: "Read the research files at [paths from deltas]. Synthesize into the Step 3 unified report structure. Write to `<$REPORT_OUT>` (substitute the resolved path from the bash block above — not the template variable). Return ONLY compact JSON: `{"status":"done","papers":N,"best_method":"<name>","confidence":0.N,"file":"<path>"}`"
 
 TaskUpdate "Print report header" → `in_progress`.

@@ -1,6 +1,6 @@
 ---
 name: calibrate
-description: "Calibrate skills/role cards for leaks/gaps with recall, precision, and confidence-accuracy checks."
+description: Calibrate skills/role cards for leaks/gaps with recall, precision, and confidence-accuracy checks.
 ---
 
 # Calibrate
@@ -22,12 +22,9 @@ Run calibration for Codex workflow integrity and behavioral scoring.
 
 ## Workflow
 
-Installed plugin runs use `--layout plugin --root <consuming-project>`. The runner discovers package assets from its
-own file location under `runtime/calibration`, `skills`, `roles`, and `shared`; `--root` controls only report output,
-Git context, and read-only classification work. It must not fall back to a source checkout or project `.codex`.
+Installed plugin runs use `--layout plugin --root <consuming-project>`. The runner discovers package assets from its own file location under `runtime/calibration`, `skills`, `roles`, and `shared`; `--root` controls only report output, Git context, and read-only classification work. It must not fall back to a source checkout or project `.codex`.
 
-Repository maintainers may use `--layout source --root <source-project>` to validate the source `.codex` layout. Do
-not mix source agents, sync manifests, or project registration checks into an installed-plugin result.
+Repository maintainers may use `--layout source --root <source-project>` to validate the source `.codex` layout. Do not mix source agents, sync manifests, or project registration checks into an installed-plugin result.
 
 ### 01: Load calibration task set from `../../runtime/calibration/tasks.json`
 
@@ -39,8 +36,7 @@ not mix source agents, sync manifests, or project registration checks into an in
 
 ### 04: Inspect `../../runtime/calibration/run.py --help`, then run plugin layout against the consuming project
 
-Use `--require-live-routes` only for the strict-live gate. Default offline scoring remains fixture-backed and makes no
-paid model calls.
+Use `--require-live-routes` only for the strict-live gate. Default offline scoring remains fixture-backed and makes no paid model calls.
 
 ### 05: Inspect `checks_failed`, `leaks_found`, and `behavioral`
 

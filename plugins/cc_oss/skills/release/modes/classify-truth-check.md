@@ -15,7 +15,7 @@
 Section order (fixed): 🚀 Added → ⚠️ Breaking Changes → 🌱 Changed → 🗑️ Deprecated → ❌ Removed → 🔧 Fixed → 🔒 Security → 🔄 Reverted
 
 | Category | Section | What goes here |
-| --- | --- | --- |
+| -- | -- | -- |
 | New Features | 🚀 Added | User-visible additions |
 | Breaking Changes | ⚠️ Breaking Changes | Existing code stops working immediately — no prior deprecation period. Prior release deprecated → ❌ Removed instead. |
 | Improvements | 🚀 Added or 🌱 Changed | Enhancements to existing behavior |
@@ -36,8 +36,6 @@ Section order (fixed): 🚀 Added → ⚠️ Breaking Changes → 🌱 Changed �
 **Cherry-pick annotation (stable-branch mode)**: when `$CHERRY_PICK_SUBJECTS` set, match subject against it. Match → append "(backported from $SOURCE_TAG_REF)". Subject-text matching is heuristic — verify manually for generic subjects.
 
 **Self-correction discipline**: present only final corrected table — no intermediate classifications.
-
----
 
 ## Truth check
 
@@ -71,8 +69,6 @@ Outcomes: confirmed present → keep (note "truth-checked"); not found → remov
 Gate loop (max 3 iterations): truth-check → remove unverified → re-run on updated set → after 3 iterations surface remaining unverified claims and proceed.
 
 Runs before Identify highlights — highlights and demo must never reference unverified items.
-
----
 
 ## Breaking-change classification
 
@@ -114,6 +110,7 @@ When `CODEMAP_OK` non-zero:
 `classify_breaking.py` output: `{breaking:[{symbol,package,external_callers|reason}], internal:[...], query_complete, migration_lines}`. "External caller" = caller whose top-level package differs from the symbol's own package.
 
 **Apply**:
+
 - Every `breaking` symbol not already under ⚠️ Breaking Changes → move it there (or add), citing its external callers as evidence.
 - `migration_lines` = the affected call-site draft — carry into **Draft migration guide** (`breaking_callers` findings); each external call site gets a before→after entry.
 - `internal` symbols → leave under their human Classify label (🚀 Added / 🌱 Changed); a same-package-only caller is not a downstream break.

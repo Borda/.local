@@ -9,6 +9,7 @@ paths:
 **Never work on partial result set.** Paginated APIs return subset by default — request full dataset before drawing conclusions, counting, filtering, or ranking.
 
 Silent truncation (30 of 300 items) worse than error — produces wrong answer.
+
 ## GitHub CLI (`gh`)
 
 Default page size 30. Override:
@@ -71,7 +72,7 @@ done
 ## General Rules
 
 | Signal | Action |
-| --- | --- |
+| -- | -- |
 | Response includes `total_count` or `total` field | Compare against items received; fetch more if not equal |
 | Task involves counting, ranking, or "all X" | Mandate complete data before proceeding |
 | First response looks suspiciously small | Verify — check for truncation before continuing |

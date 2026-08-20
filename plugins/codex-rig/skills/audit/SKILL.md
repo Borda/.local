@@ -1,6 +1,6 @@
 ---
 name: audit
-description: "Audit Codex configuration, workflow, and prompt-efficiency (instruction cost, value-per-token) drift; emit ranked gaps and measurable gates."
+description: Audit Codex configuration, workflow, and prompt-efficiency (instruction cost, value-per-token) drift; emit ranked gaps and measurable gates.
 ---
 
 # Audit
@@ -36,9 +36,7 @@ Scopes:
 - `roles`: role-routing instructions and an explicitly supplied plugin/package role-card root.
 - `all`: every applicable surface above. Missing optional local skills or roles is `not-configured`, not drift.
 
-Run `rg --files` with the `AGENTS.md`, `.codex/config.toml`, and `.agents/skills/**` globs as argv. When `target` is
-supplied and exists, enumerate regular files under it to depth four with a platform-native filesystem walk. Sort and
-deduplicate both result sets into `<run-directory>/inventory.txt`; record unavailable inputs or collection failures.
+Run `rg --files` with the `AGENTS.md`, `.codex/config.toml`, and `.agents/skills/**` globs as argv. When `target` is supplied and exists, enumerate regular files under it to depth four with a platform-native filesystem walk. Sort and deduplicate both result sets into `<run-directory>/inventory.txt`; record unavailable inputs or collection failures.
 
 ### 03: Build an audit ledger before running gates
 
@@ -83,22 +81,13 @@ Follow `../../shared/helper-cli-contract.md` and `python PLUGIN_ROOT/shared/run_
 
 ### 07: Detect drift and broken references
 
-Run `rg -n` for `config_file|skills/|roles/|quality-gates|run_gates.py|write-result.py` over existing `AGENTS.md`,
-`.codex`, `.agents`, and the optional target. Write results to `<run-directory>/reference-scan.txt`; record missing
-inputs or command failure explicitly.
+Run `rg -n` for `config_file|skills/|roles/|quality-gates|run_gates.py|write-result.py` over existing `AGENTS.md`, `.codex`, `.agents`, and the optional target. Write results to `<run-directory>/reference-scan.txt`; record missing inputs or command failure explicitly.
 
-**Structural context (optional)**: when the audited scope contains a Python package, also probe codemap-py once for
-undocumented public surface and externally-uncalled modules: `python PLUGIN_ROOT/shared/codemap_adapter.py context
---category audit --out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`,
-absence/incompatibility is non-fatal — continue with the reference scan above, using the persisted evidence as an
-additional signal, never a replacement for it.
+**Structural context (optional)**: when the audited scope contains a Python package, also probe codemap-py once for undocumented public surface and externally-uncalled modules: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category audit --out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with the reference scan above, using the persisted evidence as an additional signal, never a replacement for it.
 
 ### 08: Audit spawn-pattern coverage and overlap in `AGENTS.md` (instruction-level check)
 
-Run two separate `rg -n` argv scans: `delegat|specialist|spawn|role|\[agents\.` over existing `AGENTS.md` and
-`.codex/config.toml`, writing `<run-directory>/spawn-sections.txt`; then
-`Trigger and skip boundaries|TRIGGER when|SKIP when|NOT for` over the supplied target or `AGENTS.md`, writing
-`<run-directory>/spawn-policy-sections.txt`. Record missing inputs or command failure explicitly.
+Run two separate `rg -n` argv scans: `delegat|specialist|spawn|role|\[agents\.` over existing `AGENTS.md` and `.codex/config.toml`, writing `<run-directory>/spawn-sections.txt`; then `Trigger and skip boundaries|TRIGGER when|SKIP when|NOT for` over the supplied target or `AGENTS.md`, writing `<run-directory>/spawn-policy-sections.txt`. Record missing inputs or command failure explicitly.
 
 ### 09: Review native skill and agent contract consistency
 
@@ -120,9 +109,7 @@ Each configured role or agent has:
 
 ### 10: Review role-roster consistency when a role-card target is supplied
 
-When a target is supplied, run `rg -n` for `^(role_id|name|model|description|developer_instructions)` over that exact
-target and write `<run-directory>/role-roster-scan.txt`; record scan failure. Without a target, create that artifact as
-an empty file and classify the role roster as not configured.
+When a target is supplied, run `rg -n` for `^(role_id|name|model|description|developer_instructions)` over that exact target and write `<run-directory>/role-roster-scan.txt`; record scan failure. Without a target, create that artifact as an empty file and classify the role roster as not configured.
 
 Classify overlap as `keep`, `sharpen`, `merge-prune`:
 
@@ -138,15 +125,15 @@ Use shared lifecycle/authoritative help. Write `AUDIT_METADATA`, validate `audit
 
 ## Fail-fast Rules
 
-1. Requested target missing or escaping the consuming project/approved external scope => fail.
-2. Shared gate script missing => fail.
-3. Critical-path broken config/skill reference => fail.
-4. Any configured role/agent lacks routing coverage => fail.
-5. Unclear/overlapping spawn intent lacks collaboration-team guidance => fail.
-6. Agent overlap lacks keep/sharpen/merge-prune decision => fail.
-7. Configured entry lacks its declared skill/role contract section => fail unless exception recorded.
-8. Non-native runtime assumptions in an audited skill or role card => fail.
-9. Result artifact missing => fail.
+01. Requested target missing or escaping the consuming project/approved external scope => fail.
+02. Shared gate script missing => fail.
+03. Critical-path broken config/skill reference => fail.
+04. Any configured role/agent lacks routing coverage => fail.
+05. Unclear/overlapping spawn intent lacks collaboration-team guidance => fail.
+06. Agent overlap lacks keep/sharpen/merge-prune decision => fail.
+07. Configured entry lacks its declared skill/role contract section => fail unless exception recorded.
+08. Non-native runtime assumptions in an audited skill or role card => fail.
+09. Result artifact missing => fail.
 10. `prompt-efficiency.md` or its required evidence sections missing => fail.
 11. Prompt candidate accepted from raw length/proxy alone, without obligation mapping, hard value guards, loaded-reference cost, required adversarial review, matched live identity, or declared material reduction => fail.
 12. `axis=value-per-token` requested without `scope=skills|all` or a supplied target containing a skill root => fail.

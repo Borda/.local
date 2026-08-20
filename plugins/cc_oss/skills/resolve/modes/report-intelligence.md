@@ -1,5 +1,7 @@
 <!-- oss:resolve Step 3a — executed inline: cat $_OSS_RESOLVE/modes/report-intelligence.md; execute -->
+
 <!-- fragment — no <workflow> wrapper; executed inline by SKILL.md orchestrator -->
+
 <!-- consumer: plugins/cc_oss/skills/resolve/SKILL.md (Step 3a) -->
 
 ## Step 3a: Report intelligence (report mode only)
@@ -24,6 +26,7 @@ Building action items…
 ```
 
 <!-- loads: review-section-taxonomy.md -->
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/resolve-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""  # reload (Check 41)

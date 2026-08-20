@@ -77,8 +77,9 @@ printf "✓: Check 23 scan complete\n"
 ```
 
 After scan, apply model reasoning to each match — exclude cases where shell command genuinely necessary. Flag only where native tool is direct drop-in.
+
 | Shell command | Preferred native tool | Severity |
-| --- | --- | --- |
+| -- | -- | -- |
 | `cat <file>` | Read tool | medium |
 | `grep`/`rg` for content search | Grep tool | medium |
 | `find`/`ls` for file listing | Glob tool | medium |
@@ -107,7 +108,7 @@ printf "✓: Check 23a scan complete\n"  # timeout: 5000
 Severity: **high** — permission prompt mid-workflow blocks automation; user deny = skill phase fails.
 
 | Sub-check | Pattern | Severity |
-| --- | --- | --- |
+| -- | -- | -- |
 | 23a — python -c inline | `python -c` in skill body | high |
 | 23a — python heredoc | `python << '` in skill body | high |
 
@@ -118,6 +119,7 @@ Severity: **high** — permission prompt mid-workflow blocks automation; user de
 `# timeout: N` on a bash line is a hint to Claude Code's Bash tool — no effect when the command runs outside the tool (bin/ scripts, CI, direct shell). Hard enforcement needs `timeout S <cmd>` prefix (bash) or `--timeout S` via argparse passed to every blocking call (Python subprocess). See `bin-authoring-guide.md` §Timeout Policy for patterns and ms→s conversion table.
 
 Rules:
+
 - **Bash call sites**: line with `# timeout: N` must have `timeout S` shell prefix (S = N ÷ 1000); no internal fallback exists.
 - **Python call sites**: shell `timeout S` wrapper optional — timeout enforced internally via `--timeout` argparse parameter whose `default=` must equal N ÷ 1000 (from the calling site's `# timeout: N` annotation).
 - **Python `bin/` scripts with subprocess**: must expose `--timeout SECS` and pass it to every `subprocess.*` call.
@@ -150,11 +152,10 @@ done || true
 printf "✓: Check 23b scan complete\n"  # timeout: 5000
 ```
 
-After scan, apply model reasoning — exclude lines inside illustration/example code blocks (marked `# ✗`, surrounded by explanatory prose, or not reachable as actual tool-call commands). Flag only live executable lines.
-Severity: **medium** — bash comment-only timeout silently ignored at runtime; Python script missing `--timeout` default has no internal enforcement.
+After scan, apply model reasoning — exclude lines inside illustration/example code blocks (marked `# ✗`, surrounded by explanatory prose, or not reachable as actual tool-call commands). Flag only live executable lines. Severity: **medium** — bash comment-only timeout silently ignored at runtime; Python script missing `--timeout` default has no internal enforcement.
 
 | Sub-check | Pattern | Severity |
-| --- | --- | --- |
+| -- | -- | -- |
 | 23b — bash comment-only timeout | `# timeout: N` without `timeout S` shell prefix (non-python invocations) | medium |
 | 23b — subprocess no timeout= | `subprocess.*` call without `timeout=` in `bin/*.py` | medium |
 | 23b — missing --timeout default | Python `bin/` script uses subprocess but no `--timeout` argparse arg | medium |
@@ -179,7 +180,7 @@ False-positive exemption: `eval "$(python .../health_sentinel.py ...)"` — heal
 **Sub-check 23d** — shell variable used for state across separate Bash tool calls. **Not grep-detectable** (requires cross-block analysis of Bash call boundaries, which are runtime not lexical). Flag during curator per-file review only: when auditing a skill, scan for `VAR=$(...)` pattern in one fenced block and `"$VAR"` or `[ -z "$VAR" ]` in a later fenced block with no `cat "${TMPDIR:-/tmp}/...-${CSID}"` supplying `VAR` between them.
 
 | Sub-check | Pattern | Severity | Auto-fix |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | 23c — eval for data output | `eval "$(python ...)` without `health_sentinel` context | medium | no — replace with TMPDIR-file pattern per `bin-authoring-guide.md §Script Output Routing` |
 | 23d — cross-call shell var | `$VAR` in block N, set in earlier block M, no TMPDIR bridge | medium | no — curator flag only |
 
@@ -211,7 +212,7 @@ Collect all unique (source-file, skill-reference, trailing-argument) triples. RE
 **Step 2 — Resolve each reference (Check 24a)**:
 
 | Reference form | Resolution |
-| --- | --- |
+| -- | -- |
 | `/name` | Glob `.claude/skills/name/SKILL.md` — must exist |
 | `/plugin:name` | Glob `plugins/plugin/skills/name/SKILL.md` — must exist; if no `plugins/` dir, note "installed plugin — cannot verify statically" and skip |
 
@@ -233,7 +234,7 @@ Build directed graph from (source-file, skill-reference) pairs collected in Step
 **Report only** — no auto-fix; sequence intent requires human judgment.
 
 | Sub-check | Severity | Auto-fix |
-| --- | --- | --- |
+| -- | -- | -- |
 | 24a — target skill not on disk | high | no |
 | 24b — argument absent from argument-hint | medium | no |
 | 24c — directed cycle in follow-up chain | high | no |
@@ -290,15 +291,14 @@ Own-plugin `_shared/` IS reachable at runtime (each plugin's resolver finds it),
 **Report only** — no auto-fix; resolution requires deciding whether to inline content or move file to `foundry/_shared/`.
 
 | Sub-check | Severity | Auto-fix |
-| --- | --- | --- |
+| -- | -- | -- |
 | 27a — file absent from foundry's \_shared/ | high | no |
 | 27b — catch-22 (fallback file needs foundry to reach) | critical | no |
 | 27c — plugin-local \_shared/ file referenced but not mounted | medium | no |
 
 ## Check 28 — Cross-plugin agent dispatch fallback
 
-Skills dispatching agents via `Agent(subagent_type="<plugin>:<name>", ...)` depend on that plugin being installed. When dispatched agent belongs to different plugin from skill's own plugin, and no fallback declared for absent-plugin case, skill fails at runtime.
-**Exempt**: `general-purpose` (built-in, always available); `codex:*` agents (conditional dispatch tracked by Check 7).
+Skills dispatching agents via `Agent(subagent_type="<plugin>:<name>", ...)` depend on that plugin being installed. When dispatched agent belongs to different plugin from skill's own plugin, and no fallback declared for absent-plugin case, skill fails at runtime. **Exempt**: `general-purpose` (built-in, always available); `codex:*` agents (conditional dispatch tracked by Check 7).
 
 **Step 1 — Map skills to owning plugin:**
 
@@ -354,9 +354,9 @@ Partially covered → **[medium] Check 28b**: `<plugin>/<skill>: fallback sectio
 > **Related**: Check 25 (in `checks-shared.md`) covers bare-name dispatch (missing plugin prefix). Check 25 and Check 28 address different failure modes — run both.
 
 | Sub-check | Condition | Severity | Auto-fix |
-| --- | --- | --- | --- |
-| 28a — no fallback for cross-plugin dispatch | high | no |
-| 28b — fallback present but agent not covered | medium | no |
+| -- | -- | -- | -- |
+| 28a | no fallback for cross-plugin dispatch | high | no |
+| 28b | fallback present but agent not covered | medium | no |
 
 ### Sub-check 28c — Cross-plugin prose references without availability guard
 
@@ -391,17 +391,19 @@ fi  # timeout: 5000
 ```
 
 Severity: **medium** — user sees broken command in follow-up gate or documentation prose.
-Fix: append `(requires \`<plugin>\` plugin)` immediately after cross-plugin skill reference, or restructure as conditional.
+
+Fix: append `` (requires `<plugin>` plugin) `` immediately after cross-plugin skill reference, or restructure as conditional.
 
 | Sub-check | Condition | Severity | Auto-fix |
-| --- | --- | --- | --- |
-| 28a — no fallback for cross-plugin dispatch | high | no |
-| 28b — fallback present but agent not covered | medium | no |
-| 28c — prose cross-plugin ref without availability guard | medium | no |
+| -- | -- | -- | -- |
+| 28a | no fallback for cross-plugin dispatch | high | no |
+| 28b | fallback present but agent not covered | medium | no |
+| 28c | prose cross-plugin ref without availability guard | medium | no |
 
 ## Check 30 — Plugin skill bash operational correctness
 
 Four static-grep patterns catching silent failures in skill SKILL.md bash blocks. Run across both `.claude/skills/` and `plugins/*/skills/` — bugs appear in any skill.
+
 ### 30a — Pipe exit code capture (PIPESTATUS)
 
 ```bash
@@ -446,6 +448,7 @@ Fix pattern: `[ "${SKIP_RUFF:-0}" -ne 1 ] && $RUNNER ruff check ...`
 Cannot be caught by grep alone — requires reading spawn prompt and consolidator read pattern in same file.
 
 Flag when skill file:
+
 1. Spawns agents with prompt instructing them to write findings to file named with plugin-prefixed format (e.g. `foundry:sw-engineer.md`)
 2. AND consolidator reads files using bare-name format (e.g. `sw-engineer.md`)
 
@@ -516,8 +519,8 @@ Severity: **high** — workflow continues past a detected failure; downstream st
 Fix pattern: add `exit 1` (or appropriate non-zero exit) immediately after the failure is confirmed; do NOT continue to next step.
 
 | Sub-check | Pattern | Severity | Auto-fix |
-| --- | --- | --- | --- |
-| 30a — pipe exit code | `\ | tail` / `\ | head` without PIPESTATUS | critical | no |
+| -- | -- | -- | -- |
+| 30a — pipe exit code | `\| tail` / `\| head` without PIPESTATUS | critical | no |
 | 30b — SKIP guard missing | `SKIP_X=1` with no `[ "${SKIP_X:-0}" ]` guard | critical | no |
 | 30c — filename mismatch | spawn filename ≠ consolidator filename (model reasoning) | high | no |
 | 30d — TEST_CMD+pytest flags | `$TEST_CMD --tb` / `--co` / `::` / `--cov` without PYTEST_CMD | high | no |
@@ -531,7 +534,7 @@ For each SKILL.md, verify every **gating or dispatch tool** called in workflow b
 **High-risk tools** (absence breaks entire workflow phases, not just individual steps):
 
 | Tool | Consequence if absent from `allowed-tools` |
-| --- | --- |
+| -- | -- |
 | `Skill` | Follow-up gate never dispatches target skill; user's selection silently dropped |
 | `AskUserQuestion` | Skill falls back to prose questions (violates communication.md; interactive gates broken) |
 | `Agent` | Sub-agent spawns blocked; orchestration phase fails silently |
@@ -566,7 +569,7 @@ Severity: **critical** — blocked gating tool = entire workflow phase silently 
 Auto-fix: append missing tool name to `allowed-tools:` frontmatter line.
 
 | Sub-check | Condition | Severity | Auto-fix |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | 31 — tool-body mismatch | body calls `Skill()`, `AskUserQuestion()`, or `Agent()` but tool absent from `allowed-tools` | critical | yes — add to frontmatter |
 
 ### Sub-check 31a — Skill frontmatter completeness
@@ -598,7 +601,7 @@ done < <(find "$_ROOT" -path "*/skills/*/SKILL.md" 2>/dev/null | sort)
 Severity: **medium** for `effort:` (no default documented); **low** for `when_to_use:` (deprecated field).
 
 | Sub-check | Field | Condition | Severity | Auto-fix |
-| --- | --- | --- | --- | --- |
+| -- | -- | -- | -- | -- |
 | 31 — tool-body mismatch | `allowed-tools` | body calls Skill/AskUserQuestion/Agent, not in frontmatter | critical | yes |
 | 31a — effort missing | `effort:` | always required | medium | yes |
 | 31a — when_to_use present | `when_to_use:` | deprecated — any presence flagged (merge into `description:`, then strip) | low | no |
@@ -647,11 +650,10 @@ while IFS= read -r f; do  # timeout: 5000
 done < "${TMPDIR:-/tmp}/audit-state-${CSID}/c35-bg-skills"
 ```
 
-Severity: **high** for C35a/b/c — stalled background agents drop findings with no user-visible signal.
-Fix: reference `$_FOUNDRY_SHARED/agent-spawn-protocol.md` (preferred once file exists) or inline all three §8 elements in skill.
+Severity: **high** for C35a/b/c — stalled background agents drop findings with no user-visible signal. Fix: reference `$_FOUNDRY_SHARED/agent-spawn-protocol.md` (preferred once file exists) or inline all three §8 elements in skill.
 
 | Sub-check | Pattern | Severity | Auto-fix |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | C35a — no launch sentinel | no `touch /tmp/<sentinel>` after background spawn | high | no |
 | C35b — no file-activity poll | no 5-min `find -newer` loop | high | no |
 | C35c — no hard cutoff | no `HARD_CUTOFF` / 15-min signal | high | no |
@@ -682,8 +684,7 @@ done < <(find "$_ROOT" -path "*/skills/*/modes/*.md" 2>/dev/null | sort)
 [ "$found" -eq 0 ] && printf "✓: Check 32a — all mode files referenced in parent SKILL.md\n"
 ```
 
-Severity: **medium** — dead mode file = unreachable code; may diverge silently from live workflow.
-Auto-fix: delete the file, or add a reference in SKILL.md if omission was accidental.
+Severity: **medium** — dead mode file = unreachable code; may diverge silently from live workflow. Auto-fix: delete the file, or add a reference in SKILL.md if omission was accidental.
 
 ### Sub-check 32b — Dead template files
 
@@ -707,8 +708,7 @@ done < <(find "$_ROOT" -path "*/skills/*/templates/*" -type f 2>/dev/null | sort
 [ "$found" -eq 0 ] && printf "✓: Check 32b — all template files referenced in parent SKILL.md\n"
 ```
 
-Severity: **low** — templates may be referenced indirectly via agent spawn prompts that mention the filename inline; human review required before deletion.
-Auto-fix: delete if confirmed unused; no auto-delete.
+Severity: **low** — templates may be referenced indirectly via agent spawn prompts that mention the filename inline; human review required before deletion. Auto-fix: delete if confirmed unused; no auto-delete.
 
 ### Sub-check 32c — Dead rule files (paths: matches no project files)
 
@@ -739,13 +739,11 @@ done < <(find "$_ROOT" -path "*/rules/*.md" 2>/dev/null | sort)
 [ "$found" -eq 0 ] && printf "✓: Check 32c — all scoped rules match at least one project file\n"
 ```
 
-Severity: **medium** — rule with non-matching paths is never applied; may represent outdated scope (e.g., `src/**/*.py` when project no longer has Python files).
-Note: false positives possible if project files are in a non-standard location or generated at runtime. Human review before deletion.
-Auto-fix: remove `paths:` to make the rule global, or delete the file if rule is obsolete.
+Severity: **medium** — rule with non-matching paths is never applied; may represent outdated scope (e.g., `src/**/*.py` when project no longer has Python files). Note: false positives possible if project files are in a non-standard location or generated at runtime. Human review before deletion. Auto-fix: remove `paths:` to make the rule global, or delete the file if rule is obsolete.
 
 ### Sub-check 32d — Orphaned bin/ scripts
 
-`bin/` scripts that exist in the plugin source tree but are not referenced by any `.md` file in that plugin (SKILL.md, agents, rules, modes, templates, _shared) are unreachable at runtime. Common cause: script authored as scaffolding but never wired into its caller SKILL.md.
+`bin/` scripts that exist in the plugin source tree but are not referenced by any `.md` file in that plugin (SKILL.md, agents, rules, modes, templates, \_shared) are unreachable at runtime. Common cause: script authored as scaffolding but never wired into its caller SKILL.md.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -758,13 +756,12 @@ else
 fi
 ```
 
-Severity: **high** — orphaned script = either dead code or incomplete extraction; both are runtime gaps, not stylistic noise. An extraction that creates a bin/ script without wiring it into the caller leaves the inline twin active and the new script unreachable.
-Auto-fix: no — each category requires human judgment: (a) zero plausible consumer: confirm no in-progress branch before deleting; (b) cross-plugin consumer: search other plugins for the basename — if found, add `<!-- file: <basename> — consumers: <plugin> skills/<name> -->` doc header; (c) extraction started but wire-in skipped: identify the correct consumer SKILL.md and replace inline twin with bin/ invocation.
+Severity: **high** — orphaned script = either dead code or incomplete extraction; both are runtime gaps, not stylistic noise. An extraction that creates a bin/ script without wiring it into the caller leaves the inline twin active and the new script unreachable. Auto-fix: no — each category requires human judgment: (a) zero plausible consumer: confirm no in-progress branch before deleting; (b) cross-plugin consumer: search other plugins for the basename — if found, add `<!-- file: <basename> — consumers: <plugin> skills/<name> -->` doc header; (c) extraction started but wire-in skipped: identify the correct consumer SKILL.md and replace inline twin with bin/ invocation.
 
 > Note: search covers the entire plugins tree — cross-plugin callers are found correctly. False negatives possible only if the caller references the script by a dynamic path or alias that does not include the basename.
 
 | Sub-check | Target | Condition | Severity | Auto-fix |
-| --- | --- | --- | --- | --- |
+| -- | -- | -- | -- | -- |
 | 32a — dead mode file | `*/modes/*.md` | file exists but not referenced in parent SKILL.md | medium | delete file or add reference |
 | 32b — dead template file | `*/templates/*` | file exists but not referenced in parent SKILL.md | low | human review — may be indirect ref |
 | 32c — dead rule file | `*/rules/*.md` | `paths:` set but matches no project files | medium | remove `paths:` or delete file |
@@ -799,8 +796,7 @@ fi
 
 > "Scan these bin/ Python scripts for cross-similarity. For each pair: strip docstrings and inline comments → normalize variable names to `<VAR>` → normalize string literals and path constants to `<STR>` → compare AST-level structure. Report pairs with structural similarity ≥ 0.8. For each candidate pair: script names, plugin origin, similarity score, what differs (constant, path, plugin name, threshold), lines saved by merge, and suggested parametrization (e.g. `--plugin-root` flag, `--output-dir` arg, or move shared logic to `_shared/` helper). Skip pairs serving clearly different semantic roles despite structural overlap. Skip pairs marked `# audit-skip: resilience-replication` in their module docstring (intentional per-plugin independence)."
 
-Severity: **medium** — near-duplicate scripts = duplicated maintenance; a bug fix in one copy likely missed in the other.
-Auto-fix: no — merge requires semantic review of both scripts and all callers; confirm no behavioral difference before merging.
+Severity: **medium** — near-duplicate scripts = duplicated maintenance; a bug fix in one copy likely missed in the other. Auto-fix: no — merge requires semantic review of both scripts and all callers; confirm no behavioral difference before merging.
 
 ## Check 32f — Mode-file body shadowed in SKILL.md (extraction integrity)
 
@@ -836,8 +832,7 @@ else
 fi  # timeout: 15000
 ```
 
-Severity: **medium** — inline twin diverges silently from canonical mode file on every future edit.
-Auto-fix: delete inline block from SKILL.md; replace with bash+read pattern matching other modes.
+Severity: **medium** — inline twin diverges silently from canonical mode file on every future edit. Auto-fix: delete inline block from SKILL.md; replace with bash+read pattern matching other modes.
 
 ## Check 32g — Self-confessed manual sync markers
 
@@ -864,8 +859,7 @@ else
 fi  # timeout: 10000
 ```
 
-Severity: **medium** — self-confessed sync = guaranteed future drift.
-Auto-fix: run `/distill memory` or extract to `modes/` + replace inline block with bash+read pattern.
+Severity: **medium** — self-confessed sync = guaranteed future drift. Auto-fix: run `/distill memory` or extract to `modes/` + replace inline block with bash+read pattern.
 
 ## Check 33 — Code block duplication (NxN similarity matrix)
 
@@ -875,7 +869,7 @@ Full-spectrum detection of duplicate or near-duplicate fenced code blocks across
 
 **Check 33a — Within-file repetition**: delegate to Phase A foundry:curator (has full file context). Curator prompt must include:
 
-> "Extract every fenced code block (any language marker — ` ```bash `, ` ```python `, ` ```sh `, ` ```perl `, ` ```ruby `, ` ```js `, etc.) from this file. For each pair of blocks, compute normalized similarity: strip comments → normalize variable names to `<VAR>` → normalize string literals to `<STR>` → compare structure. Report any pair with similarity ≥ 0.8 that appears 3+ times (within this file) as a 33a finding. For each candidate: block language, purpose, occurrence count, similarity score, what differs between instances, and suggested extraction (bash function / `bin/<name>.sh` / `bin/<name>.py`). Context saving estimate: (block_lines − 1) × occurrence_count. Skip: blocks marked `# audit-skip: resilience-replication` (first line of block) or prose annotation matching 'intentional resilience replication'."
+> "Extract every fenced code block (any language marker — ```` ```bash ````, ```` ```python ````, ```` ```sh ````, ```` ```perl ````, ```` ```ruby ````, ```` ```js ````, etc.) from this file. For each pair of blocks, compute normalized similarity: strip comments → normalize variable names to `<VAR>` → normalize string literals to `<STR>` → compare structure. Report any pair with similarity ≥ 0.8 that appears 3+ times (within this file) as a 33a finding. For each candidate: block language, purpose, occurrence count, similarity score, what differs between instances, and suggested extraction (bash function / `bin/<name>.sh` / `bin/<name>.py`). Context saving estimate: (block_lines − 1) × occurrence_count. Skip: blocks marked `# audit-skip: resilience-replication` (first line of block) or prose annotation matching 'intentional resilience replication'."
 
 **33b — Cross-file NxN** — two phases: bash quick scan identifies known hotspots; curator NxN delegation runs when clusters found. Scope: all .md files in plugin tree (SKILL.md, agents, rules, templates, modes).
 
@@ -923,7 +917,7 @@ printf "✓: Check 33b Phase 1 complete\n"  # timeout: 5000
 
 **Phase 2 — Curator NxN delegation**: run when Phase 1 finds any known pattern in ≥3 files OR any language marker appears in ≥5 .md files. Spawn **foundry:curator** with all flagged files:
 
-> "Perform Check 33b cross-file code block analysis on: <list all .md files that contain flagged language markers from Phase 1>. For each file, extract every fenced code block (any language) ≥ 5 lines. Skip: blocks marked `# audit-skip: resilience-replication` (first line) or prose annotation matching 'intentional resilience replication'.
+> "Perform Check 33b cross-file code block analysis on: \<list all .md files that contain flagged language markers from Phase 1>. For each file, extract every fenced code block (any language) ≥ 5 lines. Skip: blocks marked `# audit-skip: resilience-replication` (first line) or prose annotation matching 'intentional resilience replication'.
 >
 > **Step 1 — Purpose statements**: for each block, write a one-sentence purpose statement describing what it does functionally (not how) — e.g. 'resolves `_shared/` path from plugin cache', 'detects codex plugin availability', 'emits boilerplate-duplication counts'. Syntactic line-intersection alone is blind to conditional-inversion and variable renaming — purpose grouping catches duplicates that normalization misses.
 >
@@ -932,21 +926,26 @@ printf "✓: Check 33b Phase 1 complete\n"  # timeout: 5000
 > **Step 3 — Syntactic similarity (secondary)**: within each cluster, normalize: strip `#` comment lines → replace path segments / slugs / numeric literals with `<STR>` → **replace ALL argument/parameter values (flag values, option strings, concrete command arguments) with `<ARG>`** — e.g. `CODEMAP_AVAILABLE=$(find ~/.claude/plugins/cache -name "codemap*" -type d ...)` and `FOUNDRY_AVAILABLE=$(find ~/.claude/plugins/cache -name "foundry*" -type d ...)` both normalize to `<VAR>=$(find ~/.claude/plugins/cache -name "<ARG>" -type d ...)`. Compute `sim(A,B) = 2 × |lines(A_norm) ∩ lines(B_norm)| / (|A| + |B|)`. Record max-sim per cluster. Mark **DUPLICATE** when max-sim ≥ 0.90.
 >
 > Write Table 1 and Table 2 to `$RUN_DIR/similarity-check33.md` using the Write tool.
+>
 > Table 1 format: `| Cluster | Block IDs | Files | Lang | Lines each | Purpose | Max-sim | Duplicate? |`
+>
 > Table 2 format: `| Cluster | ParamSlots | Tokens | Gate | Score | Verdict | Differs-by | Recommended extraction |`
+>
 > Where: **ParamSlots** = count of distinct `<ARG>` slots after normalization; **Tokens** = estimated token count of block; **Gate** = `G1:P/F · G2:P/F · G3:P/F` (all must pass or Verdict = HOLD) — G1 (Size OR execution cost): block > 100 tokens, **or** block launches an external interpreter process (subprocess/heredoc/`-c` — python/node/perl/ruby/etc) **and** occurs ≥3× in cluster (repeated process-fork cost is real even when each instance is token-small — a tiny `python -c "..."` one-liner repeated 84× must not gate out on size alone); G2 (Independence): no branch on prior LLM decision that cannot become explicit arg; G3 (Identity): has computational meaning outside orchestration prose (high CallerScopeDeps = G3 fail indicator); **Score** = sum of applicable positive-dimension weights when gate passes — Testable (deterministic I/O, writable pytest/shellcheck test) +2 · Reuse (same logic in 2+ .md files) +2 · Token drain (block > 300 tokens) +2 · Process overhead (external interpreter launched ≥3× in cluster) +2 · Lintable (shellcheck/ruff applicable) +1 · Run frequency (executes >1× per skill invocation) +1 · Standalone debuggable (runnable with no SKILL.md context) +1; **Verdict** = HOLD (any gate fail) · LOW (0–1) · MEDIUM (2–3) · HIGH (≥4); **Differs-by** = concrete `<ARG>` slot values varying across instances (become CLI parameters in extracted script).
+>
 > Return ONLY: `{\"status\":\"done\",\"file\":\"$RUN_DIR/similarity-check33.md\",\"clusters\":N,\"duplicates\":N,\"similar\":N,\"findings\":N,\"confidence\":0.N}`"
 
-Severity: **medium** for actionable extraction candidates (mode-dispatch, _shared resolution, multi-file python clusters); **low/info** for known intentional replications (unsupported-flag-check, health-monitoring constants — per-plugin resilience by design per `plugins/CLAUDE.md`).
+Severity: **medium** for actionable extraction candidates (mode-dispatch, \_shared resolution, multi-file python clusters); **low/info** for known intentional replications (unsupported-flag-check, health-monitoring constants — per-plugin resilience by design per `plugins/CLAUDE.md`).
 
 Auto-fix guidance:
+
 - **Bin/ shell script**: bash/sh blocks that are self-contained (stdout output, no function defs, no shell state mutation) → `plugins/cc_foundry/bin/<name>.sh` with full fallback chain; callers: `$( ${CLAUDE_PLUGIN_ROOT}/bin/<name>.sh 2>/dev/null || echo "fallback-path")`
 - **Bin/ python script**: python blocks repeated 3+ times → `plugins/cc_foundry/bin/<name>.py`; callers: `python ${CLAUDE_PLUGIN_ROOT}/bin/<name>.py`
 - **Inline function**: for within-skill bash duplication where block uses caller shell state → define bash function once in pre-flight, call at each site
 - **Never extract**: blocks explicitly marked as resilience replications (unsupported-flag-check, health-monitoring constants)
 
 | Sub-check | Target | Condition | Severity | Auto-fix |
-| --- | --- | --- | --- | --- |
+| -- | -- | -- | -- | -- |
 | 33a — within-file repetition | single .md file | same code block (any language) 3+ times, constants only differ | medium | inline helper function or bin/ script |
 | 33b — cross-file repetition | 3+ .md files | same block (excluding known resilience replications) | medium/low | bin/ script with fallback chain |
 
@@ -958,7 +957,7 @@ Scan all SKILL.md files in scope. For each file, count the total number of `AskU
 
 - ≤4 calls → `✓` (likely safe; one branch per call is typical)
 - 5–8 calls → flag **medium** — review that no single decision branch asks >4 sequentially
-- >8 calls → flag **high** — almost certainly some branch exceeds the cap
+- > 8 calls → flag **high** — almost certainly some branch exceeds the cap
 
 ```bash
 printf "=== Check 38: AskUserQuestion cap ===\n"
@@ -973,8 +972,7 @@ for f in $(find . -path "*/skills/*/SKILL.md" 2>/dev/null | sort); do
 done  # timeout: 5000
 ```
 
-**Severity**: high (>8 calls) / medium (5–8 calls) — functional regression; gate prompts that exceed cap silently drop later questions.
-Fix: collapse related sub-questions into one `AskUserQuestion` call (max 4 options per call, max 4 calls per skill workflow branch).
+**Severity**: high (>8 calls) / medium (5–8 calls) — functional regression; gate prompts that exceed cap silently drop later questions. Fix: collapse related sub-questions into one `AskUserQuestion` call (max 4 options per call, max 4 calls per skill workflow branch).
 
 ## Check 40 — Health monitoring gap
 
@@ -993,12 +991,11 @@ for f in $(find . -path "*/skills/*/SKILL.md" 2>/dev/null | sort); do
 done  # timeout: 5000
 ```
 
-**Severity**: high — background agents can silently time out with no user notification; lost work and false-progress indicators result.
-Fix: add CLAUDE.md §6 sentinel + poll protocol immediately after every `Agent(..., run_in_background=True)` spawn call.
+**Severity**: high — background agents can silently time out with no user notification; lost work and false-progress indicators result. Fix: add CLAUDE.md §6 sentinel + poll protocol immediately after every `Agent(..., run_in_background=True)` spawn call.
 
 ## Check 43 — Shell variable persistence across Bash calls
 
-Variables assigned in one `\`\`\`bash` block are NOT available in later bash blocks — each Bash tool call runs in a fresh shell. Referencing a variable from a prior block silently expands to empty string, corrupting commands, paths, and conditional guards without any error.
+Variables assigned in one ```` ```bash ```` block are NOT available in later bash blocks — each Bash tool call runs in a fresh shell. Referencing a variable from a prior block silently expands to empty string, corrupting commands, paths, and conditional guards without any error.
 
 ```bash
 printf "=== Check 43: Shell variable persistence across Bash calls ===\n"
@@ -1010,12 +1007,12 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_bash_persistence.py"
 Fix: re-assign the variable at the top of every bash block that needs it, or combine dependent commands into a single bash block. Do NOT rely on variable state persisting between bash tool calls.
 
 | Sub-check | Pattern | Severity | Auto-fix |
-| --- | --- | --- | --- |
-| 43 — cross-block ref | `$VAR` in block N where VAR assigned only in block M<N | critical | no — requires combining blocks or re-assigning |
+| -- | -- | -- | -- |
+| 43 — cross-block ref | `$VAR` in block N where VAR assigned only in block M\<N | critical | no — requires combining blocks or re-assigning |
 
 ## Check 42 — Unexpanded variables in agent spawn prompts
 
-Variables written as `$VAR` or `${VAR}` inside ` ```markdown ` fenced blocks (spawn prompt templates) are passed literally to the spawned agent — the agent receives the dollar-sign string, not the resolved value. The agent cannot resolve orchestrator shell variables; `$_FOUNDRY_SHARED/foo.md` becomes the literal path string `$_FOUNDRY_SHARED/foo.md` and the Read tool fails silently.
+Variables written as `$VAR` or `${VAR}` inside ```` ```markdown ```` fenced blocks (spawn prompt templates) are passed literally to the spawned agent — the agent receives the dollar-sign string, not the resolved value. The agent cannot resolve orchestrator shell variables; `$_FOUNDRY_SHARED/foo.md` becomes the literal path string `$_FOUNDRY_SHARED/foo.md` and the Read tool fails silently.
 
 ```bash
 printf "=== Check 42: Unexpanded variables in spawn prompt markdown blocks ===\n"
@@ -1027,8 +1024,8 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_spawn_prompt_vars.py
 Fix: resolve the variable in a preceding bash block and substitute the resolved value inline into the spawn prompt string. For paths: use `$(cat /tmp/resolved-path)` or embed the bash-resolved value as a literal string in the prompt text. Do NOT pass `$VAR` directly inside a markdown spawn prompt unless the caller explicitly substitutes it before dispatch.
 
 | Sub-check | Pattern | Severity | Auto-fix |
-| --- | --- | --- | --- |
-| 42 — unexpanded spawn var | `$VAR` inside ` ```markdown ` block | critical | no — requires resolving value before spawn |
+| -- | -- | -- | -- |
+| 42 — unexpanded spawn var | `$VAR` inside ```` ```markdown ```` block | critical | no — requires resolving value before spawn |
 
 ## Check 44 — TMPDIR sentinel session scoping
 
@@ -1048,5 +1045,5 @@ grep -rn "$_C44_PAT" . --include='*.md' --include='*.py' --include='*.sh' 2>/dev
 Fix: apply `rules/claude-config.md` §TMPDIR Sentinel Scoping (export `CSID` first line of the block, terminal `-${CSID}` suffix on the sentinel filename); genuinely out-of-session sentinels (git hooks, user-shell-created auth files, mktemp templates) get the `# tmpdir-exempt: <reason>` marker instead.
 
 | Sub-check | Pattern | Severity | Auto-fix |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | 44 — unscoped sentinel | `TMPDIR:-/tmp}/` line without session token or `tmpdir-exempt` marker | high | yes — mechanical suffix per claude-config rule |

@@ -16,7 +16,7 @@ DEVELOP_AVAILABLE=$(find ~/.claude/plugins/cache -name "develop" -type d 2>/dev/
 oss not installed → sub `oss:X` with `general-purpose`, prepend role description + `model: <model>` to spawn call:
 
 | oss agent | Fallback | Model | Role description prefix |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | `oss:cicd-steward` | `general-purpose` | `sonnet` | `You are a CI/CD specialist for GitHub Actions. Diagnose failing workflows, reduce build times, pin action SHAs, configure test matrices and caching, design quality gates. NOT for ruff/mypy rule selection (use linting-expert) or PyPI release management (use shepherd).` |
 | `oss:shepherd` | `general-purpose` | `opus` | `You are an OSS project shepherd. Write release notes, triage GitHub issues, prepare CHANGELOG entries, make SemVer decisions, mentor contributors. NOT for inline docstrings or README content — those belong to doc-scribe.` |
 
@@ -25,7 +25,7 @@ oss not installed → sub `oss:X` with `general-purpose`, prepend role descripti
 research not installed → sub `research:X` with `general-purpose`, prepend role description + `model: <model>` to spawn call:
 
 | research agent | Fallback | Model | Role description prefix |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | `research:scientist` | `general-purpose` | `opus` | `You are an ML research scientist. Implement methods from papers, design experiments, validate hypotheses against codebase constraints. NOT for general code refactoring or data pipeline correctness.` |
 | `research:data-steward` | `general-purpose` | `sonnet` | `You are a data pipeline specialist. Detect label leakage, validate train/val/test splits, audit augmentation pipelines, manage data provenance and completeness. NOT for model training or inference code.` |
 

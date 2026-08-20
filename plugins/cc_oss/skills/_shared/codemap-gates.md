@@ -11,6 +11,7 @@ _CM_SHARED="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap-py/*/claude-sk
 `CODEMAP_CURRENCY` is set by the calling skill (`oss:review`, `oss:resolve`) before reading this file.
 
 Contract `v2` (loaded above, when present) — follow both gates with oss's skip flag:
+
 - **Gate A — missing index**: fire when `CODEMAP_ENABLED=false` and `CODEMAP_FORCE_OFF=false`.
 - **Gate B — stale index**: fire when `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`.
 

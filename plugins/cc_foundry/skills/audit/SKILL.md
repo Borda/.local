@@ -1,7 +1,7 @@
 ---
 name: audit
-description: "Full-sweep quality audit of .claude/ config — cross-references, permissions, inventory drift, model tiers, docs freshness. Scope tokens select what to audit; --upgrade applies docs-sourced improvements; --adversarial runs foundry:challenger + Codex adversarial review; --efficiency sweeps model tiers, token bloat, spawn patterns, boilerplate duplication, and bin/ extraction candidates (extraction performed separately via /distill executables). Fix level chosen via always-fire follow-up gate after report."
-argument-hint: "[<scope>...] [--local] [--upgrade | --adversarial | --efficiency] [--skip-gate] [--keep \"<items>\"]"
+description: Full-sweep quality audit of .claude/ config — cross-references, permissions, inventory drift, model tiers, docs freshness. Scope tokens select what to audit; --upgrade applies docs-sourced improvements; --adversarial runs foundry:challenger + Codex adversarial review; --efficiency sweeps model tiers, token bloat, spawn patterns, boilerplate duplication, and bin/ extraction candidates (extraction performed separately via /distill executables). Fix level chosen via always-fire follow-up gate after report.
+argument-hint: '[<scope>...] [--local] [--upgrade | --adversarial | --efficiency] [--skip-gate] [--keep "<items>"]'
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, WebFetch, Skill, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: high
@@ -18,6 +18,7 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
 - **$ARGUMENTS**: optional — parse `--flags` first, then resolve remaining tokens as scope
 
   **Flags** (order independent, any combination with scope):
+
   - `--local` — audit source tree (`plugins/*/`) not user setup (`.claude/` + installed cache); plugin-dev workflows where local edits not yet installed; sets `LOCAL_MODE=true`
   - `--upgrade` — fetch latest Claude Code docs, filter new features by genuine value, apply: **config** changes (apply + correctness check), **capability** changes (calibrate before → apply → calibrate after → accept if Δrecall ≥ 0 and ΔF1 ≥ 0). Skip to **Mode: upgrade**. Mutually exclusive with `--adversarial` and `--efficiency` — error if combined with either.
   - `--adversarial` (alias: `--challenge`) — adversarial review of all agents + skills in scope using `foundry:challenger` (Phase A) + Codex adversarial pass (Phase B); surfaces issues beyond standard per-file audit; see **Mode: adversarial**. Mutually exclusive with `--upgrade` only; combinable with `--efficiency`.
@@ -28,6 +29,7 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
   **Legacy positional tokens** (`fix`, `upgrade`, `adversarial`, `challenge`, `ab`, `apply`, `fast`, `full`) — **hard error**: print migration hint and stop. Example: "`fix medium` removed — run `/audit` and pick fix level from gate, or pass `--upgrade` / `--adversarial` as flags."
 
   **Scope tokens** (positional, space-separated — resolve each token before Step 2):
+
   - No scope: full sweep — sources per `--local`: **without `--local`** covers `.claude/agents/`, `.claude/skills/`, `.claude/rules/`, hooks, settings, `~/.claude/plugins/cache/` installed; **with `--local`** covers `plugins/*/agents/`, `plugins/*/skills/` + `.claude/` secondary
   - `agents` — restrict sweep to agent files only
   - `skills` — restrict sweep to skill files only
@@ -50,11 +52,13 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
 
 <constants>
 
+```text
 BATCH_SIZE_MIN=5       # minimum files per batch; ensures curator gets sufficient context per spawn
 MAX_BATCHES=4          # total batch cap; EFFECTIVE_BATCH = max(BATCH_SIZE_MIN, ceil(total / MAX_BATCHES))
 MAX_BATCHES_FAST=10    # only when --fast: trades ~120K tok/agent for wall-clock (see Fan-out cost model)
 ADVERSARIAL_BATCH_SIZE=2  # adversarial phases (A, A-prime) use smaller batches for deeper per-file attention
 AGENT_CALL_BUDGET=55   # target tool-calls per spawned agent; above ~60 agents stall mid-task without returning an envelope
+```
 
 <!-- Fan-out buys WALL-CLOCK, not tokens: ~120K tok fixed cost per agent spawned;
      agents past ~60 calls stall without returning an envelope. Default to the
@@ -65,16 +69,17 @@ AGENT_CALL_BUDGET=55   # target tool-calls per spawned agent; above ~60 agents s
 
 <compaction>
 
-Key boundary 1: after Steps 3+4 fan-out (curator spawns + system-wide checks complete), before Step 5 aggregate.
-Key boundary 2: after Step 5 aggregate (aggregate.md + summary.jsonl written), before Step 7 report.
-Preserve at boundary 1: RUN_DIR, per-batch finding file paths, static-findings.jsonl path.
-Preserve at boundary 2: RUN_DIR, aggregate.md path, summary.jsonl path, finding counts.
+- Key boundary 1: after Steps 3+4 fan-out (curator spawns + system-wide checks complete), before Step 5 aggregate.
+- Key boundary 2: after Step 5 aggregate (aggregate.md + summary.jsonl written), before Step 7 report.
+- Preserve at boundary 1: RUN_DIR, per-batch finding file paths, static-findings.jsonl path.
+- Preserve at boundary 2: RUN_DIR, aggregate.md path, summary.jsonl path, finding counts.
 
 </compaction>
 
 <workflow>
 
 **Task hygiene**: load and follow the protocol below.
+
 ```bash
 # loads: compaction-contract.md
 cat "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/cc_foundry/skills/_shared")/task-hygiene.md"
@@ -183,7 +188,7 @@ AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || p
 
 Place these three lines at the top of every Bash block in Steps 2–11 that references either variable.
 
-**Unsupported flag check** — after extracting supported flags (`--local`, `--upgrade`, `--adversarial`, `--efficiency`, `--skip-gate`, `--keep`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--local\`, \`--upgrade\`, \`--adversarial\`, \`--efficiency\`, \`--skip-gate\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after extracting supported flags (`--local`, `--upgrade`, `--adversarial`, `--efficiency`, `--skip-gate`, `--keep`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `` ! Unknown flag(s): `--<token>`. Supported: `--local`, `--upgrade`, `--adversarial`, `--efficiency`, `--skip-gate`, `--keep`. `` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Step 1: Run pre-commit (if configured)
 
@@ -256,10 +261,12 @@ fi
 For every `PLUGIN_LAYOUT:` line, use its `skills=`/`agents=` value (not the hardcoded `skills`/`agents` names) when Globbing that plugin below — e.g. `codemap-py` prints `skills=claude-skills`, so Glob `claude-skills/*/SKILL.md` under `plugins/codemap-py/`, not `skills/*/SKILL.md`. Plugins with no manifest override resolve to the same `skills`/`agents` names the fixed patterns below already assume — no behavior change for them. **`codex-skills/`-style dirs for non-Claude-Code runtimes are intentionally excluded** — only the manifest-declared path is authoritative, since a heuristic `*skill*` name match would also sweep in skill dirs meant for a different agent runtime and produce false-positive findings against Claude Code's frontmatter schema.
 
 **Source selection by `LOCAL_MODE`**:
+
 - **`LOCAL_MODE=false` (default — user setup)**: `.claude/` primary; `plugins/` skipped. Installed/active config only.
 - **`LOCAL_MODE=true` (--local — project source)**: `plugins/` primary; `.claude/` secondary for rules/hooks/settings only.
 
 **Without `--local` (`LOCAL_MODE=false`)**:
+
 - **Agents**: Glob tool, pattern `agents/*.md`, path `.claude/`
 - **Skills**: Glob tool, pattern `skills/*/SKILL.md`, path `.claude/`
 - **Rules**: Glob tool, pattern `rules/*.md`, path `.claude/`
@@ -268,6 +275,7 @@ For every `PLUGIN_LAYOUT:` line, use its `skills=`/`agents=` value (not the hard
 - **Hooks**: Glob tool, pattern `hooks/*`, path `.claude/`
 
 **With `--local` (`LOCAL_MODE=true`)**:
+
 - **Agents (source — primary)**: for each `PLUGIN_LAYOUT:` line above, Glob tool pattern `<agents-dir>/*.md`, path `plugins/<plugin_name>/`
 - **Skills (source — primary)**: for each `PLUGIN_LAYOUT:` line above, Glob tool pattern `<skills-dir>/*/SKILL.md`, path `plugins/<plugin_name>/`
 - **Agents (project-local — secondary)**: Glob tool, pattern `agents/*.md`, path `.claude/`
@@ -296,6 +304,7 @@ printf "⚠ UNSCANNED: %s — no files matched scope globs\n" "<plugin>" | tee -
 Step 11 reads this sentinel and surfaces it as a top-level report section — a zero-coverage plugin must never produce a green summary.
 
 **Scope filtering for Step 2** (applies on top of `LOCAL_MODE`):
+
 - `agents` scope — collect agents from active source (`.claude/agents/` or `plugins/*/agents/` per `LOCAL_MODE`); skip skills, rules, hooks
 - `skills` scope — collect skills from active source; skip agents, rules, hooks
 - `plugins` scope — always reads `plugins/*/agents/*.md` + `plugins/*/skills/*/SKILL.md` regardless of `LOCAL_MODE`; forces `LOCAL_MODE=true`
@@ -374,7 +383,7 @@ cat "$AUDIT_MODES/steps-4-5-7.md"
 
 > loads: modes/steps-4-5-7.md (§Step 4–5b and §Step 7)
 
-Execute §Step 4–5b loaded above — system-wide checks (scope-dispatched), aggregate + classify findings, low-confidence remediation (conditional, skipped when no file scored <0.80). State on disk in `summary.jsonl`, `$RUN_DIR`, `$AUDIT_TPL`. Returns here to Step 6.
+Execute §Step 4–5b loaded above — system-wide checks (scope-dispatched), aggregate + classify findings, low-confidence remediation (conditional, skipped when no file scored \<0.80). State on disk in `summary.jsonl`, `$RUN_DIR`, `$AUDIT_TPL`. Returns here to Step 6.
 
 ## Step 6: Cross-validate critical findings
 
@@ -403,12 +412,12 @@ IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/de
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/load_mode.py" audit modes fix.md $( [ "$LOCAL_MODE" = true ] && echo "--local" )  # timeout: 5000
 ```
 
-> loads: modes/fix.md
-Execute Steps 8–10 loaded above inline (state on disk in `summary.jsonl`, `$RUN_DIR`, `$AUDIT_TPL`). On convergence (clean or 5-pass limit), continue to Step 11 below. If no fix option was picked, skip directly to Step 11.
+> loads: modes/fix.md Execute Steps 8–10 loaded above inline (state on disk in `summary.jsonl`, `$RUN_DIR`, `$AUDIT_TPL`). On convergence (clean or 5-pass limit), continue to Step 11 below. If no fix option was picked, skip directly to Step 11.
 
 ## Step 11: Final report
 
 <!-- loads: report-template.md -->
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
@@ -481,16 +490,21 @@ When user picks fix option (a–c): run Steps 8–10 inline via `modes/fix.md` (
 **HARD RULE — Fixed option labels**: Use exactly the labels below verbatim. Do NOT rewrite, paraphrase, or substitute finding-specific alternatives. Finding context must NOT influence option labels. This rule has been violated repeatedly in past runs; enforce strictly.
 
 **Mandatory options (always present, never omit)**:
+
 - (a) label: `Fix auto-fixable (Recommended)` — auto-fix critical, high, medium, and low findings (skip NON_AUTO_FIXABLE systemic issues)
 - (c) label: `Fix ALL` — collect all NON_AUTO_FIXABLE decisions upfront (max 4 `AskUserQuestion` calls), then run one integrated fix pass covering auto-fixable + resolved systemic items + lows; most thorough option
 
 **Conditional options (include when condition met)**:
+
 - (b) label: `Fix SECURITY + CRITICAL + HIGH` — include only when security, critical, or high findings present; omit otherwise to stay within 4-option cap
 - (d) label: `Skip` — always include; when `--efficiency` ran and `extract_count > 0` (HIGH or MEDIUM), replace with `` `Run /distill executables (N HIGH, M MEDIUM candidates)` `` instead
 
 **Option slot budget** (`AskUserQuestion` hard cap = 4 options; "Other" always auto-appended as 5th free-text slot):
+
 - Typical: (a) + (b) + (c) + (d) = 4 ✓
+
 - No sec/crit/high findings: (a) + (c) + (d) = 3 ✓ — slot freed; do NOT fill with custom finding-specific option
+
 - Efficiency override active: (a) + (b) + (c) + distill = 4 ✓ — (d) Skip replaced by distill label
 
 - question: "What next?" (include counts, e.g. "2 critical, 4 high, 3 medium, 1 low. What next?")
@@ -502,17 +516,27 @@ After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this
 <notes>
 
 - **`!` Breaking findings**: when skill or agent completely non-functional (check 7, broken cross-refs, invalid hook events), prefix finding with `!` and state impact + fix in one place — don't bury in table row. Surfaces as **`! BREAKING`** in bash output and as prominent callout in final report. **`! BREAKING` findings require user acknowledgment before audit proceeds past that check**: call `AskUserQuestion` — state what is broken and impact; user must explicitly confirm awareness before continuing. One question per distinct breaking finding; group only when logically one atomic issue. Prose acknowledgment in response body does NOT count — `AskUserQuestion` mandatory.
+
 - **settings.json is hands-off**: missing permissions always reported, never auto-edited — structural JSON edits risk breaking Claude Code config loading
+
 - **Dead loops need human judgment**: cycle in follow-up chains may be intentional (e.g., refactor → review → fix → refactor) — flag and explain, don't auto-remove
+
 - **Convergence loop replaces cycle cap**: fix loop runs until zero fixable findings or 5-pass hard limit — see `modes/fix.md` Step 10 for full protocol
+
 - **Relationship to curator**: `foundry:curator` = single-file reactive audit; `/audit` = system-wide sweep running foundry:curator at scale + cross-file checks
 
 - **Paths must be portable**: `.claude/` for project-relative, `~/` or `$HOME/` for home — never literal `/Users/<name>/` or `/home/<name>/` (anti-examples only); applies to ALL config files including `settings.json`
+
 - **Bash error logging**: if bash block in Pre-flight or Step 4 fails unexpectedly, append JSONL line to `.notes/logs/audit-errors.jsonl` (`{"ts":"<ISO>","check":"<N>","error":"<message>"}`) for post-mortem — never swallow errors silently.
+
 - **Parallel execution rule**: after Step 2, launch Steps 3 and 4 in same response — all foundry:curator spawns AND system-wide bash checks issued together. Do NOT run Step 3 first then Step 4. Aggregation (Step 5) waits for both. Docs-freshness web-explorer (within Step 4) launches in same parallel batch.
+
 - **Token cost**: Step 3 (foundry:curator spawns) most expensive. For quick structural scan needing only cross-reference + inventory validation, Step 4 system-wide checks often sufficient. Run `/audit agents` or `/audit skills` to scope, or skip Step 3 for fast pass when per-file quality trusted.
+
 - **Routing calibration complement**: to test whether skill trigger descriptions fire correctly (trigger accuracy, A/B testing), use `/foundry:calibrate routing`. `/audit` checks structural quality; `/foundry:calibrate routing` validates right skill selected by Claude Code dispatcher.
+
 - Follow-up chains:
+
   - Audit clean → pick `/foundry:setup` from gate to propagate verified config to `~/.claude/`
   - Audit found structural issues → review flagged files manually before syncing; pick fix level from gate
   - Audit found many low items → pick "Fix all" from gate, or run `/develop:refactor` (requires `develop` plugin) for targeted cleanup

@@ -1,7 +1,7 @@
 ---
 name: debug
-description: "Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file. TRIGGER when: user reports a symptom or failing test with Python traceback, or asks to investigate a runtime/CI failure with reproducible evidence; phrases: \"debug this failure\", \"why is X broken\", \"find the root cause of <error>\", \"investigate this CI failure\". SKIP when: pure config quality issues (use `/foundry:audit`); broad system-wide diagnosis without traceback (use `/foundry:investigate`); user already knows the fix (use `/develop:fix`); non-Python project."
-argument-hint: "<symptom or issue # (plain 123 or #123)> [--issue <N>] [--repo <owner/repo>] [--no-challenge] [--challenge] [--team] [--worktree] [--ci-run <run-id-or-url>] [--codemap] [--no-codemap] [--keep \"<items>\"]"
+description: 'Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file. TRIGGER when: user reports a symptom or failing test with Python traceback, or asks to investigate a runtime/CI failure with reproducible evidence; phrases: "debug this failure", "why is X broken", "find the root cause of <error>", "investigate this CI failure". SKIP when: pure config quality issues (use `/foundry:audit`); broad system-wide diagnosis without traceback (use `/foundry:investigate`); user already knows the fix (use `/develop:fix`); non-Python project.'
+argument-hint: '<symptom or issue # (plain 123 or #123)> [--issue <N>] [--repo <owner/repo>] [--no-challenge] [--challenge] [--team] [--worktree] [--ci-run <run-id-or-url>] [--codemap] [--no-codemap] [--keep "<items>"]'
 effort: high
 allowed-tools: Read, Write, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, EnterWorktree, ExitWorktree
 disable-model-invocation: true
@@ -19,9 +19,9 @@ NOT for: production incidents without any CI run ID or local traceback (use `/fo
 
 <compaction>
 
-Key boundary: after Steps 1+2 — evidence gathered and pattern analysis complete, before hypothesis gate (Step 3).
-Preserve: debug mode, CI run ID if set, evidence signals (issue body, test path), tried-hypotheses ledger (candidate causes + verdicts — refuted/ruled-out/open), --keep items.
-Refresh also after any Step 3 probe that rules out a hypothesis — so post-compact gate does not re-test refuted causes (loop guard).
+- Key boundary: after Steps 1+2 — evidence gathered and pattern analysis complete, before hypothesis gate (Step 3).
+- Preserve: debug mode, CI run ID if set, evidence signals (issue body, test path), tried-hypotheses ledger (candidate causes + verdicts — refuted/ruled-out/open), --keep items.
+- Refresh also after any Step 3 probe that rules out a hypothesis — so post-compact gate does not re-test refuted causes (loop guard).
 
 </compaction>
 
@@ -57,6 +57,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/runner-detection.md"
 ```
+
 Sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
 
 **Language preflight gate**: detect project language; adjust test runner accordingly.
@@ -135,6 +136,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-gates.md"
 ```
+
 Follow Gate A and Gate B.
 
 Downstream blocks read back: `IFS= read -r CHALLENGE_ENABLED < "${TMPDIR:-/tmp}/dev-challenge-enabled-${CSID}" 2>/dev/null || CHALLENGE_ENABLED=true`, `IFS= read -r CHALLENGE_FORCED < "${TMPDIR:-/tmp}/dev-challenge-forced-${CSID}" 2>/dev/null || CHALLENGE_FORCED=false`, `IFS= read -r TEAM_MODE < "${TMPDIR:-/tmp}/dev-team-mode-${CSID}" 2>/dev/null || TEAM_MODE=false`, `IFS= read -r CI_RUN_ID < "${TMPDIR:-/tmp}/dev-ci-run-id-${CSID}" 2>/dev/null || CI_RUN_ID=""`.
@@ -145,9 +147,10 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/ci-log-extract.md"
 ```
+
 Follow §URL Normalization to set `CI_RUN_ID`. If `CI_RUN_ID` set, follow §Log Fetching and §Log Parsing to set `CI_LOG_EVIDENCE`; use it as evidence source in Step 1 instead of local pytest.
 
-**Unsupported flag check** — after ALL supported flags extracted (including `--issue` and `--keep` from blocks above), scan `$ARGUMENTS` for remaining `--<token>` tokens not in supported list. Do NOT include `--issue` or `--keep` in "unknown" set — both are consumed by the mode-detect and keep-parse blocks above. Supported: `--no-challenge`, `--challenge`, `--team`, `--worktree`, `--ci-run`, `--issue`, `--repo`, `--codemap`, `--no-codemap`, `--keep`. If truly unknown token found: print `! Unknown flag(s): \`--<token>\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after ALL supported flags extracted (including `--issue` and `--keep` from blocks above), scan `$ARGUMENTS` for remaining `--<token>` tokens not in supported list. Do NOT include `--issue` or `--keep` in "unknown" set — both are consumed by the mode-detect and keep-parse blocks above. Supported: `--no-challenge`, `--challenge`, `--team`, `--worktree`, `--ci-run`, `--issue`, `--repo`, `--codemap`, `--no-codemap`, `--keep`. If truly unknown token found: print `` ! Unknown flag(s): `--<token>`. `` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Mode selection** — debug runs in one of two mutually-exclusive modes; set explicitly before any Step:
 
@@ -165,6 +168,7 @@ echo "$DEBUG_MODE" > ${TMPDIR:-/tmp}/dev-debug-mode-${CSID}
 ```
 
 Subsequent steps branch by `DEBUG_MODE`:
+
 - **Issue mode**: Step 1 fetches issue body and extracts test path before invoking pytest; skip symptom-text pytest block. Stop after Step 4 (handoff) — do not run symptom-text branches.
 - **Symptom mode**: Step 1 skips issue fetch; uses free-text symptom directly. Skip issue-mode pytest block entirely.
 
@@ -281,6 +285,7 @@ fi
 ```
 
 **Cross-repo adaptation** (when `REPO_NAME` set) — issue from different codebase. After fetching issue:
+
 1. Extract bug's root cause intent — what invariant violated, not just described symptoms (which may reference upstream structure or code paths)
 2. Search LOCAL codebase for equivalent failure site — grep for related symbols; code paths may differ from upstream due to divergence
 3. Treat upstream issue as debugging context, not as a map — trace actual failure in local code
@@ -312,7 +317,7 @@ fi
 Classify claim type and validate accordingly:
 
 | Claim type | Example | Validation approach |
-| --- | --- | --- |
+| -- | -- | -- |
 | Numeric / metric result | "IoU should be 0.5 but returns 0.3" | Verify formula from authoritative source; compute expected value independently |
 | API contract | "function should return list but returns generator" | Read docstring, type hints, and docs — not current implementation |
 | Algorithm correctness | "sorting is wrong — element 3 should come before element 1" | Trace comparison logic against documented sort key or invariant |
@@ -392,6 +397,7 @@ Spawn `foundry:challenger` with pattern analysis from Step 2 (differences betwee
 > "Review pattern analysis and candidate root causes. Challenge across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step."
 
 Parse result — update hypothesis ledger (`${TMPDIR:-/tmp}/dev-debug-hypotheses-${CSID}`) with each candidate's verdict as you parse:
+
 - **Blockers found** → STOP. Present findings. Incorporate challenger's surviving challenges into hypothesis list before Step 3 gate. Mark any candidate the challenger refuted `:: refuted (challenger)` in ledger.
 - **Concerns only** → add as alternative hypotheses in Step 3; append each new concern to ledger as `:: open (alt)`; continue.
 - **No findings / all refuted** → proceed.
@@ -436,6 +442,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/premise-grounding.md"
 ```
+
 §Premise Grounding Gate. Apply using **debug** context from Skill contexts table. Run before presenting hypothesis — any ungrounded premise in hypothesis produces a fix that addresses wrong mechanism.
 
 **Gate**: present hypothesis to user, wait for confirmation or challenge before proceeding to Step 4. Wrong hypothesis produces fix that passes tests but doesn't resolve underlying problem.
@@ -494,6 +501,7 @@ mkdir -p "$_DIAG_BASE/.plans/active"
 ```
 
 Write `$DIAG_FILE` with this structure:
+
 ```markdown
 # Debug Diagnosis: <symptom>
 
@@ -513,7 +521,7 @@ Write `$DIAG_FILE` with this structure:
 
 **Append Test Impact section** — only when Step 3 captured a non-empty, non-error result (`${TMPDIR:-/tmp}/dev-debug-test-impact-${CSID}` present). fix reads this to skip re-querying. Records raw JSON plus index `scanned_at` so fix can verify handoff is not older than current index (freshness guard):
 
-```bash
+````bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 TI_FILE="${TMPDIR:-/tmp}/dev-debug-test-impact-${CSID}"
@@ -532,7 +540,7 @@ if [ -s "$TI_FILE" ] && ! grep -q '"error"' "$TI_FILE"; then
         echo '```'
     } >> "$DIAG_FILE"
 fi
-```
+````
 
 Hand off: `-> /develop:fix --diagnosis $DIAG_FILE`. Root cause already known — fix's Step 1 analysis complete.
 
@@ -572,7 +580,7 @@ rm -f .temp/state/skill-contract.md ${TMPDIR:-/tmp}/dev-debug-hypotheses-${CSID}
 <!-- Reference only — execution-dead at runtime; included for agent behavioral context -->
 
 | Temptation | Reality |
-| --- | --- |
+| -- | -- |
 | "I already know root cause from traceback" | Tracebacks show where, not why. Unverified assumptions produce fixes for wrong bug. |
 | "Fix obvious — Step 2 pattern analysis overkill" | Obvious causes often symptoms. Pattern comparison reveals ordering, timing, or environment differences invisible in traceback. |
 | "I'll apply fix here instead of handing off to `/develop:fix`" | Debug = investigation only. Mixing investigation + implementation conflates history, skips regression test gate. |

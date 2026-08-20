@@ -3,6 +3,7 @@
 Spawn both in same response turn (two Agent() calls, one response — parallel). Expand `$REPO_ROOT`, `$RANGE`, `$GATHER_FILE`, `$CHANGELOG_AUDIT_FILE`, `$CONTRIBUTORS_FILE` to literal values before spawning
 
 Agent A — Audit changelog (`subagent_type="foundry:doc-scribe"` — mechanical cross-check/insertion, no opus reasoning needed):
+
 ```text
 Working directory: <REPO_ROOT>. Read classified change table from <GATHER_FILE>. Find CHANGELOG: check <REPO_ROOT>/CHANGELOG.md, then <REPO_ROOT>/docs/CHANGELOG.md, then any CHANGELOG* one level deep (excluding node_modules/, .venv/, vendor/). Cross-check against unreleased section: items absent from CHANGELOG → add (same emoji format); items in CHANGELOG not matching classified → flag (no auto-delete). For each REVERT_SET pair in classified table: add "🔄 Reverted: <original description> (introduced and reverted in this release)"; if original already in CHANGELOG before this range, remove from main section.
 
@@ -12,6 +13,7 @@ Write full audit findings to <CHANGELOG_AUDIT_FILE>. Return ONLY: {"status":"don
 ```
 
 Agent B — Extract contributors (`subagent_type="foundry:doc-scribe"` — script-driven extraction + formatting, no opus reasoning needed):
+
 ```text
 Working directory: <REPO_ROOT>. Range: <RANGE>. Run: python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/extract_contributors.py" --repo <REPO_ROOT> --range "<RANGE>" — emits one `Name <email>` line per contributor, already deduplicated by email and bot-filtered ([bot], noreply@). For each contributor inspect commits in range (git -C <REPO_ROOT> log "<RANGE>" --no-merges --author="<email>" --oneline); pick up to 3 most significant (rank: new public API > major UX > significant fix > internal > docs/typo). Resolve GitHub handle from PR author data (author.login). For each resolved handle find LinkedIn via ordered chain, stop at first hit, never guess/infer/match by contributor name at any step (handle or a real fetched-page anchor href only): 1) `gh api "/users/<login>/social_accounts" --jq '.[] | select(.provider=="linkedin") | .url'` non-empty → use. 2) else `gh api /users/<login> --jq '{blog:.blog}'` — `.blog` contains linkedin.com → use. 3) else `.blog` is a non-empty non-linkedin URL → WebFetch it, scan actual returned content for `linkedin.com/in/...` anchor hrefs; exactly one distinct match → use, zero or multiple → omit. 4) else search <REPO_ROOT>/CHANGELOG.md, docs/CHANGELOG.md, releases/*/SUMMARY.md, releases/*/DRAFT.md, and `gh release list`/`gh release view` bodies for a prior Contributors entry keyed by this EXACT handle already carrying a resolved `[LinkedIn](url)` → reuse verbatim. 5) else omit LinkedIn. Format: - **Name** (@handle, [LinkedIn](url)) — <what they did>. Write contributors list to <CONTRIBUTORS_FILE>. Return ONLY: {"status":"done","file":"<CONTRIBUTORS_FILE>","count":N}
 ```

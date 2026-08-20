@@ -138,8 +138,7 @@ fi
 
 Root cause guard for `adversarial.md` / `upgrade.md` silent-deletion bug class. Skill `.md` files construct paths via variable substitution (`$AUDIT_TPL/../modes/upgrade.md`, `$_FS/task-hygiene.md`, `${CLAUDE_PLUGIN_ROOT:-plugins/<x>}/bin/<script>`). Those paths exist as literal strings only if target filename is grep-visible. File existing locally but never copied to installed plugin cache silently fails for users who install plugin.
 
-**What it checks**: for every computed-path reference in `plugins/*/skills/*/SKILL.md`, `plugins/*/skills/*/modes/*.md`, `plugins/*/agents/*.md` — verify resolved target exists both locally (`plugins/<plugin>/...`) and in installed cache (`~/.claude/plugins/cache/borda-ai-rig/<plugin>/*/<path>`).
-Skip if `LOCAL_MODE != true` (no plugin source tree to scan).
+**What it checks**: for every computed-path reference in `plugins/*/skills/*/SKILL.md`, `plugins/*/skills/*/modes/*.md`, `plugins/*/agents/*.md` — verify resolved target exists both locally (`plugins/<plugin>/...`) and in installed cache (`~/.claude/plugins/cache/borda-ai-rig/<plugin>/*/<path>`). Skip if `LOCAL_MODE != true` (no plugin source tree to scan).
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -156,6 +155,7 @@ fi
 ```
 
 **Severity**:
+
 - `R1-FAIL` (file exists locally but absent from installed cache) → **high** — users who install plugin get broken dispatch at runtime; likely file added locally but plugin not re-installed
 - `R1-WARN` (file exists in installed cache but absent locally) → **medium** — stale installed copy; breaks after plugin update
 - `R1-INFO` (plugin not installed) → **low/info** — cannot verify installed state; note in report only
@@ -188,10 +188,13 @@ fi
 **Severity**: `R2-ORPHAN-RISK` → **medium** — file is grep-invisible; any automated or agent-assisted dead-file sweep will incorrectly flag as unreferenced and may delete it.
 
 Fix: add comment in consumer `SKILL.md` making basename a literal string, e.g.:
+
 ```
 # loads: adversarial.md  (via $AUDIT_TPL/../modes/adversarial.md)
 ```
+
 This single-line comment costs ~5 tokens and permanently protects file from grep-based false-positive orphan detection.
+
 ## Check R3 — bin/ script reference integrity (reverse of Check 32d)
 
 Check 32d walks `bin/` scripts and flags those unreferenced by any `.md` file (orphaned scripts). R3 is the reverse: for every `${CLAUDE_PLUGIN_ROOT:-plugins/<x>}/bin/<script>` reference in any plugin `.md` file, verify script exists locally — catches typos, deleted scripts, refactor leftovers leaving dangling references.
@@ -213,21 +216,24 @@ fi
 ```
 
 **Severity**:
+
 - `R3-FAIL` (script referenced but missing locally) → **high** — skill dispatch fails immediately at `python ...` call site
 - `R3-WARN` (script exists locally but absent from installed cache) → **high** — same as R1-FAIL but for bin/ scripts; users get broken skill at runtime after install
 
 Fix: create missing script locally (FAIL) or re-install plugin to sync (WARN).
 
 > **Convenience shortcut**: run all three checks together:
+>
 > ```bash
 > python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_routing_links.py" \
 >     --plugins-dir plugins \
 >     --installed-plugins-json ~/.claude/plugins/installed_plugins.json  # timeout: 20000
 > ```
+>
 > Omitting `--check` runs R1, R2, R3 in one pass.
 
 | Sub-check | Condition | Severity | Auto-fix |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | R1-FAIL — local-only file | resolved file exists locally but absent from installed cache | high | no — re-install plugin |
 | R1-WARN — installed-only file | file exists in cache but missing locally | medium | no — restore local file or remove ref |
 | R1-INFO — plugin not installed | cannot verify installed state | info | n/a |
@@ -297,12 +303,13 @@ fi
 ```
 
 **Severity**:
+
 - `R4-FAIL` (any sub-check) → **medium** — plugin policy violation; new bin/ scripts must ship with tests containing real assertions
 
 Fix: create `tests/test_<basename>.py` with at minimum one test class covering script's public API.
 
 | Sub-check | Condition | Severity | Auto-fix |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | R4-FAIL — missing test file | `bin/*.py` with no matching `tests/test_*.py` | medium | no — write tests |
 | R4-FAIL — empty test file | `tests/test_*.py` exists but has zero size | medium | no — populate test file |
 | R4-FAIL — no test functions | test file non-empty but has zero `def test_` functions | medium | no — write tests |
@@ -338,9 +345,8 @@ else
 fi
 ```
 
-**Severity**: medium — audit itself may crash at runtime trying to read missing template; silent breakage for users.
-Fix: restore missing template file or remove/update stale `<!-- loads: -->` comment in consumer.
+**Severity**: medium — audit itself may crash at runtime trying to read missing template; silent breakage for users. Fix: restore missing template file or remove/update stale `<!-- loads: -->` comment in consumer.
 
 | Sub-check | Condition | Severity | Auto-fix |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | R5-FAIL — missing template | `loads: X` comment but `X` not found on disk | medium | no — restore file or remove dead comment |

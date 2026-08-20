@@ -5,9 +5,9 @@
 name / description / tools / model / color (frontmatter)
 ---
 <role> — 2-3 sentences establishing expertise from description
-\<core_knowledge> — 2 subsections, 3-5 bullets each (domain-specific, not generic)
+<core-knowledge> — 2 subsections, 3-5 bullets each (domain-specific, not generic)
 
-\</core_knowledge>
+</core-knowledge>
 
 `<workflow>` — 5 numbered steps appropriate to the domain
 
@@ -31,12 +31,14 @@ name / description / tools / model / color (frontmatter)
 Drop tools with no purpose for declared domain. Minimal precise list beats maximal.
 
 **LLM-first formatting**: agents read primarily by LLM at inference time. Apply one canonical form per pattern type:
+
 - Unordered lists: `-` only (never `*` or `+`)
 - Sequential workflow steps: `1.` `2.` `3.`
 - Option/choice lists (AskUserQuestion, mode names, examples): `(a)` `(b)` `(c)` — never `1.` `2.` for choices
 - 3+ items × 2+ fixed attributes → table; nested prose only when schema varies per item
 
 **NOT-for clause requirement**: Every agent must include a NOT-for clause specifying:
+
 1. What use cases this agent does NOT handle
 2. Which specific alternative agent handles each excluded case
    - Example: "NOT for fixing vulnerabilities — use develop:fix"

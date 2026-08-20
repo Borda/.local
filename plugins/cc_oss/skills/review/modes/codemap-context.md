@@ -1,7 +1,11 @@
 <!-- file: codemap-context.md — consumers: review/SKILL.md -->
+
 <!-- oss:review Step 1 — executed via: > loads: modes/codemap-context.md; gated on CODEMAP_ENABLED=true -->
+
 <!-- fragment — no <workflow> wrapper; executed inline by SKILL.md Step 1 -->
+
 <!-- Input: CODEMAP_ENABLED, CHANGED_FILES, CLEAN_ARGS, _IDX, CICD_ONLY_MODE, DOCS_ONLY_MODE, DOCS_CICD_MODE (reload guards default false — missing sentinel never causes a false skip, only extra queries) -->
+
 <!-- Output: codemap_available, $CODEMAP_CONTEXT_STAGE; persists both to TMPDIR for Step 2 -->
 
 ### Structural context + review pre-flight (codemap-py — only if `CODEMAP_ENABLED=true`)
@@ -87,6 +91,6 @@ For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken`/`
 
 `codemap_available=false`: omit the block; agents proceed with current file-read behaviour.
 
-Tier annotation for Agent 1 (sw-engineer) only: label each module's `imported_by` count — **high risk** (>20), **moderate** (5–20), **low** (<5) — for blast-radius reference.
+Tier annotation for Agent 1 (sw-engineer) only: label each module's `imported_by` count — **high risk** (>20), **moderate** (5–20), **low** (\<5) — for blast-radius reference.
 
 **Semble companion** (only if `SEMBLE_ENABLED=true`): include in Agent 1 spawn prompt: "If `mcp__semble__search` available and any codemap result is direction-incomplete (`query_complete: false`, or the legacy `exhaustive: false`) or codemap absent: call `mcp__semble__search(query='<module> import', repo=<git_root>, top_k=20)` per module; stop when two consecutive queries return no new importers; merge with codemap; skip if all results `query_complete: true`."

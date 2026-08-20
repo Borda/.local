@@ -54,6 +54,7 @@ After codex review completes (sentinel verified), compute per-axis delta:
 ```
 
 Update report's `## Independent Codex Review` section (append via Edit tool) with:
+
 - Codex scorecard table (from `$CODEX_REVIEW_OUT`)
 - Aggregate health score
 - Per-axis delta table with divergence flags

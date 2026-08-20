@@ -10,6 +10,7 @@
 > 2. **Diminishing returns** — last 2 Codex passes both produced no code changes → skip Codex remaining iterations, append note to `diary.md`: `"Codex skipped from iter N — 2 consecutive no-ops"`.
 >
 > Init before R5 loop: `CODEX_ITER=0`, `CODEX_NOOP_STREAK=0`, `CODEX_DISABLED=false`.
+>
 > After each Phase 2c: increment `CODEX_ITER`; no-op → `((CODEX_NOOP_STREAK++))`, changes → `CODEX_NOOP_STREAK=0`. If `CODEX_NOOP_STREAK >= 2` set `CODEX_DISABLED=true`.
 
 Gate fail (`CODEX_DISABLED=true` or `CODEX_ITER >= MAX_CODEX_RUNS`): skip Phase 2c, continue to Phase 3.

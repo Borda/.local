@@ -1,14 +1,11 @@
 ---
 name: agent-shims
-description: "Safely manage Codex Rig role-agent shims: doctor, status, install, or remove; one action only."
+description: 'Safely manage Codex Rig role-agent shims: doctor, status, install, or remove; one action only.'
 ---
 
 # Agent Shims
 
-This is an experimental lifecycle tool. Installing authenticated standalone agent TOML does not prove that the
-active collaboration interface can select that custom profile. A task name or child path matching the role name is
-not proof. Use installed shims only when the runtime exposes an explicit custom-agent selector and observed child
-metadata plus verifier output prove selection; otherwise use blank-agent role-card injection.
+This is an experimental lifecycle tool. Installing authenticated standalone agent TOML does not prove that the active collaboration interface can select that custom profile. A task name or child path matching the role name is not proof. Use installed shims only when the runtime exposes an explicit custom-agent selector and observed child metadata plus verifier output prove selection; otherwise use blank-agent role-card injection.
 
 Accept exactly one action: `doctor`, `status`, `install`, or `remove`. Reject missing, extra, or unknown arguments without writes.
 

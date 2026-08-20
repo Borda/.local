@@ -75,10 +75,12 @@ Tool fields (`layer: "tool"`, `log-tool-use.py`): `ts`, `layer`, `runtime`, `v`,
 Compute from filtered records:
 
 **Pre-filter (both layers):**
+
 - Exclude records with `source: "bench"` (benchmark/demo load) and CLI records with empty `cmd` (pre-0.23 test pollution) from organic stats; separately report "scripted/polluted records excluded: N".
 - For records with `v` (plugin version, 0.23+), compute headline error rate, stale rate, completeness per distinct `v` + overall: release before/after signal.
 
 **CLI layer:**
+
 - Total invocations, success/error: `exit_code: 0` = success; present nonzero = error; absent = unlogged, treat success unless `result.error` non-empty.
 - Aggregate `result.index.completeness_reason` (0.23+ veto slug: `stale` / `untracked` / `degraded` / `collision` / `root_mismatch` / `module_degraded`; `ok` = complete): explains false query_complete.
 - Subcommand distribution: count per `cmd` value
@@ -88,11 +90,13 @@ Compute from filtered records:
 - Stale-index warnings: fraction of results with `"stale": true`
 
 **Skill layer:**
+
 - Total skill starts by `skill` name
 - Session count (distinct `session` values)
 - Timeline: first and last `ts` in dataset
 
 **Cross-layer:**
+
 - Sessions in both layers → linked chains (skill invoked → N CLI calls)
 - Average CLI calls per skill session
 - Aggregate overall + by `runtime` (`claude`, `codex`, `direct`); flat legacy = `unattributed`.

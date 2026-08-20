@@ -70,6 +70,7 @@ Prefix `REPORT_DIR` with `$_ORIG_ROOT` (absolute). `$RUN_DIR` (`.temp/`) handoff
 `oss:resolve` mutates a PR branch and **pushes to the contributor fork** (its real deliverable is remote — reachable regardless of local worktree). Entering the session worktree **before** Step 4 `gh pr checkout` means the checkout, Phase-2 per-specialist `git worktree`s, cherry-pick merge-back, and push all happen off the isolated worktree; the caller's main tree + branch never change.
 
 Composition facts (verified against `resolve/modes/action-item-dispatch.md`):
+
 - **Mutex path** derives from git-common-dir + branch. Worktrees share the common-dir, so the lock is identical inside the session worktree → a second concurrent resolve on the same PR branch is still blocked. No regression.
 - **Phase-2 specialist worktrees** register on the same common-dir (siblings, not nested) and branch from `resolve-base-sha` (the PR HEAD after checkout) exactly as before.
 - **Step 11 caller-branch restore** becomes a harmless no-op — the main tree was never switched.
@@ -83,4 +84,4 @@ End of run, after gates/push:
 
 1. `git branch --show-current` (from worktree CWD).
 2. `ExitWorktree(action="keep")` — returns session to original dir, leaves worktree + branch on disk. Never `remove`, never auto-merge. (`path`-entered worktrees are never auto-removed.)
-3. Surface a `Worktree` block: `path` · `branch` · note (review: `merge if you want the report's companion edits`; resolve: `commits already pushed to the fork — worktree is disposable, remove with \`git worktree remove\` when done`).
+3. Surface a `Worktree` block: `path` · `branch` · note (review: `merge if you want the report's companion edits`; resolve: `` commits already pushed to the fork — worktree is disposable, remove with `git worktree remove` when done ``).

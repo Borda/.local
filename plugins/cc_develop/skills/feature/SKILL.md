@@ -1,7 +1,7 @@
 ---
 name: feature
-description: "TDD-first feature development — crystallise API as a demo test, drive implementation to pass it, run quality stack and progressive review loop. TRIGGER when: user asks to build new functionality, add a capability, or implement a feature in a Python project; phrases: \"add X\", \"implement Y\", \"build Z feature\", \"create a new module for\". SKIP when: bug fixes (use `/develop:fix`); refactoring without new behaviour (use `/develop:refactor`); non-Python projects; `.claude/` config changes (use `/foundry:manage`)."
-argument-hint: "<goal> [--issue <N>] [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--challenge] [--no-codemap] [--codemap] [--semble] [--team] [--worktree] [--accept-no-plan] [--keep \"<items>\"]"
+description: 'TDD-first feature development — crystallise API as a demo test, drive implementation to pass it, run quality stack and progressive review loop. TRIGGER when: user asks to build new functionality, add a capability, or implement a feature in a Python project; phrases: "add X", "implement Y", "build Z feature", "create a new module for". SKIP when: bug fixes (use `/develop:fix`); refactoring without new behaviour (use `/develop:refactor`); non-Python projects; `.claude/` config changes (use `/foundry:manage`).'
+argument-hint: <goal> [--issue <N>] [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--challenge] [--no-codemap] [--codemap] [--semble] [--team] [--worktree] [--accept-no-plan] [--keep "<items>"]
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch, EnterWorktree, ExitWorktree
 disable-model-invocation: true
@@ -12,6 +12,7 @@ disable-model-invocation: true
 TDD-first feature development. Crystallise API as demo use-case test, drive implementation to pass it, close quality gaps with review, docs, quality stack.
 
 NOT for:
+
 - bug fixes (use `/develop:fix`)
 - `.claude/` config changes (use `/foundry:manage` (requires foundry plugin))
 - non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead
@@ -21,11 +22,11 @@ NOT for:
 
 <compaction>
 
-Key boundary: end of Step 1 — scope analysis and plan complete, before Step 2 demo test writing.
-Second boundary: end of Step 3 — TDD loop complete, before Step 4 review/close gaps.
-Preserve at boundary 1: dev-dir (checkpoint.md), plan-file, scope from sw-engineer analysis, PYTEST_CMD, --keep items.
-Mid-loop refresh: after each Step 3 TDD cycle contract is rewritten with changed-files + checkpoint.md path — so mid-loop compaction resumes loop (re-run suite for green state) instead of restarting Step 2 demo.
-Preserve at boundary 2: dev-dir, changed files list, test outcomes, PYTEST_CMD.
+- Key boundary: end of Step 1 — scope analysis and plan complete, before Step 2 demo test writing.
+- Second boundary: end of Step 3 — TDD loop complete, before Step 4 review/close gaps.
+- Preserve at boundary 1: dev-dir (checkpoint.md), plan-file, scope from sw-engineer analysis, PYTEST_CMD, --keep items.
+- Mid-loop refresh: after each Step 3 TDD cycle contract is rewritten with changed-files + checkpoint.md path — so mid-loop compaction resumes loop (re-run suite for green state) instead of restarting Step 2 demo.
+- Preserve at boundary 2: dev-dir, changed files list, test outcomes, PYTEST_CMD.
 
 </compaction>
 
@@ -61,6 +62,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/runner-detection.md"
 ```
+
 Sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
 
 **Language preflight gate**: apply §Language preflight gate from `runner-detection.md` (loaded above) — sets `NON_PY` and runs the abort/continue question.
@@ -70,6 +72,7 @@ Sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill sta
   MULTI_LANG fires only when Python markers AND non-Python markers coexist. Both cannot be true on the
   same repo; never reorder so MULTI_LANG runs before NON_PY.
 -->
+
 **Monorepo language-target gate**: if `NON_PY` empty (Python markers found) but non-Python markers also exist, confirm target language:
 
 ```bash
@@ -90,6 +93,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/preflight-helpers.md"
 ```
+
 Execute --plan path extraction; sets `$PLAN_FILE`.
 
 **Checkpoint init**: run block below to create `.developments/<TS>/` and capture path in `$DEV_DIR`. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4, 5), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — if found, offer to resume from last completed step.
@@ -142,11 +146,12 @@ fi
 If `ISSUE_REF` non-empty and issue fetch succeeded: include issue title, body, and labels in Step 1 scope analysis as pre-populated requirements context.
 
 **Cross-repo adaptation** (when `REPO_NAME` set) — issue filed against different codebase. After fetching issue, Step 1 scope analysis must also:
+
 1. Extract intent from issue — what problem does it solve in abstract terms, not just described implementation details (which assume upstream's structure)
 2. Check local divergences: run `git log --oneline -10` and grep for symbols mentioned in issue; identify where local codebase differs structurally from what issue assumes
 3. Produce adaptation plan: upstream intent → local implementation using local conventions, existing abstractions, and current code structure — never assume upstream approach ports directly
 
-**Unsupported flag check** — after ALL supported flags extracted (including `--issue` from block above), scan `$ARGUMENTS` for remaining `--<token>` tokens not in supported list. Do NOT include `--issue` in "unknown" set — it is consumed in second parse block above. Supported: `--plan`, `--team`, `--worktree`, `--no-challenge`, `--challenge`, `--no-codemap`, `--codemap`, `--semble`, `--accept-no-plan`, `--issue`, `--repo`, `--keep`. If truly unknown token found: print `! Unknown flag(s): \`--<token>\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after ALL supported flags extracted (including `--issue` from block above), scan `$ARGUMENTS` for remaining `--<token>` tokens not in supported list. Do NOT include `--issue` in "unknown" set — it is consumed in second parse block above. Supported: `--plan`, `--team`, `--worktree`, `--no-challenge`, `--challenge`, `--no-codemap`, `--codemap`, `--semble`, `--accept-no-plan`, `--issue`, `--repo`, `--keep`. If truly unknown token found: print `` ! Unknown flag(s): `--<token>`. `` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Worktree isolation
 
@@ -186,6 +191,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-gates.md"
 ```
+
 Follow Gate A and Gate B.
 
 **Semble preflight** — if `SEMBLE_ENABLED=true`:
@@ -196,9 +202,11 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/preflight-helpers.md"
 ```
+
 Execute semble preflight if flag set.
 
 <!-- Only active when --team flag passed (~10% of invocations) -->
+
 ## Team Mode Branch
 
 **Run immediately after flag parsing when `TEAM_MODE=true`. Runs Step 1 inline (teammates need scope context), then spawns parallel teammates for Steps 2-4. Exit after synthesis.**
@@ -278,6 +286,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-context.md"
 ```
+
 Follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags false.
 
 Spawn **foundry:sw-engineer** agent to analyse codebase and produce:
@@ -298,6 +307,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/plan-inline.md"
 ```
+
 §Inline Plan Generation Protocol. Apply using **feature** context from Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
 
 Present analysis summary before proceeding.
@@ -308,6 +318,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/premise-grounding.md"
 ```
+
 §Premise Grounding Gate. Apply using **feature** context from Skill contexts table.
 
 ### Source Verification (optional — when using external APIs or version-sensitive libraries)
@@ -364,6 +375,7 @@ Spawn `foundry:challenger` with scope analysis from Step 1 (purpose, scope, risk
 > "Review implementation approach and scope identified in Step 1. Challenge across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step."
 
 Parse result:
+
 - **Blockers found** → STOP. Present findings. Don't proceed to Step 2 until user resolves each blocker or explicitly accepts risk.
 - **Concerns only** → surface as advisory section before demo test; continue.
 - **No findings / all refuted** → proceed.
@@ -486,13 +498,17 @@ GATE_EXIT=$?
 Start from Step 2 demo — already failing, becomes first target. For each piece of functionality:
 
 1. **Target demo or write next focused test** — first iteration uses Step 2 demo directly; subsequent iterations add one new test per piece of new behaviour
+
 2. **Run existing suite — confirm all pass**:
+
    ```bash
    # timeout: 600000
    $PYTEST_CMD --tb=short <target_test_dir> -v 2>&1 | tail -20
    GATE_EXIT=${PIPESTATUS[0]}
    ```
+
 3. **Run new demo/test — confirm it fails**:
+
    ```bash
    # timeout: 600000
    $PYTEST_CMD --doctest-modules <module>.py -v --tb=short 2>&1 | tail -10
@@ -500,24 +516,32 @@ Start from Step 2 demo — already failing, becomes first target. For each piece
    $PYTEST_CMD --tb=short <test_file>::<test_name> -v
    python examples/demo_<feature>.py 2>&1 | tail -5
    ```
+
 4. **Implement minimal code** (spawn **foundry:sw-engineer** agent for non-trivial logic):
+
    - Reuse or extend existing code identified in Step 1 — prefer subclassing or composing over parallel reimplementation
    - Match project's existing patterns (naming, error handling, type annotations)
+
 5. **Run demo/test — confirm it passes**
+
 6. **Run affected tests** (prefer targeted over full suite):
 
    **Test impact (codemap-py)** — identify minimal test set first:
+
    ```bash
    codemap-py query test-impact "<changed_module>" 2>/dev/null
    ```
+
    - Non-empty `pytest_cmd` → run those tests first; surface `not_covered` caveat if present
    - Empty or `codemap-py query` absent → fall back to full suite below
 
    **Full suite fallback**:
+
    ```bash
    # timeout: 600000
    $PYTEST_CMD --tb=short <target_test_dir> -v
    ```
+
 7. If regressions appear: fix before moving on — never carry forward broken suite
 
 After each cycle, refresh compaction contract so a mid-loop compaction resumes TDD loop instead of restarting Step 2 demo:
@@ -617,6 +641,7 @@ Spawn **foundry:doc-scribe** agent to update docstrings and README only (doc-scr
 - If feature changes public API: update `README.md` usage examples
 
 Spawn doc-scribe with context:
+
 - Affected files: [list from Step 1 scope analysis]
 - New/modified public API: [function names, signatures from Step 3]
 - Demo location: [Step 2 demo file path and function name]
@@ -638,6 +663,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 _SHARED="$_DEV_SHARED"  # quality-stack.md loads its siblings from $_SHARED — this plugin's own _shared
 cat "$_DEV_SHARED/quality-stack.md"
 ```
+
 Execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps. `quality-stack.md` ships in this plugin's own `_shared`, so it is always present — absence means a broken install, not a missing optional dependency.
 
 **Branch Safety Guard — no test suite**: if no test suite found (pytest collects 0 tests or `$TEST_CMD` not set), log `⚠ No test suite detected — Branch Safety Guard weakened` and require explicit user confirmation before proceeding past guard.
@@ -669,7 +695,7 @@ rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compac
 ## Anti-Rationalizations
 
 | Temptation | Reality |
-| --- | --- |
+| -- | -- |
 | "The feature is clear — I can skip the demo and go straight to code" | Without crystallized API contract, implementation drifts. Demo = spec. |
 | "I know this library — no need to check docs" | Training data contains deprecated patterns. One fetch prevents hours of rework. |
 | "I'll write tests after the implementation is stable" | Tests drive design. Writing first reveals API problems before baked in. |

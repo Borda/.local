@@ -1,4 +1,5 @@
 <!-- Step 1 in SKILL.md dispatches to this mode file. Steps here continue from Step 2. -->
+
 <!-- loads: rules-pipeline-prompt.md -->
 
 ## Mode: rules
@@ -28,7 +29,7 @@ Rule adherence test: for each rule file in `.claude/rules/`, measures three dime
 ### Verdict mapping
 
 | Adherence recall | Outcome correct | Verdict |
-| --- | --- | --- |
+| -- | -- | -- |
 | ≥ 0.80 | ≥ 0.80 | calibrated |
 | ≥ 0.80 | < 0.80 | outcome-gap |
 | < 0.80 | any | under-enforced |

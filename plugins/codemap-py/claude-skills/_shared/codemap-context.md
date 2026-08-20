@@ -88,6 +88,7 @@ codemap_evidence: queries_run=<n> hits=<h> completeness=<exhaustive|partial|stal
 ```
 
 Completeness semantics:
+
 - `exhaustive` — all queries hit, none stale, none direction-incomplete → consumers may **skip** re-querying (grep/read) for what codemap returned.
 - `partial` — at least one result `query_complete:false` (direction-incomplete) → fill gaps via consumer's fallback (semble, grep), not by re-running codemap.
 - `stale` — index older than source (`stale:true`) → rebuild or accept reduced currency; see gates contract.
@@ -98,18 +99,21 @@ Consumers may skip re-querying **only** when `completeness=exhaustive`.
 ## Coverage metadata in output
 
 Each `scan-query` result carries `index` block with per-command coverage fields:
+
 - `index.method` — analysis technique used (`static-ast`, `import-graph`, `index-lookup`, `ast-flags`).
 - `index.not_covered` — what method structurally misses (list); non-empty → surface as scope caveat in response; do NOT grep to fill gap — gaps structurally unresolvable by static analysis.
 - `index.hint` — actionable alternative if deeper coverage needed (e.g. grep pattern for hook-registered callers).
 - `index.confidence: "exact"` — result authoritative; omit verification caveats.
 
 **Codemap = primary codebase navigation tool.** Do NOT grep/bash to re-verify what codemap already returned. When `not_covered` non-empty: (1) include one-line caveat — "Note: callers via [not_covered items] not included — structurally invisible to static AST"; (2) log gap:
+
 ```bash
 mkdir -p .cache/codemap
 printf '{"ts":"%s","cmd":"%s","target":"%s","not_covered":%s,"hint":"%s"}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "<subcommand>" "<target>" '<not_covered_json>' "<hint_or_empty>" \
     >> .cache/codemap/gaps.jsonl 2>/dev/null || true
 ```
+
 (3) Continue achieving goal — do NOT abandon task because of structural gap.
 
 When `method=index-lookup` + `confidence=exact`: result authoritative, skip verification caveats.
@@ -129,6 +133,7 @@ Set `CODEMAP_QUERY_KIND=skip` and skip Codemap when an exact file and symbol are
 Task touches multiple modules or changes public-API surface → run per-affected-module reverse-dependency scan. Interpret: any `rdeps` output = external callers affected; `coupled` output = co-change pairs. Fallback for one known module: `scan-query rdeps <mod> --top 10 2>/dev/null || true`.
 
 Risk tier by `rdep_count`:
+
 - `>= 5` → HIGH blast radius — flag before proceeding.
 - `1–4` → MODERATE — note in plan/report.
 - `0` → LOW — proceed normally.

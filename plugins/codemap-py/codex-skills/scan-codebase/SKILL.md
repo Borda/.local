@@ -1,6 +1,6 @@
 ---
 name: scan-codebase
-description: "`$codemap-py:scan-codebase [flags]` only: Python index; never auto-invoke; skip query/integration."
+description: '`$codemap-py:scan-codebase [flags]` only: Python index; never auto-invoke; skip query/integration.'
 ---
 
 # Scan Codebase

@@ -41,6 +41,7 @@ Applies to all Python written or reviewed by any agent.
 **Branch-slug expression** for the `.temp/output-*.md` filename: `<branch>` is `$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')`.
 
 **Follow-up gate options** — skill-defined; minimum: (a) primary action · (b) skip. Canonical examples by skill:
+
 - `foundry:audit` → (a) `/foundry:setup` (sync clean config) · (b) fix all findings · (c) skip
 - `foundry:distill` → (a) `/foundry:manage create` (scaffold suggestion) · (b) edit existing · (c) skip
 

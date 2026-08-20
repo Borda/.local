@@ -1,6 +1,6 @@
 ---
 name: investigate
-description: "Investigate code debugging and root-cause narrowing; use measurable gates before fixes."
+description: Investigate code debugging and root-cause narrowing; use measurable gates before fixes.
 ---
 
 # Investigate
@@ -38,9 +38,7 @@ Write `<run-directory>/symptom.md` with:
 
 ### 03: Gather signals before forming hypotheses
 
-Run `git log --oneline -10` and `python --version` as separate argv commands. Write their complete outputs to
-`<run-directory>/recent-commits.txt` and `<run-directory>/python-version.txt`; record either collection failure rather
-than treating an empty file as successful evidence.
+Run `git log --oneline -10` and `python --version` as separate argv commands. Write their complete outputs to `<run-directory>/recent-commits.txt` and `<run-directory>/python-version.txt`; record either collection failure rather than treating an empty file as successful evidence.
 
 Inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`, collect `working-tree` scope into `<run-directory>/baseline`; record collection failure, never treat as empty diff.
 

@@ -34,4 +34,4 @@ Must have:
 2. Pointer to relevant file(s)
 3. Acceptance criteria: what "done" look like?
 4. No architectural decisions required
-5. Estimated scope: 1 file, <50 lines
+5. Estimated scope: 1 file, \<50 lines

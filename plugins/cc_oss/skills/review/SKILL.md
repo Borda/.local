@@ -1,7 +1,7 @@
 ---
 name: review
 description: "Multi-agent code review of GitHub Pull Requests (Python source, documentation (Markdown/RST), and CI/CD config PRs) covering architecture, tests, performance, docs, lint, security, and API design. TRIGGER when: user provides a GitHub PR number (e.g. 42, #42) and asks to review/audit/check it, or provides a saved review-report path with --reply to draft a contributor-facing comment; phrases: 'review PR 123', 'audit this pull request', 'look at PR #42', 'draft a reply for this review report'. SKIP: local file or current git diff review (use /develop:review (requires 'develop' plugin)); non-Python source PRs without Python files (TypeScript-only, Go-only, Rust-only); standalone issue/discussion thread analysis (use /oss:analyse)."
-argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble] [--worktree] [--full] [--keep \"<items>\"]"
+argument-hint: '[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble] [--worktree] [--full] [--keep "<items>"]'
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, EnterWorktree, ExitWorktree
 model: sonnet
 effort: high
@@ -31,6 +31,7 @@ NOT for local file review or current git diff — use `/develop:review` (require
 
 <constants>
 
+```text
 FANOUT_MAX=3            # default: top-N most relevant of the scope-preselected dimensions
                         # 3 not 4 — bridge review runs outside this cap, so 3 keeps the
                         # observed agent count at 4, not 5
@@ -39,19 +40,24 @@ AGENT_CALL_BUDGET=55    # target tool-calls per agent; past ~60 they stall witho
 CHALLENGE_ENABLED=true  # set to false via --no-challenge
 CODEMAP_ENABLED=auto    # on by default if codemap installed + index found; --no-codemap = off; --codemap = strict (stop if not installed)
 SEMBLE_ENABLED=false    # set to true via --semble
+```
+
 > Background agent health monitoring (CLAUDE.md §6) — applies to Step 3 parallel agent spawns
+
+```text
 MONITOR_INTERVAL=300   # 5 minutes between polls
 HARD_CUTOFF=900        # 15 minutes of no file activity → declare timed out
 EXTENSION=300          # one +5 min extension if output file explains delay
+```
 
 </constants>
 
 <compaction>
 
-Key boundary: end of Step 2 — parallel review-agent fan-out outputs collected, before Step 5 consolidation.
-Second boundary: end of Step 5 — consolidated report written, before Step 8 --reply.
-Preserve at boundary 1: RUN_DIR, REPORT_DIR, PR# (CLEAN_ARGS), per-agent finding file paths.
-Preserve at boundary 2: final report path, PR#, reply-mode flag.
+- Key boundary: end of Step 2 — parallel review-agent fan-out outputs collected, before Step 5 consolidation.
+- Second boundary: end of Step 5 — consolidated report written, before Step 8 --reply.
+- Preserve at boundary 1: RUN_DIR, REPORT_DIR, PR# (CLEAN_ARGS), per-agent finding file paths.
+- Preserve at boundary 2: final report path, PR#, reply-mode flag.
 
 </compaction>
 
@@ -107,7 +113,7 @@ Create these tasks **before** starting Step 1 (in order, all at once):
 Parse `$ARGUMENTS` flags first (via `bin/parse-skill-flags.py`, C5) — this sets `CLEAN_ARGS`, the mode flags, and `DIRECT_PATH_MODE` **before** any step below references them (the pre-classification and Step 1 both read them):
 
 | Flag | Variable | Present | Absent |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | `--reply` | `REPLY_MODE` | `true` | `false` |
 | `--no-challenge` | `CHALLENGE_ENABLED` | `false` | `true` |
 | `--no-codemap` | `CODEMAP_FORCE_OFF` | `true` | `false` |
@@ -204,6 +210,7 @@ fi
 ```
 
 **Challenge skip** — challenger adds no value for non-logic PRs:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
@@ -219,7 +226,7 @@ echo "$CHALLENGE_ENABLED" > "${TMPDIR:-/tmp}/oss-review-challenge-enabled-${CSID
 Agent lineup — `PR_TYPE != CODE` overrides scope-based rules in Step 1:
 
 | `PR_TYPE` | Agents | Challenger | Consolidator |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | `DOCS_TYPING` | `foundry:linting-expert` only | skip | `foundry:linting-expert` |
 | `TESTS_CI` | `foundry:qa-specialist` + `foundry:linting-expert` | skip | `foundry:qa-specialist` |
 | `CODE` | full scope-based lineup | per `--no-challenge` | `foundry:sw-engineer` |
@@ -252,7 +259,7 @@ IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/review-oss-shared-${CSID}" 2>/dev/nu
 
 If `SEMBLE_ENABLED=true`: proceed — semble MCP tool availability verified at first use. If `mcp__semble__search` is unavailable when called, it fails with a clear error; do not preemptively exit here.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. Found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--reply\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--worktree\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. Found: print `` ! Unknown flag(s): `--<token>`. Supported: `--reply`, `--no-challenge`, `--codemap`, `--no-codemap`, `--semble`, `--worktree`, `--keep`. `` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Worktree isolation** — when `WT_ENABLED=true` **and** this is a PR review (not `--reply` / direct-report `.md` mode): run the review in an isolated git worktree so no dimension agent can mutate main sources. Load and follow the oss worktree protocol (§Enter now, §review deliverable routing, §Exit at the follow-up gate):
 
@@ -312,12 +319,14 @@ echo "CI_RED=$CI_RED FAILING=[$CI_FAILING_CHECKS] COUNTS=$CI_COUNTS"
 ### File scope detection
 
 <!-- loads: modes/scope-detection.md -->
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload REVIEW_SKILL_DIR (Check 41: fresh shell)
 IFS= read -r REVIEW_SKILL_DIR < "${TMPDIR:-/tmp}/review-skill-dir-${CSID}" 2>/dev/null || REVIEW_SKILL_DIR=""
 cat "$REVIEW_SKILL_DIR/modes/scope-detection.md"  # timeout: 5000
 ```
+
 Follow above and execute its bash blocks inside the `DIRECT_PATH_MODE = "false"` guard. Sets `PY_FILES`, `DOC_FILES`, `CICD_FILES`, `CICD_ONLY_MODE`, `DOCS_ONLY_MODE`, `DOCS_CICD_MODE`; persists flags to `${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}-${CSID}` for reload in Step 2.
 
 ### Scope pre-check
@@ -384,15 +393,18 @@ Skip optional agents by classification:
 **Skip entire section if `CODEMAP_ENABLED=false`** — sets `codemap_available=false` for downstream agent prompts; agents fall back to file reads.
 
 <!-- loads: modes/codemap-context.md -->
+
 > loads: modes/codemap-context.md
 
 `CODEMAP_ENABLED=true`:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload REVIEW_SKILL_DIR (Check 41: fresh shell)
 IFS= read -r REVIEW_SKILL_DIR < "${TMPDIR:-/tmp}/review-skill-dir-${CSID}" 2>/dev/null || REVIEW_SKILL_DIR=""
 cat "$REVIEW_SKILL_DIR/modes/codemap-context.md"  # timeout: 5000
 ```
+
 Follow above and execute its contents — stages `codemap_available` and `$CODEMAP_CONTEXT_STAGE` to TMPDIR (Step 2 copies into `$RUN_DIR/codemap-context.md`) and defines the Step-2 spawn-prompt substitution rules + semble companion. `CODEMAP_ENABLED=false`: skip; agents fall back to file reads.
 
 ### Linked issue analysis (PR mode only)
@@ -449,15 +461,18 @@ echo "scope_label=$SCOPE_LABEL_HIT duplicate=$DUPLICATE_HIT revert_candidate=${R
 7. **REJECT_SPAM** — spam/low-effort/AI-slop: no real change, hacktoberfest-farming pattern. Evidence needs both: diff is trivially low-value (whitespace/punctuation-only across the changed lines, no logic touched) **and** `PR_BODY` is generic/templated with no specifics tying it to this repo. Either alone is not enough — a genuine one-line critical fix is low-value-looking but not spam; judge the pairing, not the diff size alone. Orchestrator judgment only.
 8. **REJECT_PHILOSOPHY** — contradicts a documented design principle (not a style preference). Evidence: an explicit principle stated in `README.md`/`CONTRIBUTING.md`/an ADR that the PR's intent directly violates — e.g. adding a GUI to a project whose docs state "CLI-only by design". Cite the exact doc line in `Summary:` — no citable line, no reject. Orchestrator judgment only.
 
-**Challenger confirmation** (grounds 2 and 4 only — the two where accusing wrongdoing carries real reputational/legal stakes, so both share one call): only spawn when the orchestrator's own read of `PR_BODY`/diff/`CHANGED_FILES` raised a concrete suspicion for either — never spawn speculatively on every PR. Prompt: "Investigate PR #<N> (body: <PR_BODY>, diff: changed files) for two things: (1) is its intent a by-design malicious/adversarial contribution or Code of Conduct violation, vs. an accidental mistake; (2) is any changed content plagiarized or under an incompatible license the contributor has no right to submit, vs. original/properly licensed work. Read the diff and linked issue if any. Return ONLY: `{\"conduct\":{\"verdict\":\"BY_DESIGN\"|\"ACCIDENTAL\"|\"N/A\",\"confidence\":0.N},\"license\":{\"verdict\":\"CONFLICT\"|\"CLEAN\"|\"N/A\",\"confidence\":0.N},\"rationale\":\"<one sentence per flagged verdict>\"}`". `ACCIDENTAL`/`CLEAN`, `N/A`, or `confidence <0.7` on either axis → that ground is not a reject, falls through as a normal finding.
+**Challenger confirmation** (grounds 2 and 4 only — the two where accusing wrongdoing carries real reputational/legal stakes, so both share one call): only spawn when the orchestrator's own read of `PR_BODY`/diff/`CHANGED_FILES` raised a concrete suspicion for either — never spawn speculatively on every PR. Prompt: "Investigate PR #<N> (body: \<PR_BODY>, diff: changed files) for two things: (1) is its intent a by-design malicious/adversarial contribution or Code of Conduct violation, vs. an accidental mistake; (2) is any changed content plagiarized or under an incompatible license the contributor has no right to submit, vs. original/properly licensed work. Read the diff and linked issue if any. Return ONLY: `{\"conduct\":{\"verdict\":\"BY_DESIGN\"|\"ACCIDENTAL\"|\"N/A\",\"confidence\":0.N},\"license\":{\"verdict\":\"CONFLICT\"|\"CLEAN\"|\"N/A\",\"confidence\":0.N},\"rationale\":\"<one sentence per flagged verdict>\"}`". `ACCIDENTAL`/`CLEAN`, `N/A`, or `confidence <0.7` on either axis → that ground is not a reject, falls through as a normal finding.
 
 Any ground confirmed:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r PR_HEAD_SHA < "${TMPDIR:-/tmp}/oss-review-pr-head-sha-${CSID}" 2>/dev/null || PR_HEAD_SHA=""
 { echo "GATE=REJECT_GOAL"; echo "GATE_SHA=${PR_HEAD_SHA}"; echo "GATE_REASON=<one-line evidence for the ground that fired>"; } > "${TMPDIR:-/tmp}/oss-review-gate-${CSID}"  # substitute the actual REJECT_<GROUND> code (GOAL/CONDUCT/SCOPE/LICENSE/DUPLICATE/REVERTED/SPAM/PHILOSOPHY)
 ```
+
 <!-- policy-sibling: plugins/cc_oss/skills/review/SKILL.md, plugins/cc_oss/skills/resolve/SKILL.md — `Gate: REJECT_* @<sha>` line format, both sides must agree -->
+
 Skip Step 2–4 entirely. Orchestrator writes `$REPORT_DIR/review-report.md` itself (Write tool, same `---` header format as `templates/review-report.md`) with `Gate: REJECT_<GROUND> @<PR_HEAD_SHA>` (the `@<sha>` suffix is load-bearing — `/oss:resolve` parses it to refuse restarting on an unchanged, rejected PR; never omit it, regardless of which of the 8 grounds fired), `Outcome: N/A — rejected at gate`, `Summary:` stating the specific evidence (factual contradiction, challenger rationale, label/issue/revert citation, doc line quoted), `Next steps:` recommends closing the PR with that rationale (drafted for user, never auto-posted — `gh pr close`/comment forbidden by public-github.md read-only policy). Then jump straight to Step 5b's print sequence and Step 7's gate — no consolidator spawn needed, nothing to consolidate.
 
 No ground confirmed → proceed to Stage 2.
@@ -507,12 +522,14 @@ echo "$REPORT_DIR" > "${TMPDIR:-/tmp}/oss-review-report-dir-${CSID}"  # persist 
 ```
 
 **File-based handoff**:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload _OSS_SHARED (Check 41: fresh shell)
 IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/review-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
 cat "$_OSS_SHARED/file-handoff-protocol.md"  # timeout: 5000
 ```
+
 Follow above. File absent → warn and continue without it.
 
 **IMPORTANT**: Replace `$REPORT_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, and `$DATE` with actual literal computed values in every Agent spawn prompt. Do NOT pass as shell variables — agents receive text, not shell context. **Exception — `$RUN_DIR`**: never hand-substitute it; agents self-resolve via `export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"; cat "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}"` per the run-dir preamble in `agent-prompts.md` (eliminates leading-dot transcription slips).
@@ -527,12 +544,14 @@ echo "$CODEX_AVAILABLE" > "${TMPDIR:-/tmp}/oss-review-codex-available-${CSID}"
 ```
 
 <!-- loads: agent-prompts.md -->
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload REVIEW_SKILL_DIR (Check 41: fresh shell)
 IFS= read -r REVIEW_SKILL_DIR < "${TMPDIR:-/tmp}/review-skill-dir-${CSID}" 2>/dev/null || REVIEW_SKILL_DIR=""
 cat "$REVIEW_SKILL_DIR/templates/agent-prompts.md"  # timeout: 5000
 ```
+
 Template (loaded above). Substitute `<REVIEW_SKILL_DIR>` → `$REVIEW_SKILL_DIR` before using content in spawn prompts. Leave `$RUN_DIR` literal in the prompt text — agents resolve it themselves via the run-dir preamble (`cat "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}"`); the orchestrator must NOT retype the run-dir path.
 
 **Codemap context propagation**: rehydrate `codemap_available` from Step 1 persist file, copy staged context into `$RUN_DIR/codemap-context.md`, substitute into every dimension-agent spawn prompt per the rules in the Structural-context block above. Block omitted when `codemap_available=false`.
@@ -696,6 +715,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/review-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
 cat "$_OSS_SHARED/cross-validation-protocol.md"  # timeout: 5000
 ```
+
 Follow above. File absent → warn: "cross-validation protocol not found — verify foundry plugin installed (`claude plugin list`); skipping Step 4." Then skip Step 4.
 
 **Independence requirement**: cross-validation must run as separate spawned agent — same type as finding's origin. Do NOT validate in orchestrator context.
@@ -707,6 +727,7 @@ Spawn verifier agent per critical/blocking finding (or per batch when capped). A
 ## Step 5: Consolidate findings
 
 Before output path, extract:
+
 ```bash
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 DATE=$(date -u +%Y-%m-%d)  # timeout: 5000
@@ -715,15 +736,18 @@ DATE=$(date -u +%Y-%m-%d)  # timeout: 5000
 **IMPORTANT**: expand `$RUN_DIR`, `$REPORT_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, `$DATE`, `$CI_RED`, `$CI_FAILING_CHECKS`, and `$CI_COUNTS` to literal values before inserting into the spawn prompt. Un-expanded variables create wrong paths. The `## Source Files` footnote `Glob(... path="<EXPANDED_RUN_DIR>")` path must also be expanded to the literal `$RUN_DIR` value.
 
 Reload the Stage-2 gate verdict (Check 41: fresh shell — set by the acceptance gate in Step 1, must survive to here):
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 [ -f "${TMPDIR:-/tmp}/oss-review-gate-${CSID}" ] && . "${TMPDIR:-/tmp}/oss-review-gate-${CSID}"
 GATE="${GATE:-PASS}"; GATE_REASON="${GATE_REASON:-}"
 echo "Gate: $GATE ${GATE_REASON:+($GATE_REASON)}"
 ```
+
 A reject-gate run never reaches this point (Step 5 is skipped entirely) — `GATE` here is always `PASS` or `BLOCK`.
 
 Select consolidator agent by `PR_TYPE` (lighter model for non-logic PRs):
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
@@ -739,29 +763,30 @@ esac
 Spawn `$CONSOLIDATOR_AGENT` consolidator agent with prompt:
 
 <!-- loads: consolidator-prompt.md -->
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload REVIEW_SKILL_DIR (Check 41: fresh shell)
 IFS= read -r REVIEW_SKILL_DIR < "${TMPDIR:-/tmp}/review-skill-dir-${CSID}" 2>/dev/null || REVIEW_SKILL_DIR=""
 cat "$REVIEW_SKILL_DIR/templates/consolidator-prompt.md"  # timeout: 5000
 ```
+
 Template (loaded above). Prepend the run-dir resolution preamble from `agent-prompts.md` so the consolidator self-resolves `$RUN_DIR` (`cat "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}"`). Substitute `<REPORT_DIR>`, `<REVIEW_SKILL_DIR>`, `<_OSS_SHARED>`, `<DATE>`, `<CHANGED_FILES>`, `<SCOPE>`, `<CI_FAILING_CHECKS>`, `<CI_COUNTS>`, `<GATE>` with literal expanded values (`<GATE>` = `$GATE` reloaded above, `PASS` or `BLOCK`); leave `$RUN_DIR` literal (agent self-resolves). Spawn: `Agent(subagent_type="$CONSOLIDATOR_AGENT", prompt=<substituted consolidator-prompt.md content>)`
 
-Main context receives only the one-liner verdict. **Consolidator unavailable fallback** — `Agent` tool deferred/not loaded:
-Print: `⛔ BLOCKED — Agent tool not loaded; consolidator cannot run. Re-invoke /oss:review to retry. If persistent, run /foundry:setup (requires foundry plugin) to verify session config.`
-Do NOT read agent finding files inline — floods main context (~16–32K tokens per run), produces unreliable synthesis.
+Main context receives only the one-liner verdict. **Consolidator unavailable fallback** — `Agent` tool deferred/not loaded: Print: `⛔ BLOCKED — Agent tool not loaded; consolidator cannot run. Re-invoke /oss:review to retry. If persistent, run /foundry:setup (requires foundry plugin) to verify session config.` Do NOT read agent finding files inline — floods main context (~16–32K tokens per run), produces unreliable synthesis.
 
 After parsing confidence: agent < 0.7 → prepend **⚠ LOW CONFIDENCE** to findings section, state gap explicitly. Never drop uncertain findings.
 
 TaskUpdate "Step 5b: Print report header" → `in_progress`.
 
 **MANDATORY, not optional narration** — the consolidator's returned one-liner is a routing signal only; it is never printed to the user and never satisfies this step. Perform, in this exact order, in this same turn, before any other Step 5/6/7 text:
+
 1. Read `$REPORT_DIR/review-report.md` (Read tool).
 2. Extract every field from the opening `---` up to and including the closing `---` — `Title:`, `Date:`, `PR Type:`, `Scope:`, `Focus:`, `Agents:`, `CI:`, `Outcome:`, `Summary:`, `Confidence:`, `Next steps:`, `Path:`.
 3. Render those 12 fields as a two-column Markdown table (`Field | Value`, one row per key, file order) per quality-gates.md §Report File Format's Universal terminal-print rule — never print the raw `---`-delimited block. Append `→ saved to $REPORT_DIR/review-report.md`.
 4. TaskUpdate "Step 5b: Print report header" → `completed` (only once the table has actually appeared in this response).
 
-This table IS the reply header — print/omit-box handling per quality-gates.md §Report File Format (universal rule); omit the `╔═╗` Re:Anchor box (communication.md exempts quality-gates `---` report headers — the box would shadow the table). Never emit both a box header and this table. **Historical note**: an earlier revision of this step printed the raw `---`-delimited block verbatim inside a ` ```text ` fence to dodge markdown misparsing the literal `---` (leading `---` read as YAML frontmatter, closing `---` under `Path:` read as a setext heading) — that predates quality-gates.md's table rule and is superseded by it: converting to a table drops the raw `---` delimiters entirely, so the misparse risk the fence was guarding against does not arise. Render all 12 fields verbatim as table rows; use the `·`-separated one-line fallback ONLY when the `$REPORT_DIR/review-report.md` read genuinely fails — then state `⚠ could not read report header — verify $REPORT_DIR` before the fallback line rather than silently degrading, and still mark the task `completed` (the fallback line satisfies the step).
+This table IS the reply header — print/omit-box handling per quality-gates.md §Report File Format (universal rule); omit the `╔═╗` Re:Anchor box (communication.md exempts quality-gates `---` report headers — the box would shadow the table). Never emit both a box header and this table. **Historical note**: an earlier revision of this step printed the raw `---`-delimited block verbatim inside a ```` ```text ```` fence to dodge markdown misparsing the literal `---` (leading `---` read as YAML frontmatter, closing `---` under `Path:` read as a setext heading) — that predates quality-gates.md's table rule and is superseded by it: converting to a table drops the raw `---` delimiters entirely, so the misparse risk the fence was guarding against does not arise. Render all 12 fields verbatim as table rows; use the `·`-separated one-line fallback ONLY when the `$REPORT_DIR/review-report.md` read genuinely fails — then state `⚠ could not read report header — verify $REPORT_DIR` before the fallback line rather than silently degrading, and still mark the task `completed` (the fallback line satisfies the step).
 
 **Why this step is enforced twice over** (empirically motivated — a prior run genuinely skipped it): a prior run spawned the consolidator, received its one-liner, and jumped straight to Step 7's `AskUserQuestion` + confidence block — skipping this print entirely, even though `AskUserQuestion` itself (a hard tool call) fired correctly; do not treat "Step 5: Consolidate findings" completing as covering this step, they are separate tasks for that reason. **Runtime backstop**: `hooks/enforce-review-header.js` (PreToolUse on `AskUserQuestion`) denies Step 7a's call while `$REPORT_DIR/review-report.md` is missing or empty — a denial reading `oss:review report gate` means Step 5 never produced the report; spawn the consolidator, print the header, then re-issue the question. The hook can't see whether the print happened, only whether the report exists — the task above remains the actual check for the print itself.
 
@@ -792,6 +817,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/review-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
 cat "$_OSS_SHARED/codex-delegation.md"  # timeout: 5000
 ```
+
 Follow above. File absent → warn: "codex-delegation criteria not found — verify foundry plugin installed (`claude plugin list`); skipping Step 6 delegation." Then skip Step 6.
 
 Print `### Codex Delegation` only when tasks delegated — omit otherwise. Don't rewrite output file.
@@ -809,6 +835,7 @@ Print `### Codex Delegation` only when tasks delegated — omit otherwise. Don't
 ### 7a — Follow-up gate
 
 ! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text. Single call — all options in one:
+
 - question: "What next?"
 - (a) label: `/oss:resolve $CLEAN_ARGS` — description: fix this PR (implement review findings, resolve conflicts, push)
 - (b) label: `/oss:resolve report` — description: resolve from full review report only (no GitHub re-fetch)
@@ -817,6 +844,7 @@ Print `### Codex Delegation` only when tasks delegated — omit otherwise. Don't
 - (e) label: `skip` — description: no action
 
 `oss:resolve` has `disable-model-invocation: true` — `Skill()` invocation blocked. After AskUserQuestion returns:
+
 - Resolve variant chosen (a/b/c when available): present chosen label as command user must run manually (e.g. `Run: /oss:resolve $CLEAN_ARGS`); no `Skill()` call
 - `walk through findings` / `skip`: handle inline or stop
 
@@ -843,6 +871,7 @@ cat "$_OSS_SHARED/shepherd-reply-protocol.md"  # timeout: 5000
 `shepherd-reply-protocol.md` (loaded above) — apply invocation pattern and terminal summary format.
 
 Spawn with:
+
 - Report path: review output file from Step 5
 - PR number and contributor handle: from Step 1 `gh pr view` output
 - Output path: `.temp/output-reply-<PR#>-$(date -u +%Y-%m-%d).md`
@@ -868,6 +897,7 @@ rm -f .temp/state/skill-contract.md  # skill complete (compaction-contract.md §
 <calibration>
 
 Scenarios:
+
 1. FIX scope: single bug-fix PR with 1 changed file → scope=FIX, 2 agents skipped: perf-optimizer (scope), solution-architect (scope). Remaining: sw-engineer, qa-specialist, doc-scribe, linting-expert, challenger (unless `--no-challenge`) = 5 agents run (+ Codex if installed).
 2. FEATURE scope: new feature PR with API changes → scope=FEATURE, all 7 agents run
 3. --reply mode: existing review report + --reply flag → skip to Step 8, no agents spawned
@@ -884,7 +914,7 @@ Scenarios:
 - **PR review acceptance criteria — canonical here**: oss:shepherd cross-references these criteria; don't duplicate in shepherd. Shepherd defers to this file for acceptance thresholds, severity definitions. Header is two-part: `Gate:` (`PASS` / `BLOCK` / `REJECT_<GROUND>` where GROUND is one of the 8 in Stage 1 — GOAL, CONDUCT, SCOPE, LICENSE, DUPLICATE, REVERTED, SPAM, PHILOSOPHY; reject is terminal and skips fanout, block isn't) and `Outcome:` (`APPROVE` / `NEEDS_WORK` / `REQUEST_CHANGES` from the full fanout, or `N/A — rejected at gate` when `Gate` is a `REJECT_*`). See Acceptance gate (Step 1).
 - **Block-tier catalogue** — per-category default for the `[blocking]` tag, applied by full-review agents once fanout runs (not automatic, judgment still required per row):
   | Category | Default | Nuance |
-  | --- | --- | --- |
+  | -- | -- | -- |
   | CI red / failing check | `[blocking]` | only for a **major** failure (real required-check failure); a single flaky-looking rerun blip stays noted, not auto-blocking — see flaky-test rule above |
   | Missing test coverage for new/changed logic | `[blocking]` | — |
   | Accidental security bug (careless, not by-design) | `[blocking]` | by-design version is Stage 1 `REJECT_CONDUCT`, not this |

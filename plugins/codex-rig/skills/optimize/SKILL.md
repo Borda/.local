@@ -1,6 +1,6 @@
 ---
 name: optimize
-description: "Optimize a measurable metric with bounded iterations, guardrails, and regression gates."
+description: Optimize a measurable metric with bounded iterations, guardrails, and regression gates.
 ---
 
 # Optimize
@@ -44,9 +44,7 @@ Require:
 
 Dry-run both before edit:
 
-Execute the configured `metric_cmd` and `guard_cmd` separately with the host-native command runner. Write complete
-combined output to `<run-directory>/metric-baseline.txt` and `<run-directory>/guard-baseline.txt`; retain both exit
-codes and stop before editing if either command cannot run.
+Execute the configured `metric_cmd` and `guard_cmd` separately with the host-native command runner. Write complete combined output to `<run-directory>/metric-baseline.txt` and `<run-directory>/guard-baseline.txt`; retain both exit codes and stop before editing if either command cannot run.
 
 ### 03: Record baseline and hypothesis
 
@@ -80,8 +78,7 @@ One independent hypothesis per iteration. Do not optimize unmeasured paths. Befo
 
 ### 05: Re-measure
 
-Re-run the same retained `metric_cmd` and `guard_cmd` separately with the host-native command runner. Write complete
-combined output to `<run-directory>/metric-after.txt` and `<run-directory>/guard-after.txt`; retain both exit codes.
+Re-run the same retained `metric_cmd` and `guard_cmd` separately with the host-native command runner. Write complete combined output to `<run-directory>/metric-after.txt` and `<run-directory>/guard-after.txt`; retain both exit codes.
 
 ### 06: Compare baseline and after results in `<run-directory>/comparison.md`
 

@@ -1,7 +1,7 @@
 ---
 name: humanizer
 description: 'Strip AI-writing tells from prose destined for humans — docs, PR/commit bodies, reports, release notes, blog posts, Slack/email drafts. Removes LLM-vocabulary clichés (delve, boasts, testament, underscore, robust, tapestry...), banned constructions (not just X but Y, rule-of-three triads, "-ing" superficial-analysis clauses, vague-attribution weasel words), and formatting tells (title-case headings, mechanical bolding, em-dash overuse, curly quotes, bare-bullet inline-header lists). TRIGGER when: user asks to humanize/polish/de-AI a piece of text or file; before finalizing a substantial human-facing prose artifact drafted as part of the current task (docs, PR/commit body, report, blog post, release notes, external message) — self-review pass, best-effort model-initiated, not a guaranteed intercept. SKIP when: output is a terse conversational chat reply, code, JSON/YAML/config, a machine-parsed agent envelope ("Return ONLY:"), or the target is an ultra-caveman-tier handover file (`.temp/`, inter-agent prose per `plugins/CLAUDE.md` compression tiers).'
-argument-hint: "[text or file path to humanize] | check <file>"
+argument-hint: '[text or file path to humanize] | check <file>'
 allowed-tools: Read, Edit, Grep, Glob
 model: haiku
 ---
@@ -35,7 +35,7 @@ Walk the text once per category below; flag every hit before editing anything (r
 **Vocabulary — cut or replace with plain equivalent:**
 
 | Banned | Plain replacement |
-| --- | --- |
+| -- | -- |
 | delve, boasts, testament, underscore(s), showcase, tapestry, intricate/intricacies, meticulous, robust, vibrant, pivotal, crucial, garner, foster(ing), align with, landscape, interplay, enduring, enhance | say the specific thing instead — drop the word, don't swap in another vague one |
 | "stands as", "serves as", "marks a", "represents" (as copula dodge) | "is" / "was" |
 | "Additionally,", "Moreover,", "It is important to note that" | delete, or state the fact directly |

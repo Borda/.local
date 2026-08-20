@@ -4,7 +4,7 @@
 
 **Steps**:
 
-1. Inform: "Complexity: [[COMPLEXITY_TERMS]] — generating [SKILL_VERB] plan before [SKILL_VERB]..."
+1. Inform: "Complexity: \[[COMPLEXITY_TERMS]\] — generating [SKILL_VERB] plan before [SKILL_VERB]..."
 2. Spawn **foundry:sw-engineer** (model=sonnet) to produce structured plan:
    - [PLAN_SECTIONS] — filled by calling skill context below
    - Affected files: list with per-file change description
@@ -19,11 +19,10 @@
 5. On (b) or (c): stop
 6. On (a): set `PLAN_FILE=<path>` and persist it (`echo "$PLAN_FILE" > "${TMPDIR:-/tmp}/dev-plan-file-${CSID}"`) so compaction-contract boundary reads in feature/fix/refactor resolve it across Bash calls; continue to next step
 
----
-
 ### Skill contexts (substitute when calling this protocol)
 
 **feature**:
+
 - `[COMPLEXITY_TERMS]` = medium/large
 - `[SKILL_VERB]` = implementation
 - `[PLAN_SECTIONS]` = Summary (2–3 sentences: what needs to change and why), Affected files, Risks (breaking changes, blast radius, performance implications), Approach (ordered implementation steps numbered)
@@ -31,6 +30,7 @@
 - `[PROCEED_TEXT]` = continue implementation using this plan
 
 **fix**:
+
 - `[COMPLEXITY_TERMS]` = medium/large
 - `[SKILL_VERB]` = fix
 - `[PLAN_SECTIONS]` = Root cause summary (from Step 1 analysis), Affected files, Risks (breaking changes, blast radius, regressions), Approach (ordered fix steps)
@@ -38,6 +38,7 @@
 - `[PROCEED_TEXT]` = continue with fix using this plan
 
 **refactor**:
+
 - `[COMPLEXITY_TERMS]` = medium/wide
 - `[SKILL_VERB]` = refactor
 - `[PLAN_SECTIONS]` = Refactor goal and motivation, Affected files, Risks (API surface changes, caller impact, test coverage gaps), Approach (ordered refactor steps with clear checkpoints)

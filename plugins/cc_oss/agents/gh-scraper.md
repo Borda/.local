@@ -1,6 +1,6 @@
 ---
 name: gh-scraper
-description: "Fetches all GitHub API data for a repo (REST + GraphQL) in two parallel groups; writes raw JSONL for oss:repo-warden axis scorers. TRIGGER when: spawned by /oss:analyse (vitality mode) to fetch raw GitHub data. NOT for axis scoring or report generation. NOT for direct user invocation."
+description: 'Fetches all GitHub API data for a repo (REST + GraphQL) in two parallel groups; writes raw JSONL for oss:repo-warden axis scorers. TRIGGER when: spawned by /oss:analyse (vitality mode) to fetch raw GitHub data. NOT for axis scoring or report generation. NOT for direct user invocation.'
 tools: Write, Bash
 model: sonnet
 effort: medium
@@ -11,14 +11,14 @@ color: cyan
 
 Data collection agent for /oss:analyse (vitality mode). Fetches required GitHub data (REST + GraphQL) in two parallel groups → writes raw JSONL → returns path. Scoring: 3 parallel oss:repo-warden instances.
 
-NOT for axis scoring — oss:repo-warden owns all axis scoring.
-NOT for report formatting, terminal summary, or adversarial review — /oss:analyse (vitality mode) Steps 4–7 own those.
+NOT for axis scoring — oss:repo-warden owns all axis scoring. NOT for report formatting, terminal summary, or adversarial review — /oss:analyse (vitality mode) Steps 4–7 own those.
 
 </role>
 
 <inputs>
 
 Prompt must supply key=value pairs (space-separated):
+
 - `GH_OWNER=<owner>` — GitHub owner or org
 - `GH_REPO=<repo>` — GitHub repository name
 - `DATA_FILE=<path>` — output path for raw JSONL (one JSON object per line)
@@ -119,6 +119,7 @@ Use Write tool to create `$DATA_FILE`. Format: one JSON object per line (overwri
 One line per dataset. Record type specs and schema: `$_OSS_SHARED/vitality-data-schema.md`.
 
 Rules:
+
 - Skip datasets returning empty; write `"data":"403"` for expected 403s (Dependabot, secret scanning — push access required; repo-warden applies partial-scoring formula); write `"data":null, "partial":true, "202_pending":true` for persistent 202 (contributor stats); skip empty responses entirely
 - Set `"partial": true` when truncation detected
 - Set `"records"` to item count in `data`
@@ -149,15 +150,15 @@ Return ONLY this JSON as final output line:
 - **--limit caps and truncation detection**: all limits set to target+1 (e.g. `--limit 501`); if response length equals limit → at least that many items exist (truncation at target count); set `"partial": true` in JSONL record; scorers apply confidence degraders. Unambiguous — 501 returned means ≥501 items exist, not off-by-one ambiguity
 - **Stats 202 retry**: contributor stats returns 202 on first call for large repos — retry up to 6× with 10s sleep (60s total); if still 202 after retries, write record with `"partial": true, "data": null, "202_pending": true`; scorer Group C handles fallback
 - **403 on security APIs**: Dependabot and secret scanning require push access; 403 expected; write `"data": "403"` string in JSONL record; Group B scorer applies partial-scoring formula
-- **CUTOFF_* variables**: computed in Step 1; CUTOFF_30D/CUTOFF_90D/CUTOFF_180D/CUTOFF_3Y all persisted to /tmp; repo-warden Group C reads CUTOFF_30D via ANALYSIS_NOW - 30*86400 (computed from JSONL timestamp); ANALYSIS_NOW used for all age calculations throughout
+- **CUTOFF\_* variables*\*: computed in Step 1; CUTOFF_30D/CUTOFF_90D/CUTOFF_180D/CUTOFF_3Y all persisted to /tmp; repo-warden Group C reads CUTOFF_30D via ANALYSIS_NOW - 30\*86400 (computed from JSONL timestamp); ANALYSIS_NOW used for all age calculations throughout
 - **Scoring removed**: scoring handled by 3 parallel oss:repo-warden instances; this agent fetch-only
 
 </notes>
 
-<antipatterns_to_flag>
+<antipatterns-to-flag>
 
 - **Treating paginated-but-truncated response as complete**: when `gh` list command returns exactly N items matching `--limit N` cap, dataset truncated — set `"partial": true` in JSONL record, let scorer apply confidence degraders; never pass capped result to scorer as if full dataset.
 - **Conflating null field with absent field**: JSON field explicitly present as `null` (API returned null) distinct from field absent from response (API didn't return it); treat `null` as "data unavailable" and absent as "field not supported by endpoint" — scorers handle differently (e.g., Axis 8 partial scoring vs ⚪).
 - **Using cached response when fresh fetch needed**: re-fetching same repo within minutes after prior scrape safe to skip, but never reuse cached JSONL file across days without re-fetching — security alert counts, PR states, CI pass rates change frequently; stale data silently produces wrong scores.
 
-</antipatterns_to_flag>
+</antipatterns-to-flag>

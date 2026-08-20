@@ -1,7 +1,7 @@
 ---
 name: topic
-description: "Research State of the Art (SOTA) literature for an Artificial Intelligence / Machine Learning (AI/ML) topic, method, or architecture. Finds relevant papers, builds a comparison table, recommends the best implementation strategy for the current codebase, and optionally produces a phased implementation plan mapped to the codebase. Owns broad SOTA search end-to-end via foundry:web-explorer; delegates codebase mapping to foundry:solution-architect."
-argument-hint: "<topic> [--team] | plan [<output.md>] [--keep \"<items>\"]"
+description: Research State of the Art (SOTA) literature for an Artificial Intelligence / Machine Learning (AI/ML) topic, method, or architecture. Finds relevant papers, builds a comparison table, recommends the best implementation strategy for the current codebase, and optionally produces a phased implementation plan mapped to the codebase. Owns broad SOTA search end-to-end via foundry:web-explorer; delegates codebase mapping to foundry:solution-architect.
+argument-hint: <topic> [--team] | plan [<output.md>] [--keep "<items>"]
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebSearch, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion, TaskList
 disable-model-invocation: true
 effort: medium
@@ -27,9 +27,9 @@ NOT for deep single-paper analysis or experiment design — use `research:scient
 
 <compaction>
 
-Key boundary: end of Step 2 — SOTA literature gathered and written to AGENT_OUT; before Step 3 report synthesis.
-Preserve: AGENT_OUT path (TMPDIR key), BRANCH (TMPDIR key), DATE (TMPDIR key), REPORT_OUT target path, topic string from ARGUMENTS.
-Clear at Step 1 start (stale prior run) and at follow-up gate (terminal action).
+- Key boundary: end of Step 2 — SOTA literature gathered and written to AGENT_OUT; before Step 3 report synthesis.
+- Preserve: AGENT_OUT path (TMPDIR key), BRANCH (TMPDIR key), DATE (TMPDIR key), REPORT_OUT target path, topic string from ARGUMENTS.
+- Clear at Step 1 start (stale prior run) and at follow-up gate (terminal action).
 
 </compaction>
 
@@ -69,6 +69,7 @@ Read current project before searching, extract constraints:
 **Case-insensitive flag/mode normalization** — normalize before parsing so `--PLAN`, `--Team`, `Plan`, etc. accepted. Each Bash tool call runs fresh shell, so lowercased copy does NOT persist across blocks — re-derive inline from `$ARGUMENTS` (harness-substituted every block) wherever dispatch check needs it, e.g. `echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | …`. Preserve original `$ARGUMENTS` only where literal substitution into prompts required (e.g. topic string).
 
 **Unsupported flag check** (runs BEFORE any mode dispatch to catch unknown flags in all modes): load and follow the protocol below. Supported flags for this skill: `--team`, `--keep`.
+
 ```bash
 # loads: unsupported-flag-protocol.md
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -86,6 +87,7 @@ UNKNOWN_FLAGS=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | grep -oE -- '--
 ```
 
 **Early dispatch for `--team` and `plan` modes** — check BEFORE Steps 2-3. Priority: `--team` wins over `plan` (`plan --team` → Team Mode, topic string = "plan"):
+
 ```bash
 ARGUMENTS_LOWER=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]')  # timeout: 5000
 FIRST_WORD=$(echo "$ARGUMENTS_LOWER" | awk '{print $1}')  # timeout: 5000
@@ -136,7 +138,7 @@ Search targets: arXiv, Papers With Code, Semantic Scholar, HuggingFace Hub. For 
 
 Use Grep tool to search codebase for existing related code:
 
-- Pattern: `$ARGUMENTS` (treat as literal string — if `$ARGUMENTS` contains regex metacharacters like `.`, `*`, `+`, `?`, `(`, `)`, `[`, `]`, `\\`, escape them via `grep -F` semantics, OR escape each metachar with `\\` before passing to Grep tool)
+- Pattern: `$ARGUMENTS` (treat as literal string — if `$ARGUMENTS` contains regex metacharacters like `.`, `*`, `+`, `?`, `(`, `)`, `[`, `]`, `\`, escape them via `grep -F` semantics, OR escape each metachar with `\\` before passing to Grep tool)
 - Glob: `**/*.py`
 - Output mode: `files_with_matches`
 - Limit to 1000 results (per external-data.md — never cap at default 10)
@@ -253,8 +255,7 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 
 ## Team Mode — only when `--team` flag present
 
-> loads: modes/team.md  # also loads: modes/plan.md
-**Mode-file existence check** — verify before reading:
+> loads: modes/team.md # also loads: modes/plan.md **Mode-file existence check** — verify before reading:
 
 ```bash
 _TEAM_MODE="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/skills/topic/modes/team.md"
@@ -269,8 +270,7 @@ Follow `modes/team.md` (loaded above) and execute its workflow.
 
 ## Plan Mode — only when first token of `$ARGUMENTS` is exactly `plan` (not a prefix match — "planning algorithms" must NOT trigger this mode)
 
-> loads: modes/plan.md
-**Mode-file existence check** — verify before reading:
+> loads: modes/plan.md **Mode-file existence check** — verify before reading:
 
 ```bash
 _PLAN_MODE="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/skills/topic/modes/plan.md"
@@ -291,6 +291,7 @@ rm -f .temp/state/skill-contract.md  # clear contract — topic research complet
 ```
 
 Call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
+
 - question: "What next?"
 - (a) label: `/research:plan` — description: design a research program from these findings
 - (b) label: `/develop:feature` — description: implement based on findings (requires `develop` plugin)

@@ -4,7 +4,7 @@ description: >-
   Query Codemap's Python structural index for dependencies, callers, paths, symbols, blast radius, test impact,
   mocks, fixtures, subprocesses, and static gaps. Trigger for "what depends on", "who calls", "imports of",
   "dependency graph", or "blast radius". Skip for renames, text search, non-Python repositories, or index rebuilds.
-argument-hint: "<rdeps|deps|path|central|coupled|symbol|symbols|find-symbol|fn-rdeps|fn-deps|fn-blast|diff-impact|test-impact|mock-rdeps|fixture-rdeps|fixture-graph|subprocess-deps|subprocess-rdeps|coverage|coverage-gap|undocumented> ..."
+argument-hint: <rdeps|deps|path|central|coupled|symbol|symbols|find-symbol|fn-rdeps|fn-deps|fn-blast|diff-impact|test-impact|mock-rdeps|fixture-rdeps|fixture-graph|subprocess-deps|subprocess-rdeps|coverage|coverage-gap|undocumented> ...
 allowed-tools: Bash(codemap-py query:*), Bash(*/bin/codemap-py* query:*), Read, Write
 model: haiku
 effort: low
@@ -13,8 +13,7 @@ effort: low
 <objective>
 Answer structural Python questions via unified `codemap-py query` CLI.
 
-NOT for: rebuilding the index (use `/codemap-py:scan-codebase`), renaming symbols (use `/codemap-py:rename-refs`), or which tests cover or are affected by a change (use `/codemap-py:test-impact`).
-</objective>
+NOT for: rebuilding the index (use `/codemap-py:scan-codebase`), renaming symbols (use `/codemap-py:rename-refs`), or which tests cover or are affected by a change (use `/codemap-py:test-impact`). </objective>
 
 Test-impact split: a one-off structural fact ("which tests would this touch?") uses table subcommand `test-impact <target>`; full affected-test workflow (index ensure, JSON parse, `pytest` command, `not_covered` caveat) uses `/codemap-py:test-impact`. NOT-for defers workflow, not subcommand.
 
@@ -33,7 +32,7 @@ codemap-py query --compact <subcommand> [arguments]
 Enabled plugin adds version-matched `bin/` to Bash `PATH`. If unavailable interactively, invoke installed plugin's absolute `bin/codemap-py` launcher as one standalone command and accept normal host permission prompt. Prepend no `cd`, `export`, or other shell command.
 
 | Goal | Query subcommand |
-| --- | --- |
+| -- | -- |
 | production module importers / blast radius | `rdeps <module> --exclude-tests` |
 | direct test-module importers | `rdeps <module>` then filter/report test modules |
 | module imports | `deps <module>` |

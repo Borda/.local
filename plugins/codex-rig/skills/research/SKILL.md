@@ -1,6 +1,6 @@
 ---
 name: research
-description: "Research docs, papers, or state of the art; provide source-backed recommendations and caveats."
+description: Research docs, papers, or state of the art; provide source-backed recommendations and caveats.
 ---
 
 # Research
@@ -67,11 +67,7 @@ Do not send full papers, repositories, or all search results to every specialist
 
 Inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect `working-tree` scope into `<run-directory>/baseline`. Run topic scan separately; record unavailable paths/collection failures as evidence gaps.
 
-**Structural context (optional)**: for `sota`/`code-fidelity` questions naming a Python module/symbol, also probe
-codemap-py once: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category analysis [--target <qname>] --out
-<run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal —
-continue with the codebase mapping above. Persist the result once here; any specialist context pack from step 03
-includes `<run-directory>/codemap-context.json`, never a fresh query.
+**Structural context (optional)**: for `sota`/`code-fidelity` questions naming a Python module/symbol, also probe codemap-py once: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category analysis [--target <qname>] --out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with the codebase mapping above. Persist the result once here; any specialist context pack from step 03 includes `<run-directory>/codemap-context.json`, never a fresh query.
 
 ### 05: Produce `<run-directory>/research.md` with:
 
@@ -95,8 +91,7 @@ includes `<run-directory>/codemap-context.json`, never a fresh query.
 
 ### 07: Run review gate
 
-Run `git diff --check` as an argv command. Write its combined output to `<run-directory>/review.txt` and retain its
-exit status as review evidence; do not erase a nonzero result.
+Run `git diff --check` as an argv command. Write its combined output to `<run-directory>/review.txt` and retain its exit status as review evidence; do not erase a nonzero result.
 
 ### 08: Run shared gates and write the validated result artifact
 

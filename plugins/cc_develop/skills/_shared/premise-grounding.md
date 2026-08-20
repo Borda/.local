@@ -16,16 +16,13 @@ For each premise found:
 1. List: `PREMISE: <claim>`
 2. Classify source needed — see Evidence Authority below
 3. Read that source now; confirm claim matches
-4. If unverified: STOP — invoke `AskUserQuestion`:
-   "Premise `<claim>` has no verified source. Options:"
+4. If unverified: STOP — invoke `AskUserQuestion`: "Premise `<claim>` has no verified source. Options:"
    - (a) Provide authoritative source (link or file path)
    - (b) Premise is false — revise design/hypothesis to remove it
    - (c) Run experimental validation (write minimal test/script that proves or refutes it)
    - (d) Accept as unverified risk and proceed
 
 Do not build on any premise failing step 3. Memory or training knowledge never evidence — [CONSEQUENCE] if premise false.
-
----
 
 ## Evidence Authority
 
@@ -60,22 +57,24 @@ When only Tier 2 sources available: find ≥3 genuinely independent corroboratin
 4. Tier upgrade: if tracing reveals a Tier 1 source (official doc, spec, changelog) cited by a Tier 2 source but not found directly — read it; if it confirms claim, premise becomes Tier 1 verified (sufficient alone)
 5. After tracing, distinct-origin count < 3 and no Tier 1 found → require experimental validation
 
----
-
 ### Skill contexts (substitute when calling this protocol)
 
 **feature**:
+
 - `[SCAN_SOURCE]` = scope analysis, feature description, and any API/library assumptions in proposed approach
 - `[CONSEQUENCE]` = feature ships built on wrong design
 
 **fix**:
+
 - `[SCAN_SOURCE]` = root cause analysis, proposed fix approach, and any behavioral assumptions about failing code path
 - `[CONSEQUENCE]` = fix ships wrong code
 
 **refactor**:
+
 - `[SCAN_SOURCE]` = goal statement, sw-engineer analysis output, and any assumptions about current code behavior or caller impact
 - `[CONSEQUENCE]` = unnecessary or wrong structural change lands in codebase
 
 **debug**:
+
 - `[SCAN_SOURCE]` = root cause hypothesis and all supporting evidence claims
 - `[CONSEQUENCE]` = fix addresses wrong mechanism, symptom returns

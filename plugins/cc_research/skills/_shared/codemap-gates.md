@@ -11,6 +11,7 @@ _CM_SHARED="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap-py/*/claude-sk
 Read currency: `IFS= read -r CODEMAP_CURRENCY < "${TMPDIR:-/tmp}/research-codemap-currency-${CSID}" 2>/dev/null || CODEMAP_CURRENCY="no_index"`.
 
 Contract (`v2`) — follow both gates with research's skip flag:
+
 - **Gate A — missing index**: fire when `CODEMAP_ENABLED=false` and `CODEMAP_RAW=auto`.
 - **Gate B — stale index**: fire when `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`.
 

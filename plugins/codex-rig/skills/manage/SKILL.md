@@ -1,16 +1,13 @@
 ---
 name: manage
-description: "Manage Codex agents, skills, or config entries: create, update, or remove with guardrails."
+description: 'Manage Codex agents, skills, or config entries: create, update, or remove with guardrails.'
 ---
 
 # Manage
 
 Guarded Codex config management for agents, skills, rules, and local config.
 
-The installed plugin tree is immutable input. Resolve requested targets against the consuming project or an explicit
-user-approved external scope; never edit this skill's plugin cache, packaged role cards, shared helpers, runtime
-assets, or package manifests. Codex Rig agent links are managed only by the bundled `agent-shims` workflow, not by
-this general-purpose skill.
+The installed plugin tree is immutable input. Resolve requested targets against the consuming project or an explicit user-approved external scope; never edit this skill's plugin cache, packaged role cards, shared helpers, runtime assets, or package manifests. Codex Rig agent links are managed only by the bundled `agent-shims` workflow, not by this general-purpose skill.
 
 ## Input Schema
 
@@ -43,15 +40,11 @@ Unknown intent => fail before edit.
 
 ### 03: Resolve owned files and blast radius
 
-Run `rg --files` with the `AGENTS.md`, `.codex/**`, and `.agents/**` globs as an argv command; sort its lines and write
-them to `<run-directory>/inventory.txt`. Run `rg -n` for the exact target over `.codex`, `.agents`, and `AGENTS.md`,
-write results to `<run-directory>/references.txt`, and record unavailable inputs or command failure explicitly.
+Run `rg --files` with the `AGENTS.md`, `.codex/**`, and `.agents/**` globs as an argv command; sort its lines and write them to `<run-directory>/inventory.txt`. Run `rg -n` for the exact target over `.codex`, `.agents`, and `AGENTS.md`, write results to `<run-directory>/references.txt`, and record unavailable inputs or command failure explicitly.
 
 Write `<run-directory>/ownership.md`: exact edited and intentionally untouched files.
 
-Resolve the current skill path and reject any target whose canonical path is inside the same installed plugin root.
-Reject generated `codex-rig-*.toml` targets here even when they are outside the cache; report the dedicated lifecycle
-workflow as the only permitted owner.
+Resolve the current skill path and reject any target whose canonical path is inside the same installed plugin root. Reject generated `codex-rig-*.toml` targets here even when they are outside the cache; report the dedicated lifecycle workflow as the only permitted owner.
 
 ### 04: Run safety gates before editing
 
@@ -61,25 +54,18 @@ Deletion safety required for `delete` and `rename`.
 - Permission changes: reason, use case, risk note.
 - Public behavior change: consider docs/routing/calibration.
 - Versioned calibration fixtures are committed-history markers: compare current value to `git show HEAD:<path>`; while uncommitted, advance at most one step from last committed value.
-- A new-commit request never authorizes rewriting an existing commit. Amend, rebase, reset, squash, fixup, and
-  equivalent history edits require an explicit request for that exact operation.
+- A new-commit request never authorizes rewriting an existing commit. Amend, rebase, reset, squash, fixup, and equivalent history edits require an explicit request for that exact operation.
 - Home sync out of scope unless explicitly requested.
 
 ### 05: Apply the smallest reversible edit
 
-Use Codex's native scope: `.agents/skills/` for repository skills, `AGENTS.md` for repository guidance, and
-`.codex/config.toml` for project runtime settings. Use custom agent-config paths only when the active Codex contract
-and user request require them.
-Never infer that the source repository is present from the installed cache layout.
+Use Codex's native scope: `.agents/skills/` for repository skills, `AGENTS.md` for repository guidance, and `.codex/config.toml` for project runtime settings. Use custom agent-config paths only when the active Codex contract and user request require them. Never infer that the source repository is present from the installed cache layout.
 
 ### 06: Propagate references
 
 For behavior changes, update relevant descriptions, mappings, routing text, calibration notes in same patch. List intentionally stale references in `<run-directory>/unresolved-references.md`.
 
-For broad changes with separable config, docs, calibration, or verification workstreams, route through
-`delegation-lead` and shared specialist orchestration. Use the lowest-cost capable canonical role per bounded
-workstream. Accept delegated change only after the handover gate proves ownership, objective evidence, applicable
-checks, visible unresolved limits, and parent-owned final acceptance.
+For broad changes with separable config, docs, calibration, or verification workstreams, route through `delegation-lead` and shared specialist orchestration. Use the lowest-cost capable canonical role per bounded workstream. Accept delegated change only after the handover gate proves ownership, objective evidence, applicable checks, visible unresolved limits, and parent-owned final acceptance.
 
 ### 07: Run shared quality gates
 

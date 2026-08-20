@@ -41,7 +41,7 @@ from _safe_package_io import inventory_package_files, read_safe_file
 
 MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 MAX_PACKAGE_FILE_BYTES = 16 * 1024 * 1024
-EXCLUDED_PARTS = frozenset({"__pycache__", ".pytest_cache"})
+EXCLUDED_PARTS = frozenset({"__pycache__", ".pytest_cache", ".reports"})
 EXCLUDED_FILES = frozenset({".coverage", "package-manifest.json"})
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 MODE_PATTERN = re.compile(r"0[0-7]{3}")

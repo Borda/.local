@@ -1,6 +1,6 @@
 # Python/PyPI Release Checklist
 
-Release notes format + CHANGELOG generation: use `/oss:release` skill. CI publish YAML: see `oss:cicd-steward` agent `<trusted_publishing>` section.
+Release notes format + CHANGELOG generation: use `/oss:release` skill. CI publish YAML: see `oss:cicd-steward` agent `<trusted-publishing>` section.
 
 ## Pre-release
 

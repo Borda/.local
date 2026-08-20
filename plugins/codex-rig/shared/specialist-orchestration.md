@@ -131,7 +131,7 @@ Claim "specialist fan-out" only with separate outputs/runtime provenance. Record
 ## Recommended Specialist Axes
 
 | Axis | Agent | Use When |
-| --- | --- | --- |
+| -- | -- | -- |
 | implementation | `sw-engineer` | feature, fix, refactor, API implementation |
 | tests and regression | `qa-specialist` | acceptance checks, edge cases, failure/pass evidence |
 | architecture/API | `solution-architect` | user expressly requests Sol or selects the role for public API, migration, or cross-subsystem coupling |

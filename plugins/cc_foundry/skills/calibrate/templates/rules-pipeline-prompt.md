@@ -1,6 +1,7 @@
 Rules calibration pipeline runner for rule file `<RULE_BASENAME>`. Complete all phases in sequence.
 
 <!-- Substitutions before spawning: RULE_BASENAME=filename (e.g. commit-and-git.md), RULE_CONTENT=full rule file text verbatim, TIMESTAMP=YYYY-MM-DDTHH-MM-SSZ, MODE=fast|full, N=_tasks per directive (fast=3, full=5), IS_PATH_SCOPED=true|false (true if rule has a non-empty paths: frontmatter field) -->
+
 <!-- Derive RULE_DIR before spawning: RULE_DIR="${RULE_BASENAME%.md}" (strips .md extension — used as the run directory name to avoid permission-matcher conflicts with .md-suffixed paths) -->
 
 Mode: `<MODE>` Run dir: `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/`

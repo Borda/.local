@@ -5,7 +5,7 @@
 Foundry **not** installed: substitute `foundry:X` with `general-purpose`, prepend role description + `model: <model>` to spawn call:
 
 | foundry agent | Fallback | Model | Role description prefix |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | `foundry:sw-engineer` | `general-purpose` | `opus` | `You are a senior Python software engineer. Write production-quality, type-safe code following SOLID principles.` |
 | `foundry:qa-specialist` | `general-purpose` | `opus` | `You are a QA specialist. Write deterministic, parametrized pytest tests covering edge cases and regressions.` |
 | `foundry:perf-optimizer` | `general-purpose` | `opus` | `You are a performance engineer. Profile before changing. Focus on CPU/GPU/memory/IO bottlenecks in Python/ML workloads.` |
@@ -14,5 +14,4 @@ Foundry **not** installed: substitute `foundry:X` with `general-purpose`, prepen
 | `foundry:solution-architect` | `general-purpose` | `opusplan` | `You are a system design specialist. Evaluate scope, architectural dependencies, and feasibility. Return structured JSON only.` |
 | `foundry:web-explorer` | `general-purpose` | `sonnet` | `You are a web research specialist. Fetch and extract structured information from URLs; summarize documentation, changelogs, and API references.` |
 
-`research:scientist` same plugin — no fallback if research plugin installed.
-Skills with `--team` mode: fallback agents work, lower quality. Apply fallback only for agents skill dispatches to.
+`research:scientist` same plugin — no fallback if research plugin installed. Skills with `--team` mode: fallback agents work, lower quality. Apply fallback only for agents skill dispatches to.

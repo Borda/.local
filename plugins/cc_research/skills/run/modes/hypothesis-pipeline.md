@@ -1,7 +1,6 @@
 # Hypothesis Pipeline — run/SKILL.md sidecar
 
-Loaded by Step R0 when `--researcher` or `--architect` active.
-Contains oracle agent orchestration, feasibility annotation, queue filtering, checkpoint resume.
+Loaded by Step R0 when `--researcher` or `--architect` active. Contains oracle agent orchestration, feasibility annotation, queue filtering, checkpoint resume.
 
 > **Research run directory**: outputs (`hypotheses.jsonl`, `checkpoint.json`, `journal.md`) go to `.experiments/<run-id>/` — timestamped dir created at R0 start, distinct from `.experiments/state/<run-id>/`. Called `<RUN_DIR>` throughout. See `protocol.md` (companion file, same skill dir) for layout.
 

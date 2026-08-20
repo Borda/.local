@@ -25,6 +25,7 @@ Apply hierarchy to every fix at all severity levels.
 Classify each finding from `summary.jsonl` before spawning fix agents to avoid stale-read conflicts (agent reads file A → concurrent agent modifies file A → first agent's assumptions wrong).
 
 **Parallel-safe** (ALL four must hold — apply after same-file coalescing in criterion 4):
+
 1. Fix writes only to the file that contains the finding
 2. Finding category is in `PARALLEL_SAFE_CATEGORIES`: `{hardcoded-path, missing-confidence-block, typo, heading-hierarchy, duplicate-lines, broken-bash-fence, stale-version-ref, missing-frontmatter-field, verbose-bash-block}` — any category not in this list defaults to sequential
 3. No other finding in this batch writes to a file this fix reads from
@@ -37,11 +38,13 @@ Parallel-safe examples: typos, hardcoded `/Users/` paths (replacement is `~/`), 
 Sequential examples: broken cross-reference (must verify target name on current disk), inventory drift (must read MEMORY.md), README sync (must read agent/skill source files).
 
 **Two-phase dispatch**:
+
 - **Phase 1 — Parallel basket**: issue ALL parallel-safe fix spawns in a single response. Each agent touches only its own file with self-contained changes.
+
 - **Phase 2 — Sequential basket**: after Phase 1 complete, spawn **foundry:curator** mini-agent to re-read files modified in Phase 1 that are dependency inputs for Phase 2 fixes — orchestrator must NOT inline-read modified files (orchestration contract: see SKILL.md `## Pre-flight checks` orchestration rule). Mini-agent returns updated finding refs (refreshed line numbers, moot findings dropped). Then dispatch Phase 2 fixes using category→dependency table:
 
   | Category | Reads from | Serialization rule |
-  | --- | --- | --- |
+  | -- | -- | -- |
   | broken-cross-ref | target agent/skill file | serialize after any fix that renames/moves target |
   | inventory-drift | MEMORY.md | serialize after any fix that adds/removes agents or skills |
   | README-sync | agent/skill source files | serialize after any fix that modifies an agent/skill file |
@@ -143,7 +146,7 @@ For every file changed in Step 8, spawn **foundry:curator** to confirm fix resol
 grep -n "BROKEN_NAME" FIXED_FILE
 ```
 
-**Confidence re-run**: parse confidence scores from Step 3 and Step 10 summaries. **Score < 0.80**: Step 5b already ran a three-pass remediation (double-reasoning, docs consultation, Codex adversarial) — if Step 10 re-audit still scores < 0.80 after Step 5b, flag with ⚠, include gap in final report. Recurring low-confidence gaps (same gap, same file, multiple runs) → candidate for foundry:curator `\<antipatterns_to_flag>` or agent instructions.
+**Confidence re-run**: parse confidence scores from Step 3 and Step 10 summaries. **Score < 0.80**: Step 5b already ran a three-pass remediation (double-reasoning, docs consultation, Codex adversarial) — if Step 10 re-audit still scores < 0.80 after Step 5b, flag with ⚠, include gap in final report. Recurring low-confidence gaps (same gap, same file, multiple runs) → candidate for foundry:curator `<antipatterns-to-flag>` or agent instructions.
 
 **Convergence loop**: re-audit surfaces new fixable findings within gate-selected severity threshold → loop back to Step 8. Repeat until:
 

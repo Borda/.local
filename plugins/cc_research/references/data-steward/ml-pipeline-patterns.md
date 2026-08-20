@@ -1,11 +1,12 @@
----
 <!-- Loaded by research:data-steward (sonnet + medium) -->
-# Reference document — NOT an agent definition. Used by research:data-steward as contextual material.
+
 # ML Pipeline Patterns — data-steward reference
 
-Loaded by data-steward agent in `pipeline-audit` mode before Step 1.
-Contains: split strategies for grouped/temporal data, class imbalance handling, DataLoader integrity patterns.
-\<split_strategies>
+> Reference document, NOT an agent definition — contextual material for `research:data-steward`.
+
+Loaded by data-steward agent in `pipeline-audit` mode before Step 1. Contains: split strategies for grouped/temporal data, class imbalance handling, DataLoader integrity patterns.
+
+<split-strategies>
 
 ## Patient-Level Split (medical imaging — CRITICAL)
 
@@ -54,9 +55,9 @@ Sort by time, sequential split: 70%/15%/15% train/val/test, no shuffle.
 - **Multi-granularity time**: if data mixes event timestamps (ms) and day-level aggregates, normalise to single granularity (or split on coarser one) before sorting — global sort otherwise places aggregates non-deterministically.
 - **Multi-entity datasets (e.g. per-patient time-series)**: global temporal sort does NOT isolate entity-level ordering — patient A's future can land before patient B's past. Combine with Patient-Level Split above: group by entity, sort within each group, allocate each group's rows to splits independently. Use Patient-Level Split as outer split, apply this temporal sort *within* each group.
 
-\</split_strategies>
+</split-strategies>
 
-\<class_imbalance>
+<class-imbalance>
 
 ## Detection
 
@@ -77,9 +78,9 @@ ratio = majority / minority  # >10x severe; 2-10x moderate
 4. **SMOTE/augmentation** for minority classes
 5. **Threshold tuning** on classifier output (classification only)
 
-\</class_imbalance>
+</class-imbalance>
 
-\<dataloader_patterns>
+<dataloader-patterns>
 
 ## Recommended Configuration
 
@@ -109,4 +110,4 @@ loader = DataLoader(
 )
 ```
 
-\</dataloader_patterns>
+</dataloader-patterns>

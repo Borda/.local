@@ -1,6 +1,9 @@
 <!-- oss:resolve Step 8 — executed via: cat $_OSS_RESOLVE/modes/action-item-dispatch.md; execute -->
+
 <!-- fragment — no <workflow> wrapper; executed inline by SKILL.md -->
+
 <!-- Input: SELECTED_ITEMS (from Step 3e), COMMIT_MODE (from Step 3d), CODEX_AVAILABLE (from Step 1), PR_REF (from Step 4), $_OSS_RESOLVE, ARGUMENTS -->
+
 <!-- Output: items implemented/staged/committed; CHALLENGE_LOG populated; CHANGE_SCOPE set for Step 9 -->
 
 ## Step 8: Implement action items
@@ -49,7 +52,7 @@ Lock released in Phase 3's cleanup block. Crash before that leaks it — by desi
 `change` → `IMPL_AGENT` routing table — drives Phase 2 specialist grouping **unconditionally** (not gated behind `CODEX_AVAILABLE`; Codex only ever handles items via the C1 medium-effort shortcut below, never as a Phase 2 specialist group). Keep in sync with `_shared/review-section-taxonomy.md`'s resolve `change` column:
 
 | `change` value | `IMPL_AGENT` |
-| --- | --- |
+| -- | -- |
 | `code` · `refactor` · `config` · `ci` | `foundry:sw-engineer` |
 | `test` | `foundry:qa-specialist` |
 | `docs` | `foundry:doc-scribe` |
@@ -66,6 +69,7 @@ Lock released in Phase 3's cleanup block. Crash before that leaks it — by desi
 Process items in `SELECTED_ITEMS` (from Step 3e) in priority order (`[req]` first, then `[suggest]`).
 
 **Codex effort classification** — classify each item before dispatch; set `ITEM_EFFORT`; aggregate to `CHANGE_SCOPE` for Step 9:
+
 - typo/spelling/whitespace/formatting/comment/rename-single/docstring → `medium`; multi-file/refactor/architecture/new-feature/redesign → `xhigh`; all else → `high` (default)
 - Minimum effort is always `medium` — never `low`
 - `ITEM_EFFORT` set per item; include in agent prompt as `"Effort level: $ITEM_EFFORT.\n..."` prefix
@@ -158,6 +162,7 @@ Implement directly if the issue clearly exists. Return ONLY compact JSON as your
 ```
 
 Parse JSON:
+
 - **DONE** → mark item resolved; stage/commit per `COMMIT_MODE`; append to `CHALLENGE_LOG`: `id=<id> finding=<full_comment_text, truncate ~80 chars> evidence=VALID evidence_why=<Codex reason> suggestion=VALID suggestion_why=<Codex reason> resolution=codex-direct detail=<Codex reason>`; skip Phase 1+2; proceed to next item
 - **UNCERTAIN** → fall through to Phase 1+2 (normal challenge + implementation flow)
 
@@ -170,7 +175,7 @@ When `CODEX_AVAILABLE=false` OR `ITEM_EFFORT!=medium`: skip Codex routing; use P
 Route by domain to foreground challenge agent:
 
 | Item domain | Challenger |
-| --- | --- |
+| -- | -- |
 | Architecture, API design, coupling | `foundry:challenger` |
 | Code logic, correctness, edge cases | `foundry:sw-engineer` |
 | Test coverage, assertions, regressions | `foundry:qa-specialist` |
@@ -219,11 +224,12 @@ fi
 ```
 
 Parse each group's per-item verdict array — same granularity as a single-item challenge, never relaxed by grouping:
+
 - `evidence=REJECT` → print `⊘ #<id> evidence rejected: <evidence_rationale>`; set type `[challenged:reject]`; append to `CHALLENGE_LOG`: `id=<id> finding=<full_comment_text, truncate ~80 chars> evidence=REJECT evidence_why=<evidence_rationale> suggestion=— suggestion_why=— resolution=rejected detail=<evidence_rationale>`; drop from `SURVIVING_ITEMS`
 - `evidence=VALID` + `suggestion=VALID` → `SUGGESTION_VERDICT[id]=VALID`; use original suggestion for implementation
 - `evidence=VALID` + `suggestion=REJECT` → `SUGGESTION_VERDICT[id]=REJECT`; self-resolve using `alternative` as guidance
 
-Append every surviving item's verdict to `CHALLENGE_LOG`: `id=<id> finding=<full_comment_text, truncate ~80 chars> evidence=VALID evidence_why=<evidence_rationale> suggestion=<VALID|REJECT> suggestion_why=<suggestion_rationale> resolution=<as-suggested|self-resolved> detail=<when suggestion=REJECT: the `alternative` text — this is what actually gets implemented instead; when suggestion=VALID: leave as `pending-impl:<id>`, Step 11 backfills it from the item's actual commit summary once Phase 2 lands, so the report never prints a bare label with no stated content>`. Items with `evidence=VALID` form `SURVIVING_ITEMS`.
+Append every surviving item's verdict to `CHALLENGE_LOG`: `id=<id> finding=<full_comment_text, truncate ~80 chars> evidence=VALID evidence_why=<evidence_rationale> suggestion=<VALID|REJECT> suggestion_why=<suggestion_rationale> resolution=<as-suggested|self-resolved> detail=<when suggestion=REJECT: the `alternative`text — this is what actually gets implemented instead; when suggestion=VALID: leave as`pending-impl:<id>`, Step 11 backfills it from the item's actual commit summary once Phase 2 lands, so the report never prints a bare label with no stated content>`. Items with `evidence=VALID` form `SURVIVING_ITEMS`.
 
 ### Phase 2: Implementation — parallel, one worktree per specialist
 

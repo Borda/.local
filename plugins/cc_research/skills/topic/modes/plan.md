@@ -20,6 +20,7 @@ Produce sequenced, dependency-ordered implementation plan from SOTA research fin
 **Validation**: file must contain clear **Recommendation** section naming specific method. Missing or ambiguous → stop: "Research output does not contain a clear method recommendation — run `/research:topic <topic>` first, then pass the output path."
 
 Before spawning in Steps P2–P3, pre-compute output path components:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
@@ -31,6 +32,7 @@ PLAN_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-o
 # Absolute path — hooks/enforce-topic-header.js reads this to gate the follow-up question
 echo "$PWD/$PLAN_OUT" > "${TMPDIR:-/tmp}/research-topic-report-file-${CSID}"
 ```
+
 <!-- same branch/date pattern as Step 2a block -->
 
 ### Step P2: Codebase analysis

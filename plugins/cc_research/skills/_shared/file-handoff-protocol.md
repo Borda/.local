@@ -5,7 +5,7 @@
 - Any skill spawning **2+ agents in parallel** for analysis/review
 - Any **single agent** expected to produce >500 tokens of findings/analysis
 - Exception: implementation agents (writing code) return inline — output IS deliverable
-- Exception: single-agent single-question spawns where output inherently short (<200 tokens)
+- Exception: single-agent single-question spawns where output inherently short (\<200 tokens)
 
 ## Agent contract
 
@@ -56,7 +56,7 @@ Three tiers — pick based on what the dir holds:
 ## Consolidator threshold
 
 - **4+ agent files** → mandatory consolidator; reads all files, writes final report
-- **2–3 agent files** → orchestrator may read directly **only if** total expected content <2K tokens
+- **2–3 agent files** → orchestrator may read directly **only if** total expected content \<2K tokens
 - Consolidator type: same domain as lead reviewer (e.g. `foundry:sw-engineer` for code review, `foundry:curator` for config audit)
 
 ## Consolidator prompt template
@@ -73,7 +73,7 @@ Main context receives only envelope JSON.
 ## Envelope fields reference
 
 | Field | Required | Description |
-| --- | --- | --- |
+| -- | -- | -- |
 | `status` | yes | `"done"`, `"done_with_concerns"`, `"needs_context"`, `"timed_out"`, `"error"` |
 | `findings` | yes | total finding count (0 if none) |
 | `severity` | yes | `{"critical":N,"high":N,"medium":N,"low":N}` |
@@ -84,7 +84,7 @@ Main context receives only envelope JSON.
 ## Status semantics
 
 | Value | When to use |
-| --- | --- |
+| -- | -- |
 | `"done"` | Completed, full confidence |
 | `"done_with_concerns"` | Completed but agent has doubts — low confidence, incomplete coverage, or unverifiable claims; orchestrator surface this, not silently accept |
 | `"needs_context"` | No quality output; re-run with specific context named in `summary` unblocks agent |

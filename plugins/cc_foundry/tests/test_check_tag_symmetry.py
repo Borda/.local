@@ -112,15 +112,50 @@ class TestCheckFile:
         violations = _messages(cts.check_file(f))
         assert any("empty block" in v and "constants" in v for v in violations)
 
+    def test_underscore_tag_name_flagged_with_hyphen_suggestion(self, tmp_path: Path) -> None:
+        """A block tag whose name carries an underscore is not a CommonMark tag."""
+        f = tmp_path / "underscore.md"
+        f.write_text("<routing_boundaries>\ncontent\n</routing_boundaries>\n", encoding="utf-8")
+        violations = _messages(cts.check_file(f))
+        assert any("underscore in structural tag <routing_boundaries>" in v for v in violations)
+        assert any("<routing-boundaries>" in v for v in violations)
+
+    def test_underscore_check_is_not_limited_to_the_registry(self, tmp_path: Path) -> None:
+        """A name nobody registered still breaks the same way, so it is still flagged."""
+        f = tmp_path / "novel.md"
+        f.write_text("<never_registered>\ncontent\n</never_registered>\n", encoding="utf-8")
+        kinds = [v.kind for v in cts.check_file(f)]
+        assert cts.FindingKind.UNDERSCORE_TAG in kinds
+
+    def test_hyphenated_tag_name_not_flagged(self, tmp_path: Path) -> None:
+        f = tmp_path / "hyphen.md"
+        f.write_text("<routing-boundaries>\ncontent\n</routing-boundaries>\n", encoding="utf-8")
+        assert cts.check_file(f) == []
+
+    def test_underscore_placeholder_in_prose_not_flagged(self, tmp_path: Path) -> None:
+        """Only whole-line tags are structural; `<a_b>` inside a sentence is a placeholder."""
+        f = tmp_path / "prose.md"
+        f.write_text("<role>\nWrite to <output_path> when done.\n</role>\n", encoding="utf-8")
+        assert cts.check_file(f) == []
+
+    def test_underscore_tag_inside_wide_fence_not_flagged(self, tmp_path: Path) -> None:
+        """A four-backtick template fence hides its inner three-backtick block too."""
+        f = tmp_path / "template.md"
+        f.write_text(
+            "<role>\ncontent\n</role>\n\n````\n**Run:**\n```\n<pytest_cmd>\n```\n````\n",
+            encoding="utf-8",
+        )
+        assert cts.check_file(f) == []
+
     def test_escaped_structural_tag_flagged_as_low(self, tmp_path: Path) -> None:
         """Backslash-escaped structural tag in prose is flagged with [low] severity."""
         f = tmp_path / "escaped.md"
         f.write_text(
-            "<role>\ncontent\n</role>\nProse mentioning \\<antipatterns_to_flag> should be flagged.\n",
+            "<role>\ncontent\n</role>\nProse mentioning \\<antipatterns-to-flag> should be flagged.\n",
             encoding="utf-8",
         )
         violations = _messages(cts.check_file(f))
-        assert any("escaped structural tag" in v and "antipatterns_to_flag" in v for v in violations)
+        assert any("escaped structural tag" in v and "antipatterns-to-flag" in v for v in violations)
         assert any("[low]" in v for v in violations)
 
     def test_escaped_tag_inside_backtick_not_flagged(self, tmp_path: Path) -> None:
@@ -155,8 +190,8 @@ class TestCheckFile:
             "not-for",
             "role",
             "initialization",
-            "antipatterns_to_flag",
-            "core_knowledge",
+            "antipatterns-to-flag",
+            "core-knowledge",
         ],
     )
     def test_all_structural_tags_covered(self, tmp_path: Path, tag: str) -> None:
@@ -179,6 +214,89 @@ class TestCheckFile:
             cts.FindingKind.UNBALANCED,
             cts.FindingKind.ESCAPED_TAG,
         }
+
+
+class TestDynamicBalance:
+    """Covers balance checking of tag names discovered in the file rather than registered."""
+
+    def test_unregistered_block_duplicated_by_prose_fusion_is_flagged(self, tmp_path: Path) -> None:
+        """A block whose opening tag also survives inside a prose paragraph is unbalanced.
+
+        This is the shape a paragraph-fusion repair leaves behind: the original tag had been
+        swallowed into the intro paragraph, and separating it out re-emitted the tag without
+        removing the swallowed copy, so two opens face a single close. The name belongs to no
+        registry, which is precisely why the registry-driven check reported the file clean.
+        """
+        f = tmp_path / "reference.md"
+        f.write_text(
+            "Intro sentence naming the block. <split-strategies>\n"
+            "\n"
+            "<split-strategies>\n"
+            "\n"
+            "content\n"
+            "\n"
+            "</split-strategies>\n",
+            encoding="utf-8",
+        )
+        violations = _messages(cts.check_file(f))
+        assert len(violations) == 1
+        assert "unbalanced <split-strategies> — 2 open, 1 close" in violations[0]
+
+    def test_attributed_open_pairs_with_plain_close(self, tmp_path: Path) -> None:
+        """An open tag carrying attributes still pairs with its bare closing tag.
+
+        Collapsible sections in plugin READMEs are written `<details open>` on one line and
+        closed by a bare `</details>` on its own. Matching the open form literally would count
+        every such section as a missing open and bury a real defect under README noise.
+        """
+        f = tmp_path / "readme.md"
+        f.write_text(
+            "<details open>\n<summary>Title</summary>\n\nbody\n\n</details>\n",
+            encoding="utf-8",
+        )
+        assert cts.check_file(f) == []
+
+    def test_placeholder_only_seen_inline_is_never_discovered(self, tmp_path: Path) -> None:
+        """A `<name>` that only ever appears mid-sentence is a placeholder, not a block.
+
+        Skill prose is full of unpaired argument placeholders. Discovering names from any
+        occurrence would report every one of them as unbalanced; requiring a standalone line
+        is what separates a block from a placeholder.
+        """
+        f = tmp_path / "skill.md"
+        f.write_text("Pass <output-path> to the script, then read <output-path>.\n", encoding="utf-8")
+        assert cts.check_file(f) == []
+
+    def test_code_span_quoting_an_html_comment_does_not_leak_later_tags(self, tmp_path: Path) -> None:
+        """A line whose code span quotes an HTML comment keeps its later spans intact.
+
+        Stripping comments before code spans deletes the comment out of the span and leaves its
+        two backticks adjacent; every later span on the line then pairs one delimiter off, so
+        quoted prose is treated as code and the tag it mentions escapes into the balance count.
+        The documentation line that names a marker comment and a tag in the same sentence is the
+        real case that produced a phantom unbalanced finding.
+        """
+        f = tmp_path / "doc.md"
+        f.write_text(
+            "The marker `<!-- policy-sibling: a.md, b.md -->` is required; "
+            "see the curator `<workflow>` step for the follow-up.\n",
+            encoding="utf-8",
+        )
+        assert cts.check_file(f) == []
+
+    def test_legacy_underscore_block_is_both_renamed_and_balance_checked(self, tmp_path: Path) -> None:
+        """A legacy underscore block reports the rename and its balance defect together.
+
+        Underscore names are on the way out, but one that is still in the tree can still be
+        mis-paired. Admitting them to discovery means the balance defect is reported in the same
+        run as the rename advice, instead of waiting for the rename to land first.
+        """
+        f = tmp_path / "legacy.md"
+        f.write_text("<legacy_block>\n\ncontent\n\n<legacy_block>\n\n</legacy_block>\n", encoding="utf-8")
+        findings = cts.check_file(f)
+        kinds = {finding.kind for finding in findings}
+        assert kinds == {cts.FindingKind.UNDERSCORE_TAG, cts.FindingKind.UNBALANCED}
+        assert any("unbalanced <legacy_block> — 2 open, 1 close" in m for m in _messages(findings))
 
 
 class TestParseKinds:

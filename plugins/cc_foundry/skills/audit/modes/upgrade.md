@@ -98,4 +98,4 @@ Mark "A/B test capability proposals" completed.
 - Reverted items: run `/calibrate <agent> full` for deeper A/B signal (N=10 vs N=3 used here)
 ```
 
-Propose `/foundry:setup` after upgrade completes — no auto-execute. Print: `→ Run \`/foundry:setup\` to propagate accepted changes to ~/.claude/\`
+Propose `/foundry:setup` after upgrade completes — no auto-execute. Print: `` → Run `/foundry:setup` to propagate accepted changes to ~/.claude/ ``

@@ -51,6 +51,7 @@ fi
 ```
 
 If `PROJ_ROOT` resolved (≠ `not_found`):
+
 - Read `$PROJ_ROOT/CLAUDE.md` (limit=60) — tech stack, project constraints, custom rules
 - Run `git -C "$PROJ_ROOT" log --oneline -15 2>/dev/null` — recent work context
 - Use Glob (pattern `todo_*.md`, path `$PROJ_ROOT/.plans/active/`) and read found files
@@ -74,7 +75,7 @@ Group all lessons/feedback entries by domain. Use model reasoning to identify cl
 For each lesson entry, classify disposition:
 
 | Disposition | Meaning |
-| --- | --- |
+| -- | -- |
 | `→ rule` | Recurring enough to warrant standalone `.claude/rules/<name>.md` file |
 | `→ agent update` | Specific to one agent's instructions — edit that agent's `.md` file |
 | `→ skill update` | Specific to one skill's workflow — edit that skill's `SKILL.md` |
@@ -173,6 +174,7 @@ Review conflicts manually or select (b) to inspect each change before writing.
 ```
 
 Print (annotated) proposal table. Then call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
+
 - question: "Apply proposals?"
 - (a) label: `Apply non-conflicting` — description: write all `→ rule` and `→ agent/skill update` changes except ⚠ flagged proposals
 - (b) label: `Review first` — description: show diff of each proposed change before writing

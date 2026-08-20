@@ -12,6 +12,7 @@ mkdir -p "$EXT_RUN_DIR"  # timeout: 5000
 **E1: Classify and plan**
 
 Identify source type:
+
 - URL → `WebFetch` (skim landing page + follow key links: README, docs, manifests, agent/skill files)
 - File path → `Read`
 - Directory → `Glob` `*.md`, `*.js`, `*.json` then prioritise: manifests, README, agent/skill/rule/hook files
@@ -48,6 +49,7 @@ Candidate artifacts: [comma list]
 **E7: Read live local setup**
 
 Run in parallel:
+
 - Glob + Read on `.claude/agents/*.md`, `.claude/skills/**/SKILL.md`, `.claude/rules/*.md`
 - Glob on `plugins/*/` for installed plugins
 
@@ -123,14 +125,15 @@ After challenger returns: read `$EXT_RUN_DIR/challenger-review.md`. Annotate eac
 **E13: Gate — AskUserQuestion**
 
 Present source report + adoption table + install-as-is recommendation (when applicable). Then call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
-- question: "Apply external source candidates?"
-When install-as-is IS recommended, include all four options:
+
+- question: "Apply external source candidates?" When install-as-is IS recommended, include all four options:
 - (a) label: `Apply Group A candidates` — description: adopt-as-is and tweak items only
 - (b) label: `Install as standalone plugin` — description: install external source as standalone plugin
 - (c) label: `Review first` — description: walk through each candidate interactively
 - (d) label: `Skip` — description: exit without changes
 
 When install-as-is is NOT recommended, omit (b) and re-label to avoid gaps:
+
 - (a) label: `Apply Group A candidates` — description: adopt-as-is and tweak items only
 - (b) label: `Review first` — description: walk through each candidate interactively
 - (c) label: `Skip` — description: exit without changes
@@ -158,7 +161,7 @@ Substitute `$EXT_RUN_DIR` with its computed path from `EXT_RUN_DIR=` block above
 Agent(subagent_type="foundry:curator", prompt="Review Claude config files modified by /distill external mode: <list .md files changed in E14>. Check: (1) structural integrity — XML tag balance, step numbering; (2) cross-ref validity — no broken agent/skill references; (3) content quality — no duplication of existing canonical content. Write your full findings to ${EXT_RUN_DIR}/curator-external-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"file\":\"${EXT_RUN_DIR}/curator-external-review.md\",\"issues\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}")
 
 # .js / code files only — curator NOT-for excludes hooks; use sw-engineer
-Agent(subagent_type="foundry:sw-engineer", prompt="Apply the <hook_authoring> specialization from your agent definition. Review code files modified by /distill external mode: <list .js/.py/.ts/.sh files changed in E14>. Check: (1) file-header block present (PURPOSE, HOW IT WORKS, EXIT CODES); (2) exit-code semantics correct; (3) stdin pattern uses event-based accumulation; (4) subprocess calls use execFileSync/spawnSync with args array — no shell-string injection; (5) no unhandled exceptions escape. Write your full findings to ${EXT_RUN_DIR}/sw-engineer-external-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"file\":\"${EXT_RUN_DIR}/sw-engineer-external-review.md\",\"issues\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}")
+Agent(subagent_type="foundry:sw-engineer", prompt="Apply the <hook-authoring> specialization from your agent definition. Review code files modified by /distill external mode: <list .js/.py/.ts/.sh files changed in E14>. Check: (1) file-header block present (PURPOSE, HOW IT WORKS, EXIT CODES); (2) exit-code semantics correct; (3) stdin pattern uses event-based accumulation; (4) subprocess calls use execFileSync/spawnSync with args array — no shell-string injection; (5) no unhandled exceptions escape. Write your full findings to ${EXT_RUN_DIR}/sw-engineer-external-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"file\":\"${EXT_RUN_DIR}/sw-engineer-external-review.md\",\"issues\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}")
 ```
 
 If critical findings returned by either reviewer: surface to user before marking complete. Non-critical findings: advisory only.

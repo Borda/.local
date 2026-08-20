@@ -7,7 +7,7 @@ paths:
 ## Bash Timeouts — Per-Operation-Class Table
 
 | Operation class | Expected P90 | 3× timeout |
-| --- | --- | --- |
+| -- | -- | -- |
 | `gh pr view`, `gh pr diff`, `gh issue view` | 2 s | `timeout: 6000` |
 | `gh pr checks`, `gh pr list` | 5 s | `timeout: 15000` |
 | `gh api --paginate`, `gh release list` | 10 s | `timeout: 30000` |

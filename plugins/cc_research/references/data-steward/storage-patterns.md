@@ -1,12 +1,12 @@
----
 <!-- Loaded by research:data-steward (sonnet + medium) -->
-# Reference document — NOT an agent definition. Used by research:data-steward as contextual material.
+
 # Storage and Loading Patterns — data-steward reference
 
-Loaded by data-steward in `acquisition` mode before Step 2.
-Contains: DVC versioning, Polars tabular loading, HuggingFace datasets, 3D volumetric data loading.
+> Reference document, NOT an agent definition — contextual material for `research:data-steward`.
 
-<storage_and_loading_patterns>
+Loaded by data-steward in `acquisition` mode before Step 2. Contains: DVC versioning, Polars tabular loading, HuggingFace datasets, 3D volumetric data loading.
+
+<storage-and-loading-patterns>
 
 ## Data Version Control (DVC)
 
@@ -79,4 +79,4 @@ Key considerations, volumetric data:
 
 - **Spacing**: resample to isotropic voxel spacing if model needs uniform resolution
 
-</storage_and_loading_patterns>
+</storage-and-loading-patterns>

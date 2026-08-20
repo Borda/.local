@@ -2,24 +2,21 @@
 
 ## 📋 Summary
 
-<2–4 sentence para — what changed + why matters to users/devs>
+\<2–4 sentence para — what changed + why matters to users/devs>
 
 ## ✨ Spotlights / highlights
 
-<top 3–5 features or fixes, each with short code example>
+\<top 3–5 features or fixes, each with short code example>
 
 ## 🔄 Migration guide
 
-<Breaking change = worked before, fails/differs now, no prior warning or deprecation shim.
-API deprecated (with warning + forwarding) in prior release then removed → classify as ❌ Removed, not ⚠️ Breaking Changes.
-Guide users on migration needed. Include before/after code for each breaking change.
-If none: "No migration required for this release.">
+\<Breaking change = worked before, fails/differs now, no prior warning or deprecation shim. API deprecated (with warning + forwarding) in prior release then removed → classify as ❌ Removed, not ⚠️ Breaking Changes. Guide users on migration needed. Include before/after code for each breaking change. If none: "No migration required for this release.">
 
 <!-- Use Draft migration guide content — do not regenerate independently. -->
 
 ## 📝 Notable changes
 
-<Significant changes, grouped by area/component; list all PRs/commits.>
+\<Significant changes, grouped by area/component; list all PRs/commits.>
 
 ### 🚀 Added
 
@@ -45,12 +42,10 @@ If none: "No migration required for this release.">
 
 - Fixed what was broken when condition. (#PR)
 
----
-
 ## 🏆 Contributors
 
 - **Name** (@github_handle, [LinkedIn](https://linkedin.com/in/handle)) — brief what they did
 
----
+______________________________________________________________________
 
 **Full changelog**: https://github.com/[org]/[repo]/compare/vPREV...vNEXT

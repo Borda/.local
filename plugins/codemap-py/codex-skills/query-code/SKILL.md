@@ -1,6 +1,6 @@
 ---
 name: query-code
-description: "Query Codemap."
+description: Query Codemap.
 ---
 
 NOT for: $codemap-py:scan-codebase, $codemap-py:rename-refs, $codemap-py:test-impact.
@@ -16,7 +16,7 @@ Codex exposes no plugin-root variable. Resolve the installed root as `PLUGIN_ROO
 Exact-file+symbol local edit: skip Codemap only with no unresolved caller/dependency/blast-radius/test-impact/import/source slice. A lifecycle boundary (callback/hook, cancellation/exception, scheduling/cleanup, state transfer) requires inspect source plus named test/oracle; use `fn-rdeps` for caller or `fn-deps` for callee responsibility. Explicit structural/tool requirement overrides. Choose the smallest complete query set.
 
 | Need | Query |
-| --- | --- |
+| -- | -- |
 | production module importers / blast radius | `rdeps <module> --exclude-tests` |
 | production centrality / highest in-degree | `central --top N --exclude-tests` |
 | internal-import coupling (not centrality) | `coupled --top N` |

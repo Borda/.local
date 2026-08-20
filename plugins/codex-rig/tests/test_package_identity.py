@@ -87,6 +87,9 @@ def test_verify_package_reports_simulated_windows_mode_check_not_applicable(tmp_
     """Ignore only POSIX mode comparison when native Windows cannot retain it."""
     identity = load_identity()
     write_fixture(tmp_path, recorded_mode=0)
+    report = tmp_path / ".reports" / "codex" / "calibration" / "run" / "debris.txt"
+    report.parent.mkdir(parents=True)
+    report.write_text("machine-local runtime artifact\n", encoding="utf-8")
 
     result = identity.verify_package(tmp_path, enforce_modes=False)
 

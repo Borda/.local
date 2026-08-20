@@ -1,7 +1,7 @@
 ---
 name: fortify
-description: "Systematic ablation study runner. After research:run finds improvements, fortify identifies component candidates from git diff + diary, creates isolated git worktrees per ablation (main repo never modified), runs metric+guard in each worktree, ranks component importance, and optionally generates reviewer Q&A calibrated to a target venue."
-argument-hint: "[<run-id>|<program.md>] [--venue <CVPR|NeurIPS|ICML|workshop>] [--max-ablations <N>] [--skip-run] [--keep \"<items>\"]"
+description: Systematic ablation study runner. After research:run finds improvements, fortify identifies component candidates from git diff + diary, creates isolated git worktrees per ablation (main repo never modified), runs metric+guard in each worktree, ranks component importance, and optionally generates reviewer Q&A calibrated to a target venue.
+argument-hint: '[<run-id>|<program.md>] [--venue <CVPR|NeurIPS|ICML|workshop>] [--max-ablations <N>] [--skip-run] [--keep "<items>"]'
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -44,11 +44,11 @@ The constants block defaults above are YAML-only — bash blocks read environmen
 
 <compaction>
 
-Key boundaries: end of F2 — ablation candidates identified by scientist; end of F4 — all ablation variant worktrees completed.
-Preserve at F2: FORTIFY_DIR (TMPDIR key), RUN_ID (TMPDIR key), ablation-candidates.jsonl path, best_metric from source run.
-Preserve at F4: FORTIFY_DIR, RUN_ID, results.jsonl path — ready for F5 importance ranking.
-F4 loop is resume-safe: 4a-guard skips variants already terminal (non-timeout) in results.jsonl, so a mid-loop compaction resumes at the first pending variant — never re-runs a completed ablation; a timed-out variant still retries.
-Clear at F1 start (stale prior run) and at start of F8 terminal summary.
+- Key boundaries: end of F2 — ablation candidates identified by scientist; end of F4 — all ablation variant worktrees completed.
+- Preserve at F2: FORTIFY_DIR (TMPDIR key), RUN_ID (TMPDIR key), ablation-candidates.jsonl path, best_metric from source run.
+- Preserve at F4: FORTIFY_DIR, RUN_ID, results.jsonl path — ready for F5 importance ranking.
+- F4 loop is resume-safe: 4a-guard skips variants already terminal (non-timeout) in results.jsonl, so a mid-loop compaction resumes at the first pending variant — never re-runs a completed ablation; a timed-out variant still retries.
+- Clear at F1 start (stale prior run) and at start of F8 terminal summary.
 
 </compaction>
 
@@ -59,6 +59,7 @@ Clear at F1 start (stale prior run) and at start of F8 terminal summary.
 ## Agent Resolution
 
 **Agent resolution**: load and follow the protocol below. Contains foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agent this skill dispatches: `research:scientist` (same plugin — no fallback if research plugin installed).
+
 ```bash
 # loads: compaction-contract.md
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -69,7 +70,7 @@ cat "$_RESEARCH_SHARED/agent-resolution.md"
 ```
 
 | Agent | Fallback if absent |
-| --- | --- |
+| -- | -- |
 | `research:scientist` | `general-purpose` (ablation candidate identification and reviewer Q&A quality reduced — **⚠ general-purpose agent may not emit the JSON envelope this skill parses; surface partial output and surface ⚠ in F7 report**) |
 
 ## CRITICAL: Worktree-based isolation
@@ -110,6 +111,7 @@ echo "$VENUE" > "${TMPDIR:-/tmp}/fortify-venue-${CSID}"  # for F6 (Check 41)
 ```
 
 **Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--venue`, `--max-ablations`, `--skip-run`, `--keep`.
+
 ```bash
 # loads: unsupported-flag-protocol.md
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -587,28 +589,36 @@ Update `results.jsonl` with computed deltas via Write tool (rewrite full file).
 For each `no-<component>` variant with `status: "completed"`:
 
 - Read `metric_direction` from `## Metric` block in `program_file` (`higher` or `lower`). If absent, default to `higher`.
+
 - Compute **signed delta** (positive = removal hurt metric → component helpful):
+
   ```python
   signed_delta = (full_metric - ablated_metric) * (1 if direction == 'higher' else -1)
   importance = signed_delta / abs(full_metric) * 100 if full_metric != 0 else 0
   ```
+
 - Importance class (helpful components — `signed_delta >= 0`):
+
   - **CRITICAL**: importance > 50%
   - **SIGNIFICANT**: importance 10–50%
-  - **MARGINAL**: importance < 10%
-**Sign convention check** — after computing signed_delta for all variants, verify:
+  - **MARGINAL**: importance < 10% **Sign convention check** — after computing signed_delta for all variants, verify:
+
 - For `direction == 'higher'`: all helpful components should have `signed_delta >= 0` (ablated metric < full)
+
 - For `direction == 'lower'`: all helpful components should have `signed_delta >= 0` (ablated metric > full; removing component worsened metric)
+
 - Any component where `signed_delta` has unexpected sign: flag explicitly in report as "sign anomaly — verify ablation ran correctly"
 
 - **Potentially Harmful** class: `signed_delta < -5%` — removing component IMPROVED metric. Surface in dedicated `Potentially Harmful Components` report section; not ranked in main table.
 
 **Borderline components** (CI spans zero): if a confidence interval is available and spans zero (includes both positive and negative values), do NOT classify as MARGINAL. Instead:
+
 - Add to a "Borderline Components" subsection in the F7 report
 - Note: "CI spans zero — component may be neutral or harmful; additional runs required before including in model"
 - Do not rank these in the main importance table; surface separately
 
 **Coupling check** — before sorting, scan the ablation candidates (from `ablation-candidates.jsonl`) for notes on architectural dependencies. For any pair where one component explicitly requires the other (noted in `description` field or `candidates-analysis.md`):
+
 - Mark both components in the ranking with `[COUPLED]` suffix
 - Add a note: "Independent ablation unreliable — recommend joint ablation of [A + B]"
 - Add to the "Skipped Variants" section: `joint-[A]-[B] — not run (joint ablation recommended)`
@@ -784,6 +794,7 @@ Next: run /research:fortify without --skip-run to execute ablations
 Calibratable: F1–F3 sub-steps only — synthetic ablation plan with known component importance order; score whether fortify correctly ranks components and identifies reviewer questions. Full F4–F6 execution loop (worktree creation, metric runs, real guard scripts) excluded — requires live git state and metric commands.
 
 See the domain table entry for `/research:fortify` for the full ground-truth checklist. Path resolution:
+
 ```bash
 _FOUNDRY_CALIBRATE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/calibrate/modes 2>/dev/null | head -1); [ -z "$_FOUNDRY_CALIBRATE" ] && _FOUNDRY_CALIBRATE="plugins/cc_foundry/skills/calibrate/modes"
 # See: $_FOUNDRY_CALIBRATE/skills.md

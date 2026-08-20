@@ -118,5 +118,5 @@ Fix: <concrete action to resolve>
 ```
 
 - Severity markers: `!` = critical (standalone alert-block prefix only, e.g. `! BREAKING`) · `⚠` = warnings · `✓` = pass · hint = fix hint. Outcome/verdict tables use `✗` for blocked/rejected instead (§Report File Format) — `!` never appears as a table-cell symbol, only as the alert-block prefix
-- **Block merge integrity**: after merging two blocks (combining e.g. `<antipatterns>` + `<quality_checks>` into one), diff the combined output against both originals; every named rule (`##` heading or bold title) must survive; zero silent drops
+- **Block merge integrity**: after merging two blocks (combining e.g. `<antipatterns>` + `<quality-checks>` into one), diff the combined output against both originals; every named rule (`##` heading or bold title) must survive; zero silent drops
 - **Deferred work must appear in the delivered artifact**: if any analysis, rubric definition, or implementation is deferred, approximated, or left incomplete, document it explicitly in the output file ("Phase 2 / requires X / not yet implemented") — not only in conversation

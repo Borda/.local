@@ -1,6 +1,6 @@
 ---
 name: rename-refs
-description: "`$codemap-py:rename-refs`: rename Python names; skip non-Python/unbuilt/local/grep/split/pkg-dir."
+description: '`$codemap-py:rename-refs`: rename Python names; skip non-Python/unbuilt/local/grep/split/pkg-dir.'
 ---
 
 # Rename Refs
@@ -38,7 +38,7 @@ Keep that result for Step 2. `index.stale: true` means mismatch; `index.query_co
 
 ### 2. Resolve targets
 
-For `symbol`, reuse `matches`; each has `{name, qualified_name, type, module, path, start_line, end_line, source}`. Use path/lines for edits and `qualified_name` for exact filtering. Zero: report "Symbol '<old_ref>' not found" and stop. Multiple: list name/type/module/path, ask selection, wait. Then query:
+For `symbol`, reuse `matches`; each has `{name, qualified_name, type, module, path, start_line, end_line, source}`. Use path/lines for edits and `qualified_name` for exact filtering. Zero: report `Symbol '<old_ref>' not found` and stop. Multiple: list name/type/module/path, ask selection, wait. Then query:
 
 ```bash
 PLUGIN_ROOT/bin/codemap-py query fn-rdeps "<module>::<qualified_name>"

@@ -2,8 +2,7 @@
 
 # Codemap-py structural-context contract — codex-rig
 
-Protocol: `codemap-py.integration.v1`. Codex Rig is a **consumer**, never a provider — it reads only the public `codemap-py` CLI/JSON surface (`doctor --json`, `query <subcommand>`) via `../../shared/codemap_adapter.py`. It never imports `codemap_py`, never reads codemap-py cache
-internals or source-tree paths, and never depends on `codemap-py` being installed.
+Protocol: `codemap-py.integration.v1`. Codex Rig is a **consumer**, never a provider — it reads only the public `codemap-py` CLI/JSON surface (`doctor --json`, `query <subcommand>`) via `../../shared/codemap_adapter.py`. It never imports `codemap_py`, never reads codemap-py cache internals or source-tree paths, and never depends on `codemap-py` being installed.
 
 ## Launcher resolution
 
@@ -52,7 +51,7 @@ The divergence is recorded, never reconciled, and never folded into `status`. Th
 ## Named status vocabulary
 
 | Status | Meaning | Workflow action |
-| --- | --- | --- |
+| -- | -- | -- |
 | `available` | `codemap-py` present, index healthy, evidence exhaustive for the queries run | consume the persisted evidence as authoritative |
 | `absent` | `codemap-py` not installed / not on PATH | fall back to Codex Rig's own bounded file inspection; do not treat this as an error |
 | `stale` | index older than source for at least one query's target | note the caveat, still use the returned evidence, do not silently treat it as exhaustive |
@@ -68,7 +67,7 @@ Absence and incompatibility are non-fatal: the workflow proceeds with its normal
 ## Category → query map (plan §8.4)
 
 | Category | Consuming skills | Queries (`codemap-py query <subcommand>`) |
-| --- | --- | --- |
+| -- | -- | -- |
 | `analysis` | change-analysis, research | `central` (no target) + `deps <target>` |
 | `implementation` | implement, investigate, optimize | `rdeps <target>` + `coupled` (no target) + `test-impact <target>` |
 | `review` | code-review, code-remediate | `diff-impact` (no target — reads the working-tree/PR diff once) |
@@ -81,7 +80,7 @@ Adaptive route kinds are a closed consumer vocabulary: `central` (`central`), `c
 Passing `--query-kind` is a per-workflow decision, not a migration every consumer owes. The default keeps the category batch, so a skill that does not select a route is fully specified rather than unfinished. This table is the record of each skill's choice; a skill that starts or stops selecting routes must move rows here in the same change.
 
 | Skill | Category | Route selection | Why |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | `implement` | `implementation` | adaptive — passes `--query-kind` | resolves one module/symbol at its decision point, so a single fact usually settles the open structural question |
 | `investigate` | `implementation` | adaptive — passes `--query-kind` | same decision point, reached only when `scope` names a Python module/symbol |
 | `optimize` | `implementation` | adaptive — passes `--query-kind` | same decision point, reached only when `scope_files` resolves to a Python module/symbol |
@@ -101,7 +100,7 @@ The five not-applicable skills below select no category at all and are absent fr
 Five skills have no Python structural-query subject and stay not-applicable rather than being forced to integrate:
 
 | Skill | Reason |
-| --- | --- |
+| -- | -- |
 | `manage` | operates on plugin config artifacts (`.md`/`.toml`/`.json`) — config-reference propagation, not a Python call graph |
 | `sync` | pure package-lifecycle (install/refresh via Codex CLI) — zero source analysis; must stay the single-product owner, never a circular installer |
 | `agent-shims` | manages authenticated agent shim lifecycle/filesystem state — no source-code subject |
@@ -110,7 +109,6 @@ Five skills have no Python structural-query subject and stay not-applicable rath
 
 ## Symmetric optionality (plan §8.5)
 
-`codemap_adapter.py` has zero import-time or startup-time dependency on `codemap-py` being
-installed — every subprocess call is lazy, inside a function called only when a wired skill reaches its decision point. Codex Rig's own skill discovery, packaging, and startup never probe or require `codemap-py`.
+`codemap_adapter.py` has zero import-time or startup-time dependency on `codemap-py` being installed — every subprocess call is lazy, inside a function called only when a wired skill reaches its decision point. Codex Rig's own skill discovery, packaging, and startup never probe or require `codemap-py`.
 
 This optionality is the default runtime contract. A benchmark or deployment profile may make Codemap availability an explicit admission requirement for a packaged-integration arm, but it must install and version-lock the provider and still validate launcher recognition through the adapter; installation alone does not change the runtime contract.

@@ -1,9 +1,6 @@
 # Helper CLI Contract
 
-Helper option schemas live in `--help`, not skills. In a plugin, derive `PLUGIN_ROOT` from the selected `SKILL.md`
-path and require every helper in `package-manifest.json`; never choose a cache with glob/latest/mtime logic or use a
-source-tree fallback. The list below is the full release closure: run an entry only when the current package manifest
-contains it. Before creating or changing an invocation, run the relevant packaged command:
+Helper option schemas live in `--help`, not skills. In a plugin, derive `PLUGIN_ROOT` from the selected `SKILL.md` path and require every helper in `package-manifest.json`; never choose a cache with glob/latest/mtime logic or use a source-tree fallback. The list below is the full release closure: run an entry only when the current package manifest contains it. Before creating or changing an invocation, run the relevant packaged command:
 
 - `python PLUGIN_ROOT/shared/create_run.py --help`
 - `python PLUGIN_ROOT/shared/run_gates.py --help`
@@ -21,9 +18,7 @@ contains it. Before creating or changing an invocation, run the relevant package
 - `python PLUGIN_ROOT/shared/validate-artifacts.py --help`
 - `python PLUGIN_ROOT/skills/code-review/validate_artifacts.py --help`
 
-Create every skill run with `python PLUGIN_ROOT/shared/create_run.py --skill <skill-id>`. Retain its single printed
-path and pass that literal path explicitly to every later helper and artifact operation. Never persist the path in a
-shell variable or assume state survives between command/tool calls.
+Create every skill run with `python PLUGIN_ROOT/shared/create_run.py --skill <skill-id>`. Retain its single printed path and pass that literal path explicitly to every later helper and artifact operation. Never persist the path in a shell variable or assume state survives between command/tool calls.
 
 Also run each skill-specific local CLI's `--help`. Do not copy full flags/templates into `SKILL.md`; state only:
 

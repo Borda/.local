@@ -1,7 +1,7 @@
 ---
 name: implement
 description: Ask Codex for one bounded write-capable change with compact results.
-argument-hint: "[--model MODEL] [--effort LEVEL] [--timeout-seconds N] [--background] [--session-id UUID] TASK"
+argument-hint: '[--model MODEL] [--effort LEVEL] [--timeout-seconds N] [--background] [--session-id UUID] TASK'
 allowed-tools: Bash
 ---
 

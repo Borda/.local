@@ -4,7 +4,7 @@ description: |
   Analyze GitHub issues, Pull Requests (PRs), Discussions, and repo vitality for an Open Source Software (OSS) project. For any specific item, casts a wide net — finds and lists all related open and closed issues/PRs/discussions, explicitly flags duplicates. Summarizes long threads, extracts reproduction steps, and generates repo vitality stats. Uses gh Command Line Interface (CLI) for GitHub Application Programming Interface (API) access. Complements oss:shepherd (requires `oss` plugin). NOT for PR readiness assessment or code review (use oss:review).
   TRIGGER when: user provides GitHub issue number (#N), PR number, or github.com URL with issue/PR/discussion path AND asks to analyze, summarize, understand, or triage it; user asks for repo vitality stats or "is this repo healthy".
   SKIP: user already pasted full thread text inline; oss:resolve already active on same PR; user wants code review (use oss:review); user phrasing is "review PR" meaning code quality assessment, not thread triage (route to oss:review).
-argument-hint: "<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report.md> [--reply] [--quick] [--keep \"<items>\"]"
+argument-hint: <N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report.md> [--reply] [--quick] [--keep "<items>"]
 allowed-tools: Read, Bash, Write, Edit, Agent, AskUserQuestion, TaskList, TaskCreate, TaskUpdate
 context: fork
 model: sonnet
@@ -34,17 +34,21 @@ NOT for implementing PR action items (use oss:resolve). NOT for **code-quality a
 <constants>
 
 > Background agent health monitoring (CLAUDE.md §6) — applies to Step 7 shepherd spawn
+
+```text
 MONITOR_INTERVAL=300   # 5 minutes between polls
 HARD_CUTOFF=900        # 15 minutes of no file activity → declare timed out
 EXTENSION=300          # one +5 min extension if output file explains delay
+```
 
 </constants>
 
 <compaction>
 
 > loads: compaction-contract.md
-Key boundary: end of Step 5 — gather/fetch complete, before Step 6 synthesis gate.
-Preserve: cache-dir (.cache/gh), target # (CLEAN_ARGS), synthesized report path, reply-mode flag.
+
+- Key boundary: end of Step 5 — gather/fetch complete, before Step 6 synthesis gate.
+- Preserve: cache-dir (.cache/gh), target # (CLEAN_ARGS), synthesized report path, reply-mode flag.
 
 </compaction>
 
@@ -77,6 +81,7 @@ _OSS_ANALYSE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_
 [ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/cc_oss/skills/analyse"
 echo "$_OSS_ANALYSE" > "${TMPDIR:-/tmp}/analyse-oss-analyse-${CSID}"
 ```
+
 > loads: oss-shared-resolver.md
 
 ## Step 1: Flag parsing
@@ -193,6 +198,7 @@ echo "${GH_REPO:-}" > "${TMPDIR:-/tmp}/analyse-gh-repo-${CSID}"
 ```
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If found: invoke `AskUserQuestion` with:
+
 - question: "Unknown flag(s): `--<token>`. Supported: `--reply`, `--quick`, `--keep`. How to proceed?"
 - (a) Abort — re-invoke with correct flags
 - (b) Continue ignoring unknown flags
@@ -387,7 +393,7 @@ fi
 Read and execute the mode file from `${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/skills/analyse/modes/`.
 
 | Argument | Mode file |
-| --- | --- |
+| -- | -- |
 | number (any type) | `modes/thread.md` |
 | `vitality` | `modes/vitality.md` |
 | `ecosystem` | `modes/ecosystem.md` |
@@ -428,6 +434,7 @@ mkdir -p .temp/state  # timeout: 5000
 Invoke `AskUserQuestion`. Options depend on mode:
 
 **Thread mode** (`$CLEAN_ARGS` is a number):
+
 - question: "What next?"
 - (a) label: `/develop:fix` — description: diagnose and fix the reported issue (requires `develop` plugin)
 - (b) label: `/develop:feature` — description: implement as new feature (requires `develop` plugin)
@@ -435,6 +442,7 @@ Invoke `AskUserQuestion`. Options depend on mode:
 - (d) label: `skip` — description: no action
 
 **Vitality / ecosystem mode** (`$CLEAN_ARGS` is `vitality` or `ecosystem`):
+
 - question: "What next?"
 - (a) label: `/oss:analyse <N> --reply` — description: draft reply for specific thread
 - (b) label: `/oss:review <N>` — description: full code review for specific PR (requires `oss` plugin)
@@ -498,6 +506,7 @@ rm -f .temp/state/skill-contract.md  # skill complete (compaction-contract.md §
 Calibratable modes: thread (duplicate detection recall), vitality (repo vitality metrics accuracy), ecosystem (impact analysis accuracy).
 
 Scenarios:
+
 1. Thread — duplicate detection: synthetic issue with identical symptoms to existing closed issue → root cause match ≥0.9; duplicate link surfaced
 2. Thread — actionable response quality: feature request with no linked PRs → concrete scope + next step; no vague suggestions
 3. Vitality — metric accuracy: repo with known issue/PR/response-time counts → numeric values within ±10% of ground truth; archetype scenario matrix with expected score ranges per repo type: `vitality-calibration.md`

@@ -7,7 +7,7 @@ Annotated companion to `.claude-plugin/permissions-allow.json` (allow list) and 
 ## Deny List — always blocked
 
 | Permission | Description | Why denied |
-| --- | --- | --- |
+| -- | -- | -- |
 | `Bash(chmod 777:*)` | World-writable permissions | Security risk; overly broad file permissions |
 | `Bash(rm -rf:*)` | Recursive force delete | Irreversible; destroys entire directory trees |
 | `Bash(ssh:*)` | SSH connections | Prevents agent from opening remote sessions |
@@ -23,7 +23,7 @@ Annotated companion to `.claude-plugin/permissions-allow.json` (allow list) and 
 Pre-authorize `Read`, `Glob`, `Grep`, `Write` on dirs skills and teammates access frequently as own config or runtime state. Without these, agents prompted to confirm accessing own config files or writing output to skill run dirs.
 
 | Permission | Description | Typical use case |
-| --- | --- | --- |
+| -- | -- | -- |
 | `Read(.claude/*.md)` | Read top-level `.claude/` markdown files | Agents read CLAUDE.md, permissions-guide.md, TEAM_PROTOCOL.md at spawn |
 | `Read(.claude/**/*.md)` | Read any nested `.claude/` markdown file | Agents and skills read own agent/skill/rule files; curator reads config files for audit |
 | `Read(.claude/logs/**)` | Read log files under legacy `.claude/logs/` | Legacy fallback reads — `/calibrate` and `/session` merge pre-relocation entries alongside `.notes/logs/` for historical context; logs now write to `.notes/logs/` (see `Write(.notes/**)`) |
@@ -55,13 +55,13 @@ Both hooks were validated against *committed text* — the share of shipped blue
 ## Web
 
 | Permission | Description | Typical use case |
-| --- | --- | --- |
+| -- | -- | -- |
 | `WebSearch` | Search web for current information | Fetch current docs, CVE advisories, package release notes, ecosystem news |
 
 ## Shell utilities
 
 | Permission | Description | Typical use case |
-| --- | --- | --- |
+| -- | -- | -- |
 | `Bash(curl:*)` | HTTP requests and file downloads | Hit REST API, download file, fetch raw URLs for link verification |
 | `Bash(echo:*)` | Print strings to stdout | Pipe content into another command, emit simple diagnostics |
 | `Bash(find:*)` | Locate files by name, type, or modification time | Discover files matching pattern across directory tree |
@@ -123,7 +123,7 @@ Both hooks were validated against *committed text* — the share of shipped blue
 ## GitHub CLI — primarily read-only
 
 | Permission | Description | Typical use case |
-| --- | --- | --- |
+| -- | -- | -- |
 | `Bash(gh auth status:*)` | Check GitHub CLI authentication state | Pre-flight check in `/resolve` and any skill requiring `gh` auth |
 | `Bash(gh pr view:*)` | Inspect PR metadata, body, review status | Used by `/oss:review` and `/develop:fix` to understand PR under review |
 | `Bash(gh pr checkout:*)` | Check out PR branch locally | `/resolve` uses this to enter PR branch state before applying changes |
@@ -144,7 +144,7 @@ Both hooks were validated against *committed text* — the share of shipped blue
 ## Git — read-only
 
 | Permission | Description | Typical use case |
-| --- | --- | --- |
+| -- | -- | -- |
 | `Bash(git fetch:*)` | Fetch from remote without merging | `/resolve` fetches remote refs to detect fork divergence before merging |
 | `Bash(git log:*)` | Browse commit history | `/release` reads commits since last tag; general history inspection |
 | `Bash(git shortlog:*)` | Summarise history grouped by author | Contributor stats for release notes |
@@ -161,7 +161,7 @@ Both hooks were validated against *committed text* — the share of shipped blue
 ## Git — local write
 
 | Permission | Description | Typical use case |
-| --- | --- | --- |
+| -- | -- | -- |
 | `Bash(git merge:*)` | Merge branch into current branch (with or without committing) | `/resolve` merges PR head branch to detect and stage conflict resolution; `--no-commit --no-ff` for inspection, `--ff-only` for clean pointer advance |
 | `Bash(git merge-base:*)` | Find common ancestor commit of two branches | `/resolve` uses this to find diverge point between source and target for diff analysis |
 | `Bash(git worktree:*)` | Add, list, or remove linked working trees | `/resolve` creates temporary isolated worktree in `/tmp` to run merge without touching user's main working directory |
@@ -175,7 +175,7 @@ Both hooks were validated against *committed text* — the share of shipped blue
 ## Python toolchain
 
 | Permission | Description | Typical use case |
-| --- | --- | --- |
+| -- | -- | -- |
 | `Bash(pytest:*)` | Run test suite via `pytest` entry point | Quick test run during TDD loop in `/develop:feature` and `/develop:fix` |
 | `Bash(pre-commit run:*)` | Run pre-commit hooks on staged or all files | Verify formatting and linting before marking task done |
 | `Bash(python -m pytest:*)` | Run tests via module interface | Environment-safe alternative when `pytest` binary not on PATH |
@@ -204,21 +204,21 @@ Both hooks were validated against *committed text* — the share of shipped blue
 ## macOS / ecosystem
 
 | Permission | Description | Typical use case |
-| --- | --- | --- |
+| -- | -- | -- |
 | `Bash(claude:*)` | Invoke Claude Code CLI | SessionStart hook runs `claude auth status` to cache plan info |
 | `Bash(node:*)` | Run Node.js scripts | Hooks (`task-log.js`, `statusline.js`) are Node scripts executed by Claude Code |
 
 ## WebFetch — allowed domains
 
 | Permission | Description | Typical use case |
-| --- | --- | --- |
+| -- | -- | -- |
 | `WebFetch(domain:github.com)` | GitHub web pages and repo content | Fetch README, release pages, action marketplace entries |
 | `WebFetch(domain:docs.github.com)` | GitHub documentation | GitHub Actions syntax, REST API reference |
 | `WebFetch(domain:raw.githubusercontent.com)` | Raw file content from GitHub repos | Read source files, configs, or changelogs directly |
 | `WebFetch(domain:pypi.org)` | PyPI package metadata | Release history, classifiers, dependency info |
 | `WebFetch(domain:pre-commit.ci)` | pre-commit.ci run status and badge URLs | Verify CI badges before adding to README |
-| `WebFetch(domain:claude.ai)` | Claude product pages |
-| `WebFetch(domain:claude.com)` | Claude Code landing and docs |
+| `WebFetch(domain:claude.ai)` | Claude product pages | Check product/plan capabilities |
+| `WebFetch(domain:claude.com)` | Claude Code landing and docs | Read Claude Code documentation |
 | `WebFetch(domain:anthropic.com)` | Anthropic blog, model cards, policy docs | Research model capabilities, fetch release announcements |
 | `WebFetch(domain:docs.anthropic.com)` | Claude Code documentation | Fetch Claude Code docs; redirects to code.claude.com — both domains needed for full coverage |
 | `WebFetch(domain:code.claude.com)` | Claude Code documentation | `/audit` fetches hook, agent, skill schemas for validation |
@@ -236,7 +236,7 @@ Both hooks were validated against *committed text* — the share of shipped blue
 Only skills invoked **programmatically** (by another skill, hook, or automated workflow) need `Skill()` entry. Skills invoked directly by user (`/audit`, `/oss:review`, `/develop:feature`, etc.) never need pre-authorization — user's own invocation is approval. Adding all 14 skills to allow list = noise.
 
 | Permission | Description | Why programmatic (not user-invoked) |
-| --- | --- | --- |
+| -- | -- | -- |
 | `Skill(calibrate)` | Invoke `/calibrate` skill without confirmation | Post-fix quality gate in `/develop` and CLAUDE.md self-improvement loop; runs without user at prompt |
 
 ## Top-level `settings.json` keys
@@ -244,7 +244,7 @@ Only skills invoked **programmatically** (by another skill, hook, or automated w
 Non-permission top-level keys in `settings.json` controlling Claude Code behaviour. Not part of `permissions` block but documented here as canonical `settings.json` reference.
 
 | Key | Value in this project | Description |
-| --- | --- | --- |
+| -- | -- | -- |
 | `autoCompactThreshold` | `0.7` | Fraction of context capacity triggering automatic compaction. `0.7` = compact at 70% full. Lower = compact earlier (safer for long sessions); higher = use more context before compacting. |
 | `ordering` | `"auto"` | Controls tool-call ordering. `"auto"` lets Claude Code choose optimal execution order. Undocumented in public docs as of 2026-04-07 — re-check quarterly; keep as `"auto"` unless release notes document other values. |
 | `teammateMode` | `"in-process"` | Controls how agent teammates spawn. `"in-process"` runs teammates in same process (low overhead, shared memory); alternative `"subprocess"` for full isolation. Required alongside `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in `env`. |

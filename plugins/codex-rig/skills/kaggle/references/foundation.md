@@ -7,7 +7,7 @@ Generate the header, environment setup, imports, and path constants. Use the var
 ## Variant matrix
 
 | Variant | Title suffix | Package setup | Scope |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | `full` | `⚡PTL + <ModelLibrary>` for neural training | online download by default; frozen offline packages when requested | training and inference dependencies |
 | `eda-only` | `— EDA` | online download; never offline-only | exploration dependencies only |
 | `inference-only` | `— Inference` | frozen offline packages | inference dependencies only |

@@ -1,7 +1,7 @@
 ---
 name: setup
-description: "Post-install setup for foundry plugin. Run once after installing on a new machine, or after a plugin version upgrade to sync settings and symlinks. Merges statusLine, permissions.allow, enabledPlugins, and advisorModel into ~/.claude/settings.json; symlinks rules and TEAM_PROTOCOL.md into ~/.claude/; purges orphaned plugin cache versions."
-argument-hint: "[--approve]"
+description: Post-install setup for foundry plugin. Run once after installing on a new machine, or after a plugin version upgrade to sync settings and symlinks. Merges statusLine, permissions.allow, enabledPlugins, and advisorModel into ~/.claude/settings.json; symlinks rules and TEAM_PROTOCOL.md into ~/.claude/; purges orphaned plugin cache versions.
+argument-hint: '[--approve]'
 allowed-tools: Read, Write, Bash, AskUserQuestion
 effort: low
 model: sonnet
@@ -12,7 +12,7 @@ model: sonnet
 Set up foundry on new machine:
 
 | Action | What happens |
-| --- | --- |
+| -- | -- |
 | Detect Python 3.10+ (`python` / `py -3` / `python3`); install `~/.local/bin/python` shim if needed | ✓ |
 | Merge `statusLine`, `permissions.allow`, `enabledPlugins`, `advisorModel` → `~/.claude/settings.json` | ✓ |
 | `rules/<name>.md` → `~/.claude/rules/foundry-<name>.md` | symlink |
@@ -59,7 +59,7 @@ fi
 
 When `APPROVE_ALL=true`, every `AskUserQuestion` below **skipped** — ★ recommended option applied automatically. Print `[--approve] auto-accepting recommended option` in place of question.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--approve\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `` ! Unknown flag(s): `--<token>`. Supported: `--approve`. `` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Python detection
 
@@ -139,8 +139,7 @@ If `APPROVE_ALL=true`: print `[--approve] auto-accepting: remove stale hooks blo
 
 Otherwise, use `AskUserQuestion`:
 
-(a) Remove stale `hooks` block now ★ recommended (backup in place from Step 2)
-(b) Skip — I'll handle manually
+(a) Remove stale `hooks` block now ★ recommended (backup in place from Step 2) (b) Skip — I'll handle manually
 
 On **(a)**: strip `hooks` key in-bash (no Write tool), continue:
 
@@ -340,12 +339,9 @@ These entries in ~/.claude/ would be replaced with symlinks to the foundry plugi
 
 Options:
 
-(a) Replace all ★ recommended
-(b) Skip all conflicts — keep existing files unchanged
-(c) Review one by one
+(a) Replace all ★ recommended (b) Skip all conflicts — keep existing files unchanged (c) Review one by one
 
-On **(b)**: set `SKIP_CONFLICTS_MODE=true`.
-On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. **Cap**: if `${#LINK_CONFLICTS[@]} > 10`, emit warning "⚠ ${#LINK_CONFLICTS[@]} conflicts found — per-item review capped at 10; showing first 10. Run again for the rest." and process only the first 10. Iterate over each entry (up to cap); for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier — the destination basename, i.e. `foundry-<name>.md` for rules, or `TEAM_PROTOCOL.md` — to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. After the loop, persist: `export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"; printf '%s\n' "${APPROVED_CONFLICT_ENTRIES[@]}" > ${TMPDIR:-/tmp}/foundry-setup-approved-${CSID}.txt`. Items not in `$LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.
+On **(b)**: set `SKIP_CONFLICTS_MODE=true`. On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. **Cap**: if `${#LINK_CONFLICTS[@]} > 10`, emit warning "⚠ ${#LINK_CONFLICTS[@]} conflicts found — per-item review capped at 10; showing first 10. Run again for the rest." and process only the first 10. Iterate over each entry (up to cap); for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier — the destination basename, i.e. `foundry-<name>.md` for rules, or `TEAM_PROTOCOL.md` — to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. After the loop, persist: `export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"; printf '%s\n' "${APPROVED_CONFLICT_ENTRIES[@]}" > ${TMPDIR:-/tmp}/foundry-setup-approved-${CSID}.txt`. Items not in `$LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.
 
 **Phase 4 — Symlink** — for each approved, auto-replaced, or absent entry, `ln -sf` creates/replaces. Stale foundry symlinks from Phase 2 are included here (auto-replaced silently). Conflict guard depends on which Phase 3 branch fired:
 
@@ -452,7 +448,7 @@ Print summary:
 - Rules removed obsolete: N (files no longer in current plugin version)
 - User-level skill links removed: N (foundry skills invoke as `/foundry:<name>`)
 - Agent symlinks removed from ~/.claude/agents/: N (stale foundry-managed symlinks purged)
-- Rules linked: N → ~/.claude/rules/foundry-*.md
+- Rules linked: N → ~/.claude/rules/foundry-\*.md
 - TEAM_PROTOCOL.md linked → ~/.claude/TEAM_PROTOCOL.md
 - Cache purged: N orphaned version(s), M MB (or `skipped` / `nothing to purge`)
 - CLAUDE.md written → ~/.claude/CLAUDE.md

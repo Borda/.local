@@ -1,7 +1,7 @@
 ---
 name: retro
-description: "Post-run retrospective: reads .experiments/ JSONL, computes Wilcoxon significance, detects dead iterations, flags suspicious jumps, generates next-hypothesis queue for --hypothesis flag."
-argument-hint: "[<run-id>] [--compare <run-id-2>] [--threshold <delta>] [--alpha <significance>]"
+description: 'Post-run retrospective: reads .experiments/ JSONL, computes Wilcoxon significance, detects dead iterations, flags suspicious jumps, generates next-hypothesis queue for --hypothesis flag.'
+argument-hint: '[<run-id>] [--compare <run-id-2>] [--threshold <delta>] [--alpha <significance>]'
 effort: medium
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -20,6 +20,7 @@ NOT for: running experiments (use `/research:run`); designing experiments (use `
 ## Agent Resolution
 
 **Agent resolution**: load and follow the protocol below. Contains: foundry check + fallback table. `research:scientist` in same plugin — no fallback needed if research plugin installed.
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
@@ -35,6 +36,7 @@ Triggered by `retro`, `retro <run-id>`, or `retro <run-id> --compare <run-id-2>`
 **Defaults**: `--threshold 0.001`, `--alpha 0.05`.
 
 **Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--compare`, `--threshold`, `--alpha`.
+
 ```bash
 # loads: unsupported-flag-protocol.md
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -145,11 +147,13 @@ Write the combined results (parsed JSON plus computed `r`) to `$RUN_DIR/stats-re
 **Definition**: dead iteration window = 3+ consecutive iterations (any status) where `abs(metric_delta) < threshold` (default `--threshold 0.001`).
 
 **Scale check** (after loading baseline_metric in T1): if `baseline_metric > 100 * threshold`, print:
+
 ```text
 ! Threshold advisory: baseline_metric=[value] is >100x the default threshold (0.001).
   For this metric scale, consider: --threshold [baseline_metric * 0.0001:.4f]
   Proceeding with --threshold [threshold] — override with: /research:retro <run-id> --threshold <value>
 ```
+
 Apply advisory threshold automatically only when `--threshold` not explicitly provided by user.
 
 **Timeout detection**: when scanning reverted iterations, check `status` field. If `status == "timeout"`: classify as `timeout-as-revert` (see Notes). Else: flag any reverted iteration where `delta` is in correct improvement direction (metric moved toward goal) as "possible timeout — verify commit [sha]"; don't count delta as valid.
@@ -195,7 +199,7 @@ Compute per-iteration absolute metric deltas for kept iterations only. Build sli
 Flag any single-step improvement where `abs(delta) > running_mean + 2 * running_std`:
 
 | Severity | Condition |
-| --- | --- |
+| -- | -- |
 | HIGH | `abs(delta) > running_mean + 3 * running_std` |
 | MEDIUM | `abs(delta) > running_mean + 2 * running_std` (and not HIGH) |
 
@@ -243,6 +247,7 @@ Return ONLY: {"status":"done","hypotheses":N,"file":"<RUN_DIR>/retrospective.md"
 **Health monitoring note** (CLAUDE.md §6 deviation): research:scientist agent here spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling unreachable mid-call. Health monitoring approximated post-hoc: if Agent() call returns after >15 min with no output file, treat as timed out. CLAUDE.md §6 full protocol applies only to background agents.
 
 **Post-call timeout check**: after Agent() returns, verify:
+
 - File `$RUN_DIR/retrospective.md` exists and has content → success
 - File missing or empty → set `scientist_status = "timed_out"`, continue to T6; surface with ⏱ in report
 

@@ -1,6 +1,6 @@
 ---
 name: kaggle
-description: "Build/extend grounded Kaggle Jupytext notebooks for training, EDA, inference, or resume workflows, grounding schema and submission format through the authenticated kaggle CLI."
+description: Build/extend grounded Kaggle Jupytext notebooks for training, EDA, inference, or resume workflows, grounding schema and submission format through the authenticated kaggle CLI.
 ---
 
 # Kaggle
@@ -71,7 +71,7 @@ Inspect in parallel where available:
 Write a source-backed table in `profile.md`:
 
 | Fact | Value | Source |
-| --- | --- | --- |
+| -- | -- | -- |
 | problem type | — | user, fetched URL, local file, or explicit inference from another row |
 | input modality | — | — |
 | target/output format | — | — |
@@ -88,7 +88,7 @@ Never invent competition-specific columns, paths, labels, metrics, or submission
 Choose the simplest justified model family:
 
 | Profile | Preferred starting point |
-| --- | --- |
+| -- | -- |
 | image classification/regression | `timm` backbone; PyTorch Lightning for neural training |
 | 2D segmentation | `segmentation_models_pytorch`; MONAI for 3D |
 | detection | `torchvision.models.detection` or a verified installed detector API |
@@ -138,15 +138,15 @@ Follow `../../shared/helper-cli-contract.md` and inspect helper `--help` before 
 
 ## Fail-Fast Rules
 
-1. Missing or unsafe competition slug => fail before writing.
-2. Conflicting modes or missing resume path => fail before writing.
-3. Unknown input modality, metric, or submission format without explicit placeholder approval => stop and ask.
-4. Competition-specific claim without a cited user, local, fetched, or `kaggle` CLI source => fail the grounding gate.
-5. Referenced composition, section contract, or style file missing or unreadable => fail before generation.
-6. Generated output missing required sections, containing forbidden sections, or failing cell-marker checks => fail.
-7. Claimed runtime success without executed evidence => fail review.
-8. Missing `profile.md`, gate evidence, or validated result artifact => fail.
-9. Full competition or dataset archive downloaded without listing file sizes and asking first => fail.
+01. Missing or unsafe competition slug => fail before writing.
+02. Conflicting modes or missing resume path => fail before writing.
+03. Unknown input modality, metric, or submission format without explicit placeholder approval => stop and ask.
+04. Competition-specific claim without a cited user, local, fetched, or `kaggle` CLI source => fail the grounding gate.
+05. Referenced composition, section contract, or style file missing or unreadable => fail before generation.
+06. Generated output missing required sections, containing forbidden sections, or failing cell-marker checks => fail.
+07. Claimed runtime success without executed evidence => fail review.
+08. Missing `profile.md`, gate evidence, or validated result artifact => fail.
+09. Full competition or dataset archive downloaded without listing file sizes and asking first => fail.
 10. A required main-path notebook action (data load, sample display, chart, lens, training, inference, or submission validation) guarded by `try`/`except`, `if`/`else`, or a silent skip => fail. Assert its preconditions immediately before the action and let unexpected errors stop the notebook.
 
 ## Quality Gates

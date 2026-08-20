@@ -1,7 +1,7 @@
 ---
 name: test-impact
-description: "Identify which tests need rerunning after a code change — traces static call graph (function-level) or import graph (module-level) to find affected test files, then emits a ready-to-run pytest command. TRIGGER when: user asks which tests are affected by a change; phrases: \"which tests are affected\", \"what tests cover this\", \"test impact of\", \"what tests to rerun\"."
-argument-hint: "<module::symbol | module> [--no-mocks]"
+description: 'Identify which tests need rerunning after a code change — traces static call graph (function-level) or import graph (module-level) to find affected test files, then emits a ready-to-run pytest command. TRIGGER when: user asks which tests are affected by a change; phrases: "which tests are affected", "what tests cover this", "test impact of", "what tests to rerun".'
+argument-hint: <module::symbol | module> [--no-mocks]
 allowed-tools: Bash, Write, AskUserQuestion
 model: haiku
 effort: low
@@ -52,6 +52,7 @@ command -v codemap-py >/dev/null 2>&1 || { echo "codemap-py not on PATH — inst
 `SCAN_NO_AUTOBUILD=1` opts out: use index unchanged; no refresh/full build. Echo build wall-time when run, separating build/query cost.
 
 If `$INDEX` missing:
+
 - With `SCAN_NO_AUTOBUILD=1`: print `! codemap index missing and SCAN_NO_AUTOBUILD=1 — refusing to auto-build. Build it manually first: /codemap-py:scan-codebase`; exit 1.
 - Otherwise run foreground `codemap-py index`; wait, then continue. Never invoke `codemap-py:scan-codebase`: `disable-model-invocation:true`, user-slash-only. Build through gated `codemap-py index` dispatcher.
 
@@ -74,6 +75,7 @@ fi
 ```
 
 After build/refresh, re-verify index:
+
 ```bash
 # timeout: 5000
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
@@ -98,6 +100,7 @@ echo "$MOCKS_FLAG" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-mocks-${CSID}"
 ```
 
 If `$ARGUMENTS` empty, use `AskUserQuestion`: "Which function or module changed?" Options: (a) Enter `module::symbol` for function-level; (b) Enter bare module for module-level; (c) Cancel, exit without analysis. After answer, set `QNAME`; write tmpfile before Step 2:
+
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -149,6 +152,7 @@ for name, value in fields.items():
 ```
 
 Parse `$RESULT` JSON:
+
 - `test_files` — list of test file paths
 - `pytest_cmd` — ready-to-run command
 - `via_call` / `via_mock` — breakdown of how tests were found
@@ -165,7 +169,7 @@ Parse `$RESULT` JSON:
 
 **When `total > 0`**:
 
-```
+````
 ## Test impact: <qname>
 
 **Affected tests** (<total> files, <via_call> via call/import graph, <via_mock> via mocks):
@@ -179,7 +183,7 @@ Parse `$RESULT` JSON:
 <if not_covered non-empty>
 **Caveat:** dynamic-dispatch / hook-callback callers are not in the static graph — <hint>.
 </if>
-```
+````
 
 Output routing: if `total >= 5`, derive free non-colliding path; write report there:
 

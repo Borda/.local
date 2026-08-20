@@ -23,8 +23,7 @@ Start with these (adapt based on tree content):
 
 1. "Which open branch best captures the core direction you want to pursue?" — list each open branch as lettered option. Note: if tree was saved and this branch does not already have ✓ status in file, it should be updated to `resolved — chosen in distillation` in tree file; do not re-save file here — spec file written in D3 will reflect accepted direction.
 2. "Should any remaining open branches be combined with chosen direction, or are they separate concerns?"
-3. "What is the single most important success criterion for this idea?"
-4–5. Ask additional questions based on gaps in open threads section or unresolved tensions between branches
+3. "What is the single most important success criterion for this idea?" 4–5. Ask additional questions based on gaps in open threads section or unresolved tensions between branches
 
 After questions, briefly restate distilled direction in 2–3 sentences — synthesis of what was just decided.
 
@@ -145,6 +144,7 @@ Spec: <file path>
 **Model-invocability check**: inspect task 1's invocation from the action plan table (Step B2). If it resolves to `/foundry:manage create ...` / `/foundry:manage update ...` (or any other skill with `disable-model-invocation: true`), task 1 is **not** model-invocable — print task 1's invocation as a copy-pasteable plain-text command above the question, and omit the "Start task 1 now" option below. Otherwise task 1 is model-invocable — offer it normally.
 
 **When task 1 is model-invocable**, call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
+
 - question: "Plan ready. What next?"
 - (a) label: `Start task 1 now` — description: proceed immediately with task 1 invocation (★ recommended)
 - (b) label: `Copy plan` — description: output plan table as clean markdown block, then stop
@@ -153,6 +153,7 @@ Spec: <file path>
 On **(a)** (requires `develop` plugin): before dispatching, verify no active `/develop:feature` task for this spec exists in TaskList — call `TaskList` and scan for tasks naming the spec slug or referencing `/develop:feature` against same spec file; if found, surface existing task to user and skip dispatch (prevents double-dispatch on re-entry). Otherwise proceed immediately with invocation from task 1. On **(b)**: output plan table as clean markdown block, then stop. On **(c)**: stop and tell user to revise spec and re-run `/brainstorm breakdown <spec>`.
 
 **When task 1 is NOT model-invocable**, print task 1's invocation as a copy-pasteable command, then call `AskUserQuestion`:
+
 - question: "Plan ready. Task 1 requires manual invocation (shown above). What next?"
 - (a) label: `Copy plan` — description: output plan table as clean markdown block, then stop (★ recommended)
 - (b) label: `Revise spec first` — description: stop; revise spec and re-run `/brainstorm breakdown <spec>`

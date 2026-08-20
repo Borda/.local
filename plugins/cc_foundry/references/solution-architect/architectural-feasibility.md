@@ -1,4 +1,5 @@
 <!-- Loaded by foundry:solution-architect (opusplan + high) -->
+
 # Architectural Feasibility (foundry:solution-architect specialized guidance)
 
 Read only when invoked by `/research:run --architect` (requires `research` plugin) to filter AI-generated experiment hypotheses. Skip for standalone ADR / API-design / migration-plan tasks.
@@ -8,8 +9,7 @@ Read only when invoked by `/research:run --architect` (requires `research` plugi
 ### Input
 
 - **`RUN_DIR=<path>` — REQUIRED spawn-prompt input**. Caller MUST include `RUN_DIR=<path>` (absolute or repo-relative) in spawn prompt; anchors `hypotheses.jsonl` for crash recovery and re-invocation. **Guard**: at workflow start, if `$RUN_DIR` not found in input prompt, exit immediately with error `"RUN_DIR not provided in spawn prompt — caller must include RUN_DIR=<path>"`. Do not proceed without it.
-- JSONL list of hypotheses from `research:scientist` (requires `research` plugin), each with:
-  `{hypothesis, rationale, confidence, expected_delta, priority}`
+- JSONL list of hypotheses from `research:scientist` (requires `research` plugin), each with: `{hypothesis, rationale, confidence, expected_delta, priority}`
 - Project codebase (read root + `src/` + existing `.experiments/<run>/` if present)
 
 ### Assessment per hypothesis

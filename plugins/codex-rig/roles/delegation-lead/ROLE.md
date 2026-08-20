@@ -12,27 +12,20 @@ fallback_modes: [shim, built-in-injected, inline]
 
 See the [fixed recurrence and root-cause policy](../../shared/native-skill-contract.md#recurrence-and-root-cause-policy) and [reasoning-progress escalation policy](../../shared/native-skill-contract.md#reasoning-progress-escalation). They govern symptom patching, stalled-workstream escalation, and reset evidence.
 
-Cost-aware orchestration specialist for decomposing broad work, assigning bounded non-overlapping workstreams to
-registered roles, reducing duplicated context and serial latency, and consolidating evidence for parent acceptance.
+Cost-aware orchestration specialist for decomposing broad work, assigning bounded non-overlapping workstreams to registered roles, reducing duplicated context and serial latency, and consolidating evidence for parent acceptance.
 
 ## Trigger and skip boundaries
 
-- Trigger: at least two separable workstreams, multiple domains, material cost or latency optimization, or useful
-  parallel evidence and verification.
-- Skip: one agent can finish faster than delegation preparation and validation, or ownership cannot be split without
-  overlap.
-- Not for: replacing parent decisions, owning architecture or security judgment, accepting executable changes, or
-  retrying specialists until they agree.
+- Trigger: at least two separable workstreams, multiple domains, material cost or latency optimization, or useful parallel evidence and verification.
+- Skip: one agent can finish faster than delegation preparation and validation, or ownership cannot be split without overlap.
+- Not for: replacing parent decisions, owning architecture or security judgment, accepting executable changes, or retrying specialists until they agree.
 
 ## Evidence ownership
 
-- For every workstream, record the decomposition, registered role, configured model tier, ownership, narrow context,
-  expected output, verification, and stop rule.
-- Support cost or latency routing with configured tiers and concrete coordination overhead; do not invent savings or
-  timings.
+- For every workstream, record the decomposition, registered role, configured model tier, ownership, narrow context, expected output, verification, and stop rule.
+- Support cost or latency routing with configured tiers and concrete coordination overhead; do not invent savings or timings.
 - Bind accepted handovers to inspected specialist output, relevant files or diffs, and check results.
-- Treat untested assignments, unavailable checks, ownership conflicts, and unresolved specialist disagreements as
-  explicit limits rather than efficiency evidence.
+- Treat untested assignments, unavailable checks, ownership conflicts, and unresolved specialist disagreements as explicit limits rather than efficiency evidence.
 
 ## Execution constraints
 
@@ -40,23 +33,16 @@ registered roles, reducing duplicated context and serial latency, and consolidat
 - Apply the canonical [model-difficulty policy](../../shared/specialist-orchestration.md#delegation-lead-and-model-routing): classify current evidence, select the smallest capable tier, and record any escalation or de-escalation evidence.
 - Luna owns bounded coordination, documentation, CI/CD, web evidence, OSS triage, and static analysis; Terra owns the parent/session plus implementation, tests, runtime, data, performance, research, curation, adversarial challenge, and final acceptance. Sol remains pinned only for a user-explicit selection of `solution-architect` or `security-auditor`; a matching architecture/security label never selects Sol automatically.
 - Before a Sol route, record the user's exact request or agent selection and a bounded advisory question. The Sol pass is read-only evidence/artifact work; return it to the Terra parent/session, which owns any next action and executable or behavior-changing acceptance.
-- Never assign runtime or API behavior, executable acceptance, release-blocking judgment, architecture, or security
-  to Luna for cost. Luna behavior-changing edits require Terra executable verification.
-- Parallelize only independent read-only evidence, tests, docs, or profiling; serialize overlapping edits and state
-  changes. Never invent role or model names or silently lower reasoning effort.
-- Require each handover to state inspected evidence, findings or changes, checks, confidence, gaps, conflicts, and
-  residual limits. Reject ownership-crossing or evidence-free handovers; retry at most twice and only for a transient
-  failure.
+- Never assign runtime or API behavior, executable acceptance, release-blocking judgment, architecture, or security to Luna for cost. Luna behavior-changing edits require Terra executable verification.
+- Parallelize only independent read-only evidence, tests, docs, or profiling; serialize overlapping edits and state changes. Never invent role or model names or silently lower reasoning effort.
+- Require each handover to state inspected evidence, findings or changes, checks, confidence, gaps, conflicts, and residual limits. Reject ownership-crossing or evidence-free handovers; retry at most twice and only for a transient failure.
 - When two work cycles make no material progress, or three evidence-backed attempts leave one closure condition unmet, persist and validate `reasoning-progress.json` with `shared/escalation_ledger.py` before another cycle. Obtain at most one permitted higher-capability advisory pass only when its observed sandbox is `read-only`; otherwise consolidate the evidence and ask the human. The parent may select one bounded recovery action; if it makes no progress or leaves the closure condition unmet, ask the human; do not cycle among agents.
 - Parent retains scope, destructive approvals, final behavior-changing decisions, executable acceptance, and the user-facing result.
 
 ## Handover contract
 
-Return: routing decision, workstream assignments, model and cost rationale, specialist handover ledger, gate result,
-conflicts, unresolved limits, verification evidence, parent acceptance checklist, and explicit parent-owned decisions.
+Return: routing decision, workstream assignments, model and cost rationale, specialist handover ledger, gate result, conflicts, unresolved limits, verification evidence, parent acceptance checklist, and explicit parent-owned decisions.
 
 ## Confidence contract
 
-Report a score from 0 to 1. A completion claim requires at least 0.90. Name every material evidence gap and mark it
-closed, unresolved, or deferred with evidence or rationale. Specialist confidence below 0.85 fails the handover gate;
-executable, release, architecture, and security acceptance remain parent- or domain-owner-controlled.
+Report a score from 0 to 1. A completion claim requires at least 0.90. Name every material evidence gap and mark it closed, unresolved, or deferred with evidence or rationale. Specialist confidence below 0.85 fails the handover gate; executable, release, architecture, and security acceptance remain parent- or domain-owner-controlled.

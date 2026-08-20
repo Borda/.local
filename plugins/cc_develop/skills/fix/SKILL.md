@@ -1,6 +1,6 @@
 ---
 name: fix
-description: "Reproduce-first bug resolution — capture bug in failing regression test, apply minimal fix, run quality stack and review loop. TRIGGER when: user reports a bug, regression, or unexpected behaviour in Python code with a traceback, failing test, or issue number; phrases: \"fix this bug\", \"repair X\", \"broken since Y\", \"test failing\". SKIP when: CI-only failures without local traceback (use `/develop:debug` first); new features (use `/develop:feature`); `.claude/` config issues (use `/foundry:audit`); non-Python projects."
+description: 'Reproduce-first bug resolution — capture bug in failing regression test, apply minimal fix, run quality stack and review loop. TRIGGER when: user reports a bug, regression, or unexpected behaviour in Python code with a traceback, failing test, or issue number; phrases: "fix this bug", "repair X", "broken since Y", "test failing". SKIP when: CI-only failures without local traceback (use `/develop:debug` first); new features (use `/develop:feature`); `.claude/` config issues (use `/foundry:audit`); non-Python projects.'
 argument-hint: '<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--plan <path>] [--diagnosis <path>] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team] [--worktree] [--keep "<items>"]'
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, EnterWorktree, ExitWorktree
@@ -12,6 +12,7 @@ disable-model-invocation: true
 Reproduce-first bug resolution. Capture bug in failing regression test, apply minimal fix, verify via quality stack and review loop.
 
 NOT for:
+
 - CI-only failures with no local traceback — use `/develop:debug` first (`--ci-run <run-id>` for GitHub Actions logs)
 - production incidents without any CI run or traceback (use `/foundry:investigate` (requires foundry plugin))
 - `.claude/` config issues (use `/foundry:audit` (requires foundry plugin))
@@ -22,10 +23,10 @@ NOT for:
 
 <compaction>
 
-Key boundary: end of Step 2 — reproduction test written and failing, before Step 3 code edits.
-Second boundary: end of Step 3 — fix applied and regression test passing, before Step 4 review stack.
-Preserve at boundary 1: dev-dir, regression test path, root cause summary, plan-file, --keep items.
-Preserve at boundary 2: dev-dir, changed files list, test outcomes, regression test path.
+- Key boundary: end of Step 2 — reproduction test written and failing, before Step 3 code edits.
+- Second boundary: end of Step 3 — fix applied and regression test passing, before Step 4 review stack.
+- Preserve at boundary 1: dev-dir, regression test path, root cause summary, plan-file, --keep items.
+- Preserve at boundary 2: dev-dir, changed files list, test outcomes, regression test path.
 
 </compaction>
 
@@ -61,6 +62,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/runner-detection.md"
 ```
+
 Sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
 
 **Language preflight gate**: apply §Language preflight gate from `runner-detection.md` (loaded above) — sets `NON_PY` and runs the abort/continue question.
@@ -73,6 +75,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/preflight-helpers.md"
 ```
+
 Execute --plan path extraction; sets `$PLAN_FILE`.
 
 **Checkpoint init**: creates `.developments/<TS>/` and captures path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
@@ -154,9 +157,10 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-gates.md"
 ```
+
 Follow Gate A and Gate B.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--worktree\`, \`--diagnosis\`, \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. If found: print `` ! Unknown flag(s): `--<token>`. Supported: `--plan`, `--team`, `--worktree`, `--diagnosis`, `--no-challenge`, `--challenge`, `--codemap`, `--no-codemap`, `--accept-no-plan`, `--semble`, `--repo`, `--keep`. `` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
@@ -166,9 +170,11 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/preflight-helpers.md"
 ```
+
 Execute codemap + semble preflight if respective flags set.
 
 <!-- Only active when --team flag passed (~10% of invocations) -->
+
 ## Team Mode Branch
 
 **If `TEAM_MODE=true`**: execute team workflow now — do not proceed to Step 1.
@@ -197,6 +203,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_issue_fetch_wrap.py" f
 ```
 
 **Cross-repo adaptation** (when `REPO_NAME` set) — issue was filed against a different codebase. After fetching issue, analysis must:
+
 1. Understand bug's root cause intent from issue body — not just symptoms or described fix (which may reference upstream structure)
 2. Locate equivalent bug in LOCAL codebase — run Grep for relevant symbols/patterns; code paths may differ due to divergence
 3. Treat upstream issue as context, not prescription — implement fix appropriate to local structure
@@ -252,6 +259,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-context.md"
 ```
+
 Follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags false.
 
 Spawn **foundry:sw-engineer** agent to analyze failing code path and identify:
@@ -290,11 +298,11 @@ fi
 > Derived qualified name comes from whatever Step 1 recorded in `$DEV_DIR/checkpoint.md` (write suspect there as `module::function` when you append `step: 1 — completed`). No suspect in `module::function` form recorded → skip silently; `central` baseline already ran.
 
 **Cannot-reproduce gate**: if sw-engineer unable to identify root cause, traceback, or any failing test, invoke `AskUserQuestion` — do NOT proceed to Step 2 with no reproduction path:
+
 - question: "Cannot confirm root cause from available information. How to proceed?"
 - (a) Use `/develop:debug` — investigate interactively first
 - (b) Provide additional context — user pastes traceback, logs, or minimal reproduction; after user replies, re-run Step 1 analysis with new context in same session (DMI: cannot wait for next invocation; apply additional context inline)
-- (c) Use `/foundry:investigate` (requires foundry plugin) — for production incidents with no CI trace
-Stop until user provides option (b) context or selects a redirect.
+- (c) Use `/foundry:investigate` (requires foundry plugin) — for production incidents with no CI trace Stop until user provides option (b) context or selects a redirect.
 
 If root cause not definitively established after analysis, surface assumptions before proceeding:
 
@@ -309,6 +317,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/premise-grounding.md"
 ```
+
 §Premise Grounding Gate. Apply using **fix** context from Skill contexts table.
 
 **Scope gate**: if root cause spans 3+ modules, flag complexity smell. Use `AskUserQuestion` to present scope concern before proceeding, with options: "Narrow scope (Recommended)" / "Proceed anyway".
@@ -319,6 +328,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/plan-inline.md"
 ```
+
 §Inline Plan Generation Protocol. Apply using **fix** context from Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
 
 ## Challenger gate
@@ -336,6 +346,7 @@ Spawn `foundry:challenger` with root cause analysis from Step 1 (root cause, bla
 > "Review root cause analysis and proposed fix approach. Challenge across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step."
 
 Parse result:
+
 - **Blockers found** → STOP. Present findings. Do not proceed to Step 2 until user resolves each blocker or explicitly accepts risk.
 - **Concerns only** → surface as advisory; continue.
 - **No findings / all refuted** → proceed.
@@ -360,10 +371,12 @@ Parse result:
    ```
 
 2. For each candidate test found — critically assess coverage quality:
+
    - Does it exercise exact failing path (correct inputs, correct assertions)?
    - Or is it a weak test — broad mocking, trivially happy-path, partial assertion — that deflected the problem rather than caught it?
 
 3. Three outcomes from archaeology:
+
    - **A: Existing test fails already** → captures bug; use as-is; proceed to Step 3
    - **B: Existing test passes but is weak** (deflected problem) → fix existing test to properly reproduce; do NOT write new test; gate: test must fail after fix
    - **C: No relevant test found** → write new test (proceed to Part B)
@@ -377,6 +390,7 @@ Surface archaeology verdict before any writing:
 Spawn **foundry:qa-specialist** agent (outcome C only — no existing tests found) to write two reproduction tests:
 
 Spawn with context:
+
 - Bug description: [symptom from $ARGUMENTS or issue]
 - Failing output: [exact error/traceback captured in Step 1]
 - Suspect files: [files identified by sw-engineer in Step 1]
@@ -384,6 +398,7 @@ Spawn with context:
 - Actual behaviour: [what currently happens]
 
 **Path 1 — Full user flow (integration demo)**
+
 - Exercises complete user-reported scenario end-to-end
 - No mocking of broken subsystem — real execution
 - Confirms user-reported problem fully resolved
@@ -391,6 +406,7 @@ Spawn with context:
 - Lives in `tests/integration/` or alongside existing integration tests
 
 **Path 2 — Targeted unit test (fast iteration)**
+
 - Minimal scope: isolates root cause directly
 - Mock external dependencies; only broken unit under test is real
 - Designed for quick re-run during fix iteration (sub-second)
@@ -479,18 +495,21 @@ If `oss` plugin available (i.e., `$_OSS_SHARED` non-empty), use `semver-rules.md
 Make minimal change to fix root cause:
 
 1. Edit only code necessary to resolve bug
+
 2. Run regression test to confirm now passes:
+
    ```bash
    # timeout: 600000
    $PYTEST_CMD --tb=short <test_file>::<test_name> -v
    ```
+
 3. Run affected tests (prefer targeted over full suite):
 
    **Test impact (codemap-py)** — derive minimal test set before running anything.
 
    **Reuse from diagnosis handoff first** — when invoked with `--diagnosis`, `/develop:debug` may have already run this query and written it into diagnosis file under `## Test Impact (codemap-py)`. Reuse it (one query total across debug→fix) only when still fresh — not `stale` and not older than current index:
 
-   ```bash
+   ````bash
    # timeout: 6000
    DIAG_FILE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/diagnosis_parse.py" "$ARGUMENTS" 2>/dev/null)  # re-derive — bash state lost between Bash() calls
    REUSED_PYTEST_CMD=""
@@ -509,20 +528,24 @@ Make minimal change to fix root cause:
            echo "→ diagnosis test-impact stale or index moved — re-querying live"
        fi
    fi
-   ```
+   ````
 
    **Live query** — run only when no fresh handoff result was reused (`REUSED_PYTEST_CMD` empty):
+
    ```bash
    codemap-py query test-impact "<changed_module::function or bare module>" 2>/dev/null
    ```
+
    - Reused `REUSED_PYTEST_CMD` non-empty, OR live result non-empty `pytest_cmd` → use it instead of full `<test_dir>` run; surface `not_covered` caveat if present
    - Result empty or `codemap-py query` absent → fall back to full directory below
 
    **Full suite fallback** (only when impact query returns empty or unavailable):
+
    ```bash
    # timeout: 600000
    $PYTEST_CMD --tb=short <test_dir> -v
    ```
+
    **If `<test_dir>` does not exist or has no tests beyond regression test**: run only regression test (already verified in Step 2). Note in Final Report: "No pre-existing test suite found — regression test is sole verification."
 
 4. If existing tests break: fix has side effects — reconsider approach
@@ -591,6 +614,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 _SHARED="$_DEV_SHARED"  # quality-stack.md loads its siblings from $_SHARED — this plugin's own _shared
 cat "$_DEV_SHARED/quality-stack.md"
 ```
+
 Execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps. `quality-stack.md` ships in this plugin's own `_shared`, so it is always present — absence means a broken install, not a missing optional dependency.
 
 ## Final Report
@@ -646,7 +670,7 @@ rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compac
 ## Anti-Rationalizations
 
 | Temptation | Reality |
-| --- | --- |
+| -- | -- |
 | "I already know root cause from symptom" | Assumptions without verification fix wrong bug. Read code path first. |
 | "Regression test can wait — add after fix" | Fix without failing test = unverifiable. Test proves bug existed. |
 | "Clean up nearby code while here" | Scope creep produces side effects, obscures fix. Touch only root cause. |

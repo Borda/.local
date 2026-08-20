@@ -29,6 +29,7 @@ Labelled or annotated question (e.g. `[AskUserQuestion simulated] — What forma
 Describing, simulating, or annotating a tool call in any form — parenthetical ("AskUserQuestion would be invoked here"), bracket notation (`[Invoking AskUserQuestion: ...]`), or intent narration ("I would ask...") — is plain text and a violation. Call tool directly; emit no prose description of intent before or instead of call.
 
 Compliant example — only valid form:
+
 > Call `AskUserQuestion(questions=["What format is the data in? (JSON, CSV, XML)"])` — no prose question in response body.
 
 - Plain text questions easily missed, don't block execution, don't surface as distinct UI affordance

@@ -47,7 +47,9 @@ Wait for completion. Verify `$DATA_FILE` exists and non-empty. TaskUpdate "Step 
 Spawn all 3 `oss:repo-warden` agents simultaneously in single response:
 
 > `Agent(subagent_type="oss:repo-warden", prompt="GH_OWNER=$GH_OWNER GH_REPO=$GH_REPO DATA_FILE=$DATA_FILE PARTIAL_FILE=$PARTIAL_A AXIS_GROUP=A")`
+>
 > `Agent(subagent_type="oss:repo-warden", prompt="GH_OWNER=$GH_OWNER GH_REPO=$GH_REPO DATA_FILE=$DATA_FILE PARTIAL_FILE=$PARTIAL_B AXIS_GROUP=B")`
+>
 > `Agent(subagent_type="oss:repo-warden", prompt="GH_OWNER=$GH_OWNER GH_REPO=$GH_REPO DATA_FILE=$DATA_FILE PARTIAL_FILE=$PARTIAL_C AXIS_GROUP=C")`
 
 **Health monitoring** (CLAUDE.md §6): before spawning, create checkpoint:
@@ -176,6 +178,7 @@ IFS= read -r _OSS_ANALYSE < "${TMPDIR:-/tmp}/analyse-oss-analyse-${CSID}" 2>/dev
 REPORT_TPL="$_OSS_ANALYSE/templates/vitality-report.md"
 cat "$REPORT_TPL"  # timeout: 5000
 ```
+
 Full report structure (loaded above). Write `$REPORT_FILE` using that structure as scaffold — substitute all `{VARIABLE}` placeholders with bash variables set above (`REPORT_TIMESTAMP`, `GH_OWNER`, `GH_REPO`, `SKILL_VERSION`, `REPORT_COMMIT`, `TOTAL_PASSES`, `CONFIDENCE_HISTORY`, `REPORT_AGENTS_YAML`, etc.). Do not print full analysis to terminal.
 
 ## Step 5 — Codex Independent Repo Review · Step 6 — Adversarial Rework Loop
@@ -219,6 +222,7 @@ cat "$_OSS_ANALYSE/modes/vitality-adversarial-rework.md"  # timeout: 5000
 Execute its steps (Step 6) — each returns here to the next in sequence.
 
 > loads: vitality-codex-review.md
+>
 > loads: vitality-adversarial-rework.md
 
 ## Step 7 — Terminal Summary Output
@@ -229,6 +233,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/analyse-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
 cat "$_OSS_SHARED/terminal-summaries.md"  # timeout: 5000
 ```
+
 Compact block format (loaded above). File absent → warn "run /foundry:setup — printing plain terminal output instead."
 
 **Hook-enforced**: `hooks/enforce-analyse-header.js` (PreToolUse on `AskUserQuestion`) denies SKILL.md Step 6a's follow-up question while the `$REPORT_FILE` written in Step 4 is missing or empty. A denial reading `oss:analyse report gate` means Step 4 never produced the report — write it, print the block below, then re-issue the question. The hook sees only whether the report exists, not whether the block was printed; this step remains the check for that.
@@ -240,6 +245,7 @@ Print compact block to terminal. Three sections: header, exec summary, simplifie
 **Skill:** oss:analyse v{SKILL_VERSION} · **Commit:** {REPORT_COMMIT} · **Generated:** {REPORT_TIMESTAMP}
 **Passes:** {TOTAL_PASSES}/5 · confidence: {OVERALL_CONFIDENCE} (history: {CONFIDENCE_HISTORY colons→commas})
 ```
+
 _(Omit Passes line when TOTAL_PASSES=1 — no retry loop needed.)_
 
 ```markdown
@@ -275,9 +281,11 @@ _(When OVERALL_CONFIDENCE < 0.7 prefix this line with: `⚠ LOW CONFIDENCE ({OVE
 ```
 
 For ⚪ axes: show `--` in Score/Status columns; append below closing `---`:
+
 ```text
 ⚠ Axis {N} ({name}, wt {X}%) unavailable — score normalized over {M}/9 axes
 ```
+
 If Axis 3 specifically ⚪: `⚠ Axis 3 (contributor health, wt 10%) unavailable — rerun in 5–10 min for full score`.
 
 **Post-table validation (mandatory)**: after printing the scorecard, verify: (a) exactly 9 data rows appear with axis numbers 1–9, (b) no axis number repeated. Any duplicate or omission = immediately reprint the corrected full table before any other output. Never omit an axis row — even when data missing, show `--` in Score/Status.
@@ -301,7 +309,7 @@ Block must begin with `# Repo Vitality — {GH_OWNER}/{GH_REPO}` title and close
 - **403 on security APIs**: Dependabot and secret scanning require push access; 403 = expected; scorer Group B applies partial scoring for Axis 8; confidence 0.4; never ⚪ solely from Dependabot 403
 - **Axis 1 response time**: responses by issue/PR author do not count — only first non-author comment/review contributes to response time computation
 - **Code-review coverage (Axis 4)**: bot-submitted PRs (Dependabot, Renovate) excluded from both numerator and denominator — bot PRs cannot be "reviewed" in human sense and distort coverage rate
-- **Star velocity**: advisory only — excluded from numeric score; page loop stops at 180d boundary via `$CUTOFF_180D`; if coverage < 30 days of stars when loop ends, mark 8B ⚪; partial data (≥30d coverage but <180d) → note truncation and use available window for trend
+- **Star velocity**: advisory only — excluded from numeric score; page loop stops at 180d boundary via `$CUTOFF_180D`; if coverage < 30 days of stars when loop ends, mark 8B ⚪; partial data (≥30d coverage but \<180d) → note truncation and use available window for trend
 - **Package registry 404**: skip sub-signal C silently — not all repos publish to PyPI/npm
 - **Axis independence**: failure of one axis (API unavailable, access denied, computing) → ⚪ row in scorecard, continue with remaining axes; never block report on single axis failure
 - **Codex independent review (Step 5)**: runs before adversarial review — codex assesses raw data independently, not main report; produces parallel scorecard and divergence notes; aggregate health score = mean(main, codex); when CODEX_AVAILABLE=0, note "codex unavailable — single-pass analysis only" in report section
@@ -310,7 +318,7 @@ Block must begin with `# Repo Vitality — {GH_OWNER}/{GH_REPO}` title and close
 - **Rework loop exit conditions**: exits when `$REWORK_VERDICT = "pass"` OR `$REWORK_ITER >= $REWORK_MAX`; always exits after 2 iterations max regardless of verdict
 - **SCORES_FILE**: assembled in Step 3 by orchestrator from 3 partial files — not written by gh-scraper; gh-scraper prompt in Step 1 does NOT include SCORES_FILE
 - **CI pass-rate denominator**: always `success / total` (full denominator); never trim to success/conclusive; report `action_required` runs as separate "workflow auth failures" note — never exclude from denominator; inconsistent denominators break cross-repo Health Score comparison
-- **Dependabot manifest_path classification**: before classifying alert as runtime user exposure, check `manifest_path` — `*_test.txt`, `**/test*.txt`, `**/dev*.txt`, `**/ci*.txt` = test/CI deps, not user-facing; GitHub `scope=runtime` field is unreliable for extras classification; actual runtime exposure = alert in file referenced by published extras_require; always split security finding: "N user-facing (extras/*.txt)" vs "M dev/CI-facing (*_test.txt)"
+- **Dependabot manifest_path classification**: before classifying alert as runtime user exposure, check `manifest_path` — `*_test.txt`, `**/test*.txt`, `**/dev*.txt`, `**/ci*.txt` = test/CI deps, not user-facing; GitHub `scope=runtime` field is unreliable for extras classification; actual runtime exposure = alert in file referenced by published extras_require; always split security finding: "N user-facing (extras/*.txt)" vs "M dev/CI-facing (*\_test.txt)"
 - **CODEOWNERS activity verification**: compute CODEOWNERS active-maintainer count programmatically from commit-author data (`commits.json`/stats); never enumerate by name recognition; inactive = 0 commits in window; still counts as CODEOWNERS member but labelled "nominal"; correct list must include all commit authors who appear in CODEOWNERS, exclude those with 0 commits
 - **Issue truncation framing**: when `open_issues.json` size == (`open_issues_count` − open PRs count), sample IS full population — state "all N open issues sampled"; reserve "N-cap window" framing for genuinely truncated samples only (response size == fetch limit); check: `sample_size = len(open_issues.json)`, `population = repo_meta.open_issues_count - open_prs_count`, if `sample_size >= population` → no truncation
 - **Workflow count reconciliation**: when API `total_count` differs from count of YAML files in `.github/workflows/`, reconcile — API includes archived/disabled; filesystem is active only; report as "N active (M registered)" never a single ambiguous number; SAST/security claims must use filesystem count (active workflows only)

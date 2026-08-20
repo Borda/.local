@@ -77,6 +77,7 @@ fi
 Checks two failure modes: (1) empty blocks — `<tag></tag>` with only whitespace between open and close; (2) unbalanced tags — open count differs from close count. Both leave files structurally broken.
 
 Scan all agent and skill files via deterministic bin/ script:
+
 ```bash
 printf "=== Check 14a: Structural tag symmetry ===\n"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_tag_symmetry.py" \
@@ -84,6 +85,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_tag_symmetry.py" \
 ```
 
 **Severity**: **medium** — gate-level; must fix before audit passes.
+
 - **Empty block**: **Auto-fix: YES** — remove empty open+close tag pair entirely; no content to lose.
 - **Unbalanced tag**: **Auto-fix: NO** — missing open or close tag requires manual inspection to determine intended structure.
 
@@ -91,7 +93,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_tag_symmetry.py" \
 
 ## Check 14b — Code fence symmetry
 
-Detects two failure modes: (1) unclosed fence — opening ` ``` ` or ` ```lang ` with no matching closing ` ``` `; (2) bad nesting — inner fence uses same or more backticks as outer (outer must use ```` ```` or more to contain inner ` ``` `).
+Detects two failure modes: (1) unclosed fence — opening ```` ``` ```` or ```` ```lang ```` with no matching closing ```` ``` ````; (2) bad nesting — inner fence uses same or more backticks as outer (outer must use ` ` or more to contain inner ```` ``` ````).
 
 Scan all agent and skill files via deterministic bin/ script:
 
@@ -102,15 +104,16 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_fence_symmetry.py" \
 ```
 
 **Severity**: **high** — unclosed fence corrupts all subsequent code blocks in the file; Claude misparses the rest of the file.
-- **Unclosed fence**: **Auto-fix: YES** — add missing closing ` ``` ` at end of block; confirm content boundary by reading surrounding context.
-- **Bad nesting**: **Auto-fix: YES** — promote outer fence to ```` ```` ```` ````; or demote inner if outer is intentionally 3-backtick.
-- **Timeout comment on closing fence** (```` ``` # timeout: N ````): **Auto-fix: YES** — move comment to last command inside block; change closing line to plain ` ``` `.
 
-> Root cause: timeout annotation placed on closing fence delimiter instead of inside block (most common); or copy-paste lost a closing ` ``` `.
+- **Unclosed fence**: **Auto-fix: YES** — add missing closing ```` ``` ```` at end of block; confirm content boundary by reading surrounding context.
+- **Bad nesting**: **Auto-fix: YES** — promote outer fence to ` ` ` `; or demote inner if outer is intentionally 3-backtick.
+- **Timeout comment on closing fence** (```` ``` # timeout: N ````): **Auto-fix: YES** — move comment to last command inside block; change closing line to plain ```` ``` ````.
+
+> Root cause: timeout annotation placed on closing fence delimiter instead of inside block (most common); or copy-paste lost a closing ```` ``` ````.
 
 ## Check 14c — README drift
 
-Detects README facts drifted from disk: (1) a literal `Current version: `X.Y.Z`` marker not matching the plugin's `plugin.json` version; (2) a `.py`/`.sh` script named on a README line mentioning `bin/` (or as an explicit `plugins/<plugin>/bin/<name>` path) existing nowhere in the plugin. Arbitrary version-shaped strings (release examples, historical benchmark tags) ignored — only the explicit marker checked.
+Detects README facts drifted from disk: (1) a literal `Current version: `X.Y.Z\`\` marker not matching the plugin's `plugin.json` version; (2) a `.py`/`.sh` script named on a README line mentioning `bin/` (or as an explicit `plugins/<plugin>/bin/<name>` path) existing nowhere in the plugin. Arbitrary version-shaped strings (release examples, historical benchmark tags) ignored — only the explicit marker checked.
 
 Scan all plugins via deterministic bin/ script:
 
@@ -121,6 +124,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_readme_drift.py" \
 ```
 
 **Severity**: **medium** — user-facing wrong facts; gate-level.
+
 - **Version marker drift**: **Auto-fix: YES** — update the marker to the current `plugin.json` version.
 - **Stale bin/ reference**: **Auto-fix: NO** — resolve to the current script name (often a sh→py migration) by inspecting the actual `bin/` directory.
 
@@ -128,8 +132,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_readme_drift.py" \
 
 ## Check 14d — Mode dispatch integrity
 
-Detects dangling mode-dispatch references: a SKILL.md line routing control to a named section (e.g. `go to "Mode: Lessons Distillation"` or `skip to **Mode: X**`) with no matching `## Mode: X` header in the same file — the half-done-rename bug class where the header was renamed but a dispatch line still points at the old name.
-Scan all plugins via deterministic bin/ script:
+Detects dangling mode-dispatch references: a SKILL.md line routing control to a named section (e.g. `go to "Mode: Lessons Distillation"` or `skip to **Mode: X**`) with no matching `## Mode: X` header in the same file — the half-done-rename bug class where the header was renamed but a dispatch line still points at the old name. Scan all plugins via deterministic bin/ script:
 
 ```bash
 printf "=== Check 14d: Mode dispatch integrity ===\n"
@@ -138,6 +141,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_mode_dispatch.py" \
 ```
 
 **Severity**: **high** — dangling dispatch sends the agent to a section that does not exist; the mode silently never runs.
+
 - **Dangling dispatch**: **Auto-fix: NO** — resolve to the intended header name (restore the renamed header or update the dispatch line to match); manual inspection determines which side is stale.
 
 > Root cause: a `## Mode: <Name>` header renamed without updating every `go to`/`skip to`/`see` dispatch line that references it (or vice versa).
@@ -154,6 +158,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/propagate_shared.py"  # ti
 ```
 
 **Severity**: **high** — a stale copy means one plugin runs old fallback logic; behaviour diverges silently by plugin.
+
 - **Drifted copy**: **Auto-fix: YES** — run `propagate_shared.py --apply` to overwrite copies with the canonical.
 
 > Root cause: `sync.sh` does not propagate cross-plugin shared files; a canonical edit was not mirrored into the consuming plugins. Also enforced pre-commit.
@@ -168,6 +173,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_codemap_guard.py"  #
 ```
 
 **Severity**: **high** — an unmanaged copy drifts silently; a subdir-anchored or sanitized-name copy reports `no_index` while an index exists, and the agent falls back to Grep with no error.
+
 - **Unregistered copy**: **Auto-fix: NO** — pick a shape first (provider CLI preferred), then add the `MANIFEST` or `REGISTRY` entry.
 - **Invariant violation**: **Auto-fix: NO** — restore root anchoring / raw basename at the offending line.
 - **Stale registry entry**: **Auto-fix: YES** — drop the entry; the file no longer holds a guard.
@@ -249,13 +255,14 @@ Flag files with block count ≥ 10 as extraction candidates — recommend `--eff
 For 17a (step-level prose overlap, ≥40% consecutive steps): flag pair, name canonical owner; route to Check 20 `merge-prune` if no clear owner.
 
 | Sub-check | Algorithm | Threshold | Severity | Output |
-| --- | --- | --- | --- | --- |
+| -- | -- | -- | -- | -- |
 | 17a — step overlap | consecutive step fraction | ≥40% steps | medium | findings list only |
 | 17b — block duplicate | NxN similarity (moved) | run `--efficiency` for full analysis | — | Phase B2 in efficiency.md |
 
 ## Check C32 — Hardcoded source-tree paths (install-path regression)
 
 Plugin skill and agent files must not contain bare `plugins/<name>/` paths as primary references. Resolve in source tree but break post-install where `plugins/` absent. Install-path resolution pattern (cache + fallback) mandatory.
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
@@ -282,7 +289,7 @@ fi  # timeout: 5000
 Severity: **high** — skill silently fails for any user who installed via marketplace (primary install path).
 
 | Sub-check | Pattern | Severity | Auto-fix |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | C32 — source-tree primary path | `plugins/<name>/` not in comment or fallback | high | no |
 
 > **Related**: Check 15 covers `/Users/` and `/home/` hardcoded paths. C32 covers `plugins/` source-tree paths.
@@ -370,7 +377,7 @@ Via model reasoning, apply four criteria per file:
 
 **4 — Information gap test (mandatory before flagging any candidate)**: "If removed, can reader reconstruct from remaining content?" YES = safe to flag. NO = not a finding — content load-bearing even if verbose. Always skip: code blocks, inline examples (Check 16), cross-reference tables, numbered lists where order carries meaning.
 
-Per finding: location (section heading + approx line range) · pattern type (repetition / prose-inflation / obvious-consequence) · estimated token savings (small <20 / medium 20–80 / large >80) · proposed shorter form or "remove entirely".
+Per finding: location (section heading + approx line range) · pattern type (repetition / prose-inflation / obvious-consequence) · estimated token savings (small \<20 / medium 20–80 / large >80) · proposed shorter form or "remove entirely".
 
 **Severity**: **medium** — total savings >= medium across >= 2 distinct locations. **low** — isolated small savings only. **Report only** — never auto-fix; minimization risks removing load-bearing nuance.
 
@@ -385,6 +392,7 @@ Per finding: file · TRIGGER line · SKIP line · one-line reason second is pure
 **29b — Non-actionable / hedged absolute directive**: directive using "consider", "may", "might", "should ideally", "try to", "where possible" where surrounding context makes rule absolute (no conditionality intended). Also: step missing verb+object+condition triad — subject-only or object-only instructions with no triggering condition.
 
 Via model reasoning per file: scan workflow steps and rule bullets. Flag where:
+
 - Hedging word present + no conditional clause justifying it (absolute rule weakened by hedge)
 - Step body is object-only ("error handling", "edge cases") with no verb or condition
 
@@ -440,15 +448,14 @@ Via model reasoning: extract (symbol, concept) pairs from legend. Per concept, s
 **Report only** — never auto-fix; symbol choices may be intentional or constrained by existing docs.
 
 | Sub-check | Severity | Auto-fix |
-| --- | --- | --- |
+| -- | -- | -- |
 | 26a — same concept, different symbols | medium | no |
 | 26b — directive notation mixed `/name` vs `name` | low | no |
 | 26c — body symbol contradicts legend | medium | no |
 
 ## Check 41 — LLM-first formatting conventions
 
-Config files consumed primarily by LLM at inference time. Formatting inconsistencies force LLM to resolve ambiguity before parsing content — wasted tokens, degraded reliability.
-**Principle**: compact + robust + minimal variation. One canonical form per pattern type per file.
+Config files consumed primarily by LLM at inference time. Formatting inconsistencies force LLM to resolve ambiguity before parsing content — wasted tokens, degraded reliability. **Principle**: compact + robust + minimal variation. One canonical form per pattern type per file.
 
 **Scan targets**: all `*.md` files under `.claude/` and `plugins/`, excluding any file named `README.md`. Each sub-check block below re-derives that file list inline — a shared assignment in its own block would not survive into the next Bash call (Check 43), and `mapfile` is a bash builtin absent from zsh (Check 45's note).
 
@@ -456,22 +463,24 @@ Via model reasoning, apply four sub-checks per file:
 
 **41a — List marker uniformity**: scan all unordered list lines outside code fences. Collect distinct markers used (`-`, `*`, `+`). More than one distinct marker in same file = finding. Mixed markers = ambiguous parse order for LLM; `-` is canonical.
 
-```bash
+````bash
 printf "=== Check 41a: List marker uniformity ===\n"
 while IFS= read -r f; do  # timeout: 5000
     [ -f "$f" ] || continue
     markers=$(awk '/^```/{skip=!skip} !skip && /^[[:space:]]*[*+] /{print $1}' "$f" | sort -u | tr '\n' ' ')
     [ -n "$markers" ] && echo "$f: uses markers: $markers"
 done < <(find .claude plugins -name "*.md" ! -name "README.md" 2>/dev/null | sort)
-```
+````
 
 Via model reasoning: for each file printing markers, confirm multiple distinct markers present outside code fences. Flag files with `*` or `+` alongside `-`.
 
 **41b — Numbering intent clarity**: two numbering registers must not be mixed in same document context:
+
 - `1.` `2.` `3.` — sequential steps (implies ordering + dependency)
 - `(a)` `(b)` `(c)` — choices / alternatives (implies selection, no ordering)
 
 Violations to flag:
+
 - `1.` `2.` used for choices inside AskUserQuestion option blocks or "choose one" lists
 - `(a)` `(b)` used for sequential workflow sub-steps where ordering matters
 
@@ -509,7 +518,7 @@ Via model reasoning: for each flagged header, find the file's own established si
 **Severity**: P3 — report only. Never auto-fix; reformatting risks layout regression in rendered contexts. Flag only clear violations with concrete line references.
 
 | Sub-check | Severity | Auto-fix |
-| --- | --- | --- |
+| -- | -- | -- |
 | 41a — mixed list markers | low | no |
 | 41b — numbering register mismatch | medium | no |
 | 41c — nested prose where table fits | low | no |
@@ -542,7 +551,7 @@ done 3< <(find .claude plugins -name "*.md" ! -name "README.md" 2>/dev/null | so
 **Severity**: low — gap in sub-check labeling. No runtime impact; misleads readers into expecting a missing variant.
 
 | Sub-check | Pattern | Severity | Auto-fix |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | 44 — orphan letter suffix | `Check Nb` in file without `Check Na` | low | no — rename or add missing variant |
 
 ## Check 45 — Policy-sibling marker symmetry (reference-graph completeness)
@@ -550,6 +559,7 @@ done 3< <(find .claude plugins -name "*.md" ! -name "README.md" 2>/dev/null | so
 Some policies (safety rules, scoping rules, format conventions) are **restated in prose** across multiple files instead of cross-referenced, because each consumer needs the rule inline in its own reading context. A restated copy has no structural link back to its siblings, so refining the policy in one location can silently leave others stating a stale version — grep-for-violations doesn't catch a file that correctly states an *old* rule. `plugins/CLAUDE.md §Policy Duplication Marker` requires a `<!-- policy-sibling: path1, path2, ... -->` comment in every copy, listing every other file stating the same policy. This check verifies that declared graph is complete and symmetric — it does not (cannot, mechanically) verify the restated *content* itself stays in sync; that judgment call is `foundry:curator`'s reference-graph trace (see curator `<workflow>` step on policy edits).
 
 Two failure modes:
+
 - **45-BROKEN**: marker lists a sibling path that doesn't exist on disk (stale — file renamed/deleted, marker not updated)
 - **45-ASYMMETRIC**: file A's marker lists file B as a sibling, but B has no `policy-sibling` marker pointing back — B was never updated to know it's part of the group (exactly how `git-commit.md` was missed before this check existed)
 
@@ -572,12 +582,13 @@ if [ -n "$OUT" ]; then printf "$OUT"; else printf "✓: Check 45 — no unsynced
 Extraction anchors on the literal `<!-- policy-sibling:` prefix (not a bare grep for the word) so prose documenting the convention — like this file's own explanation above, or an example snippet — never self-matches; the sibling-token filter (`/.*\.md$`) additionally drops non-path fragments (placeholder text, trailing rationale words) that survive the comma split. No array syntax (`read -ra`, `mapfile`) — Claude Code's Bash tool runs under the user's login shell, which is `zsh` on macOS by default, and zsh's `read` does not support bash's `-a` flag; plain `for x in $(...)` word-splitting is portable to both.
 
 **Severity**:
+
 - `45-BROKEN` — **high** — sibling reference points nowhere; anyone following it to propagate a fix finds nothing
 - `45-ASYMMETRIC` — **medium** — one-directional link; the group is incomplete, next refinement likely repeats the git-commit.md miss
 
 Fix: add the missing `policy-sibling` marker to the un-listed file (45-ASYMMETRIC), or correct/remove the stale path (45-BROKEN). Both directions must resolve — A→B requires B→A.
 
 | Sub-check | Pattern | Severity | Auto-fix |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | 45-BROKEN — dangling sibling path | listed path does not exist on disk | high | no — fix or remove path |
 | 45-ASYMMETRIC — one-directional link | B listed by A but B has no marker back | medium | no — add reciprocal marker to B |

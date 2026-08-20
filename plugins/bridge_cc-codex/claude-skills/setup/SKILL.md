@@ -1,7 +1,7 @@
 ---
 name: setup
 description: Diagnose Claude Code and Codex bridge statically by default; live probe requires explicit opt-in.
-argument-hint: "[--live] [--direction codex|claude|both]"
+argument-hint: '[--live] [--direction codex|claude|both]'
 allowed-tools: Bash
 ---
 

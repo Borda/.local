@@ -102,15 +102,31 @@ repos:
     hooks:
       - id: mdformat
         name: 📝 mdformat (general)
-        # Coverage: general Markdown plus plugin README.md and CHANGELOG.md files.
-        # Excludes generated benchmark manifests, plugin agent/skill sources, and docs handled below.
-        # Plugin sources are excluded because mdformat corrupts them (measured 2026-08-20): its core
-        # paragraph normalization fuses bare lines inside XML-ish tag blocks (<constants>, compaction
-        # boundaries) into one line, it pads tables against trim_plugin_tables.py, and beautysh
-        # rewrites fenced bash out from under the blueprint manifest. Their no-wrap convention is
-        # prose discipline (plugins/CLAUDE.md §Markdown No-Wrap), not hook-enforced.
-        exclude: ^(benchmarks/manifests/|plugins/(?!.*(?:README|CHANGELOG)\.md$)|docs/)
+        # Coverage: everything the two instances below do not own — repo-root and config Markdown
+        # (README, CLAUDE.md, AGENTS.md, .claude/, .codex/, benchmarks/) plus every plugin
+        # README.md and CHANGELOG.md, whose padded table alignment stays human-owned. The three
+        # instances are disjoint by construction, so no file is formatted twice with rival args:
+        # padding a table here that the plugin-sources hook compacts would never converge.
+        exclude: ^(plugins/(?!.*(?:README|CHANGELOG)\.md$)|docs/)
         args: ["--number", "--wrap=no"]
+        additional_dependencies:
+          - mdformat-gfm
+          - mdformat-ruff
+          - mdformat-frontmatter
+          - mdformat-config
+          - mdformat-beautysh
+          - mdformat-admon
+          - mdformat-web
+      - id: mdformat
+        name: 📝 mdformat (plugin sources)
+        # Coverage: every plugin Markdown source except README/CHANGELOG (handled above), so plugin
+        # tables and prose have exactly one owner. `--compact-tables` replaces the retired
+        # trim-plugin-tables hook; `--no-codeformatters` keeps beautysh away from fenced bash, whose
+        # bytes the blueprint manifest hashes, and keeps illustrative json/yaml fragments verbatim.
+        # Same dependency set as the general hook so both share one cached environment.
+        files: ^plugins/
+        exclude: (?:^|/)(README|CHANGELOG)\.md$
+        args: ["--number", "--wrap=no", "--compact-tables", "--no-codeformatters"]
         additional_dependencies:
           - mdformat-gfm
           - mdformat-ruff
@@ -166,16 +182,31 @@ repos:
         name: ⚖️ XML unbalanced tag pairs
         language: system
         entry: python3 plugins/cc_foundry/bin/check_tag_symmetry.py --check unbalanced
-        # Coverage: plugin agent cards and top-level SKILL.md instruction files.
-        files: ^plugins/[^/]+/(agents/[^/]+|skills/[^/]+/SKILL)\.md$
+        # Coverage: every plugin Markdown file. The check balances the registry plus whatever
+        # names each file uses as standalone tag lines, so a block invented in a reference or
+        # mode file is covered without being registered first — which is how a duplicated open
+        # tag once survived every gate. Unlike escaped-tag/empty-block below, nothing here
+        # depends on the registry, so the wider scope costs no extra false positives.
+        files: ^plugins/.*\.md$
         types: [markdown]
 
       - id: check-tag-symmetry-escaped
         name: 🔖 XML escaped structural tags
         language: system
         entry: python3 plugins/cc_foundry/bin/check_tag_symmetry.py --check escaped-tag
-        # Coverage: plugin agent cards and top-level SKILL.md instruction files.
+        # Coverage: plugin agent cards and top-level SKILL.md instruction files — registry-driven,
+        # so widening it would need an escaped-form grammar for undiscovered names first.
         files: ^plugins/[^/]+/(agents/[^/]+|skills/[^/]+/SKILL)\.md$
+        types: [markdown]
+
+      - id: check-tag-symmetry-underscore
+        name: 🔤 XML underscore tag names
+        language: system
+        entry: python3 plugins/cc_foundry/bin/check_tag_symmetry.py --check underscore-tag
+        # Coverage: every plugin Markdown file, not just agents/SKILL — modes, templates, _shared
+        # and references carry structural tags too, and an underscore name breaks navigation
+        # wherever it lands (plugins/CLAUDE.md §Structural Tag Names).
+        files: ^plugins/.*\.md$
         types: [markdown]
 
       - id: check-orphaned-bin
@@ -300,16 +331,6 @@ repos:
         entry: python3 plugins/cc_foundry/bin/check_bash_persistence.py --scan-dir plugins
         pass_filenames: false
         always_run: true
-
-      - id: trim-plugin-tables
-        name: ✂️ trim plugin table padding
-        language: system
-        entry: python3 plugins/cc_foundry/bin/trim_plugin_tables.py
-        # Coverage: all plugin Markdown tables.
-        files: ^plugins/.*\.md$
-        # Excludes plugin README tables, whose deliberate alignment remains human-owned.
-        exclude: (?:^|/)README\.md$
-        types: [markdown]
 
       - id: no-hardcoded-user-paths
         name: 🚫 No hardcoded user paths

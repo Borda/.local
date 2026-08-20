@@ -114,7 +114,7 @@ Set `HAS_REPRO=true` if any found; `HAS_REPRO=false` otherwise.
 Scan body and all comments for sensitive patterns. **Flag presence only — never include actual values in report.**
 
 | Pattern class | Signals to detect |
-| --- | --- |
+| -- | -- |
 | Credentials / tokens | `sk-`, `ghp_`, `Bearer `, PEM block headers, hex strings > 40 chars assigned to `key`/`token`/`secret` |
 | PII in sample data | Email addresses, phone numbers, full names embedded in data payloads |
 | Internal infrastructure | Private domain names (`.internal`, `.corp`, non-public TLDs), S3/GCS bucket paths with internal prefixes, database DSNs |
@@ -307,6 +307,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/analyse-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
 cat "$_OSS_SHARED/terminal-summaries.md"  # timeout: 5000
 ```
+
 Compact terminal summary template (loaded above). File absent → warn: "run /foundry:setup — printing plain terminal output instead." Use **Issue Summary** template. Replace `[skill-specific path]` with `$REPORT_FILE`, ensure block opens with `---` on own line, entity line follows next line, `→ saved to <path>` line present at end, block closes with `---` on own line after it. Print terminal block: read '---' header from top of report file (lines 1–7 up to and including closing '---'), append '→ saved to <path>', print to terminal. Report file already contains block — no separate prepend step needed
 
 **⛔ DO NOT STOP — `REPLY_MODE=true`**: Skip Confidence block here — emitted in SKILL.md Step 6 after reply, or as last step of SKILL.md if not in reply mode. Proceed **immediately** to "Draft contributor reply" section in SKILL.md (Step 7). Response not complete until shepherd spawned and reply file written.

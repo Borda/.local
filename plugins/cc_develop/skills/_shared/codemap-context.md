@@ -17,6 +17,7 @@ Contract (`v3`) — follow §Batch pre-flight pattern (run with `TARGET_MODULE`/
 ## Per-agent query map (develop dimension)
 
 Extends contract core map with develop's dimension queries:
+
 - `central --top 5` — global blast-radius baseline (sw-engineer, architect)
 - `fn-rdeps --exclude-tests` — direct callers; benchmarked (94k vs 1M+ tokens, +40pp accuracy); run first (sw-engineer)
 - `fn-blast` — transitive caller impact when depth > 1 needed (sw-engineer)
@@ -25,7 +26,7 @@ Extends contract core map with develop's dimension queries:
 - `undocumented` — docstring gaps (doc-scribe)
 - `symbol --with-imports` — contract reading without re-reading file (all agents)
 
-Results returned: prepend `## Structural Context (codemap-py)` block to foundry:sw-engineer spawn prompt with hotspot JSON and per-query output, followed by this **codemap-first protocol** (own copy — self-contained, no cross-plugin reference): (1) **Skill-first** — use the block above before any Grep/Glob/Read aimed at imports, callers, or symbol contracts for a symbol already listed there. (2) **Bounded call budget** — symbol not listed → up to 3 additional `codemap-py query` calls this task. (3) **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`) — that result is final for its direction, no follow-up Grep/Read/query to re-confirm it. `codemap-py` not found or index missing: emit ⚠ warning to stderr (` >&2 echo "⚠ codemap-py: codemap-py unavailable or index missing — context reduced to central --top 5" `), omit the protocol paragraph, then proceed.
+Results returned: prepend `## Structural Context (codemap-py)` block to foundry:sw-engineer spawn prompt with hotspot JSON and per-query output, followed by this **codemap-first protocol** (own copy — self-contained, no cross-plugin reference): (1) **Skill-first** — use the block above before any Grep/Glob/Read aimed at imports, callers, or symbol contracts for a symbol already listed there. (2) **Bounded call budget** — symbol not listed → up to 3 additional `codemap-py query` calls this task. (3) **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`) — that result is final for its direction, no follow-up Grep/Read/query to re-confirm it. `codemap-py` not found or index missing: emit ⚠ warning to stderr (`>&2 echo "⚠ codemap-py: codemap-py unavailable or index missing — context reduced to central --top 5"`), omit the protocol paragraph, then proceed.
 
 Note: `foundry:sw-engineer` also carries its own `<codemap_context>` pre-flight (workflow step 00) that runs independently of this wrapper — the protocol above governs the query output this wrapper hands the agent inline; sw-engineer's own step 00 governs what it queries itself on spawn regardless of caller.
 
@@ -38,11 +39,12 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap_scan.py" --source=
 ```
 
 > Interpret: any `rdeps` output = external callers affected; `coupled` output = co-change pairs.
+>
 > Fallback (specific known module): `codemap-py query rdeps <mod> --top 10 2>/dev/null || true`.
 
 ## Review-pipeline injection (oss:review, develop:review)
 
-Review orchestrators run v4 pre-flight queries **per changed module** before spawning dimension agents, persist structured output, pass to each agent as `CODEMAP_CONTEXT` so agent skips redundant file reads. Pre-flight queries (module-level only — a name-only changed-files list cannot supply the `module::fn` qnames `fn-rdeps`/`fn-blast` require; bare-module fn-* calls failed 100% in production, 2026-07 usage audit F1; fn-level returns once diff-hunk qname derivation lands — audit plan P1.2b):
+Review orchestrators run v4 pre-flight queries **per changed module** before spawning dimension agents, persist structured output, pass to each agent as `CODEMAP_CONTEXT` so agent skips redundant file reads. Pre-flight queries (module-level only — a name-only changed-files list cannot supply the `module::fn` qnames `fn-rdeps`/`fn-blast` require; bare-module fn-\* calls failed 100% in production, 2026-07 usage audit F1; fn-level returns once diff-hunk qname derivation lands — audit plan P1.2b):
 
 ```bash
 codemap-py query --timeout 5 rdeps       "$MODULE"            2>/dev/null  # importer count → risk tier
@@ -53,6 +55,7 @@ codemap-py query --timeout 5 undocumented "$MODULE"  2>/dev/null  # doc coverage
 ```
 
 > Per-agent consumption:
+>
 > - `qa-specialist` — read `uncovered` + `mock-rdeps` first; skip manual test-file grep for symbols codemap already classifies; fall back to Read only when codemap context absent or insufficient
 > - `doc-scribe` — read `undocumented` + `xrefs --broken` first; skip docstring-scan reads on listed symbols
 > - `sw-engineer` — read `rdeps` first (importers per changed module); `fn-rdeps`/`fn-blast` only when a concrete `module::fn` qname is known (dimension queries above)

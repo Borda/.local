@@ -29,7 +29,7 @@ Full one-line rule in `plugins/CLAUDE.md` §GitHub Reference Scoping.
 Full rule in `plugins/CLAUDE.md` §Writing Style — Compression Tiers.
 
 | Content | Tier | Rule |
-| --- | --- | --- |
+| -- | -- | -- |
 | READMEs, `docs/`, user-facing guides | Verbose | Full sentences, rationale, examples |
 | Final reports (`.reports/`), human-read output | Normal caveman | Drop articles/filler/hedging; full sentences where clarity needs |
 | Agent source (`<workflow>`, `<role>`, `<notes>`, skills, rules, modes), handover files (`.temp/`), inter-agent prose | Ultra caveman | Max compression — fragments OK, zero filler, shortest synonyms |

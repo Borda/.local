@@ -28,6 +28,7 @@ fi
 ```
 
 > Query map:
+>
 > - `central --top 5` — global blast-radius baseline
 > - `fn-rdeps --exclude-tests` — direct callers of the edited function (skip redundant caller-walk reads)
 > - `rdeps --top 10` — modules importing the edited target; risk tier by count: `>=5` HIGH, `1–4` MODERATE, `0` LOW

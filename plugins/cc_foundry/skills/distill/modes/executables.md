@@ -74,6 +74,7 @@ Bin/ extraction candidates:
 ```
 
 Then call `AskUserQuestion` — do NOT write options as plain text first. Map options directly into tool call arguments:
+
 - question: "Extract candidates to bin/ scripts?"
 - (a) label: `HIGH only` — description: extract only HIGH-verdict clusters
 - (b) label: `HIGH + MEDIUM` — description: extract all HIGH and MEDIUM clusters

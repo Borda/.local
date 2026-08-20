@@ -1,4 +1,5 @@
 <!-- Loaded by foundry:sw-engineer (opus + xhigh) -->
+
 # Hook Authoring (foundry:sw-engineer specialized guidance)
 
 Read only when working on hook code (JavaScript files under `.claude/hooks/`, hook registrations in `settings.json`, `PostToolUse`/`PreToolUse`/`SubagentStop` event handlers). Skip for Python implementation tasks.
@@ -27,8 +28,7 @@ Every hook file must start with:
 //   2  <feedback case — Claude Code shows output and Claude acts on it>
 ```
 
-Subsection order: `PURPOSE` → `HOW IT WORKS` → `EXIT CODES` (add others like `HOOK EVENT RESPONSIBILITIES` as needed).
-`HOW IT WORKS` may not be omitted even for simple hooks — use at least one numbered step.
+Subsection order: `PURPOSE` → `HOW IT WORKS` → `EXIT CODES` (add others like `HOOK EVENT RESPONSIBILITIES` as needed). `HOW IT WORKS` may not be omitted even for simple hooks — use at least one numbered step.
 
 ### Minimal exit-code template (always pair success + error paths)
 
@@ -48,7 +48,7 @@ Every hook must explicitly handle error path — never leave it implicit. For bl
 Exit 1 behavior depends on hook type — do not use exit 1 uniformly:
 
 | Hook type | exit 0 | exit 1 | exit 2 |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | **Blocking** (UserPromptSubmit, PreToolUse gatekeeper, PreCompact) | allow / proceed | **blocks Claude execution** | show output to Claude; Claude acts on it |
 | **Non-blocking** (PostToolUse, Stop, SubagentStop, SubagentStart, observational PreToolUse) | proceed | logged as error only — does **NOT** block execution | show output to Claude; Claude acts on it |
 
@@ -78,6 +78,7 @@ Exit 1 behavior depends on hook type — do not use exit 1 uniformly:
 ## PreToolUse Decision Output
 
 When `PreToolUse` hook needs to approve or block tool call, use `hookSpecificOutput` (current format):
+
 ```json
 {
   "hookSpecificOutput": {
@@ -93,8 +94,7 @@ When `PreToolUse` hook needs to approve or block tool call, use `hookSpecificOut
 
 ## PostToolUse and SubagentStop Hooks
 
-Logging hooks (timing, file-writes, audit trails) need no output — exit 0 silently.
-Never emit to stdout from logging hook; unexpected output can interfere with Claude's tool-result handling.
+Logging hooks (timing, file-writes, audit trails) need no output — exit 0 silently. Never emit to stdout from logging hook; unexpected output can interfere with Claude's tool-result handling.
 
 - `PostToolUse` receives tool result payload on stdin — use for timing deltas, logging tool output size, or writing audit records
 - `SubagentStop` fires when spawned agent completes — use to clean up per-agent state files (e.g. `${TMPDIR:-/tmp}/claude-state-<session-id>/agents/<id>.json`) (harness-managed path: `${TMPDIR:-/tmp}/claude-state-<session-id>`; not user-configurable) <!-- tmpdir-exempt: harness-managed path, not plugin-authored -->

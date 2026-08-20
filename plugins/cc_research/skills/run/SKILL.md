@@ -1,7 +1,7 @@
 ---
 name: run
-description: "Sustained metric-improvement loop with atomic commits, auto-rollback, and experiment logging. Iterates with specialist agents, commits atomically, auto-rolls back on regression. Accepts a program.md file path. Supports --resume, --team, --colab, --codex, --researcher, --architect, --journal, --hypothesis."
-argument-hint: "<program.md> [clarification] [--resume <program.md>] [--team] [--compute=local|colab|docker] [--colab[=H100|L4|T4|A100]] [--codex] [--researcher] [--architect] [--journal] [--hypothesis <path>] [--scientist] [--codemap] [--no-codemap] [--keep \"<items>\"]"
+description: Sustained metric-improvement loop with atomic commits, auto-rollback, and experiment logging. Iterates with specialist agents, commits atomically, auto-rolls back on regression. Accepts a program.md file path. Supports --resume, --team, --colab, --codex, --researcher, --architect, --journal, --hypothesis.
+argument-hint: <program.md> [clarification] [--resume <program.md>] [--team] [--compute=local|colab|docker] [--colab[=H100|L4|T4|A100]] [--codex] [--researcher] [--architect] [--journal] [--hypothesis <path>] [--scientist] [--codemap] [--no-codemap] [--keep "<items>"]
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -44,7 +44,7 @@ SENTINEL_SLUG_FORMULA: |
 **Agent strategy mapping** (`agent_strategy` in config → ideation agent to spawn):
 
 | `agent_strategy` | Specialist agent | When to use |
-| --- | --- | --- |
+| -- | -- | -- |
 | `auto` | heuristic | Default — infer from metric_cmd keywords |
 | `perf` | `foundry:perf-optimizer` | latency, throughput, memory, GPU utilization |
 | `code` | `foundry:sw-engineer` | coverage, complexity, lines, coupling |
@@ -54,6 +54,7 @@ SENTINEL_SLUG_FORMULA: |
 **Auto-inference keyword heuristics** (when `agent_strategy: auto` or omitted; checked against `## Goal` text AND metric command):
 
 **Precedence order** (first match wins; ML keywords beat test-framework keywords). ML-specific compound terms (not bare tokens) required — prevents over-triggering on `eval`/`train`/`val` as common words:
+
 - contains `accuracy`, `loss` (paired with `train_loss`/`val_loss`/`eval_loss`), `f1_score`, `auc_roc`, `auroc`, `train_step`, `val_acc`, `eval_loss`, `epoch`, `gradient`, `tensor`, `overfit`, `generaliz`, `regulariz`, `validation`, `dropout`, `weight_decay`, `lr_schedule`, `cross_val`, `precision`, `recall`, OR explicit `--scientist` flag → `ml` → `research:scientist`
 - contains `time`, `latency`, `bench`, `throughput`, `memory` → `perf` → `foundry:perf-optimizer`
 - contains `pytest`, `coverage`, `complexity` → `code` → `foundry:sw-engineer`
@@ -66,12 +67,13 @@ Bare tokens `eval`, `train`, `val` (without compound suffix) do NOT trigger `ml`
 1. Switch agent type. Rotation by current strategy:
 
    | Current strategy | Next strategy | Escalation agent |
-   | --- | --- | --- |
+   | -- | -- | -- |
    | `code` | `ml` | `research:scientist` |
    | `ml` | `perf` | `foundry:perf-optimizer` |
    | `perf` | `code` | `foundry:sw-engineer` |
    | `arch` | `code` | `foundry:sw-engineer` (fallback `foundry:solution-architect` if sw-engineer unavailable) |
    | `auto` | infer from resolved strategy | follow rotation row for whichever concrete strategy `auto` heuristics resolved to at Step R3 (e.g. `auto` → resolved `ml` → next `perf` → `foundry:perf-optimizer`) |
+
 2. Spawn 2 agents parallel, competing strategies; each writes full analysis to `.experiments/state/<run-id>/stuck-escalation-<i>-<agent-type>.md`, returns ONLY compact JSON envelope. Use this spawn prompt verbatim (substitute `<run-id>`, `<i>`, and strategy):
 
    ```text
@@ -87,15 +89,16 @@ Bare tokens `eval`, `train`, `val` (without compound suffix) do NOT trigger `ml`
    ```
 
    Consolidation: pick whichever returns delta ≥ 0.1% AND guard pass; if both qualify, pick higher delta.
+
 3. Stop, report progress, surface to user — no blind looping
 
 </constants>
 
 <compaction>
 
-Key boundary: end of each Phase 8 in R5 iteration loop — JSONL record appended and `state.json` updated. Overwrite each iteration; contract always reflects latest in-progress state. Long metric-improvement loops are the primary auto-compact risk.
-Preserve at each boundary: RUN_ID (TMPDIR key), STATE_DIR path, program.md path, current iteration#, best metric, best-commit SHA, experiments.jsonl path.
-Clear at R1 start (stale prior run) and after R6/R7 campaign completion.
+- Key boundary: end of each Phase 8 in R5 iteration loop — JSONL record appended and `state.json` updated. Overwrite each iteration; contract always reflects latest in-progress state. Long metric-improvement loops are the primary auto-compact risk.
+- Preserve at each boundary: RUN_ID (TMPDIR key), STATE_DIR path, program.md path, current iteration#, best metric, best-commit SHA, experiments.jsonl path.
+- Clear at R1 start (stale prior run) and after R6/R7 campaign completion.
 
 </compaction>
 
@@ -147,8 +150,7 @@ cat "$CLAUDE_SKILL_DIR/modes/hypothesis-pipeline.md"  # timeout: 5000
 
 **Per-iteration hypothesis selection** (when `--researcher`/`--architect` set, inside R5 loop): pop next from `RESEARCH_QUEUE`. Append to Phase 2 prompt: "Focus this iteration on testing this hypothesis: `<hypothesis text>`."
 
-**Per-iteration journal hook** (inside R5, after Phase 7): if `--journal` active, append entry to `<RUN_DIR>/journal.md` after EVERY iteration — regardless of outcome. Entry format: `protocol.md` (companion file, same skill dir).  # loads: protocol.md
-Journals record kept and reverted iterations so ideation agent learns failed approaches.
+**Per-iteration journal hook** (inside R5, after Phase 7): if `--journal` active, append entry to `<RUN_DIR>/journal.md` after EVERY iteration — regardless of outcome. Entry format: `protocol.md` (companion file, same skill dir). # loads: protocol.md Journals record kept and reverted iterations so ideation agent learns failed approaches.
 
 **Per-iteration checkpoint write** (after Phase 7): if `--researcher`/`--architect` active, append one line to `<RUN_DIR>/checkpoint.json` per schema in `protocol.md` (companion file, same skill dir): `{iteration, hypothesis_id, metric_before, metric_after, status: "passed"|"rolled_back"}`.
 
@@ -183,6 +185,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/extract-keep-flag.py" res
 ```
 
 **Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--resume`, `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--scientist`, `--codemap`, `--no-codemap`, `--keep`.
+
 ```bash
 # loads: unsupported-flag-protocol.md
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -202,11 +205,13 @@ CODEMAP_RAW=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/codemap-fla
 > loads: codemap-gates.md
 
 When `CODEMAP_RAW` ≠ `off`:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
 cat "$_RESEARCH_SHARED/codemap-gates.md"
 ```
+
 Follow Gate A and Gate B.
 
 **If argument is a `.md` file** — read and parse with these rules:
@@ -275,15 +280,15 @@ Note: status is `"initializing"` until all R2 precondition checks pass — resum
 
 Run all checks before touching code. Fail fast with clear message:
 
-1. **Clean git**: `git status --porcelain` → must be empty. If dirty: print dirty files and stop.
-2. **Not detached HEAD**: `git rev-parse --abbrev-ref HEAD` → must not be `HEAD`.
-3. **Metric command numeric**: run `metric_cmd` once; parse stdout for float. If no float: show output and stop.
-4. **Guard passes**: run `guard_cmd` once; must exit 0. If fails: show output and stop.
-5. **`--colab` check**: verify `mcp__colab-mcp__runtime_execute_code` available. If not, print setup instructions (see Colab MCP section) and stop. If `--colab=HW` (`colab_hw` non-null): print: `  Hardware requested: --colab=<colab_hw>. Ensure your Colab notebook running with <colab_hw> GPU.`
-6. **`--codex` check**: distinguish the installed-and-enabled bridge target from absence. `claude` not on `PATH` → print `⚠ 'claude' CLI not in PATH — bridge availability cannot be verified.` and **stop**. If `claude plugin list` lacks `bridge@borda-ai-rig`, print `⚠ bridge@borda-ai-rig not installed. Install it from the Borda AI Rig marketplace.` and **stop**. If it is disabled, print `⚠ bridge@borda-ai-rig is disabled. Enable it and reload plugins.` and **stop**.
-7. **`compute: docker` check**: run `docker ps` via Bash (`timeout: 5000`). If non-zero: print `⚠ Docker daemon not running. Start Docker Desktop and retry.` and **stop**.
-8. **Flag conflict**: if `--colab` and `--compute=docker` both active: print `⚠ --colab and --compute=docker are mutually exclusive. Use one or the other.` and **stop**.
-9. **`--colab` + `--codex` compatibility note** (non-blocking): if both flags active, print `ℹ --colab + --codex active: Codex Phase 2c will receive colab_hw context so generated code can target the right GPU (H100/T4 bf16 vs fp16). Phase 5 metric verification runs through Colab MCP as usual.` and continue. Pass `colab_hw` to Codex spawn prompt (Phase 2c — see `modes/codex-copilot.md`).
+01. **Clean git**: `git status --porcelain` → must be empty. If dirty: print dirty files and stop.
+02. **Not detached HEAD**: `git rev-parse --abbrev-ref HEAD` → must not be `HEAD`.
+03. **Metric command numeric**: run `metric_cmd` once; parse stdout for float. If no float: show output and stop.
+04. **Guard passes**: run `guard_cmd` once; must exit 0. If fails: show output and stop.
+05. **`--colab` check**: verify `mcp__colab-mcp__runtime_execute_code` available. If not, print setup instructions (see Colab MCP section) and stop. If `--colab=HW` (`colab_hw` non-null): print: `  Hardware requested: --colab=<colab_hw>. Ensure your Colab notebook running with <colab_hw> GPU.`
+06. **`--codex` check**: distinguish the installed-and-enabled bridge target from absence. `claude` not on `PATH` → print `⚠ 'claude' CLI not in PATH — bridge availability cannot be verified.` and **stop**. If `claude plugin list` lacks `bridge@borda-ai-rig`, print `⚠ bridge@borda-ai-rig not installed. Install it from the Borda AI Rig marketplace.` and **stop**. If it is disabled, print `⚠ bridge@borda-ai-rig is disabled. Enable it and reload plugins.` and **stop**.
+07. **`compute: docker` check**: run `docker ps` via Bash (`timeout: 5000`). If non-zero: print `⚠ Docker daemon not running. Start Docker Desktop and retry.` and **stop**.
+08. **Flag conflict**: if `--colab` and `--compute=docker` both active: print `⚠ --colab and --compute=docker are mutually exclusive. Use one or the other.` and **stop**.
+09. **`--colab` + `--codex` compatibility note** (non-blocking): if both flags active, print `ℹ --colab + --codex active: Codex Phase 2c will receive colab_hw context so generated code can target the right GPU (H100/T4 bf16 vs fp16). Phase 5 metric verification runs through Colab MCP as usual.` and continue. Pass `colab_hw` to Codex spawn prompt (Phase 2c — see `modes/codex-copilot.md`).
 10. **`--journal` prerequisite**: verify `--researcher`/`--architect` also set. If neither: print `⚠ --journal requires --researcher or --architect — omit --journal or add a hypothesis pipeline flag.` and **stop**.
 
 **`--codex-delegation` warning** (non-blocking): `codex-delegation.md` ships inside this plugin's own `skills/_shared/`, so R7 needs no other plugin installed. Verify it resolves:
@@ -388,7 +393,7 @@ For each iteration `i` from 1 to `max_iterations`:
 **Phase overview** (all phases run per iteration):
 
 | Phase | Name | Trigger / description |
-| --- | --- | --- |
+| -- | -- | -- |
 | 0 | Print header | Always — print `[→ Iter N/max · starting]`; TaskUpdate R5 subject with current iteration |
 | 1 | Build context | Always — build compact context from git log, JSONL history, and recent diff |
 | 2 | Propose change | Always — spawn specialist agent to read code, research, investigate, and generate a hypothesis with optional sandbox scripts |
@@ -439,11 +444,13 @@ fi
 ```
 
 **Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-run-codemap-enabled-${CSID}`):
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
 cat "$_RESEARCH_SHARED/codemap-context.md"
 ```
+
 Execute its block. Leave `TARGET_MODULE`/`TARGET_FN` empty for the global `central` blast-radius baseline, or set `TARGET_MODULE` to the module the experiment edits (from `## Config`) for importer/coverage queries. Append output to `context-${I}.md` under a `## Structural Context (codemap-py)` heading so the Phase 2 ideation agent sees blast-radius before proposing edits.
 
 Codemap output non-empty: also append this **codemap-first protocol** directly below it in `context-${I}.md` (own copy — self-contained, no cross-plugin reference), so the Phase 2 spawn prompt's "read `context-<i>.md`" instruction carries it to the ideation agent: (1) **Skill-first** — use the Structural Context above before any Grep/Glob/Read aimed at imports, callers, or test coverage for a symbol already listed there. (2) **Bounded call budget** — symbol not listed → up to 3 additional `codemap-py query` calls this iteration. (3) **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`) — that result is final for its direction, no follow-up Grep/Read/query to re-confirm it. Codemap output empty: omit this paragraph — Phase 2 agent proceeds with normal file-read behaviour.
@@ -483,6 +490,7 @@ If Agent tool unavailable (nested subagent context), implement change inline, co
 #### Phase 2a — Sandbox validate (`sandbox_mode = "docker"` only)
 
 > loads: compute-docker.md
+>
 > Follow `modes/compute-docker.md` — full Phase 2a and 2b logic for docker sandbox. Skip entire file if `sandbox_mode = "local"`.
 
 ```bash
@@ -533,7 +541,8 @@ If pre-commit hooks fail:
 
 #### Phase 5 — Verify metric
 
-> loads: phase5-metric.md  # also loads: codex-copilot.md, colab-setup.md, compute-docker.md, hypothesis-pipeline.md, report.md, resume.md, team.md
+> loads: phase5-metric.md # also loads: codex-copilot.md, colab-setup.md, compute-docker.md, hypothesis-pipeline.md, report.md, resume.md, team.md
+>
 > Follow `modes/phase5-metric.md` — metric verification logic for docker, local, and colab sandbox modes.
 
 ```bash
@@ -553,7 +562,7 @@ Record pass (exit 0) or fail (non-zero).
 #### Phase 7 — Evaluate outcome
 
 | Condition | Action |
-| --- | --- |
+| -- | -- |
 | metric improved AND guard pass | Keep commit. Update `state.json`: `best_metric`, `best_commit`. "Improved" = `new_metric > best_metric` when `direction: higher`; `new_metric < best_metric` when `direction: lower`. |
 | metric improved AND guard fail | Rework: re-spawn agent with guard failure output. Max `GUARD_REWORK_MAX` (2) attempts. If still failing after all rework attempts: revert (`git revert HEAD --no-edit`); diary status = `"reverted"`, decision = `"Guard failed after GUARD_REWORK_MAX rework attempts — reverted"`. |
 | metric improved AND gain < 0.1% AND change > 50 lines | Refresh sentinel; discard: `git revert HEAD --no-edit`. (Line count computed via `CHANGE_LINES` — see note below table.) |
@@ -692,6 +701,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CLAUDE_SKILL_DIR < "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || CLAUDE_SKILL_DIR=""
 cat "$CLAUDE_SKILL_DIR/modes/report.md"  # timeout: 5000
 ```
+
 `state.json`: `status = completed`.
 
 ### Step R7: Codex delegation (optional)
@@ -722,6 +732,7 @@ rm -f .temp/state/skill-contract.md  # clear contract — campaign complete (com
 ## Resume Mode
 
 > loads: resume.md
+>
 > Follow and execute `modes/resume.md`.
 
 ```bash
@@ -733,6 +744,7 @@ cat "$CLAUDE_SKILL_DIR/modes/resume.md"  # timeout: 5000
 ## Mode: colab
 
 > loads: colab-setup.md
+>
 > Execute only when `--colab` flag active. Follow and execute `modes/colab-setup.md`.
 
 ```bash

@@ -1,6 +1,6 @@
 ---
 name: distill
-description: "One-time snapshot extracting patterns from work history and accumulated lessons, distills into concrete improvements — new agent/skill suggestions, memory pruning, consolidating lessons into rules/agent updates, or performing bin/ extraction from /audit --efficiency candidates. Roster boundary analysis → /foundry:audit agents (Check 34)."
+description: One-time snapshot extracting patterns from work history and accumulated lessons, distills into concrete improvements — new agent/skill suggestions, memory pruning, consolidating lessons into rules/agent updates, or performing bin/ extraction from /audit --efficiency candidates. Roster boundary analysis → /foundry:audit agents (Check 34).
 argument-hint: '[prune | memory | executables [<run-dir-or-report-path>] | "external <url-or-path>" | "<recurring task description>"] [--project] [--eager] [--keep "<items>"]'
 disable-model-invocation: true
 allowed-tools: Read, Edit, Bash, Glob, Grep, Write, AskUserQuestion, Agent, WebFetch, TaskCreate, TaskUpdate, TaskList
@@ -11,8 +11,7 @@ effort: low
 
 Analyze how Claude Code is used and surface concrete improvements — new agents/skills to reduce repetition, or consolidate lessons into governance files (rules, agent instructions, skill updates) — without duplicating what exists.
 
-NOT for single-file edits or quality checks — use `/foundry:audit` for config quality checks.
-NOT for audit-only scan for extraction candidates (use `/foundry:audit --efficiency` instead of `distill executables` for detection-only).
+NOT for single-file edits or quality checks — use `/foundry:audit` for config quality checks. NOT for audit-only scan for extraction candidates (use `/foundry:audit --efficiency` instead of `distill executables` for detection-only).
 
 </objective>
 
@@ -30,14 +29,15 @@ NOT for audit-only scan for extraction candidates (use `/foundry:audit --efficie
 </inputs>
 
 <compaction>
-Key boundary 1: end of Step 2 frequency heuristics (default mode only — prune/memory/external/executables exit early), before Step 3 gap analysis.
-Preserve at boundary 1: EAGER flag, ARGUMENTS (stripped), no run-dir (default mode is stateless).
-Terminal paths: end of Step 5 report (default mode); end of Memory Pruning mode (both eager and standard branches).
+- Key boundary 1: end of Step 2 frequency heuristics (default mode only — prune/memory/external/executables exit early), before Step 3 gap analysis.
+- Preserve at boundary 1: EAGER flag, ARGUMENTS (stripped), no run-dir (default mode is stateless).
+- Terminal paths: end of Step 5 report (default mode); end of Memory Pruning mode (both eager and standard branches).
 </compaction>
 
 <workflow>
 
 **Task hygiene**: load and follow the protocol below.
+
 ```bash
 # loads: compaction-contract.md
 # audit-skip: resilience-replication
@@ -121,6 +121,7 @@ If `$ARGUMENTS` provided, use as additional context for pattern analysis.
 - **Domain-specific knowledge** required → candidate for specialist agent (not just skill)
 
 With `--eager` (lower thresholds):
+
 - **2+ occurrences** → candidate for automation
 - **1 occurrence** with significant manual effort → qualifies as high-value candidate
 - Domain-specific threshold unchanged
@@ -268,6 +269,7 @@ Execute the mode loaded above.
   - Model tier mismatches (e.g., heavy analysis assigned to `sonnet` teammates) → flag for tier adjustment
 
 - **`external` mode calibration**: two concrete GT fixture cases defined in calibrate skills mode file — find via `find "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}" -maxdepth 5 -path "*/calibrate/modes/skills.md" 2>/dev/null | head -1` with fallback to `plugins/cc_foundry/skills/calibrate/modes/skills.md`:
+
   - **caveman plugin** — narrow, self-contained communication mode, no local structural overlap → GT: install-as-is recommended, Group A empty or thin
   - **Karpathy autoresearch** — research automation tool, strong overlap with `research:` plugin structure → GT: Group A candidates map to research plugin, digest recommended, install-as-is not triggered
   - Ground truth = static snapshot of each tool's agent/skill/rule files (no live fetch needed); score adoption-table lane assignments against GT outcomes

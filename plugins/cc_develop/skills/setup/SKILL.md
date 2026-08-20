@@ -1,7 +1,7 @@
 ---
 name: setup
 description: "Post-install setup for the develop plugin. Run once after installing on a new machine, or after a plugin version upgrade, to deliver this plugin's rules/*.md into ~/.claude/rules/ as namespaced symlinks. TRIGGER when: user installed or upgraded the develop plugin and its rules are not loading; phrases: 'set up develop', 'develop rules not loading', 'after upgrading develop'. SKIP: settings/statusLine/TEAM_PROTOCOL setup (use /foundry:setup (requires `foundry` plugin)); editing rule content (edit the plugin source)."
-argument-hint: "[--approve]"
+argument-hint: '[--approve]'
 allowed-tools: Bash, AskUserQuestion
 effort: low
 model: sonnet
@@ -12,7 +12,7 @@ model: sonnet
 Deliver develop's rules to Claude's user-level rule namespace.
 
 | Action | What happens |
-| --- | --- |
+| -- | -- |
 | `rules/*.md` → `~/.claude/rules/develop-<name>.md` | symlink |
 | Stale link from an older develop version | refreshed silently |
 | Link whose source left the plugin | removed |
@@ -40,7 +40,7 @@ NOT for: `~/.claude/settings.json`, statusLine, `TEAM_PROTOCOL.md`, or plugin-ca
 
 ## Step 0: Flags
 
-Parse `$ARGUMENTS` for `--approve` (case-insensitive) → `APPROVE_ALL=true`, else `false`. Any other `--<token>` → print ``! Unknown flag(s): `--<token>`. Supported: `--approve`.`` and stop.
+Parse `$ARGUMENTS` for `--approve` (case-insensitive) → `APPROVE_ALL=true`, else `false`. Any other `--<token>` → print `` ! Unknown flag(s): `--<token>`. Supported: `--approve`. `` and stop.
 
 ## Step 1: Python
 

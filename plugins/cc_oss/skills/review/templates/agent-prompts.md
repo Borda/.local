@@ -27,7 +27,7 @@ Every agent prompt must end with:
 **Error path analysis** (new/changed code): For each error-handling path introduced or modified, produce table:
 
 | Location | Exception/Error | Caught? | Action if caught | User-visible? |
-| --- | --- | --- | --- | --- |
+| -- | -- | -- | -- | -- |
 
 Flag rules:
 

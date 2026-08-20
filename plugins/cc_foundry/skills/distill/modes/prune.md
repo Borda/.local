@@ -7,6 +7,7 @@ Triggered when `$ARGUMENTS == "prune"`. Locate, evaluate, and trim project memor
 **Find memory file:**
 
 <!-- Note: if the auto-memory path convention changes, update this slug derivation. -->
+
 <!-- Slug-divergence guard: `resolve_memory_dir.py` is the single source of truth for the memory directory and `MEMORY.md` filename. Any consumer that reads or writes project memory (e.g. distill's `memory` mode — `modes/memory.md`) MUST resolve the same path via this script — do NOT hardcode an alternate slug or filename here or elsewhere; divergence causes silent split-brain between writer and reader. -->
 
 ```bash
@@ -25,7 +26,7 @@ else
 fi
 ```
 
- **Short-circuit**: After the block runs, scan for `PRUNE_ABORT` (exact-line match). If present, stop prune mode and end with Confidence block. Otherwise, collect all `PRUNE_ENTRY:` lines — each has format `<slug> | <N>k tokens | <path>`.
+**Short-circuit**: After the block runs, scan for `PRUNE_ABORT` (exact-line match). If present, stop prune mode and end with Confidence block. Otherwise, collect all `PRUNE_ENTRY:` lines — each has format `<slug> | <N>k tokens | <path>`.
 
 **If `PROJECT_FLAG == true`** (interactive picker): call `AskUserQuestion` with `multiSelect: true`. Build options from `PRUNE_ENTRY` lines — label = `<slug> (tokens=<N>k)`, description = `prune this project's memory`. Max 4 options: if more than 4 projects found, take the 4 largest by token count and note in the question text that remaining projects were omitted (user can re-run). Always add a final option with label `Skip` and description `exit without changes`. Checked slugs → extract matching `<path>` fields as the working set.
 
@@ -93,6 +94,7 @@ Legend:
 ```
 
 **P-eager-2**: Call `AskUserQuestion` tool — do NOT write question as plain text:
+
 - question: "Which entries to prune? Select tier or type item numbers (e.g. 2, 4, 7)."
 - (a) label: `All P2` — description: drop all tier-P2 entries; apply `→ rule` conversions as proposals
 - (b) label: `All P1 + P2` — description: trim P1 entries and drop P2 entries
@@ -147,22 +149,23 @@ rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compac
 
 **P2**: Print consolidated proposed prune report across all projects:
 
-   ```text
-   Prune proposals (apply manually unless explicitly approved below):
+```text
+Prune proposals (apply manually unless explicitly approved below):
 
-   [Project: <slug>]
-     Drop  — <section name>: <reason>
-     Trim  — <section name>: <what to remove vs keep>
+[Project: <slug>]
+  Drop  — <section name>: <reason>
+  Trim  — <section name>: <what to remove vs keep>
 
-   [Project: <slug>]
-     ...
-   ```
+[Project: <slug>]
+  ...
+```
 
 **P3**: Call `AskUserQuestion` — do NOT write question as plain text. Map options directly into tool call:
-   - question: "Apply prune edits across all N project memory files?"
-   - (a) label: `Apply now` — description: apply all proposals to all memory files in parallel
-   - (b) label: `Show diff first` — description: print line-by-line preview before applying any change
-   - (c) label: `Skip` — description: leave all MEMORY.md files untouched; user will edit manually
+
+- question: "Apply prune edits across all N project memory files?"
+- (a) label: `Apply now` — description: apply all proposals to all memory files in parallel
+- (b) label: `Show diff first` — description: print line-by-line preview before applying any change
+- (c) label: `Skip` — description: leave all MEMORY.md files untouched; user will edit manually
 
 Only after user picks (a) (or (b) followed by approval) may Edit be invoked on memory files. **Never apply prune edits silently.** Apply edits to all projects in parallel using Edit tool (one project per call, concurrent).
 

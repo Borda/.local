@@ -1,7 +1,7 @@
 ---
 name: refactor
-description: "Test-first refactoring — audit coverage, add characterization tests, apply changes with safety net, run quality stack and review loop. TRIGGER when: user wants to restructure existing Python code without changing behaviour; phrases: \"refactor X\", \"clean up Y\", \"extract Z\", \"restructure this module\", \"improve code quality\". SKIP when: bug fixes (use `/develop:fix`); new features (use `/develop:feature`); mixed refactor+feature — run `/develop:refactor` first, then `/develop:feature`; non-Python projects."
-argument-hint: '<target file or directory> <goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team] [--worktree] [--keep "<items>"]'
+description: 'Test-first refactoring — audit coverage, add characterization tests, apply changes with safety net, run quality stack and review loop. TRIGGER when: user wants to restructure existing Python code without changing behaviour; phrases: "refactor X", "clean up Y", "extract Z", "restructure this module", "improve code quality". SKIP when: bug fixes (use `/develop:fix`); new features (use `/develop:feature`); mixed refactor+feature — run `/develop:refactor` first, then `/develop:feature`; non-Python projects.'
+argument-hint: <target file or directory> <goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team] [--worktree] [--keep "<items>"]
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, EnterWorktree, ExitWorktree
 disable-model-invocation: true
@@ -12,6 +12,7 @@ disable-model-invocation: true
 Test-first refactoring. Audit coverage, add characterization tests if missing, apply changes with safety net.
 
 NOT for:
+
 - bug fixes (use `/develop:fix`)
 - new features (use `/develop:feature`)
 - `.claude/` config changes (use `/foundry:manage` (requires foundry plugin))
@@ -30,10 +31,10 @@ Quality stack (Branch Safety Guard, Codex Pre-pass, Progressive Review) requires
 
 <compaction>
 
-Key boundary: end of Step 2 — coverage audit complete, before characterization test writing in Step 3.
-Second boundary: end of Step 4 — refactor edits applied, before review stack in Step 5.
-Preserve at boundary 1: dev-dir, target path, coverage audit summary, plan-file, --keep items.
-Preserve at boundary 2: dev-dir, changed files list, test outcomes.
+- Key boundary: end of Step 2 — coverage audit complete, before characterization test writing in Step 3.
+- Second boundary: end of Step 4 — refactor edits applied, before review stack in Step 5.
+- Preserve at boundary 1: dev-dir, target path, coverage audit summary, plan-file, --keep items.
+- Preserve at boundary 2: dev-dir, changed files list, test outcomes.
 
 </compaction>
 
@@ -69,6 +70,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/runner-detection.md"
 ```
+
 Sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
 
 **Optional `--plan <path>`**: if `$ARGUMENTS` contains `--plan <path>` (at any position), read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to inform Step 1 scope analysis. Skip redundant codebase exploration for already-classified files. Store plan path as `PLAN_FILE`.
@@ -79,6 +81,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/preflight-helpers.md"
 ```
+
 Execute --plan path extraction; sets `$PLAN_FILE`.
 
 **Checkpoint init**: create `.developments/<TS>/` run directory, capture path in `$DEV_DIR` (assigned in the block below). Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4, 5), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
@@ -123,7 +126,7 @@ CODEMAP_RAW=auto
 echo "$CODEMAP_RAW" > ${TMPDIR:-/tmp}/dev-refactor-codemap-raw-${CSID}
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--worktree\`, \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. If found: print `` ! Unknown flag(s): `--<token>`. Supported: `--plan`, `--team`, `--worktree`, `--no-challenge`, `--challenge`, `--codemap`, `--no-codemap`, `--accept-no-plan`, `--semble`, `--repo`, `--keep`. `` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Worktree isolation
 
@@ -163,6 +166,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-gates.md"
 ```
+
 Follow Gate A and Gate B.
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
@@ -173,6 +177,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/preflight-helpers.md"
 ```
+
 Execute codemap + semble preflight if respective flags set.
 
 ## Step 1: Scope and understand
@@ -193,6 +198,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-context.md"
 ```
+
 Follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip if both false.
 
 **Multi-file / API-change scope — extended codemap scan** (only when `CODEMAP_ENABLED=true`): if target is directory, spans multiple files, or goal mentions renaming/restructuring public API (i.e., refactoring NOT limited to internals of single function or class with unchanged public interface):
@@ -227,6 +233,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/premise-grounding.md"
 ```
+
 §Premise Grounding Gate. Apply using **refactor** context from Skill contexts table.
 
 **Goal classification gate**: after sw-engineer analysis completes, scan goal text for mixed signals — if goal contains both refactor keywords (rename, extract, restructure, decouple, consolidate) AND feature keywords (add, implement, new, support), invoke `AskUserQuestion`: "Goal mixes refactoring and feature work — split into two runs." · (a) Abort — run refactor first, then feature · (b) Continue as refactor-only — treat feature additions as out of scope.
@@ -239,6 +246,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/plan-inline.md"
 ```
+
 §Inline Plan Generation Protocol. Apply using **refactor** context from Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
 
 ## Challenger gate
@@ -256,6 +264,7 @@ Spawn `foundry:challenger` with scope analysis from Step 1 (affected files, depe
 > "Review the refactoring scope and approach. Challenge across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step."
 
 Parse result:
+
 - **Blockers found** → STOP. Present findings. Don't proceed to Step 2 until user resolves each blocker or explicitly accepts risk.
 - **Concerns only** → surface as advisory before coverage audit; continue.
 - **No findings / all refuted** → proceed.
@@ -303,6 +312,7 @@ Before writing characterization tests, evaluate audit output critically:
 If audit incomplete: re-examine before Step 3. Gaps found mid-refactoring (Step 4) costly.
 
 <!-- Only active when --team flag passed (~10% of invocations) -->
+
 **Team mode branch** — if `TEAM_MODE=true`: Steps 1–2 complete solo (teammates need scope + coverage context). Spawn both teammates now; skip Steps 3–5, proceed to Final Report after results received.
 
 > loads: team-mode.md — gated; ~90% of runs (`--team` absent) skip the load entirely
@@ -344,6 +354,7 @@ For every **uncovered** or **partially covered** public API, spawn **foundry:qa-
 - Name tests `test_<function>_characterization_*`
 
 Spawn with context:
+
 - Target module: `<module_path>`
 - Coverage audit results: [paste coverage-audit output showing uncovered/partial functions]
 - Uncovered public APIs to test: [list from audit]
@@ -496,6 +507,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 _SHARED="$_DEV_SHARED"  # quality-stack.md loads its siblings from $_SHARED — this plugin's own _shared
 cat "$_DEV_SHARED/quality-stack.md"
 ```
+
 If not found → skip quality stack entirely, note the message above in Final Report. Otherwise execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.
 
 ## Final Report
@@ -545,7 +557,7 @@ rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compac
 ## Anti-Rationalizations
 
 | Temptation | Reality |
-| --- | --- |
+| -- | -- |
 | "The code is simple enough — I can skip characterization tests" | No safety net = no proof behavior unchanged. Characterization tests only proof. |
 | "I'll fix this adjacent bug while I'm in here" | Scope creep conflates history. Adjacent bugs go in Follow-up, not this session. |
 | "The tests are too brittle — I'll refactor them as well" | Refactoring tests + prod code simultaneously makes regressions unattributable. Fix tests first, separate pass. |

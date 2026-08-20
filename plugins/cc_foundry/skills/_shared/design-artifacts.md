@@ -68,8 +68,8 @@ Canonical usage pattern:
 
 ## Component Diagram (ASCII)
 
-**Spacing critical** — every box must have uniform content width (pad all rows same length with spaces).
-Misaligned walls or jagged padding breaks diagram. Count characters; don't eyeball.
+**Spacing critical** — every box must have uniform content width (pad all rows same length with spaces). Misaligned walls or jagged padding breaks diagram. Count characters; don't eyeball.
+
 ```text
 
 ┌─────────────────┐     ┌─────────────────┐

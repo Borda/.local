@@ -1,7 +1,11 @@
 <!-- oss:resolve Step 9 — executed via: cat $_OSS_RESOLVE/modes/lint-qa-gate.md; execute -->
+
 <!-- fragment — no <workflow> wrapper; executed inline by SKILL.md -->
+
 <!-- Input: $BASE_REF_MERGE, current working tree after Step 8; $RUN_DIR optional (created here if unset) -->
+
 <!-- $CHANGE_SCOPE: lint-only | targeted | full (default=targeted; set in SKILL.md Step 8 effort classification) -->
+
 <!-- Output: lint fixes committed (if any), or BLOCKING_ISSUES found -->
 
 ## Step 9: Lint and QA gate
@@ -34,8 +38,8 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/commit_lint_fixes.py"  # timeo
 1. Run truth-check — `foundry:qa-specialist` reports blocking issues
 2. Fix — apply fixes inline or via `IMPL_AGENT`
 3. Re-run `foundry:qa-specialist` — clean → proceed; still blocking → loop
-4. Blocked after 3 iterations → **stop workflow** — do not push; surface all remaining blocking issues; print:
-   `⛔ QA gate blocked push — review findings above, fix errors, then re-run /resolve or push manually after fixing.`
+4. Blocked after 3 iterations → **stop workflow** — do not push; surface all remaining blocking issues; print: `⛔ QA gate blocked push — review findings above, fix errors, then re-run /resolve or push manually after fixing.`
+
 - Warnings (non-blocking) → record in report; don't block push
 
 Revoke commit authorization (recompute sentinel path — main PR flow does not set `$SENTINEL`):

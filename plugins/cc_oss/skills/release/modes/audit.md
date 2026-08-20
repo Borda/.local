@@ -1,4 +1,5 @@
 <!-- oss:release Mode: audit — executed via: cat "$SKILL_DIR/modes/audit.md"; execute -->
+
 <!-- Variables available: $SKILL_DIR, $_OSS_SHARED, $LAST_TAG, $BRANCH, $DATE, $RANGE, $VERSION, $REPO_ROOT, $SOURCE_TAG_REF, $CHERRY_PICK_SUBJECTS -->
 
 **Trigger**: `/release audit [version]`
@@ -70,9 +71,9 @@ git -C "$REPO_ROOT" grep -n "^def <symbol>\|^class <symbol>\|    def <symbol>\| 
 ```
 
 **Outcomes per symbol**:
+
 - Absent from HEAD → ✓ correctly removed
-- Still present AND OVERDUE → ✗ **CRITICAL** — add to Phase 2 findings table as:
-  `| Scheduled removal overdue | ✗ \`<symbol>\` still present (remove_in="V.W") | <file:line> | critical |`
+- Still present AND OVERDUE → ✗ **CRITICAL** — add to Phase 2 findings table as: `` | Scheduled removal overdue | ✗ `<symbol>` still present (remove_in="V.W") | <file:line> | critical | ``
 - `$TARGET` not set → surface OVERDUE candidates as informational (`⚠ remove_in="V.W" scheduled but target version unknown`)
 
 ### Phase 1b: Upstream review verdict check
@@ -101,7 +102,7 @@ cat "$SKILL_DIR/templates/audit-checks.md"  # timeout: 5000
 After readiness table, if issues found, append **Findings summary** table:
 
 | # | Issue | Location | Severity |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | 1 | <what is wrong> | <section or file> | critical/high/medium/low |
 
 Every finding needs explicit location, severity, action — matches structured output format of `notes` and `changelog` modes.

@@ -38,7 +38,7 @@ Use `foundry:curator`, not `foundry:sw-engineer`, for `.claude/` edits (agents, 
 ## Agent/Skill File XML Tag Conventions
 
 - **Structural tags** (`<role>`, `<workflow>`, `<notes>`): unescaped — primary Claude Code-parsed sections
-- **Non-structural section tags** (e.g. `\<antipatterns_to_flag>`, `\<toolchain>`, `\<core_principles>`): backslash-escaped — internal org, Claude Code ignores
+- **Non-structural section tags** (e.g. `<antipatterns-to-flag>`, `\<toolchain>`, `<core-principles>`): backslash-escaped — internal org, Claude Code ignores
 - New section tag: use `\<tag>` for subsections inside `<role>` or `<workflow>`; leave three structural tags unescaped
 
 ## Audit Check Numbering Convention
@@ -59,7 +59,7 @@ Use `foundry:curator`, not `foundry:sw-engineer`, for `.claude/` edits (agents, 
 ## Log File TTL
 
 | Location | TTL | Condition |
-| --- | --- | --- |
+| -- | -- | -- |
 | `~/.claude/logs/` | forever | hook audit logs (invocations, compactions, timings) — global across all projects; rotate at 10 MB |
 | `.notes/logs/` | forever | skill-specific logs (calibrations, audit-errors) — project-scoped; rotate at 10 MB; legacy `.claude/logs/` read-only fallback for historical entries written before relocation |
 

@@ -1,6 +1,6 @@
 ---
 name: code-remediate
-description: "Apply selected code-review fixes; rerun gates/report gaps; PR +review uses latest matching artifact."
+description: Apply selected code-review fixes; rerun gates/report gaps; PR +review uses latest matching artifact.
 ---
 
 # Code Remediate
@@ -44,8 +44,7 @@ Shorthand rules:
 
 For `latest-matching-review-report`, inspect `python PLUGIN_ROOT/shared/find-review-report.py --help`, resolve `PR_TARGET` against `.reports/codex/code-review`, assign printed path to `FINDINGS_SOURCE`. The helper filters explicit `review_status=unavailable` diagnostics, so an older assessed review remains eligible when a newer collection failure exists. A newer `review_status=closed` result instead blocks older findings because the close disposition is current and non-remediable. Before accepting an explicit result path as findings input, invoke the same helper with `--result <path>`; it rejects unavailable results with the rerun instruction and closed results with `matching-review-closed-not-remediable`.
 
-Copy the exact bytes from the retained findings-source path to `<run-directory>/findings-input.txt` with the
-filesystem tool. Do not depend on a shell variable retaining that source path.
+Copy the exact bytes from the retained findings-source path to `<run-directory>/findings-input.txt` with the filesystem tool. Do not depend on a shell variable retaining that source path.
 
 For `mode=pr`, inspect `python PLUGIN_ROOT/shared/collect_pr.py --help`; collect `PR_TARGET` into `<run-directory>/pr` with checkout enabled for current online evidence, target/head refresh, local checkout.
 
@@ -64,10 +63,7 @@ Findings intake:
 
 For `mode=pr`, required before `action-items.md`, `resolution-scope.md`, or report/PR-review code changes. Establish clean PR and latest target implementation before conflict markers make worktree noisy.
 
-Read `remote_ref` from `<run-directory>/pr/target-branch.json` with a JSON parser and retain the exact printed value as
-`<base-remote-ref>`. Run `git merge-base HEAD <base-remote-ref>` as argv, retain its single printed value as
-`<merge-base>`, and write that value to `<run-directory>/pr/merge-base.txt`. Run these argv commands separately and
-write stdout to the named artifacts:
+Read `remote_ref` from `<run-directory>/pr/target-branch.json` with a JSON parser and retain the exact printed value as `<base-remote-ref>`. Run `git merge-base HEAD <base-remote-ref>` as argv, retain its single printed value as `<merge-base>`, and write that value to `<run-directory>/pr/merge-base.txt`. Run these argv commands separately and write stdout to the named artifacts:
 
 - `git diff --stat <merge-base>..HEAD` → `<run-directory>/pr/pr-intent.diffstat`
 - `git diff --name-only <merge-base>..HEAD` → `<run-directory>/pr/pr-intent-files.txt`
@@ -101,12 +97,7 @@ If checkout starts dirty, conflicted, or partially merged, fail or ask cleanup b
 
 ### 04: Normalize Findings Before Editing
 
-**Structural context (optional)**: when `target_scope` names a Python module, also probe codemap-py once for
-changed-symbol/caller impact: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category review [--target
-<qname>] --out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`,
-absence/incompatibility is non-fatal — continue normalizing findings from `findings-input.txt` alone. Persist the
-result once here; specialist owners assigned in step 06 receive `<run-directory>/codemap-context.json` in their
-context pack, never a fresh query.
+**Structural context (optional)**: when `target_scope` names a Python module, also probe codemap-py once for changed-symbol/caller impact: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category review [--target <qname>] --out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue normalizing findings from `findings-input.txt` alone. Persist the result once here; specialist owners assigned in step 06 receive `<run-directory>/codemap-context.json` in their context pack, never a fresh query.
 
 Write `<run-directory>/action-items.md` starting with `## Review Item Resolution Table`, before prose. One row per ingested entry: all report findings, normalized report-origin review obligations, fetched online PR comments, PR reviews, review threads, unresolved review threads. If user supplied/requested report, include report items even if fresh PR evidence repeats them. Table is selectable-findings source; every `resolved` row needs resolution evidence. Never reduce ledger to changed/selected/unresolved/high-impact rows.
 
@@ -228,9 +219,7 @@ Before accepting an explicit scope or prompting for one, complete the pre-edit `
 
 For an omitted `remediation_scope`, record the pending state before prompting: `selection source: user-prompt`, the exact prompt below, `user selection confirmed before editing: false`, and no selected indexes or severity groups. Retain resolved online items only as the documented omitted count; do not add them to the table.
 
-Read the complete `<run-directory>/resolution-scope.md` through the filesystem tool and render it unabridged before
-any scope prompt or edits. Immediately append `Full report: <run-directory>/action-items.md`; do not use shell output
-or a persisted path variable to assemble this context.
+Read the complete `<run-directory>/resolution-scope.md` through the filesystem tool and render it unabridged before any scope prompt or edits. Immediately append `Full report: <run-directory>/action-items.md`; do not use shell output or a persisted path variable to assemble this context.
 
 The `Full report` path must appear immediately after the unabridged scope context and target `<run-directory>/action-items.md`, the complete normalized resolution report. The link supplements the scope context; do not replace the context with a `Selectable items:` summary, shortened numbered list, artifact link, or ellipsis. The terminal table must let the user choose from the full item id/source, severity, summary, and closure evidence without opening another file.
 
@@ -382,9 +371,7 @@ Leave accepted remediation changes unstaged by default. If the user explicitly r
 Co-authored-by: Codex <codex@openai.com>
 ```
 
-Do not commit for a remediation summary alone or without the user's explicit authorization.
-Creating a new remediation commit never authorizes rewriting an existing commit. Amend, rebase, reset, squash,
-fixup, and equivalent history edits require an explicit request for that exact operation.
+Do not commit for a remediation summary alone or without the user's explicit authorization. Creating a new remediation commit never authorizes rewriting an existing commit. Amend, rebase, reset, squash, fixup, and equivalent history edits require an explicit request for that exact operation.
 
 ## Fail-fast Rules
 

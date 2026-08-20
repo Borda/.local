@@ -5,7 +5,7 @@
 Three capability tiers:
 
 | Tier | Model | Example agents |
-| --- | --- | --- |
+| -- | -- | -- |
 | Plan-gated | `opusplan` | solution-architect, oss:shepherd, curator |
 | Implementation | `opus` | sw-engineer, research:scientist, perf-optimizer |
 | Diagnostics / writing | `sonnet` | web-explorer, doc-scribe, research:data-steward, oss:cicd-steward, qa-specialist |
@@ -96,6 +96,7 @@ Use model reasoning to score each pair: `overlap_pct` = fraction of one agent's 
 **34b — Coverage gap detection**: scan agent descriptions for task domains with no clear owner. Coverage gap = realistic task type where no agent's TRIGGER applies and no NOT-for exclusion explains the gap.
 
 Examples of coverage gap signals:
+
 - "Who handles X?" produces no confident agent → gap
 - Two agents exclude a domain ("NOT for Y") but no agent includes it → gap
 

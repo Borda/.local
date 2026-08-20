@@ -1,7 +1,7 @@
 ---
 name: resolve
 description: "OSS maintainer fast-close workflow for GitHub PRs. Three phases: (1) PR intelligence — reads full thread, linked issues, PR body to synthesize contribution motivation and classify every comment into action items; (2) conflict resolution — checks out PR branch (fork-aware via gh pr checkout), merges BASE into it, resolves conflicts semantically using contributor's intent as priority lens; (3) implements each action item as separate attributed commit via Codex, pushes back to contributor's fork. Supports three source modes: pr (live GitHub comments only), report (latest /review report findings as action items, no GitHub re-fetch), and pr + report (both sources aggregated and deduplicated in one pass). Also accepts bare comment text for single-comment dispatch. NOT for reply drafting to /oss:analyse findings (use /oss:analyse --reply (requires `oss` plugin)). NOT for code diff review of PR changes (use /oss:review). NOT for release preparation (use /oss:release). NOT for fixing local bugs unrelated to a PR (use /develop:fix; requires develop plugin). TRIGGER when: PR is ready to close and has open comments, conflicts, or review findings to address; user says 'close this PR', 'resolve comments on PR #N', or 'implement review findings'."
-argument-hint: "<PR number or URL> [report] | report | <review comment text> [--no-challenge] [--agent <name>] [--codemap] [--no-codemap] [--worktree] [--keep \"<items>\"]"
+argument-hint: <PR number or URL> [report] | report | <review comment text> [--no-challenge] [--agent <name>] [--codemap] [--no-codemap] [--worktree] [--keep "<items>"]
 disable-model-invocation: true
 model: sonnet
 allowed-tools: Read, Edit, Write, Bash, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion, EnterWorktree, ExitWorktree
@@ -45,21 +45,27 @@ NOT-for additions (scope guards):
 </inputs>
 
 <constants>
+```text
 CHALLENGE_TIMEOUT_S=300  # tightened from CLAUDE.md §6 default 900s
 CHALLENGE_POLL_S=90      # tightened from CLAUDE.md §6 default 300s
+```
 > Bash timeout convention — `# timeout: N` annotations in bash blocks are honored by the Claude Code
+>
 > Bash tool (sets tool-level timeout). Shell enforcement (`timeout S cmd` prefix) is NOT required for
+>
 > skills executed exclusively via Claude Code. Shell prefix added only for commands that could hang
+>
 > in direct-shell execution (git push, gh pr checkout).
 </constants>
 
 <compaction>
 
 > loads: compaction-contract.md
-Key boundary: end of Step 8 — per-item implementation loop complete, before Step 9 lint gate. Contract overwrites on each iteration (latest state wins).
-Second boundary: start of Step 11 — before final report write, after push.
-Preserve at boundary 1: PR#, implemented/remaining item state.
-Preserve at boundary 2: final report path, PR#.
+
+- Key boundary: end of Step 8 — per-item implementation loop complete, before Step 9 lint gate. Contract overwrites on each iteration (latest state wins).
+- Second boundary: start of Step 11 — before final report write, after push.
+- Preserve at boundary 1: PR#, implemented/remaining item state.
+- Preserve at boundary 2: final report path, PR#.
 
 </compaction>
 
@@ -140,6 +146,7 @@ IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/resolve-oss-shared-${CSID}" 2>/dev/n
 **Codemap gates** — when `CODEMAP_FORCE_OFF=false`, run (from `codemap-gates.md`, loaded above): **Gate A** if `CODEMAP_ENABLED=false` (missing index → offer to build); **Gate B** if `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`. On a build choice, build with the gated `codemap-py index` binary in the foreground, then set `CODEMAP_ENABLED=true` — never model-invoke the `codemap-py:scan-codebase` skill, which is `disable-model-invocation: true` (user-slash-only). Skip both gates when `CODEMAP_FORCE_OFF=true` (`--no-codemap`).
 
 Codex missing: set `CODEX_AVAILABLE=false` — Steps 3–7 work without it. Step 8 degradation:
+
 1. Simple, single-file items → `foundry:sw-engineer`
 2. Complex/multi-file → skip with: `⚠ bridge@borda-ai-rig is absent or disabled — skipping item #<id>. Install or enable the bridge and reload plugins.`
 
@@ -195,6 +202,7 @@ echo "${PR_NUMBER:-n/a}" > "${TMPDIR:-/tmp}/resolve-pr-number-${CSID}"  # timeou
 ```
 
 <!-- branch: unsupported-flags — isolated; ≤1 call; fires only when unknown flags present -->
+
 **Unsupported flag check** — after `eval`, scan remaining `$ARGUMENTS` for any `--<token>` not in `{--no-challenge, --agent, --codemap, --no-codemap, --worktree}`. Found → invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown tokens). Supported: `--no-challenge`, `--agent <name>`, `--codemap`, `--no-codemap`, `--worktree`, `--keep "<items>"`.
 
 - `MODE="pr+report"` → strip `report` suffix conceptually (already captured separately); find latest review report via `ls -t .reports/review/*/review-report.md .reports/codex/review/*/review-notes.md 2>/dev/null | head -1`; no report found → warn but continue in pr mode; newest match is codex-lineage (`.reports/codex/review/*/review-notes.md`) → this parser can't read its schema — warn `⚠ newest review is codex-lineage, unsupported by this parser — GitHub comments only, no report findings merged` and continue in pr mode (same non-fatal treatment as "no report found")
@@ -231,9 +239,7 @@ esac
 
 ## Step 1b: Create all workflow tasks upfront
 
-After `PR_NUMBER` and `MODE` resolved above, create all major-step tasks now.
-Store each returned `task_id` for step-level `TaskUpdate` calls.
-Conditional tasks: include condition in subject brackets; cancel via `TaskUpdate(status="deleted")` at skip point — never leave conditional tasks pending.
+After `PR_NUMBER` and `MODE` resolved above, create all major-step tasks now. Store each returned `task_id` for step-level `TaskUpdate` calls. Conditional tasks: include condition in subject brackets; cancel via `TaskUpdate(status="deleted")` at skip point — never leave conditional tasks pending.
 
 ```text
 TASK_GATHER   = TaskCreate(subject="Step 2: Gather action items — PR #<N>",              activeForm="Gathering action items for PR #<N>")
@@ -252,6 +258,7 @@ TaskUpdate(task_id=TASK_GATHER, status="in_progress")
 ```
 
 ## Step 3a: Report intelligence (report mode only)
+
 <!-- loads: report-intelligence.md -->
 
 ```bash
@@ -263,6 +270,7 @@ cat "$_OSS_RESOLVE/modes/report-intelligence.md"  # timeout: 5000
 Execute its steps (loaded above).
 
 ## Step 3b: PR intelligence
+
 <!-- loads: pr-intelligence.md -->
 
 ```bash
@@ -316,6 +324,7 @@ Print merged ACTION_ITEMS as markdown table to terminal immediately after the me
 ```
 
 **Author field rules** — Author = who owns fixing this item:
+
 - `[gh]` items (no dedup): GitHub reviewer's `@login`
 - `[gh]` items (dedup collision with report): `@login + <owner-agent>` (e.g. `@reviewer + foundry:doc-scribe`) — both authors preserved
 - `[report]` items (no collision): Owner agent from taxonomy (e.g. `foundry:doc-scribe`, `foundry:qa-specialist`) — **never** the skill name `review` or `/review`
@@ -325,6 +334,7 @@ Summary ≤60 chars. Loc = inline / discussion / report. Notes = `—` when empt
 ## Step 3d: User item selection
 
 <!-- branch: main-path — item-selection (call 1 of 4 on normal path; always fires in step 3d) -->
+
 ! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text.
 
 Gather is complete here (3b/3c done). Mark TASK_GATHER `completed` and TASK_SELECT `in_progress` **before** the selection prompt — otherwise the gather `activeForm` keeps driving the spinner through the user-selection window, falsely implying gather is still running:
@@ -350,6 +360,7 @@ Q4 — multiSelect: FALSE (single-select only — user picks one bulk action, no
 ```
 
 **Bulk-action resolution from Q4**:
+
 - (a) → `SELECTED_ITEMS` = all `[req]` IDs; skip Call 2 in two-call flow; proceed to commit mode question
 - (b) → `SELECTED_ITEMS` = all `[suggest]` IDs; skip Call 2 in two-call flow; proceed to commit mode question
 - (c) → `SELECTED_ITEMS` = all pending [req+suggest] IDs; skip Call 2; proceed to commit mode question (do NOT hardcode `COMMIT_MODE` — scope and commit mode are orthogonal; user still chooses granularity)
@@ -361,6 +372,7 @@ Q4 — multiSelect: FALSE (single-select only — user picks one bulk action, no
 **≥20 pending items — context-budget mode**: skip per-item checkboxes; print compressed table (type · id · summary ≤40 chars · file) **inline to terminal** (Output-Routing exemption from Step 3c applies — never divert to `.temp`) then Q4 only; follow with commit mode question unless (d) selected.
 
 <!-- branch: main-path — commit-mode (call 2 of 4; skipped only when Q4=(d) skip) -->
+
 **Commit mode follow-up** — ask immediately after Q4 resolves to (a), (b), (c), or unanswered (skip only when (d) skip-all). Commit mode is always the user's choice; item scope ((c) = all items) never implies a commit mode:
 
 ```text
@@ -374,6 +386,7 @@ AskUserQuestion: "Commit mode for selected items:"
 **ESSENTIAL — all 4 options mandatory, never emit fewer than 4** (empirically motivated: LLMs tend to drop (b) By topic group and (d) Stage only — both must appear every time). Distinct menu from Q4, never merge or pull Q4's bulk-action options in — this menu sets commit MODE (how to commit), Q4 sets item SCOPE (which items).
 
 Set `COMMIT_MODE`:
+
 - (a) → `each`
 - (b) → `grouped`
 - (c) → `all`
@@ -417,6 +430,7 @@ IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/resolve-oss-shared-${CSID}" 2>/dev/n
 *Skip only when `MODE = report` with no PR# (`$PR_NUMBER` unset — no remote branch to check out). In pr mode, runs unconditionally regardless of `SELECTED_ITEMS` — conflict resolution must happen even when 0 action items selected.*
 
 When skipping:
+
 ```text
 TaskUpdate(task_id=TASK_CHECKOUT, status="deleted")
 TaskUpdate(task_id=TASK_CONFLICT, status="deleted")
@@ -526,6 +540,7 @@ TaskUpdate(task_id=TASK_CHECKOUT, status="completed")
 ```
 
 ## Steps 5–7: Conflict detection, context, and resolution
+
 <!-- Steps 5–7 defined in conflict-resolution.md — see that file for sub-step numbering -->
 
 ```text
@@ -549,6 +564,7 @@ TaskUpdate(task_id=TASK_CONFLICT, status="completed")
 *Skip when `SELECTED_ITEMS` is empty — jump to Step 9.*
 
 When skipping:
+
 ```text
 TaskUpdate(task_id=TASK_IMPL, status="deleted")
 ```
@@ -569,6 +585,7 @@ fi
 ```
 
 <!-- branch: codex-cap — only when codex agent AND N>8 items; adds 1 call (max 5 if user proceeds; worst case = item-select + commit-mode + codex-cap + push-auth + post-pr) -->
+
 If `_RESOLVE_IMPL_AGENT = bridge:implement` AND `SELECTED_ITEMS` has > 8 items, invoke `AskUserQuestion`: "N items selected — bridge implementation cap is 8 per session. Split into batches?" Options: (a) Apply first 8 now, re-run for remainder · (b) Apply all [req] only (if ≤8) · (c) Proceed anyway (sequential, may be slow). For non-bridge agents, skip this gate.
 
 **Codemap index identity (if `CODEMAP_ENABLED=true`)**: resolve the index path the next block reuses. No query runs here — per-item blast radius is action-item-dispatch.md's **Pre-loop blast-radius scan**, which resolves each item's canonical module first and passes it as `rdeps`' positional argument.
@@ -669,6 +686,7 @@ TaskUpdate(task_id=TASK_LINT, status="completed")
 *Skip when report mode with no PR# (`$FORK_REMOTE`, `$HEAD_REF`, `$BASE_REF` unset — no fork branch; workflow ends at Step 11).*
 
 When skipping:
+
 ```text
 TaskUpdate(task_id=TASK_CLOSE, status="deleted")
 ```
@@ -705,6 +723,7 @@ echo "→ $PUSH_COUNT commits ready to push to $FORK_REMOTE/$HEAD_REF ($PUSH_STA
 ```
 
 <!-- branch: main-path — push-auth (call 3 of 4 normal / 4 of 5 with codex-cap) -->
+
 **Push authorization gate** — per `git-commit.md` push-safety rule ("Never push without explicit user confirmation"), invoke `AskUserQuestion` before any `git push`. The question must surface:
 
 - Target remote and branch: `$FORK_REMOTE/$HEAD_REF`
@@ -716,7 +735,7 @@ Options:
 - (a) **Push** — proceed with `git push` below (default)
 - (b) **Skip push** — stop after Step 9; user pushes manually later
 
-Only proceed to the `git push` below on option (a). On option (b): print `→ Push skipped — run \`git push\` manually when ready.` and jump to Step 11.
+Only proceed to the `git push` below on option (a). On option (b): print `` → Push skipped — run `git push` manually when ready. `` and jump to Step 11.
 
 ```bash
 git push # timeout: 30000
@@ -796,6 +815,7 @@ fi
 **Worktree exit** — if `WT_ENABLED=true` and a worktree was entered at Step 4: commits are already pushed to the fork (the deliverable is remote). Follow `worktree-isolation.md` §Exit — `git branch --show-current`, then `ExitWorktree(action="keep")` to return the session to the main tree, and append the `Worktree` block noting the local worktree is disposable (`git worktree remove` when done). The `SAVED_BRANCH` restore above was a no-op — the main tree was never switched. Never auto-merge.
 
 <!-- branch: main-path — post-pr (call 4 of 4 normal / 5 of 5 with codex-cap) -->
+
 ```text
 TaskUpdate(task_id=TASK_CLOSE, status="completed")
 ```

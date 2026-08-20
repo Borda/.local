@@ -1,6 +1,6 @@
 ---
 name: integration
-description: "Codemap integration: audit|plan|apply|sync|demo; skip query/index rebuilds."
+description: 'Codemap integration: audit|plan|apply|sync|demo; skip query/index rebuilds.'
 ---
 
 NOT for: structural queries (`$codemap-py:query-code`) or index rebuilds (`$codemap-py:scan-codebase`).
@@ -10,7 +10,7 @@ NOT for: structural queries (`$codemap-py:query-code`) or index rebuilds (`$code
 Adapter for `codemap-py integrate` (`src/codemap_py/integration.py`). Claude Code or Codex may target Claude, Codex, or both; this skill runs only native plugin-manager CLIs, never another runtime's model. `check` is removed with no alias.
 
 | Mode | Args | Mutation | Exit |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | `audit` | `[--runtime {claude,codex,both}] [--json] [--since YYYY-MM-DD]` | none | 0 pass/warn; 1 fail; 2 bad syntax |
 | `plan` | `[--runtime ...] [--consumers <csv>] [--source {local-candidate,release}] [--out <artifact>]` | report artifact only | 0; 2 bad syntax |
 | `apply` | `--plan <artifact> --approve <sha256>` | verified source checkout only | 0; 1 drift/fs; 2 bad approve/syntax |

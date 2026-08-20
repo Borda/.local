@@ -1,4 +1,5 @@
 <!-- oss:release Mode: demo — executed via: cat "$SKILL_DIR/modes/demo.md"; execute -->
+
 <!-- Variables available: $SKILL_DIR, $_OSS_SHARED, $LAST_TAG, $BRANCH, $DATE, $RANGE, $VERSION, $REPO_ROOT, $GATHER_FILE -->
 
 **Trigger**: `/release demo [range]`
@@ -26,6 +27,7 @@ git diff --stat "$(echo "$RANGE" | sed 's/\.\./.../')"  # three-dot range prefer
 ```
 
 From gathered commits and diffs, select 2–3 headline features:
+
 - Prefer: new public API, breaking changes, significant performance wins, major UX improvements
 - Exclude: internal refactors, CI/tooling, dep bumps, doc-only changes
 
@@ -64,23 +66,32 @@ Write Python script in jupytext percent format. Structure in order:
    #       jupytext_version: 1.16.0
    # ---
    ```
+
 2. **Title cell** (`# %% [markdown]`):
+
    - `# <PackageName> <VERSION>: <tagline — one clause per headline feature>`
    - Colab badge placeholder: `[![Open In Colab](...)](<repo-url>/blob/main/releases/<VERSION>/demo.ipynb)`
    - `**What you'll learn:**` — bullet per headline feature
    - `**Sections:**` — numbered TOC with anchor links
    - 2–3 narrative paragraphs: what release adds, why it matters; `> **Breaking change:**` blockquote if breaking changes present
+
 3. **Install cell** (`# %%`): `# !pip install <package>==<VERSION>`
+
 4. **Config cell** (`# %%`): all notebook-level constants (`OUTPUT_DIR`, `BATCH_SIZE`, etc.); `num_workers` pattern for macOS/Windows safety if training involved
+
 5. **One section per headline feature** — for each:
+
    - Markdown cell: `## N. <Feature name>` + prose (before/after, motivation, API shape)
    - Code cell(s): demonstrate feature; if showing old→new migration, old API in commented block above
    - Verification cell where output confirms feature works (e.g. print, assertion, plot)
+
 6. **Next steps cell** (`# %% [markdown]`):
+
    - `## <N+1>. Next steps` header
    - Bullet list: docs link, changelog link (GitHub compare URL), migration guide link if breaking changes, links to prior release demos; use `<placeholder-url>` format — never invent real URLs
 
 Content rules:
+
 - All code must be syntactically valid Python
 - Placeholder URLs use `<repo-url>`, `<docs-url>` — never invent real URLs
 - Narrative cells explain WHY, not just what — write for developer who hasn't seen release

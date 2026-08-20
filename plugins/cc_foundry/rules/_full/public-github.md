@@ -6,8 +6,7 @@ paths:
 
 ## Public GitHub — Read-Only
 
-Claude + all agents (subagents, skills, teammates) **read-only** on public GitHub.
-Hard constraint — not suggestion.
+Claude + all agents (subagents, skills, teammates) **read-only** on public GitHub. Hard constraint — not suggestion.
 
 ### Permitted (read)
 

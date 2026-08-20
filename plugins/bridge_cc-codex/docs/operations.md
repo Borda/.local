@@ -55,7 +55,7 @@ A recorded `running` job whose supervisor process no longer exists — or a `que
 ## Common failures
 
 | Signal | Meaning | Operator action |
-| --- | --- | --- |
+| -- | -- | -- |
 | `blocked` | The request was rejected or a required CLI, authentication, permission, model, or input contract was unavailable. | Read `blockers`, run static diagnosis, and resolve the host prerequisite or narrow the request. |
 | `timeout` | The hard cutoff elapsed before a valid result returned. | Read the transcript and workspace state; narrow the task or increase the explicit budget. Do not assume no edits occurred. |
 | `refused` with `recursion-depth` | The trusted call chain already contains a peer dispatch. | Start a fresh outer call rather than attempting another cross-host hop. |

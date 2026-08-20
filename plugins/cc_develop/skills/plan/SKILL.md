@@ -1,7 +1,7 @@
 ---
 name: plan
-description: "Analysis-only planning — classify and scope a task without writing code; outputs a structured plan to .plans/active/. TRIGGER when: user wants to understand scope and risks before implementation; phrases: \"plan this\", \"scope out X\", \"what would it take to Y\", \"analyse before we start\". SKIP when: user already knows what to build and wants code immediately (use `/develop:feature` or `/develop:fix` directly); `.claude/` config planning (use `/foundry:manage`)."
-argument-hint: "<goal> [--no-challenge] [--codemap] [--no-codemap] [--semble] [--max-depth <N>]"
+description: 'Analysis-only planning — classify and scope a task without writing code; outputs a structured plan to .plans/active/. TRIGGER when: user wants to understand scope and risks before implementation; phrases: "plan this", "scope out X", "what would it take to Y", "analyse before we start". SKIP when: user already knows what to build and wants code immediately (use `/develop:feature` or `/develop:fix` directly); `.claude/` config planning (use `/foundry:manage`).'
+argument-hint: <goal> [--no-challenge] [--codemap] [--no-codemap] [--semble] [--max-depth <N>]
 effort: medium
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
@@ -12,6 +12,7 @@ disable-model-invocation: true
 Analysis-only. Produces structured plan, no code. Use to understand scope, risks, effort before `/develop:feature`, `/develop:fix`, `/develop:refactor`.
 
 NOT for: code/tests (use develop mode); `.claude/` config (use `/foundry:manage` (requires foundry plugin)).
+
 - non-Python-only projects (JS/TS/Go/Rust with no Python source) — downstream develop skills assume pytest; planning analysis language-agnostic but downstream implementation needs language-native toolchain
 - mixed refactor+feature tasks — run /develop:refactor first, then /develop:feature
 
@@ -62,7 +63,7 @@ cp "${TMPDIR:-/tmp}/dev-plan-max-depth-${CSID}"     "$PLAN_NS/max-depth"        
 
 Downstream blocks recover namespace then read back, e.g. `IFS= read -r PLAN_NS < "${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID}" 2>/dev/null || PLAN_NS=""; IFS= read -r CODEMAP_ENABLED < "$PLAN_NS/codemap-enabled" 2>/dev/null || CODEMAP_ENABLED=false`.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--max-depth\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. If found: print `` ! Unknown flag(s): `--<token>`. Supported: `--no-challenge`, `--codemap`, `--no-codemap`, `--semble`, `--max-depth`. `` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Codemap auto-detection** — normalize `CODEMAP_RAW` to `true`/`false`; strict mode hard-fails when codemap unavailable:
 
@@ -81,6 +82,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-gates.md"
 ```
+
 Follow Gate A and Gate B.
 
 **Preflight** — runs only when `--semble` was passed; the block re-reads `SEMBLE_ENABLED` from the namespace because bash state is lost between Bash() calls:
@@ -98,6 +100,7 @@ else
     echo "→ --semble not passed — skipping semble preflight"
 fi
 ```
+
 When the block printed `preflight-helpers.md`, execute the semble preflight it describes; when it printed the skip line, proceed. Codemap validation handled by auto-detect block above.
 
 ## Step 1: Classify and scope
@@ -143,6 +146,7 @@ else
     echo "→ codemap and semble both off — skipping structural context"
 fi
 ```
+
 Follow enabled sections per the values the block echoed (codemap block if `CODEMAP_ENABLED=true`, semble companion if `SEMBLE_ENABLED=true`). Nothing printed beyond the skip line → proceed.
 
 **Effort sizing (codemap-py)** — when `CODEMAP_ENABLED=true`, derive blast-radius tier table from reverse dependencies so complexity estimate structural, not guessed. Degrade silently when codemap-py absent — plan works unchanged, sizing falls back to agent's file-count heuristic. Run Extended scan (`--source=diff` when partial diff exists, e.g. re-planning after abandoned work; otherwise per-target `rdeps` when `TARGET_MODULE` known):
@@ -164,6 +168,7 @@ fi
 ```
 
 > Interpret `$PLAN_NS/sizing-rdeps` (skip when empty — codemap absent or no target): each `rdeps` block's caller count sets per-module blast tier; `coupled` output lists co-change pairs. Tiers match develop's convention:
+>
 > - `>= 5` rdeps → **HIGH** blast radius — cross-module reach; nudges complexity toward `large` and adds a Risks entry
 > - `1–4` rdeps → **MODERATE** — note affected importers in plan
 > - `0` rdeps → **LOW** — self-contained; proceed
@@ -194,6 +199,7 @@ fi
 ```
 
 At depth 0: stop, report current plan state, invoke `AskUserQuestion` — (a) Accept plan as-is · (b) Re-scope with reduced depth requirement.
+
 - Identify affected files and modules (search codebase — no guessing)
 - Assess complexity: small (1-3 files, self-contained), medium (4-8 files or 1-2 modules), large (cross-module, API changes, or 3+ modules). When effort-sizing block produced tier table, let structural reach override file count: any **HIGH** blast module (≥5 rdeps) or ≥3 affected modules → `large`, regardless of raw file count.
 - Return **two separate** structured fields (not merged into flat risks list):
@@ -280,8 +286,7 @@ Each agent receives only plan file path and role — no conversation history, no
 
 **Parse-failure handling**: agent responses may not be valid JSON (especially fallback `general-purpose` agents that wrap JSON in prose). Before processing:
 
-1. Attempt to extract JSON object: prefer `echo "$RESPONSE" | jq -c '.' 2>/dev/null` for parseable input. For mixed prose+JSON: use `echo "$RESPONSE" | grep -oE '\{[^{}]*(\{[^{}]*\}[^{}]*)?\}' | tail -1 | jq -c '.' 2>/dev/null` — extracts last balanced JSON object (one nesting level; breaks on strings containing `{` or `}`). If `jq` not available or both jq attempts fail, fallback: `echo "$RESPONSE" | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/extract_json_field.py" .` — recovers outermost balanced JSON object from arbitrary prose+JSON text; pass specific field name (e.g. `ok`, `a`) instead of `.` to extract just that field.
-   **Caveat**: prefer matching `"a":"<ROLE>"` pattern as anchor when multiple candidates.
+1. Attempt to extract JSON object: prefer `echo "$RESPONSE" | jq -c '.' 2>/dev/null` for parseable input. For mixed prose+JSON: use `echo "$RESPONSE" | grep -oE '\{[^{}]*(\{[^{}]*\}[^{}]*)?\}' | tail -1 | jq -c '.' 2>/dev/null` — extracts last balanced JSON object (one nesting level; breaks on strings containing `{` or `}`). If `jq` not available or both jq attempts fail, fallback: `echo "$RESPONSE" | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/extract_json_field.py" .` — recovers outermost balanced JSON object from arbitrary prose+JSON text; pass specific field name (e.g. `ok`, `a`) instead of `.` to extract just that field. **Caveat**: prefer matching `"a":"<ROLE>"` pattern as anchor when multiple candidates.
 2. If extraction succeeds: use extracted object
 3. If extraction fails entirely: log `⚠ non-JSON plan response — falling back to prose extraction`; treat as `{"a":"<ROLE>","ok":false,"blockers":["agent returned non-JSON response"],"q":[],"concerns":[]}` and enter resolution loop with re-query
 
@@ -331,10 +336,10 @@ For each blocker or open question:
 3. After all resolvable items cleared, re-check: if all agents `ok: true` -> `✓ agents ready`.
 
 **Plan file coherence**: after resolution loop exits (regardless of outcome), annotate `<PLAN_FILE>`:
+
 - Each resolved blocker: add `(resolved ✓)` inline
 - Each unresolved blocker: add `(unresolved — requires user input)`
-- Update Brief (once it exists): note "N of M blockers resolved autonomously; N require user input"
-Ensures plan file coherent after partial resolution.
+- Update Brief (once it exists): note "N of M blockers resolved autonomously; N require user input" Ensures plan file coherent after partial resolution.
 
 **Escalate to user only what cannot be resolved autonomously** — blocker requires user input when: depends on business decision, undocumented external constraint, missing credential/secret, or genuine goal ambiguity with two equally valid interpretations.
 
@@ -369,6 +374,7 @@ Block printed the skip line → skip the rest of Step 4 entirely and go to Step 
 > "Read `<PLAN_FILE>`. Challenge plan across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step per your instructions."
 
 Parse result:
+
 - **Blockers found** → STOP. Present findings. Do not print `/develop` handoff until user resolves each blocker or explicitly accepts risk. Update `<PLAN_FILE>` with blocker annotations.
 - **Concerns only** → append `### Challenger concerns` to `<PLAN_FILE>` as advisory; continue to Final output.
 - **No findings / all refuted** → proceed.
@@ -427,6 +433,7 @@ If unresolved items escalated, print each after brief:
 Invoke `AskUserQuestion` tool before printing `-> /develop:<classification> ...`. Options: (a) Proceed — print handoff line and continue · (b) Revise plan — return to Step 2 with user edits. Do not print handoff line until user selects option (a).
 
 **Handoff contract**: plan file at `<PLAN_FILE>` consumable by downstream skills. Pass via `--plan <PLAN_FILE>` when invoking `/develop:feature`, `/develop:fix`, or `/develop:refactor`. For `debug` classification: no downstream plan file — invoke `/develop:debug <goal>` directly; once root cause identified, re-run `/develop:plan` to produce scoped fix plan. When skill receives `--plan <path>`, reads plan file at Step 1 and:
+
 - Extracts `Classification`, `Affected files`, `Risks`, `Suggested approach` — skips cold codebase exploration
 - Inherits agent feasibility verdicts and Codex corrections already applied
 - Uses `Suggested approach` as implementation roadmap
@@ -454,7 +461,7 @@ End plan document with:
 ## Anti-Rationalizations
 
 | Temptation | Reality |
-| --- | --- |
+| -- | -- |
 | "The plan is obvious — no need for agent feasibility review" | Feasibility review catches domain-specific blockers (missing test infrastructure, incompatible library constraints, API changes) that seem obvious in hindsight. |
 | "Codex design review is optional for small tasks" | Small tasks regularly reveal large hidden dependencies. Codex catches architectural anti-patterns before baked into implementation plan. |
 | "I can scope this during implementation — no need to plan first" | Scope discovered during implementation inflates PRs and obscures intent. Plan mode exists to prevent exactly this. |

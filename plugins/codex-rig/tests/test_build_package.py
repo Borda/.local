@@ -107,6 +107,27 @@ def test_update_refuses_without_posix_mode_enforcement(monkeypatch: pytest.Monke
         builder.main()
 
 
+def test_check_uses_verified_manifest_without_posix_mode_enforcement(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keep native Windows checks bound to verified installed-package bytes."""
+    builder = load_builder()
+    calls: list[tuple[Path, bool]] = []
+    monkeypatch.setattr(builder, "parse_args", lambda: SimpleNamespace(check=True, update=False))
+    monkeypatch.setattr(builder, "enforces_posix_modes", lambda: False)
+    monkeypatch.setattr(
+        builder,
+        "verify_package",
+        lambda root, *, enforce_modes: calls.append((root, enforce_modes)),
+    )
+    monkeypatch.setattr(builder, "build_manifest", lambda: pytest.fail("native Windows regenerated the manifest"))
+
+    builder.main()
+
+    assert calls == [(builder.PACKAGE_ROOT, False)]
+    assert capsys.readouterr().out == "Package manifest is current.\n"
+
+
 @POSIX_ONLY
 def test_manifest_binds_the_pure_role_generator() -> None:
     """Prevent installed managers from importing unbound generator bytes."""

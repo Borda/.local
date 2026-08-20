@@ -1,7 +1,7 @@
 ---
 name: cancel
 description: Request cancellation of a running detached Codex bridge job.
-argument-hint: "JOB_ID"
+argument-hint: JOB_ID
 allowed-tools: Bash
 ---
 

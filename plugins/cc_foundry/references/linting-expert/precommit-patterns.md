@@ -1,4 +1,5 @@
 <!-- Loaded by foundry:linting-expert (haiku + medium) -->
+
 # pre-commit Configuration & Versioning (foundry:linting-expert specialized guidance)
 
 Read only when task scope explicitly touches `.pre-commit-config.yaml` (creating, editing, or auditing pre-commit hooks). Skip for ruff-only or mypy-only tasks.

@@ -2,11 +2,10 @@
 
 ## Review Report Section Taxonomy
 
-Canonical section headers, grep keys, agent ownership, and resolve triage type.
-Both `review` (consolidator) and `resolve` (parser) load this file — edit here only.
+Canonical section headers, grep keys, agent ownership, and resolve triage type. Both `review` (consolidator) and `resolve` (parser) load this file — edit here only.
 
 | Section header | Grep key | Owner agent | resolve `type` (MEDIUM) | resolve `change` |
-| --- | --- | --- | --- | --- |
+| -- | -- | -- | -- | -- |
 | `### [blocking] Critical` | `Critical` / `[blocking]` | any | `[req]` | `code` (domain not distinguishable at this header — falls back to the general implementer) |
 | `### Architecture & Quality` | `Architecture` | `foundry:sw-engineer` | `[req]` (code-related) | `code` |
 | `### Test Coverage Gaps` | `Test Coverage` | `foundry:qa-specialist` | `[suggest]` | `test` |
@@ -28,7 +27,7 @@ Both `review` (consolidator) and `resolve` (parser) load this file — edit here
 All severities:
 
 | Severity | Section | resolve `type` |
-| --- | --- | --- |
+| -- | -- | -- |
 | CRITICAL or `[blocking]` | any | `[req]` |
 | HIGH | any | `[req]` |
 | MEDIUM | Architecture, Performance, API Design (code-related) | `[req]` |

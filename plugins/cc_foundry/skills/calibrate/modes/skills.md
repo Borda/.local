@@ -38,6 +38,7 @@ For each skill in domain table (after exclusions), spawn one `general-purpose` p
 For skill targets (target name starts with `/`): spawn `general-purpose` subagent with skill's `SKILL.md` content prepended as context, running against synthetic input from problem. Pipeline template write-and-acknowledge pattern still applies.
 
 For mode-specific targets (`/research:plan`, `/research:judge`): prepend relevant mode file as context instead of full `SKILL.md`. Resolve skill file via registry first, falling back to source-tree path:
+
 - `/research:plan`: `python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/get_plugin_install_path.py" borda-ai-rig research 2>/dev/null` → append `/skills/plan/SKILL.md`; fallback: `$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/plan/SKILL.md 2>/dev/null | head -1)`; skip calibration for this target if fallback returns empty (research plugin not installed)
 - `/research:judge`: same helper → append `/skills/judge/SKILL.md`; fallback: `$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/judge/SKILL.md 2>/dev/null | head -1)`; skip calibration for this target if fallback returns empty (research plugin not installed)
 
@@ -79,7 +80,7 @@ Run dir per skill: `.reports/calibrate/<TIMESTAMP>/<TARGET>/` (strip `/` from ta
 Modes evaluated for calibration but deferred — significant barriers. `/audit` Check 19 skips modes listed here to avoid false-positive recommendations.
 
 | Mode | Barrier | Re-evaluate when |
-| --- | --- | --- |
+| -- | -- | -- |
 | `/analyse-thread` | Requires GitHub API mocking — thread analysis fetches live issue/PR data | GitHub fixture infrastructure exists |
 | `/analyse-health` | Requires live GitHub API — health overview fetches real repo stats (issue/PR counts) | GitHub fixture infrastructure exists |
 | `/analyse-ecosystem` | Requires live GitHub API — ecosystem analysis fetches real package/dependency data | GitHub fixture infrastructure exists |

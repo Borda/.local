@@ -1,6 +1,6 @@
 ---
 name: debrief-coding
-description: "Telemetry report: `$codemap-py:debrief-coding [flags]`; skip integration/index/query."
+description: 'Telemetry report: `$codemap-py:debrief-coding [flags]`; skip integration/index/query.'
 ---
 
 # Debrief Coding

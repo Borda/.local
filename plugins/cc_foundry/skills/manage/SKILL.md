@@ -1,7 +1,7 @@
 ---
 name: manage
-description: "Create, update, or delete agents, skills, and rules; update or delete hooks (hook creation not yet implemented — edit `hooks/<name>.js` directly). Full cross-reference propagation. Trivial edits (typos, small fixes ≤10 words) applied inline without agent; `.md` content-edits delegated to foundry:curator; code file edits (`.js`, `.py`, `.ts`) delegated to foundry:sw-engineer; large cross-ref fan-outs (> 3 files) also delegate. The parent orchestrates MEMORY.md, README, audit, calibration, and the final report. Also manages settings.json permissions atomically with permissions-guide.md. NOT for: validation/quality audit of existing agents/skills (use /foundry:audit); implementing application source code changes outside `.claude/` (use develop:feature or develop:fix — requires `develop` plugin)."
-argument-hint: 'create <agent|skill|rule> <name> "desc" | update <name> [new-name|"change"|spec.md] | delete <name> | add perm <rule> "desc" "use-case" | remove perm <rule>'
+description: 'Create, update, or delete agents, skills, and rules; update or delete hooks (hook creation not yet implemented — edit `hooks/<name>.js` directly). Full cross-reference propagation. Trivial edits (typos, small fixes ≤10 words) applied inline without agent; `.md` content-edits delegated to foundry:curator; code file edits (`.js`, `.py`, `.ts`) delegated to foundry:sw-engineer; large cross-ref fan-outs (> 3 files) also delegate. The parent orchestrates MEMORY.md, README, audit, calibration, and the final report. Also manages settings.json permissions atomically with permissions-guide.md. NOT for: validation/quality audit of existing agents/skills (use /foundry:audit); implementing application source code changes outside `.claude/` (use develop:feature or develop:fix — requires `develop` plugin).'
+argument-hint: create <agent|skill|rule> <name> "desc" | update <name> [new-name|"change"|spec.md] | delete <name> | add perm <rule> "desc" "use-case" | remove perm <rule>
 effort: medium
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, Skill
@@ -18,6 +18,7 @@ Manage lifecycle of agents, skills, rules, hooks in `.claude/`. Handles creation
 <inputs>
 
 - **$ARGUMENTS**: required, one of:
+
   - `create agent <name> "description"` — create new agent with generated domain content
   - `create skill <name> "description"` — create new skill with workflow scaffold
   - `create rule <name> "description"` — create new rule file with frontmatter and sections
@@ -29,9 +30,13 @@ Manage lifecycle of agents, skills, rules, hooks in `.claude/`. Handles creation
   - `remove perm <rule>` — remove permission from settings.json allow list and permissions-guide.md
 
 - Names must be **kebab-case** (lowercase, hyphens only)
+
 - Descriptions must be quoted when containing spaces
+
 - Permission rules use Claude Code format: `WebSearch`, `Bash(cmd:*)`, `WebFetch(domain:example.com)`
+
 - `--skip-audit` — optional flag: skip Step 9 `/audit` validation (use inside `audit fix` loop to avoid recursion)
+
 - **Spec-file paths must be quoted** — `update <name> <spec-file.md>` requires the spec path quoted if it contains any whitespace (e.g. `update my-agent "docs/My Spec.md"`); unquoted paths with spaces split into multiple arguments and trigger argument-shape mismatch. Recommended: keep spec filenames free of spaces.
 
 **Update/delete mode** — name looked up across agents, skills, rules automatically:
@@ -87,7 +92,7 @@ echo "$SKIP_AUDIT" > "${TMPDIR:-/tmp}/manage-skip-audit-${CSID}"  # persist (Che
 echo "${TMPDIR:-/tmp}/manage-skip-audit-${CSID}" > "${TMPDIR:-/tmp}/manage-skip-audit-path-${CSID}"
 ```
 
-**Unsupported flag check** — after all supported flags extracted (`--skip-audit`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--skip-audit\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted (`--skip-audit`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `` ! Unknown flag(s): `--<token>`. Supported: `--skip-audit`. `` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Validation rules:**
 
@@ -99,9 +104,11 @@ echo "${TMPDIR:-/tmp}/manage-skip-audit-${CSID}" > "${TMPDIR:-/tmp}/manage-skip-
 - For `remove perm`: rule MUST already exist in settings.json allow list
 
 **Type auto-detection** (for `update` and `delete`): first verify post-install context exists:
+
 ```bash
 [ -d .claude/agents ] || { printf "! .claude/agents not found — run /foundry:setup first or confirm working directory is project root\n"; exit 1; }  # timeout: 3000
 ```
+
 Then run all four Glob checks in parallel:
 
 - Agent: pattern `agents/<name>.md`, path `.claude/`
@@ -126,7 +133,7 @@ jq -e --arg rule '<rule>' '.permissions.allow | index($rule) != null' .claude/se
 **Update second-argument discrimination** — apply after type resolved. Set shell variable `MODE` from the parsed operation; consumed by the delete confirmation gate above, the edit-complexity classifier below, and the per-mode workflow branches in Step 4. Recognised values: `create`, `rename`, `content-edit`, `delete`, `add-perm`, `remove-perm`.
 
 | Argument shape | `MODE` |
-| --- | --- |
+| -- | -- |
 | `create <type> <name> "..."` | `create` |
 | `update <name> <new-name>` (two bare kebab-case args; second has no spaces, no `.md`) | `rename` (validate new-name does NOT already exist) |
 | `update <name> "<change>"` (one name + quoted string) | `content-edit` (validate spec non-empty; set `DIRECTIVE` = the quoted string) |
@@ -148,7 +155,7 @@ If validation fails, report error and stop.
 Classify `$DIRECTIVE` as **trivial** when ALL conditions hold:
 
 | Condition | Required |
-| --- | --- |
+| -- | -- |
 | Word count ≤ 10 | ✓ |
 | Matches pattern: `typo`, `spelling`, `rename X to Y`, `change X to Y`, `replace X with Y`, `fix (a/the)? (typo/bug/error)`, `add missing`, `remove [word]`, `correct` | ✓ |
 
@@ -300,9 +307,9 @@ Atomic rename — create new directory before removing old:
 
 1. Create new directory:
 
-    ```bash
-    mkdir -p .claude/skills/<new-name>  # timeout: 5000
-    ```
+   ```bash
+   mkdir -p .claude/skills/<new-name>  # timeout: 5000
+   ```
 
 2. Read old SKILL.md, update `name:` line in frontmatter, Write to new location.
 
@@ -310,9 +317,9 @@ Atomic rename — create new directory before removing old:
 
 3. Verify new file exists: `Read(file_path=".claude/skills/<new-name>/SKILL.md", limit=5)`
 
-    ```bash
-    rm -r .claude/skills/<old-name>  # timeout: 5000
-    ```
+   ```bash
+   rm -r .claude/skills/<old-name>  # timeout: 5000
+   ```
 
 ### Mode: Delete Agent
 
@@ -333,12 +340,13 @@ Before executing type-specific content-edit mode, determine approach:
 **File-type → agent routing:**
 
 | File extension | Agent |
-| --- | --- |
+| -- | -- |
 | `.md` (agents, skills, SKILL.md) | `foundry:curator` |
 | `.js`, `.py`, `.ts`, `.sh` (code) | `foundry:sw-engineer` |
 | Rule `.md` (under `rules/`) | inline Edit — no agent |
 
 **If `EDIT_TRIVIAL=true`** (classified in Step 1):
+
 1. Read file using Read tool
 2. Apply directive directly using Edit tool — no agent spawn
 3. Proceed to Step 8; skip Steps 5–7 unless name or description changed in edit
@@ -467,7 +475,7 @@ Hook files are JavaScript — delegate to **foundry:sw-engineer** (not foundry:c
 
 ```markdown
 Read `.claude/hooks/<name>.js`.
-Apply the hook authoring standards from the `\<hook_authoring>` section in your agent definition — file-header structure, exit code semantics, stdin pattern, and anti-patterns.
+Apply the hook authoring standards from the `<hook-authoring>` section in your agent definition — file-header structure, exit code semantics, stdin pattern, and anti-patterns.
 Apply this change: <directive>
 Rules:
 - Preserve the file header block (PURPOSE, HOW IT WORKS, EXIT CODES) unless the change explicitly modifies that logic
@@ -532,7 +540,7 @@ Adds rule to both `settings.json` and `permissions-guide.md` atomically.
 
 1. Determine guide category from rule prefix:
 
-> **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
+   > **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
 
    - `WebSearch` → `## Web`
    - `WebFetch(domain:...)` → `## WebFetch — allowed domains`
@@ -548,36 +556,36 @@ Adds rule to both `settings.json` and `permissions-guide.md` atomically.
 
 2. Update `settings.json` — atomic jq edit via shared helper:
 
-    ```bash
-    # timeout: 15000
-    python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/jq_write.py" .claude/settings.json '.permissions.allow += [$rule]' --arg rule "<rule>"
-    ```
+   ```bash
+   # timeout: 15000
+   python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/jq_write.py" .claude/settings.json '.permissions.allow += [$rule]' --arg rule "<rule>"
+   ```
 
 3. Also append to plugin's `permissions-allow.json` so `/foundry:setup` syncs it to `~/.claude/settings.json` on reinstall:
 
-    ```bash
-    # timeout: 5000
-    PERM_FILE="${CLAUDE_PLUGIN_ROOT}/.claude-plugin/permissions-allow.json"
-    if [ -f "$PERM_FILE" ]; then
-        python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/jq_write.py" "$PERM_FILE" '. += [$rule] | unique' --arg rule "<rule>"
-    fi
-    ```
+   ```bash
+   # timeout: 5000
+   PERM_FILE="${CLAUDE_PLUGIN_ROOT}/.claude-plugin/permissions-allow.json"
+   if [ -f "$PERM_FILE" ]; then
+       python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/jq_write.py" "$PERM_FILE" '. += [$rule] | unique' --arg rule "<rule>"
+   fi
+   ```
 
 4. Update `permissions-guide.md` — append new row to end of correct section (before its trailing `---` separator). New row format:
 
-    ```markdown
-    | `<rule>` | <description> | <use case> |
-    ```
+   ```markdown
+   | `<rule>` | <description> | <use case> |
+   ```
 
-    Use Edit tool to insert row: find last table row in target section and insert after it.
+   Use Edit tool to insert row: find last table row in target section and insert after it.
 
 5. Verify both files updated:
 
-    ```bash
-    # timeout: 5000
-    python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/verify_perm.py" "<rule>" .claude/settings.json .claude/permissions-guide.md present
-    # Exits 0 if both consistent; prints "settings: OK|MISSING" + "guide: OK|MISSING"
-    ```
+   ```bash
+   # timeout: 5000
+   python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/verify_perm.py" "<rule>" .claude/settings.json .claude/permissions-guide.md present
+   # Exits 0 if both consistent; prints "settings: OK|MISSING" + "guide: OK|MISSING"
+   ```
 
 ### Mode: Remove Permission
 
@@ -585,20 +593,20 @@ Removes rule from both `settings.json` and `permissions-guide.md` atomically.
 
 1. Update `settings.json` — atomic jq edit via shared helper:
 
-    ```bash
-    # timeout: 15000
-    python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/jq_write.py" .claude/settings.json 'del(.permissions.allow[] | select(. == $rule))' --arg rule "<rule>"
-    ```
+   ```bash
+   # timeout: 15000
+   python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/jq_write.py" .claude/settings.json 'del(.permissions.allow[] | select(. == $rule))' --arg rule "<rule>"
+   ```
 
 2. Update `permissions-guide.md` — use Edit tool to remove table row containing `` `<rule>` ``.
 
 3. Verify both files clean:
 
-    ```bash
-    # timeout: 5000
-    python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/verify_perm.py" "<rule>" .claude/settings.json .claude/permissions-guide.md absent
-    # Exits 0 if both consistent; prints "settings: OK|STILL_PRESENT" + "guide: OK|STILL_PRESENT"
-    ```
+   ```bash
+   # timeout: 5000
+   python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/verify_perm.py" "<rule>" .claude/settings.json .claude/permissions-guide.md absent
+   # Exits 0 if both consistent; prints "settings: OK|STILL_PRESENT" + "guide: OK|STILL_PRESENT"
+   ```
 
 ## Step 5: Propagate cross-references
 
@@ -668,7 +676,7 @@ Use Edit tool with **absolute auto-memory path** to update these roster lines in
 **`README.md` (project root):**
 
 - **create agent**: add row to `### Agents` table — columns: `| **name** | Short tagline | Key capabilities |`
-- **create skill**: add row to `### Skills` table — columns: `| **name** | \`/name\` | Description |\`
+- **create skill**: add row to `### Skills` table — columns: `` | **name** | `/name` | Description | ``
 - **update (rename)**: find and replace old name in table row
 - **delete**: remove row for deleted name
 

@@ -1,7 +1,7 @@
 ---
 name: investigate
-description: 'Systematic diagnosis for unknown failures — local environment, tool setup, CI vs local divergence, hook misbehavior, and runtime anomalies. Gathers signals broadly, ranks hypotheses, uses adversarial review (Codex or foundry:challenger) for ambiguous cases, probes each, and reports root cause with a recommended next action. NOT for known code bugs (/develop:debug (requires `develop` plugin)) or config quality (/foundry:audit). TRIGGER when: unknown failure with no Python traceback — hook not firing, CI passes locally but fails remotely, background agent stalled, behavior inconsistent with config; phrases: "not working but config looks right", "hook not triggering", "why isn''t X running". SKIP: Python traceback present (use develop:debug (requires `develop` plugin)); known code bug with repro (use develop:fix (requires `develop` plugin)); pure config quality check (use foundry:audit).'
-argument-hint: "<symptom, question, or failing command> [--fast] [--keep \"<items>\"]"
+description: "Systematic diagnosis for unknown failures — local environment, tool setup, CI vs local divergence, hook misbehavior, and runtime anomalies. Gathers signals broadly, ranks hypotheses, uses adversarial review (Codex or foundry:challenger) for ambiguous cases, probes each, and reports root cause with a recommended next action. NOT for known code bugs (/develop:debug (requires `develop` plugin)) or config quality (/foundry:audit). TRIGGER when: unknown failure with no Python traceback — hook not firing, CI passes locally but fails remotely, background agent stalled, behavior inconsistent with config; phrases: \"not working but config looks right\", \"hook not triggering\", \"why isn't X running\". SKIP: Python traceback present (use develop:debug (requires `develop` plugin)); known code bug with repro (use develop:fix (requires `develop` plugin)); pure config quality check (use foundry:audit)."
+argument-hint: <symptom, question, or failing command> [--fast] [--keep "<items>"]
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 model: opus
 effort: high
@@ -9,14 +9,14 @@ effort: high
 
 <objective>
 
-Diagnose unknown failures: broken local setup, environment mismatch, tool misbehavior, hook problems, CI vs local divergence, permission errors, runtime anomalies. Gather signals broadly, eliminate hypotheses systematically, report confirmed root cause + recommended next skill. No fixes — diagnosis only.
-NOT for: known Python test failures with traceback (use `/develop:debug` (requires `develop` plugin)); `.claude/` config quality sweep (use `/foundry:audit`).
+Diagnose unknown failures: broken local setup, environment mismatch, tool misbehavior, hook problems, CI vs local divergence, permission errors, runtime anomalies. Gather signals broadly, eliminate hypotheses systematically, report confirmed root cause + recommended next skill. No fixes — diagnosis only. NOT for: known Python test failures with traceback (use `/develop:debug` (requires `develop` plugin)); `.claude/` config quality sweep (use `/foundry:audit`).
 
 </objective>
 
 <inputs>
 
 - **$ARGUMENTS**: required — symptom, question, or failing command, e.g.:
+
   - `"hooks not firing on Save"`
   - `"bridge review is unavailable on this machine"`
   - `"/calibrate times out every run"`
@@ -30,15 +30,16 @@ If $ARGUMENTS empty or too vague, use AskUserQuestion: "What exactly is failing 
 </inputs>
 
 <compaction>
-Key boundary 1: end of Step 2 (signals.md written to run-dir), before Step 3 rank hypotheses.
-Key boundary 2: end of Step 3 (hypotheses.md written), refreshed again after each Step 5 probe verdict — so a mid-loop compaction does NOT re-rank or re-probe.
-Preserve: INVESTIGATE_RUN, symptom.txt, signals.md, hypotheses.md paths; adversarial-review path (codex/challenger) if Step 4 ran; probe ledger (hypothesis → Confirmed/Ruled-out/Inconclusive).
-Terminal path: end of Step 6 (report + follow-up gate complete).
+- Key boundary 1: end of Step 2 (signals.md written to run-dir), before Step 3 rank hypotheses.
+- Key boundary 2: end of Step 3 (hypotheses.md written), refreshed again after each Step 5 probe verdict — so a mid-loop compaction does NOT re-rank or re-probe.
+- Preserve: INVESTIGATE_RUN, symptom.txt, signals.md, hypotheses.md paths; adversarial-review path (codex/challenger) if Step 4 ran; probe ledger (hypothesis → Confirmed/Ruled-out/Inconclusive).
+- Terminal path: end of Step 6 (report + follow-up gate complete).
 </compaction>
 
 <workflow>
 
 **Task hygiene**: load and follow the protocol below.
+
 ```bash
 # loads: compaction-contract.md
 # audit-skip: resilience-replication
@@ -66,7 +67,7 @@ From $ARGUMENTS extract:
 - **Where**: local / CI / both; which tool or command; which skill or hook if applicable
 - **When**: started recently (after change) or always broken; intermittent or consistent
 
-**Unsupported flag check** — after all supported flags extracted (`--fast`, `--keep`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--fast\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted (`--fast`, `--keep`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `` ! Unknown flag(s): `--<token>`. Supported: `--fast`, `--keep`. `` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Step 2: Gather signals
 
@@ -81,8 +82,7 @@ echo "$INVESTIGATE_RUN" > "${TMPDIR:-/tmp}/investigate-run-path-${CSID}"  # pers
 echo "INVESTIGATE_RUN=$INVESTIGATE_RUN"  # bash vars don't persist; read from stdout
 ```
 
-Collect evidence in parallel — do NOT form hypotheses yet.
-**Tool versions and PATH**:
+Collect evidence in parallel — do NOT form hypotheses yet. **Tool versions and PATH**:
 
 ```bash
 which python && python --version                                                                   # timeout: 5000
@@ -149,7 +149,7 @@ mkdir -p .temp/state  # timeout: 5000
 List candidate root causes ranked by probability, drawing only from gathered evidence:
 
 | Rank | Hypothesis | Supporting evidence | Ruling-out test |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | 1 | … | … | … |
 | 2 | … | … | … |
 | 3 | … | … | … |
@@ -324,10 +324,7 @@ End with a `## Confidence` block:
 - Pass 1: [gap addressed]
 ```
 
-Invoke `AskUserQuestion` as follow-up gate:
-(a) Invoke recommended next action (from Recommended next action field above)
-(b) Run additional investigation with narrowed hypothesis
-(c) Skip — diagnosis complete
+Invoke `AskUserQuestion` as follow-up gate: (a) Invoke recommended next action (from Recommended next action field above) (b) Run additional investigation with narrowed hypothesis (c) Skip — diagnosis complete
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"

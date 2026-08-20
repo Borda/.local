@@ -1,7 +1,7 @@
 Severity order: **security** → **critical** → **high** → **medium** → **low**
 
 | Severity | Examples |
-| --- | --- |
+| -- | -- |
 | **security** | Shell injection via `$ARGUMENTS`/env-var interpolated into bash without sanitization, hardcoded secrets (API keys, tokens, passwords) in config files, eval-unsafe bin/ output (unquoted shell assignments), `subprocess` with `shell=True` or string-concatenated command args, path traversal via unvalidated argv, `eval` with external input in shell scripts, unquoted variable expansion in command position, `pickle.load`/`yaml.load` without safe loader on external data |
 | **critical** | Broken cross-reference (agent/skill not exist on disk), MEMORY.md inventory wrong, relative path silently fall back to wrong dir |
 | **high** | Dead loop in follow-up chain, missing settings.json permission for tool in use, broken code example (undefined variable, wrong command syntax), agent/skill instruction directly contradicts `.claude/CLAUDE.md` directive, deprecated/invalid hook event name or type in use, tool declared in `tools:`/`allowed-tools:` needed but absent causing silent failures, `deep-reasoning` or `plan-gated` agent declared on `sonnet` (underpowered for tier) |
@@ -11,9 +11,13 @@ Severity order: **security** → **critical** → **high** → **medium** → **
 ## Antipatterns (severity under-classification — common calibration failures)
 
 - Any injection vector, secret leak, or eval-with-external-input → always **security**, not **critical**
+
 - `subprocess(shell=True)` with any external input source → always **security**, not **high**
+
 - Hardcoded credentials (even "test" or "example" tokens with real format) → always **security**
 
 - MEMORY.md inventory drift → always **critical**, not "out of sync" (medium) — stale roster fails at runtime
+
 - `deep-reasoning` agent on `sonnet` → **high**, not "possibly underpowered" (medium) — tier table is authority
+
 - Direct CLAUDE.md contradiction → **high**, not "best practice concern" (medium) — governance hierarchy applies

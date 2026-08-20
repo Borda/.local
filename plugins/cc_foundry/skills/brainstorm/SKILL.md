@@ -1,7 +1,7 @@
 ---
 name: brainstorm
-description: "Iterative brainstorming skill for turning fuzzy ideas into approved tree documents. Diverges into branches, deepens and prunes them over many rounds, saves a tree doc. Run breakdown on the tree to distill it into a spec via guided questions."
-argument-hint: "<fuzzy idea or feature goal> [--tight|--deep] [--type <type>] [--keep \"<items>\"] | breakdown <tree-or-spec-file>"
+description: Iterative brainstorming skill for turning fuzzy ideas into approved tree documents. Diverges into branches, deepens and prunes them over many rounds, saves a tree doc. Run breakdown on the tree to distill it into a spec via guided questions.
+argument-hint: <fuzzy idea or feature goal> [--tight|--deep] [--type <type>] [--keep "<items>"] | breakdown <tree-or-spec-file>
 disable-model-invocation: true
 allowed-tools: Read, Write, Bash, Grep, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Skill
 effort: medium
@@ -9,11 +9,9 @@ effort: medium
 
 <objective>
 
-Turn unformed idea into branching exploration tree, then distill into spec. Idea mode = pure divergence — grow tree of directions, deepen promising branches, prune others, save result. No premature convergence. Run `breakdown` on tree when ready: asks distillation questions, writes spec section-by-section.
-NOT for implementation or code-gen — see `develop` plugin (requires `develop` plugin).
+Turn unformed idea into branching exploration tree, then distill into spec. Idea mode = pure divergence — grow tree of directions, deepen promising branches, prune others, save result. No premature convergence. Run `breakdown` on tree when ready: asks distillation questions, writes spec section-by-section. NOT for implementation or code-gen — see `develop` plugin (requires `develop` plugin).
 
-> **HARD GATE:** Do NOT take any implementation action — writing code, creating files, scaffolding — until user approves design (spec). Applies regardless of perceived simplicity. Simple idea can have short tree and spec, but process never skipped.
-</objective>
+> **HARD GATE:** Do NOT take any implementation action — writing code, creating files, scaffolding — until user approves design (spec). Applies regardless of perceived simplicity. Simple idea can have short tree and spec, but process never skipped. </objective>
 
 <inputs>
 
@@ -32,14 +30,15 @@ NOT for implementation or code-gen — see `develop` plugin (requires `develop` 
 </inputs>
 
 <compaction>
-Key boundary 1: end of Step 4 (tree doc saved to .plans/blueprint/), before Step 5 tree review.
-Preserve at boundary 1: tree file path (.plans/blueprint/YYYY-MM-DD-<slug>.md), sidecar path (if viewer active).
-Terminal path: Step 6 option (a) approval — suggest breakdown and stop.
+- Key boundary 1: end of Step 4 (tree doc saved to .plans/blueprint/), before Step 5 tree review.
+- Preserve at boundary 1: tree file path (.plans/blueprint/YYYY-MM-DD-<slug>.md), sidecar path (if viewer active).
+- Terminal path: Step 6 option (a) approval — suggest breakdown and stop.
 </compaction>
 
 <workflow>
 
 **Task hygiene**: load and follow the protocol below.
+
 ```bash
 # loads: compaction-contract.md
 # audit-skip: resilience-replication
@@ -65,7 +64,7 @@ echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/brainstorm-state-keep-items-${CSID}"
 
 ## Step 1: Context scan
 
-**Unsupported flag check** — after all supported flags extracted (`--tight`, `--deep`, `--type`, `--keep`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--tight\`, \`--deep\`, \`--type\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted (`--tight`, `--deep`, `--type`, `--keep`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `` ! Unknown flag(s): `--<token>`. Supported: `--tight`, `--deep`, `--type`, `--keep`. `` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 Gather project context before asking anything:
 
@@ -90,6 +89,7 @@ Goal: understand constraints so questions targeted, not generic. If idea already
 **Scope check**: before asking clarifying questions, assess request size. If idea describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag immediately — do not spend questions refining details of oversized scope. Help user decompose into sub-ideas: what are independent pieces, how do they relate, what order to tackle them? Then proceed with first sub-idea through normal idea mode flow.
 
 **Live viewer init**: ask user whether to create live viewer before proceeding. Call `AskUserQuestion`:
+
 - question: "Create live tree viewer for this session?"
 - (a) label: `Yes — create viewer` — description: create JSON sidecar and serve tree viewer in browser
 - (b) label: `No — skip viewer` — description: proceed without viewer; tree still saved to disk at Step 4
@@ -134,10 +134,12 @@ On write failure: log `> Viewer write failed: <reason>` inline and continue.
 Print launch note:
 
 > **Live tree viewer**: resolve scripts dir (works both pre- and post-install — `$CLAUDE_PLUGIN_ROOT` points at the installed cache when the plugin is installed; the fallback supports development against the source tree):
+>
 > ```bash
 > _BRAINSTORM_SCRIPTS="${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/skills/brainstorm/scripts"
 > echo "Viewer HTML: $_BRAINSTORM_SCRIPTS/tree-viewer.html"
 > ```
+>
 > Because the viewer lives under the plugin cache (read-only) while `$SIDECAR` lives under the project's `.plans/blueprint/`, the static server's document root must cover both paths. Easiest reliable option: serve from `$HOME` with `python -m http.server 8080 --directory "$HOME"` (or `npx serve "$HOME"`), then open `http://localhost:8080/<relative-path-from-HOME-to-tree-viewer.html>?state=<absolute-or-HOME-relative-sidecar-path>`. If you prefer serving from the project root, copy or symlink the viewer HTML into a project-local directory first so the URL path resolves under the same document root as `$SIDECAR`.
 
 ## Step 2: Clarifying questions
@@ -208,7 +210,9 @@ After user selects initial focus, write sidecar immediately with all branch deta
 After seeding, enter operations loop. Each iteration:
 
 1. Show current **tree summary** (see format below)
+
 2. Write **Skill's moment** — 2–3 sentences of skill's current read: which open branches look most interesting and why, what closed branches revealed about problem, and what skill would explore next if it had a vote. Make specific to current tree state (refer to actual branch names by their labels). Gives user something to react to before choosing operation.
+
 3. Call `AskUserQuestion` with **four operation-category** options (AQQ cap is 4 per call — pick a category here; if the category needs a specific operation, ask one follow-up AQQ enumerating the operations within it):
 
    - (a) **per-branch operation** — deepen, reject, accept, or merge a branch (follow-up AQQ enumerates the four per-branch operations and asks which branch)
@@ -217,12 +221,14 @@ After seeding, enter operations loop. Each iteration:
    - (d) **ready** — save tree and proceed to Step 4
 
    When (a) is picked, the follow-up AQQ (still capped at 4 options) lists:
+
    - a) deepen [branch name] — add sub-directions
    - b) reject [branch name] — close with a reason
    - c) accept [branch name] — mark as the chosen direction
    - d) merge [branch name] + [branch name] — combine into one
 
    When (b) is picked, the follow-up AQQ lists:
+
    - a) add a new top-level branch — explore a fresh angle
    - b) reopen [branch name] — revisit a closed branch
 
@@ -384,6 +390,7 @@ If `findings > 0`: add missing details, improve closure reasons, or add open thr
 ## Step 6: Present and gate
 
 Show tree file path and compact tree summary (same format as Step 3). Then call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
+
 - question: "How does the exploration tree look?"
 - (a) label: `Tree looks good — ready to distill` — description: proceed to distillation (★ recommended)
 - (b) label: `Needs more exploration` — description: describe what to add or close; loop back to Step 5
@@ -411,8 +418,7 @@ Resolve the modes dir, then read and execute `breakdown.md` — it carries disti
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/load_mode.py" brainstorm modes breakdown.md  # timeout: 5000
 ```
 
-> loads: modes/breakdown.md
-Execute the mode loaded above matching the file's `**Status**:` field (`tree` → distillation; `draft` → action plan).
+> loads: modes/breakdown.md Execute the mode loaded above matching the file's `**Status**:` field (`tree` → distillation; `draft` → action plan).
 
 </workflow>
 

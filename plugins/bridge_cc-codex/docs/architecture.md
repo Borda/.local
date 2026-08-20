@@ -5,7 +5,7 @@
 ## Request directions
 
 | Direction | Entry point | Peer process | Transport requirement |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | Claude Code to Codex | `claude-skills/implement`, `claude-skills/advise`, `claude-skills/review` and `bin/bridge_call.py` | `codex exec` | Direct local command-line invocation; MCP is not required. |
 | Codex to Claude Code | `codex-skills/implement`, `codex-skills/advise`, `codex-skills/review` and `bridge_mcp.py` | `claude --print` | The bridge MCP server is required for this direction. |
 

@@ -1,4 +1,5 @@
 <!-- Loaded by foundry:doc-scribe (sonnet + medium) -->
+
 # Specialized Docstring Patterns (foundry:doc-scribe specialized guidance)
 
 Apply only when scoped task explicitly involves computer-vision / ML tensor docstrings or pyDeprecate migration guides. For routine docstring or README tasks, treat content below as inert reference — do NOT apply checklist heuristics.
@@ -13,6 +14,7 @@ Apply only when scoped task explicitly involves computer-vision / ML tensor docs
 A single param name (e.g. `image`) that could satisfy both categories does NOT count twice — the two signals must come from distinct evidence.
 
 > **NOT-for — do not apply CV checklist to**:
+>
 > - Audio DSP functions (`spectrogram`, `waveform`, `frame` as STFT frame, `mel_bins`)
 > - NLP / attention models (`attention_mask`, `hidden_state`, `token_ids`, even when `(B, C, H, W)`-like shapes appear)
 > - Medical imaging functions unless explicitly annotated as CV pipeline stage (NIfTI/DICOM-only volumetric utilities → use medical-imaging-specific subset of checklist; see RAS/LPS qualifier in Spatial convention)
@@ -27,10 +29,9 @@ A single param name (e.g. `image`) that could satisfy both categories does NOT c
 
 ## Migration Guide Template (for API deprecation cycles)
 
-When public API deprecated with pyDeprecate, write migration guide
-(deprecation lifecycle and pyDeprecate usage policy → `oss:shepherd` agent (requires `oss` plugin)):
+When public API deprecated with pyDeprecate, write migration guide (deprecation lifecycle and pyDeprecate usage policy → `oss:shepherd` agent (requires `oss` plugin)):
 
-- `## Migrating from \`old_function()\` to \`new_function()\`` — title with both names
+- `` ## Migrating from `old_function()` to `new_function()` `` — title with both names
 - **Deprecated in**: version; **Removed in**: version
 - `### Before (deprecated)` — minimal before-code example
 - `### After` — equivalent after-code example

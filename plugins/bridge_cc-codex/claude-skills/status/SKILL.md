@@ -1,7 +1,7 @@
 ---
 name: status
 description: Read a detached Codex bridge job's current state.
-argument-hint: "JOB_ID"
+argument-hint: JOB_ID
 allowed-tools: Bash
 ---
 

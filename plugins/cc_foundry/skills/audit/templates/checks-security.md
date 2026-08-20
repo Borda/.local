@@ -1,5 +1,7 @@
 <!-- file: checks-security.md — consumers: audit/SKILL.md Step 4 -->
+
 <!-- Quick-reference: Check 35 ($ARGUMENTS injection), Check 36 (eval-unsafe output), Check 37 (hardcoded secrets). -->
+
 <!-- security findings appear in a dedicated Security Findings section of the audit report, before functional findings. -->
 
 ## Check 35 — $ARGUMENTS shell injection risk security
@@ -7,13 +9,15 @@
 Bash blocks in any SKILL.md that interpolate `$ARGUMENTS`, `$SCAN_ARGS`, or `$SCAN_QUERY` (or any unvalidated env var representing user-supplied input) directly into shell string without sanitization.
 
 **Safe patterns** (allow-list — any satisfies Check 35):
+
 - `shlex.split(os.environ.get("ARGUMENTS", ""))` — Python-side splitting
 - `EXEC_ARGS="${ARGUMENTS#prefix}"` then `shlex.quote $EXEC_ARGS` before interpolation
 - Passing as positional arg to Python bin/ script (`python ... "$ARGUMENTS"`) which handles shlex internally
 - `[[ "$ARGUMENTS" =~ ^safe-pattern$ ]]` guard before use
 
 **Unsafe patterns** (flag as security):
-- `` eval "cmd $ARGUMENTS" `` or `` bash -c "... $ARGUMENTS ..." `` (direct shell eval)
+
+- `eval "cmd $ARGUMENTS"` or `bash -c "... $ARGUMENTS ..."` (direct shell eval)
 - `python -c "... $ARGUMENTS ..."` (inline python with injected argument)
 - Unquoted `$ARGUMENTS` in heredoc expansion position
 
@@ -23,20 +27,21 @@ Scan all `*/SKILL.md` and `*/skills/*/SKILL.md` files in scope. Flag any bash co
 printf "=== Check 35: \$ARGUMENTS shell injection risk ===\n"
 ```
 
-**Severity**: `security` — direct shell injection vector.
-Fix: route env-var user input through bin/ script with shlex-safe argument parsing (see `plugins/codemap-py/bin/parse_scan_args.py` as reference).
+**Severity**: `security` — direct shell injection vector. Fix: route env-var user input through bin/ script with shlex-safe argument parsing (see `plugins/codemap-py/bin/parse_scan_args.py` as reference).
 
 ## Check 36 — eval-unsafe bin/ output security
 
 Python bin/ scripts producing shell variable assignments for `eval $()` in a calling SKILL.md must quote all dynamic values with `shlex.quote`. Unquoted values allow injection via crafted env var content.
 
 **Safe pattern (required for eval-consumed output)**:
+
 ```python
 import shlex
 print(f"VAR={shlex.quote(value)}")
 ```
 
 **Unsafe pattern (flag)**:
+
 ```python
 print(f"VAR={value}")  # unquoted — injection risk if value contains shell metacharacters
 ```
@@ -55,8 +60,7 @@ grep -rn 'print(f"[A-Z_]*=' plugins/*/bin/*.py 2>/dev/null \
     done  # timeout: 5000
 ```
 
-**Severity**: `security` — exploitable only when calling SKILL.md passes crafted env var through eval-consumed bin/ script.
-Fix: wrap dynamic values in `shlex.quote()` before printing assignment strings.
+**Severity**: `security` — exploitable only when calling SKILL.md passes crafted env var through eval-consumed bin/ script. Fix: wrap dynamic values in `shlex.quote()` before printing assignment strings.
 
 ## Check 37 — Hardcoded secrets in config security
 
@@ -71,5 +75,4 @@ grep -rniE '(api[-_]?key|token|secret|password|bearer)\s*[=:]\s*["'"'"'][a-zA-Z0
 
 Any hit not an example/placeholder pattern → `security` finding.
 
-**Severity**: `security` — immediate secret rotation required.
-Fix: remove secret from config; use env var reference (`$MY_API_KEY`) or system keychain; never commit secrets to plugin files.
+**Severity**: `security` — immediate secret rotation required. Fix: remove secret from config; use env var reference (`$MY_API_KEY`) or system keychain; never commit secrets to plugin files.

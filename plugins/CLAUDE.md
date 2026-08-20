@@ -16,6 +16,10 @@ In `.md` plugin files, prose annotations, notes, and load directives use `>` blo
 > loads: modes/resume.md   ✓    # loads: modes/resume.md   ✗ (H1)
 ```
 
+## Structural Tag Names — Hyphens, Never Underscores
+
+Structural block tags (`<routing-boundaries>`, `<antipatterns-to-flag>`, `<core-principles>`) use hyphens between words. Never underscores: CommonMark accepts only letters, digits and hyphens in a raw-HTML tag name, so `<foo_bar>` is not a tag at all — it is prose, and every Markdown formatter escapes it to `\<foo_bar>`, which breaks Claude's block navigation. Enforced by `check_tag_symmetry.py --check underscore-tag`.
+
 ## Markdown No-Wrap
 
 Never hard-wrap prose in any Markdown file — one physical line per prose paragraph; preserve breaks in headings/lists/tables/blockquotes/links/`<details>`/fenced code. Edit only the intended prose, never a whole-file reflow.
@@ -60,7 +64,7 @@ All size/length limits: **tokens primary, lines secondary** — format `N tokens
 - Inline SKILL.md blocks: bash default; Python only when bash needs JSON parsing, multi-line strings, or numeric computation (`Bash(python:*)` not allow-listed — prompts every call).
 - `references/<agent>/*.md` — agent sidecar fragments, loaded via `cat`. **Never nest under `agents/`** (registers as an uncontrolled dispatchable agent) or `bin/` (PATH-scanned); `skills/<name>/` is safe. Mechanism: `AUTHORING.md` §references/<agent> Nesting Mechanism.
 
-## Shared File Authoring Rule (modes/, templates/, _shared/)
+## Shared File Authoring Rule (`modes/`, `templates/`, `_shared/`)
 
 Every file added to `plugins/*/skills/*/modes/`, `plugins/*/skills/*/templates/`, or `plugins/*/skills/_shared/` **must** satisfy one: (1) basename appears as a literal string in ≥1 consumer `.md` file (e.g. `# loads: upgrade.md`); or (2) file contains `<!-- file: <basename> — consumers: ... -->` header (cross-plugin consumers). **At authoring time**: add the loads-comment or header to the consumer *before* creating the shared file — a grep-based orphan check deletes unmarked files with zero hits. Check R2 (`/foundry:audit plugins`) detects violations. Why + precedent: `AUTHORING.md` §Shared File Authoring Rule.
 
@@ -118,7 +122,7 @@ Plugin-prefixed refs always (`foundry:sw-engineer`, `oss:review` — never bare 
 - NOT-for lines mandatory in every agent; `/audit` Check 16 flags ≥40% overlap
 - **Independent instances**: never cross-ref via local/relative path (breaks after install) — reference only via installed plugin-prefixed name (`foundry:sw-engineer`)
 - **Opt-in gating required**: any cross-plugin usage must check availability first and degrade gracefully if absent — unchecked call = broken UX for users without that plugin
-- **Prose references too**: any `/plugin:skill` mention in `<notes>`, follow-ups, or docs prose must include `(requires \`<plugin>\` plugin)` inline caveat. Check 28c.
+- **Prose references too**: any `/plugin:skill` mention in `<notes>`, follow-ups, or docs prose must include `` (requires `<plugin>` plugin) `` inline caveat. Check 28c.
 
 ## Fallback / Resilience Infrastructure
 
@@ -133,7 +137,7 @@ No plugin dependency system in Claude Code — never propose "install `foo` as p
 **Every plugin points at its own `skills/_shared`. No global path, no sibling reach-in.** Enforced by audit Check 27.
 
 - Resolve via the plugin's **own** resolver: `cc_foundry`/`cc_oss` `bin/resolve_shared_path.py <own-plugin> skills/_shared`; `cc_develop` `bin/dev_shared_resolve.py`; `cc_research` `bin/resolve_shared.py`. Bare `plugins/<own-plugin>/skills/_shared` allowed only as final fallback tier (§Installability).
-- **Never** `$HOME/.claude/skills/_shared/...` or bare `.claude/skills/_shared/...` — that path doesn't exist (`/foundry:setup` symlinks only `rules/*.md` + `TEAM_PROTOCOL.md`), and a `SKILL.md` dropped there silently shadows Claude Code's bundled skill of the same name. Incident + precedent: `AUTHORING.md` §Self-Contained _shared.
+- **Never** `$HOME/.claude/skills/_shared/...` or bare `.claude/skills/_shared/...` — that path doesn't exist (`/foundry:setup` symlinks only `rules/*.md` + `TEAM_PROTOCOL.md`), and a `SKILL.md` dropped there silently shadows Claude Code's bundled skill of the same name. Incident + precedent: `AUTHORING.md` §Self-Contained `_shared`.
 - **Never** read another plugin's `_shared` or `bin/` (`resolve_shared_path.py foundry` from a non-foundry plugin, `--foundry`, `$_FOUNDRY_SHARED`, `$_FOUNDRY_BIN`, literal `plugins/cc_<other>/`). Shared content two plugins need is **duplicated, not borrowed** — copy in each + a `MANIFEST` entry in `propagate_shared.py` to stay byte-identical.
 - Corollary: a standalone install of any single plugin must work with no other plugin present. Agent-dispatch fallback (`hooks/agent-router.js` + per-plugin `_shared/agent-resolution.md`) is unaffected and stays.
 
@@ -153,7 +157,7 @@ No plugin dependency system in Claude Code — never propose "install `foo` as p
 Per-plugin version in `.claude-plugin/plugin.json`, space `0.X.Y`:
 
 | Change type | Bump |
-| --- | --- |
+| -- | -- |
 | Fix, wording, refactor, cleanup, or restoring behaviour to original design intent | `Y` |
 | New capability, new agent/skill, new designed behaviour (not intended before) | `X` |
 | Test-only changes (adding/editing `tests/*.py` or `tests/*_sh.py`, no source file changes) | none — skip |

@@ -1,7 +1,7 @@
 ---
 name: judge
-description: "Research-supervisor review of program.md — validates experimental methodology (hypothesis clarity, measurement validity, control adequacy, scope, strategy fit), emits APPROVED / NEEDS-REVISION / BLOCKED verdict before expensive run loop."
-argument-hint: "[<program.md>] [--skip-validation] [--keep \"<items>\"]"
+description: Research-supervisor review of program.md — validates experimental methodology (hypothesis clarity, measurement validity, control adequacy, scope, strategy fit), emits APPROVED / NEEDS-REVISION / BLOCKED verdict before expensive run loop.
+argument-hint: '[<program.md>] [--skip-validation] [--keep "<items>"]'
 effort: medium
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -11,14 +11,13 @@ disable-model-invocation: true
 
 Research-supervisor review of `program.md` — validates experimental methodology, emits APPROVED / NEEDS-REVISION / BLOCKED verdict before expensive run loop. Read-only; never modifies code or state.
 
-NOT for: running experiments (use `/research:run`); designing hypotheses (use `research:scientist` agent); config quality (`/foundry:audit` (requires `foundry` plugin)).
-</objective>
+NOT for: running experiments (use `/research:run`); designing hypotheses (use `research:scientist` agent); config quality (`/foundry:audit` (requires `foundry` plugin)). </objective>
 
 <compaction>
 
-Key boundary: end of J3 — methodology and scientific review agents complete, output files written; before J4 validation and J6 verdict.
-Preserve: RUN_DIR (TMPDIR key), PROGRAM_PATH (TMPDIR key), methodology.md path, scientific-review.md path, SKIP_VALIDATION flag, BRANCH.
-Clear at J1 start (stale prior run) and at end of J6 after terminal summary printed.
+- Key boundary: end of J3 — methodology and scientific review agents complete, output files written; before J4 validation and J6 verdict.
+- Preserve: RUN_DIR (TMPDIR key), PROGRAM_PATH (TMPDIR key), methodology.md path, scientific-review.md path, SKIP_VALIDATION flag, BRANCH.
+- Clear at J1 start (stale prior run) and at end of J6 after terminal summary printed.
 
 </compaction>
 
@@ -29,6 +28,7 @@ Clear at J1 start (stale prior run) and at end of J6 after terminal summary prin
 ## Agent Resolution
 
 **Agent resolution**: load and follow the protocol below. Contains foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents: `foundry:solution-architect`, `research:scientist`.
+
 ```bash
 # loads: compaction-contract.md
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -39,7 +39,7 @@ cat "$_RESEARCH_SHARED/agent-resolution.md"
 ```
 
 | Agent | Fallback if absent |
-| --- | --- |
+| -- | -- |
 | `foundry:solution-architect` | `general-purpose` (methodology review quality reduced — **⚠ general-purpose agent may not emit `methodology_rating` in required format; verdict defaults to NEEDS-REVISION**) |
 | `research:scientist` | `general-purpose` (scientific rigor review quality reduced — **⚠ general-purpose agent may not emit `scientific_rating`; verdict defaults to NEEDS-REVISION**) |
 
@@ -66,6 +66,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/extract-keep-flag.py" jud
 ```
 
 **Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--skip-validation`, `--keep`.
+
 ```bash
 # loads: unsupported-flag-protocol.md
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -94,7 +95,7 @@ Extract `<program_title>` from `# Program: <title>` line for reports (fallback `
 Check C1–C12 plus C2b and C6b (14 items total). Produce findings list with severity. Each finding has: `id`, `check`, `status` (pass/fail/warn), `severity`, `detail`.
 
 | ID | Check | Severity if failing | Description |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | C1 | `## Goal` present and non-empty | critical | Campaign cannot run without a goal |
 | C2 | `## Metric` has `command` field | critical | No metric = no feedback loop |
 | C3 | `## Metric` has `direction` field (higher/lower) | critical | Cannot decide keep/revert without direction |
@@ -109,6 +110,7 @@ Check C1–C12 plus C2b and C6b (14 items total). Produce findings list with sev
 | C12 | `## Notes` section present | low | Notes optional but improve ideation quality |
 
 **Scope adequacy sub-rule (C6b)** — after C6 passes, assess whether `scope_files` is *sufficient* for stated goal. If goal type implies known bottleneck locations outside declared scope, add `medium` finding:
+
 - Test-speed goal + scope limited to `tests/` only → flag: "conftest.py, fixtures, and test infrastructure outside tests/ are common levers for test runtime; scope may be too narrow"
 - Throughput/latency goal + scope limited to single-layer path (e.g., `src/serving/`) → flag: "serving bottlenecks often span middleware, connection pooling, or database layers outside declared scope"
 - Any goal where the stated scope excludes a widely-known dependency class → emit medium finding with location `## Config / scope_files`, suggested broader pattern as fix
@@ -120,6 +122,7 @@ Distinct from C6 (path existence) — C6b fires even when path exists but is lik
 **Placeholder token check (C2, C4 sub-rule)** — after confirming `command` present in `## Metric` (C2) and `## Guard` (C4), scan each command for `{...}` tokens. Verify each token's field name exists in `## Config`. Token with no matching field = unresolvable — add `high` finding. Don't flag `{field_name}` tokens as malformed; valid when resolvable.
 
 **Goodhart's Law check (C2b)** — after confirming metric `command` present (C2 passes), assess whether command operationalizes stated `## Goal` or measures proxy. If metric could improve while actual goal NOT achieved, add `critical` finding:
+
 - metric measures test pass rate but goal is latency reduction → critical: "metric is a correctness proxy, not a latency measure"
 - metric measures lint error count but goal is bug density reduction → critical: "pylint score is a gameable proxy; agent can suppress warnings without improving actual quality"
 - metric measures a format/style score but goal is functional improvement → critical: "metric does not operationalize the stated goal"
@@ -291,8 +294,7 @@ note: `claude` CLI not in PATH — Codex availability cannot be verified; skippi
 
 ## Step J5b: Resolve rating source
 
-Apply rating source precedence before J6 verdict computation — fixes ambiguity when envelope and file-parsed ratings disagree.
-For `methodology_rating`:
+Apply rating source precedence before J6 verdict computation — fixes ambiguity when envelope and file-parsed ratings disagree. For `methodology_rating`:
 
 0. If `SPAWN_ARCHITECT=false` (complexity gate didn't fire): set `methodology_rating="sound"` directly — no file or envelope; log `→ methodology_rating: sound (architect gate skipped — narrow scope)`. Skip steps 1–2 for methodology_rating.
 1. If `$RUN_DIR/methodology.md` present AND parsable, use file-parsed value — authoritative.
@@ -316,7 +318,7 @@ Resolved rating values feed directly into J6 verdict table — no further source
 Top-to-bottom; **first match wins**. BLOCKED takes precedence — stop at first match.
 
 | Condition | Verdict |
-| --- | --- |
+| -- | -- |
 | any critical (J2) — exact `critical` severity match | BLOCKED |
 | `methodology_rating == "fundamentally-flawed"` (exact string match, J3) | BLOCKED |
 | `scientific_rating == "fundamentally-flawed"` (exact string match, J3) | BLOCKED |
@@ -336,6 +338,7 @@ BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # t
 ```
 
 **Write full report** (never overwrite — use counter loop):
+
 ```bash
 mkdir -p .reports/research  # timeout: 3000
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000  # re-derive: separate bash block

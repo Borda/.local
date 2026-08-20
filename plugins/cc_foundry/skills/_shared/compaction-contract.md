@@ -32,7 +32,7 @@ Refresh at boundary **after** expanding phase (parallel fan-out / iteration loop
 ## Lifecycle
 
 | Step | Action |
-| --- | --- |
+| -- | -- |
 | Boundary reached | Write tool → `.temp/state/skill-contract.md` |
 | Auto-compact fires | PreCompact hook appends block verbatim to `session-context.md` |
 | Post-compaction | Re-read `session-context.md` — contract section restored into context |

@@ -45,4 +45,4 @@ Use [pyDeprecate](https://pypi.org/project/pyDeprecate/) (Borda's package) — h
 
 - **Deprecation lifecycle**: deprecate in minor → keep ≥1 minor cycle → remove in next major
 - **Also**: add `.. deprecated:: X.Y.Z` Sphinx directive in docstring so docs generators render deprecation notice
-- Anti-patterns: see shepherd's `<antipatterns_to_flag>` section (deprecation category)
+- Anti-patterns: see shepherd's `<antipatterns-to-flag>` section (deprecation category)

@@ -1,7 +1,7 @@
 ---
 name: advise
 description: Ask Codex a read-only question with explicit model, effort, budget, and compact results.
-argument-hint: "[--model MODEL] [--effort LEVEL] [--timeout-seconds N] QUESTION"
+argument-hint: '[--model MODEL] [--effort LEVEL] [--timeout-seconds N] QUESTION'
 allowed-tools: Bash
 ---
 

@@ -36,6 +36,7 @@ Check `CHANGELOG.md`: `[Unreleased]` or `$TARGET` section covers `$RANGE` commit
 For each 🚀 Added entry in CHANGELOG `$TARGET` or `[Unreleased]` identifying significant new entity (new public skill, new command, new agent, new submodule, new mode): compute **doc weight** for that feature and 2–3 comparable existing features of same nature (same task type, mode category, conceptual peer) in relevant README or docs file.
 
 Doc weight = `header_score + coverage_score + example_score`:
+
 - `header_score`: H2 = 3, H3 = 2, H4/deeper = 1, no heading = 0
 - `coverage_score`: `min(non_blank_lines_in_section / 5, 5)` — non-blank lines from feature heading to next same-or-higher heading
 - `example_score`: fenced code blocks in section, capped at 3

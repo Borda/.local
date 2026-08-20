@@ -2,8 +2,7 @@
 
 ## Modality-specific sample display — dispatch by `input_modality`
 
-Use this dispatch wherever samples need showing (EDA Section 3, training sanity check, inference spot check).
-Pick matching branch; each is self-contained set of cells.
+Use this dispatch wherever samples need showing (EDA Section 3, training sanity check, inference spot check). Pick matching branch; each is self-contained set of cells.
 
 ## Contents
 
@@ -11,8 +10,6 @@ Pick matching branch; each is self-contained set of cells.
 - `image-3d`: volumetric loading, three-plane viewer, and statistics
 - `tabular`: descriptive statistics, correlation, and target plots
 - `point-cloud`: bounded 3D point display
-
----
 
 ### `image` — 2D images (default)
 
@@ -33,6 +30,7 @@ _= show_images(df_train)
 ```
 
 Optional dimension scatter (when image sizes vary):
+
 ```python
 # %%
 from PIL import Image
@@ -43,11 +41,10 @@ df_train["w"], df_train["h"] = zip(
 _= df_train.plot.scatter("w", "h", alpha=0.3, title="Image dimensions")
 ```
 
----
-
 ### `image-3d` — volumetric / TIFF stacks / medical imaging
 
 Setup cell (add to notebook setup `# %%`):
+
 ```python
 # %%
 # ! pip install -q tifffile imagecodecs ipywidgets
@@ -55,6 +52,7 @@ Setup cell (add to notebook setup `# %%`):
 ```
 
 Imports (add to imports `# %%`):
+
 ```python
 import tifffile
 import ipywidgets as widgets
@@ -63,6 +61,7 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 ```
 
 Load one volume:
+
 ```python
 # %%
 def load_volume(sample_id):
@@ -76,6 +75,7 @@ print(f"Volume: {vol.shape} {vol.dtype}  |  Mask: {mask_vol.shape}  labels: {np.
 ```
 
 Interactive 3-plane viewer + mask overlay:
+
 ```python
 # %%
 _MASK_COLORS = ["lightgray", "yellow", "cyan", "red"]
@@ -118,6 +118,7 @@ interact(
 ```
 
 Volume statistics:
+
 ```python
 # %%
 print(f"Volume: min={vol.min()}, max={vol.max()}, mean={vol.mean():.2f}")
@@ -125,8 +126,6 @@ label_counts = dict(zip(*np.unique(mask_vol, return_counts=True)))
 print(f"Mask labels: {label_counts}")
 _= pd.Series(label_counts).plot(kind="bar", title="Label voxel counts")
 ```
-
----
 
 ### `tabular` — structured / CSV only
 
@@ -156,11 +155,10 @@ if len(num_cols) <= 20:
 _= df_train[TARGET_COL].value_counts().plot(kind="bar", title="Target distribution")
 ```
 
----
-
 ### `point-cloud` — 3D point sets
 
 Setup cell:
+
 ```python
 # %%
 # ! pip install -q open3d

@@ -1,4 +1,5 @@
 <!-- oss:release Mode: prepare — executed via: cat "$SKILL_DIR/modes/prepare.md"; execute -->
+
 <!-- Variables available: $SKILL_DIR, $_OSS_SHARED, $LAST_TAG, $BRANCH, $DATE, $RANGE, $VERSION, $REPO_ROOT, $GATHER_FILE, $CHANGELOG_FILE -->
 
 **Trigger**: `/release prepare <version>` (e.g., `prepare v1.3.0` or `prepare 1.3.0`)
@@ -66,12 +67,15 @@ echo "$DEMO_OUT" > "${TMPDIR:-/tmp}/release-prepare-demo-out-${CSID}"  # persist
 ```
 
 Write generated script to `$DEMO_OUT` using Write tool. **Execution gate** — run:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r DEMO_OUT < "${TMPDIR:-/tmp}/release-prepare-demo-out-${CSID}" 2>/dev/null || DEMO_OUT=""  # reload (Check 41)
 python "$DEMO_OUT"  # timeout: 600000
 ```
+
 <!-- policy-sibling: plugins/cc_oss/skills/release/SKILL.md §Generate release demo (demo retry bound) -->
+
 Fix and re-run until exits 0 with expected output — **max 3 attempts total**. Don't proceed to 4b until gate passes. Still failing after the 3rd attempt: stop retrying, invoke `AskUserQuestion` ("Demo still failing after 3 attempts. Exclude from release and continue, or abort?") — (a) **Exclude and continue**: mark demo excluded, drop the `demo.py` bullet from the Written list and the `jupytext` item from Next steps, note the exclusion + last failure reason in the output, and run 4b from `HIGHLIGHTS.md` alone · (b) **Abort**: stop, report the 3 failed attempts, write no further artifacts.
 
 **b. Executive summary** — apply **Draft executive summary** logic using `releases/$VERSION/HIGHLIGHTS.md` and demo output (demo excluded → HIGHLIGHTS.md alone). Write to `releases/$VERSION/SUMMARY.md`.

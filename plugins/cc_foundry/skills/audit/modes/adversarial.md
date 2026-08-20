@@ -13,6 +13,7 @@ Adversarial review of all agents + skills in scope. Runs parallel with or after 
 For each file in scope (Step 2 inventory; default all agents + skills if no explicit scope), spawn **foundry:curator** (config-file adversarial review — `foundry:challenger`'s NOT-for excludes config-file review; routes to `foundry:curator`):
 
 > "Adversarially challenge this agent/skill. Do NOT accept claims at face value. Find: (1) unstated assumptions that will fail in edge cases, (2) NOT-for coverage gaps — tasks this agent will wrongly accept because exclusions are incomplete, (3) conflicting instructions that produce non-deterministic or contradictory behavior, (4) workflow steps that would route to the wrong sub-agent for the stated goal, (5) implicit scope that contradicts explicit NOT-for lines. Report every finding with specific evidence from the file."
+>
 > Write full findings to `<RUN_DIR>/challenger-<file-slug>.md` where `<file-slug>` = `<plugin>-<skill-dir-name>` for skills or `<plugin>-<agent-name>` for agents (e.g. `foundry-audit`, `oss-review`, `foundry-curator`); `.claude/` files prefix `local`. Never use bare `challenger-SKILL.md`. Return ONLY: `{"status":"done","file":"<path>","findings":N,"severity":{"security":N,"critical":N,"high":N,"medium":N,"low":N},"confidence":0.N}`
 
 Use `ADVERSARIAL_BATCH_SIZE` (default 2) for grouping — smaller batches than Step 3 (`BATCH_SIZE_MIN`) to maximise per-file attention depth. Same plugin-aware batching algorithm applies; substitute `ADVERSARIAL_BATCH_SIZE` for `BATCH_SIZE_MIN`.
@@ -31,6 +32,7 @@ printf "CURATOR_PROMPT_PATH=%s/curator-prompt.md\n" "$AUDIT_TPL"
 For each file in scope, spawn **foundry:curator** with no scope constraint — replace `<CURATOR_PROMPT_PATH>` with the literal value printed above:
 
 > "Audit this file. Run `cat "<CURATOR_PROMPT_PATH>"` via the Bash tool and use it as your baseline checklist — apply all those checks. Then go beyond: report ANY additional issue you observe that falls outside the explicit checklist. Look especially for: execution continuing after a confirmed failure path with no `exit 1`; incomplete specifications that would leave an agent uncertain at a branch point; undocumented implicit dependencies (env vars, files, network) not declared in inputs; workflow logic that is self-consistent but would silently produce wrong results on a valid non-happy-path input. No scope constraint — senior-engineer judgment applies."
+>
 > Write full findings to `<RUN_DIR>/deep-curator-<file-slug>.md` using same `<file-slug>` convention as Phase A. Return ONLY: `{"status":"done","file":"<path>","findings":N,"severity":{"security":N,"critical":N,"high":N,"medium":N,"low":N},"confidence":0.N}`
 
 Use `ADVERSARIAL_BATCH_SIZE` grouping. Phase C deduplicates Phase A-prime findings against `summary.jsonl` from Steps 3–6 in SAME RUN_DIR only — not against prior runs. In adversarial-only mode (no same-run standard audit), all Phase A-prime findings carried forward.
@@ -52,6 +54,7 @@ Codex writes per-file findings to `<RUN_DIR>/codex-adversarial-<file-slug>.md` u
 **Phase D — Security & Vulnerability Review** (parallel with Phases A, A-prime, B):
 
 Scope resolution — map audit scope tokens to plugin directories, collect all bin/ scripts:
+
 - Default (full sweep): all `plugins/*/bin/*.py` and `plugins/*/bin/*.sh`
 - Named scope (e.g. `foundry`, `oss`, `codemap`): `plugins/<name>/bin/*.py` and `plugins/<name>/bin/*.sh`
 - `--local` mode: same paths from `plugins/` source tree; non-local: same paths under `~/.claude/plugins/cache/borda-ai-rig/`

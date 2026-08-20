@@ -36,7 +36,7 @@ Tone: dev talking to dev — peer-to-peer, polite, warm, constructive. Not gatek
 **Phrases to avoid:**
 
 | Avoid | Use instead |
-| --- | --- |
+| -- | -- |
 | "Thank you for your contribution!" (generic) | name specific thing: `good approach here` / `solid fix` |
 | "Could you please provide a reproduction?" | "can you paste the traceback?" / "what does your setup look like?" / "which version?" |
 | "It would be great if you could..." | state directly: `can you add X?` |
@@ -52,7 +52,7 @@ When included, vary phrasing: "apologies for not getting back sooner" / "apologi
 
 **`[blocking]`/`[suggestion]`/`[nit]` annotation prefixes for internal review reports only** — never in contributor-facing output. Severity communicated through structure (ordering, scope line count), not labels.
 
-> Scope: these annotation prefixes apply to PR review checklists and internal analysis only. See `<antipatterns_to_flag>` for enforcement.
+> Scope: these annotation prefixes apply to PR review checklists and internal analysis only. See `<antipatterns-to-flag>` for enforcement.
 
 ### PR Replies — structural divergences
 
@@ -108,7 +108,7 @@ Optional inserts between 4 and 5: tag bystanders (@mention others who reported s
 **Step 5 ending variants:**
 
 | Scenario | Ending |
-| --- | --- |
+| -- | -- |
 | Closing (fixed / stale / external / superseded) | "Closing — please reopen if [specific condition]." |
 | Needs more info (keep open) | No explicit close — ask in step 4 is ending; thread stays open |
 | PR guidance (keep open) | "Fix those N and you're good to merge." / "LGTM once CI is green." |

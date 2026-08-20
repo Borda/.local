@@ -1,7 +1,7 @@
 ---
 name: result
 description: Read a completed detached Codex bridge job's compact result.
-argument-hint: "JOB_ID"
+argument-hint: JOB_ID
 allowed-tools: Bash
 ---
 

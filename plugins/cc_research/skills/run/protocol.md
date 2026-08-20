@@ -30,7 +30,7 @@ One JSON obj per line. Two-pass write by separate agents:
 **Pass 1 — researcher (oracle):**
 
 | Field | Type | Description |
-| --- | --- | --- |
+| -- | -- | -- |
 | `hypothesis` | `str` | What to test — concrete, implementable change |
 | `rationale` | `str` | Literature or experiment grounding |
 | `confidence` | `float` | Oracle confidence [0–1]; entries < 0.7 deprioritized to queue end |
@@ -41,9 +41,9 @@ One JSON obj per line. Two-pass write by separate agents:
 **Pass 2 — solution-architect (feasibility filter):** annotates in place, preserves order
 
 | Field | Type | Description |
-| --- | --- | --- |
+| -- | -- | -- |
 | `feasible` | `bool` | `true` if codebase supports change with reasonable effort |
-| `blocker` | `str` | null` | Required if `feasible: false`; names specific architectural blocker |
+| `blocker` | `str \| null` | Required if `feasible: false`; names specific architectural blocker |
 | `codebase_mapping` | `str` | Files, classes, or functions needing change |
 
 **Minimal valid oracle entry (before feasibility pass):**
@@ -93,7 +93,7 @@ Written after every iteration; `--resume` uses to skip completed:
 ```
 
 | Field | Type | Values |
-| --- | --- | --- |
+| -- | -- | -- |
 | `iteration` | `int` | 1-indexed; monotonically increasing |
 | `hypothesis_id` | `int` | 0-indexed position in `hypotheses.jsonl` |
 | `metric_before` | `float` | Metric value before applying hypothesis |
@@ -144,7 +144,7 @@ Rules:
 `--team` active: Phase A hypothesis agents produce `source: "team"` entries with 3 **required** additional fields:
 
 | Field | Type | Description |
-| --- | --- | --- |
+| -- | -- | -- |
 | `axis` | `str` | Optimization axis (e.g., `"model architecture"`) |
 | `agent_type` | `str` | Specialist agent for implementation (e.g., `"perf-optimizer"`, `"researcher"`) |
 | `change_scope` | `str` | Estimated blast radius: `"small"` (1–2 files), `"medium"` (3–5 files), `"large"` (6+ files or architectural) (primary Phase B sort key — small runs first) |
@@ -156,7 +156,7 @@ Team entry missing any of 3 fields = schema violation (like missing `blocker` on
 **Team-mode output files** (in `<RUN_DIR>/`, alongside `hypotheses.jsonl`):
 
 | File | Written by | Description |
-| --- | --- | --- |
+| -- | -- | -- |
 | `hypotheses-<axis-slug>.jsonl` | Phase A agents | Per-axis raw hypothesis output; merged into queue in Phase B |
 | `hypothesis-analyst-<axis-slug>.md` | Phase A agents | Full analysis and Confidence block (file-handoff protocol) |
 | `team-queue.jsonl` | Phase B lead | Final ordered execution queue (post-sort, post-user-gate) |

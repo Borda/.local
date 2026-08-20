@@ -1,6 +1,6 @@
 ---
 name: change-analysis
-description: "Analyze issue/PR/problem before implementation; produce source-backed findings and measurable gates."
+description: Analyze issue/PR/problem before implementation; produce source-backed findings and measurable gates.
 ---
 
 # Change Analysis
@@ -20,9 +20,7 @@ Run evidence-first analysis: truth, risk, next action before implementation, rev
 
 ## Workflow
 
-Codex provides this selected `SKILL.md` path. Resolve `PLUGIN_ROOT` as the directory two levels above the containing
-skill directory, then use only helpers under `PLUGIN_ROOT/shared/` that are listed in `package-manifest.json`. Never
-guess a cache version or fall back to a source checkout.
+Codex provides this selected `SKILL.md` path. Resolve `PLUGIN_ROOT` as the directory two levels above the containing skill directory, then use only helpers under `PLUGIN_ROOT/shared/` that are listed in `package-manifest.json`. Never guess a cache version or fall back to a source checkout.
 
 ### 01: Create run directory
 
@@ -41,13 +39,9 @@ Unsupported/ambiguous mode => fail with usage note, unless pasted evidence suppo
 
 ### 03: Capture scope and source inventory before drawing conclusions
 
-Use `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect `working-tree` into `<run-directory>/baseline`. Scan references
-separately; record failed diff collection.
+Use `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect `working-tree` into `<run-directory>/baseline`. Scan references separately; record failed diff collection.
 
-**Structural context (optional)**: for `local`/`ecosystem` scope naming a Python module or symbol, probe codemap-py once:
-`python PLUGIN_ROOT/shared/codemap_adapter.py context --category analysis [--target <qname>] --out <run-directory>/codemap-context.json`.
-Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with the evidence above. Persist
-the result once here; step 05 specialist fan-out consumes `<run-directory>/codemap-context.json`, never a fresh query.
+**Structural context (optional)**: for `local`/`ecosystem` scope naming a Python module or symbol, probe codemap-py once: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category analysis [--target <qname>] --out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with the evidence above. Persist the result once here; step 05 specialist fan-out consumes `<run-directory>/codemap-context.json`, never a fresh query.
 
 ### 04: Gather evidence with a ledger. Write `<run-directory>/evidence.md` with one row per claim:
 
@@ -91,8 +85,7 @@ Required sections in `<run-directory>/analysis.md`:
 
 ### 07: Run the self-review check
 
-Run `git diff --check` as an argv command. Write its combined output to `<run-directory>/review.txt` and retain its
-exit status as review evidence; do not erase a nonzero result.
+Run `git diff --check` as an argv command. Write its combined output to `<run-directory>/review.txt` and retain its exit status as review evidence; do not erase a nonzero result.
 
 ### 08: Decide gate result
 

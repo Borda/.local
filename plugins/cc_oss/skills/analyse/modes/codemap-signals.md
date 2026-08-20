@@ -20,8 +20,7 @@ IFS= read -r CM_CURRENCY < "${TMPDIR:-/tmp}/analyse-codemap-currency-${CSID}" 2>
 
 `CM_ENABLED=false` → caller emits inline flag (see below) and skips every codemap-py query block. No AskUserQuestion — analyse is read-only triage; degrade silently-but-flagged per accept criterion. `CM_ENABLED=true` + `CM_CURRENCY=stale` → detector already printed a stale warning; proceed with stale data, caller notes "index stale — signals may miss recent code".
 
-**Inline flag when disabled** (caller prints once, in report + terminal):
-`> structural signals unavailable — codemap index absent (build via /codemap-py:scan-codebase, requires codemap plugin) or codemap-py query not installed`
+**Inline flag when disabled** (caller prints once, in report + terminal): `> structural signals unavailable — codemap index absent (build via /codemap-py:scan-codebase, requires codemap plugin) or codemap-py query not installed`
 
 ## Signal A — stale-issue check (thread mode, issues/discussions only)
 
@@ -45,6 +44,7 @@ fi
 > `build_triage_batch.py` maps each candidate to `rdeps` (module) or `find-symbol` (symbol) — extracted to `bin/` per plugin authoring policy (no inline heredoc in skill bodies). `CM_ENABLED=false` or no candidates → whole block no-ops; empty batch (`[]`) skips the codemap-py query call.
 
 **Interpret** each `batch[]` entry:
+
 - `rdeps` result with `"error": "module not indexed"` → module named in thread no longer indexed → **stale-issue candidate**. `suggestions[]` = likely rename target; surface as "module `X` not found — possibly renamed to `Y`".
 - `find-symbol` result with `"count": 0` (empty `matches`) → symbol gone → **stale-issue candidate**.
 - Non-empty result → identifier still live; not stale. `rdeps` `count: 0` (indexed, zero importers) is NOT stale — module exists but unused; note only if thread claims it is used.
@@ -104,6 +104,7 @@ fi
 ```
 
 Parse `${TMPDIR:-/tmp}/analyse-cm-central-${CSID}.json`:
+
 - `central[]` → top-5 highest-blast-radius modules (name + rdep_count). Emit a bullet: "Highest blast radius: `mod` (N reverse-deps) — changes here ripple widest; weight review effort accordingly."
 - coverage block `collision_count` (>0) → bullet: "N symbol-name collisions in the index — `find-symbol`/rename precision reduced for those names."
 - coverage block `degraded: true` → bullet: "index built in degraded mode — some structural signals approximate."

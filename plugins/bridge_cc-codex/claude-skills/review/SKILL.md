@@ -1,7 +1,7 @@
 ---
 name: review
 description: Request a read-only adversarial Codex review with explicit model, effort, budget, and compact findings.
-argument-hint: "[--model MODEL] [--effort LEVEL] [--timeout-seconds N] REVIEW_INSTRUCTIONS"
+argument-hint: '[--model MODEL] [--effort LEVEL] [--timeout-seconds N] REVIEW_INSTRUCTIONS'
 allowed-tools: Bash
 ---
 

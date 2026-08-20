@@ -9,10 +9,14 @@ paths:
 ## Docstring Style
 
 - **Google style (Napoleon)** — no exceptions unless user explicitly requests otherwise
+
 - Never switch NumPy style based on project type, existing code, or own judgement
+
 - Every public function/class/module needs docstring; at least one `Examples` section per public function
+
   - Omit only when user **explicitly says skip examples** (e.g., "no examples needed", "skip the Examples section")
   - Brevity request or "minimal" docstring does NOT qualify
+
 - **Docstrings only where Python binds them**: module (first statement), function, class, method. A triple-quoted string trailing a module- or class-level variable is not a docstring — Python attaches it to nothing, `__doc__` stays unset. Use a `#:` comment directly above the assignment instead (Sphinx `autodoc` reads it as the attribute doc):
 
   ```python
@@ -25,7 +29,7 @@ paths:
 Use `pyDeprecate`, never `warnings.warn`. Import from `deprecate` (not `pyDeprecate`). Not installed → add it, don't fall back.
 
 | Target | API |
-| --- | --- |
+| -- | -- |
 | function / method | `@deprecated(target=new_fn, deprecated_in="X.Y", remove_in="Z.W")` |
 | class (incl. Enum, dataclass) | `@deprecated_class(target=NewClass, ...)` — v0.6.0+ |
 | instance | `deprecated_instance(new_obj, ...)` — v0.6.0+ |
@@ -88,7 +92,7 @@ Applies to **every code-touching agent**, not `foundry:sw-engineer` alone. Train
 A dict with known, fixed keys is the same failure as a bare string with fixed values: `d["retires"]` raises only at runtime, `d.get("retires")` silently returns `None`, and no tool flags a renamed key. Pick by what the data must do:
 
 | Need | Use |
-| --- | --- |
+| -- | -- |
 | Behaviour + validation, mutable, methods | `@dataclass` (`slots=True`, `frozen=True` when immutable) |
 | Existing dict-shaped payload (JSON, API, `**kwargs`) — annotate without changing runtime type | `TypedDict` |
 | Immutable, tuple-unpacked, hashable | `NamedTuple` |
@@ -107,7 +111,7 @@ Fixed, mutually exclusive options (severity, mode, status, kind, action, directi
 **Signals** (any one ⇒ closed set): docstring says `One of "a", "b"` · `argparse choices=(...)` whose value is branched on internally · same literals compared in 2+ places · dataclass field `str` with enumerable legal values.
 
 | Case | Use |
-| --- | --- |
+| -- | -- |
 | Branched on, carries behaviour, crosses module boundary | `class X(str, Enum)` — `X("bad")` raises |
 | Local single-use annotation only | `X = Literal["a", "b"]` — type-check only |
 
@@ -128,7 +132,7 @@ class Severity(str, Enum):
 Enforce via ruff `C901` + `PLR` rules (see `foundry:linting-expert` for config). Hard limits per function:
 
 | Metric | Limit | ruff rule | Refactor signal |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | Cyclomatic complexity (McCabe) | ≤12 | `C901` | extract sub-functions, guard clauses |
 | Required arguments (no default) | ≤7 | style rule | primary rule — enforced in review; more than 7 required = introduce config dataclass |
 | All arguments (incl. kwargs w/ defaults) | ≤12 | `PLR0913` | blunt ruff gate — kwargs with defaults may exceed 7 freely; ≤12 catches extreme cases |

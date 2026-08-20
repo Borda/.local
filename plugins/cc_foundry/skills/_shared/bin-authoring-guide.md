@@ -1,4 +1,5 @@
 <!-- R3: placeholder paths below (e.g. /Users/<name>/, /path/to/) are illustrative examples, not hardcoded user paths — Check R3 false positives -->
+
 # bin/ Authoring Guide
 
 Reference from any skill or scaffolding step deciding whether to write a `bin/` script vs keep code inline, which language to use, how to structure it.
@@ -10,8 +11,6 @@ Two audiences:
 
 See also: [bin/ Script Principles](../../README.md#bin-script-principles) in plugins/README.md for authoring motivations behind these rules.
 
----
-
 ## Language Policy (canonical — reproduced verbatim from `plugins/CLAUDE.md`)
 
 - `bin/` — optional: standalone executables (`.sh`, `.py`) auto-added to Bash `PATH` by Claude Code; invoked via `${CLAUDE_PLUGIN_ROOT}/bin/<script>` inside skills
@@ -22,8 +21,6 @@ See also: [bin/ Script Principles](../../README.md#bin-script-principles) in plu
     - Reference design: `plugins/codemap-py/bin/` (typed, docstrings, `__name__` guards, dataclass serialization boundaries)
   - **Language policy — inline blocks in SKILL.md**: bash default; Python only when bash version requires JSON parsing, multi-line string manipulation, or numeric computation (and note: `Bash(python:*)` not in allow list — inline Python triggers approval prompt every invocation)
 
----
-
 ## Cross-OS Compatibility
 
 `bin/` scripts run on macOS, Linux, Windows (WSL/git-bash). Python preferred over bash for any logic beyond the three allowed bash cases — Python portable by design; bash not.
@@ -31,7 +28,7 @@ See also: [bin/ Script Principles](../../README.md#bin-script-principles) in plu
 **Bash: banned constructs** (GNU-only or platform-divergent):
 
 | Construct | Problem | Use instead |
-| --- | --- | --- |
+| -- | -- | -- |
 | `grep -P` | PCRE — GNU only; macOS BSD grep rejects | `grep -E` or Python `re` |
 | `sed -i` (no arg) | GNU accepts; BSD requires `sed -i ''` | Python `pathlib.write_text` |
 | `readlink -f` | BSD lacks `-f` | Python `Path.resolve()` |
@@ -40,12 +37,11 @@ See also: [bin/ Script Principles](../../README.md#bin-script-principles) in plu
 | `sort -V` (version sort) | GNU/recent BSD only | Python `packaging.version` |
 
 **Python: portability rules**:
+
 - Use `pathlib.Path` for all path operations — never `os.path.sep` string surgery
 - Never `os.system()` — use `subprocess.run(..., check=True)`
 - Add `LC_ALL=C` to subprocess env when calling `sort`/`grep` for stable locale-independent output
 - Test with `tmp_path` fixture (pytest) — never hard-code `/tmp/` or `C:\Temp`
-
----
 
 ## Silent-Failure Bash Idioms
 
@@ -69,8 +65,6 @@ while IFS= read -r f; do ... done < <(find plugins -path "*/skills/*/SKILL.md") 
 
 Keep variables holding **plain paths**, never patterns, and enumerate with `find` piped into `while IFS= read -r`. Note `find -path "*/agents/*.md"` recurses (`*` matches `/`) where the glob `*/agents/*.md` does not — add `! -path "*/agents/*/*"` when the flat scope is intended.
 
----
-
 ## Extraction Gate
 
 Before writing ANY inline code block, first apply the Prose check (§Prose over Code, Case 3). If prose is precision-equivalent and shorter — write prose and stop. Otherwise apply this gate. All three must pass — if any fails, stay inline.
@@ -84,7 +78,7 @@ Before writing ANY inline code block, first apply the Prose check (§Prose over 
 **Score — sum applicable weights when gate passes:**
 
 | Dimension | Weight |
-| --- | --- |
+| -- | -- |
 | Testable (deterministic I/O, writable pytest/shellcheck test) | +2 |
 | Reuse (same logic used in 2+ `.md` files) | +2 |
 | Token drain (block > 300 tokens) | +2 |
@@ -96,13 +90,11 @@ Before writing ANY inline code block, first apply the Prose check (§Prose over 
 **Verdict:**
 
 | Score | Verdict | Action |
-| --- | --- | --- |
+| -- | -- | -- |
 | Any gate fails | HOLD | Inline is correct choice |
 | 0–1 | LOW | Inline acceptable |
 | 2–3 | MEDIUM | Prefer bin/ script |
 | ≥4 | HIGH | Write as bin/ script — do NOT write inline |
-
----
 
 ## Prose over Code (Token Compression)
 
@@ -119,7 +111,7 @@ Tests and linting on a bin/ script are anti-regression tools — NOT a reason to
 Replace with prose/table/schema when all REPLACE conditions apply AND no KEEP condition applies:
 
 | Condition | REPLACE | KEEP |
-| --- | --- | --- |
+| -- | -- | -- |
 | Variable only referenced in prose conditions (never in a later shell command) | ✓ | — |
 | Variable consumed by a later shell command or drives file I/O / cache state | — | ✓ |
 | Cases bounded, mutually exclusive, no shell/subshell semantics | ✓ | — |
@@ -149,8 +141,6 @@ When all hold: delete script (and its test file if present), replace call-site w
 
 **Prose check runs first, before the Extraction Gate.** Ask: would one sentence, a table, or a schema express this with equal precision and fewer tokens? Yes → write prose; stop. No → proceed to Extraction Gate (G1/G2/G3).
 
----
-
 ## Decision Flowchart
 
 0. **Prose check first**: would one sentence, a table, or a schema express this with precision-equivalent content and fewer tokens? Yes → write prose; stop here. No → continue.
@@ -164,8 +154,6 @@ When all hold: delete script (and its test file if present), replace call-site w
 
 > **A consumer never reaches into another plugin's `bin/`.** `${CLAUDE_PLUGIN_ROOT}` must resolve to the **consuming** plugin, so the script has to exist in that plugin's own `bin/`. A script two plugins both need is **duplicated**: add a `propagate_shared.py` MANIFEST entry (canonical in the owning plugin) and the copies stay byte-identical. Precedent: `find-polluter.py`, canonical in foundry, copied to `cc_develop/bin/` — `develop:debug` previously derived a `$_FOUNDRY_BIN` path from the resolver output, so flaky-test isolation silently vanished on a develop-only install. Rule and rationale: `plugins/CLAUDE.md` §Self-Contained `_shared`; audit Check 27 fails new reach-ins.
 
----
-
 ## Caller Pattern
 
 How to invoke bin/ scripts from `.md` files:
@@ -178,14 +166,12 @@ RESULT=$("${CLAUDE_PLUGIN_ROOT}/bin/<script-name>.sh" arg1 arg2 2>/dev/null || e
 RESULT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/<script-name>.py" arg1 arg2)
 ```
 
----
-
 ## Script Output Routing
 
 **Rule: match output channel to downstream consumer.**
 
 | Output needed for | Script writes | Skill reads via |
-| --- | --- | --- |
+| -- | -- | -- |
 | Shell command arg (`"$VAR"`) | `${TMPDIR:-/tmp}/<skill>-<name>-${CSID}` file | `IFS= read -r VAR < "${TMPDIR:-/tmp}/<skill>-<name>-${CSID}"` |
 | Prose condition / display only | `${TMPDIR:-/tmp}/<skill>-<name>-${CSID}` file | Read tool or plain prose |
 | Single value, same bash block | stdout | `VAR=$(python script.py ...)` |
@@ -244,8 +230,6 @@ PROJ=$(python resolve.py --field proj)
 INDEX=$(python resolve.py --field index)
 ```
 
----
-
 ## Timeout Policy
 
 Every bin/ executable called from a SKILL.md with a `# timeout: N` comment must enforce that timeout at runtime — not just as a hint to Claude Code's Bash tool:
@@ -292,8 +276,6 @@ def _subprocess_call(timeout: int = 5) -> str:
 **Pure-transform scripts** (arg parsers, path resolvers without subprocess) — no timeout parameter needed; they cannot block.
 
 **ms → s reference** (for `--timeout` arg in Python scripts): 5000 ms = 5 s; 6000 ms = 6 s; 15000 ms = 15 s; 600000 ms = 600 s.
-
----
 
 ## Python Script Skeleton
 
@@ -377,8 +359,6 @@ import script_name  # bin/ already on sys.path via conftest.py
 from script_name import pure_function
 ```
 
----
-
 ## Bash Script Skeleton
 
 For the three allowed cases only (see language policy above):
@@ -391,8 +371,6 @@ For the three allowed cases only (see language policy above):
 set -euo pipefail
 ...
 ```
-
----
 
 ## Bash Script Testing
 
@@ -455,8 +433,6 @@ Integration-requiring conditions: `git describe`, `git log` on real history, `gh
 
 **Audit enforcement** — Check 34 (`/audit plugins`) verifies every `bin/*.sh` has corresponding `tests/test_<name>_sh.py`. Missing test files flagged as MEDIUM severity.
 
----
-
 ## Complexity Escalation
 
 Applies to `bin/` scripts only — inline SKILL.md blocks stay bash (inline Python triggers approval prompt every invocation). When an extracted `bin/` bash script grows past a simple linear transform, convert to Python before complexity compounds.
@@ -464,7 +440,7 @@ Applies to `bin/` scripts only — inline SKILL.md blocks stay bash (inline Pyth
 **Escalation triggers** — any one fires → convert:
 
 | Trigger | Example |
-| --- | --- |
+| -- | -- |
 | 3+ `if/elif` branches | `if [[ $x == a ]]; then ... elif [[ $x == b ]]; ...` (3rd branch = trigger) |
 | Nested conditionals | `if ...; then if ...; fi; fi` |
 | Loop with conditional body | `for f in ...; do if ...; then ...; fi; done` |
@@ -482,24 +458,22 @@ Applies to `bin/` scripts only — inline SKILL.md blocks stay bash (inline Pyth
 
 **Check 33 / `--efficiency` mode**: Phase A bin/-extraction check raises complexity-escalation findings as **medium** severity when trigger conditions detected in an existing `bin/` bash script. HIGH or MEDIUM verdict triggers conversion, not just extraction.
 
----
-
 ## Quality Agents
 
 After writing any `bin/` script, delegate to these agents:
 
 **`foundry:linting-expert`** — after implementation, before handover:
+
 - `ruff check` + `ruff format` — style, imports, security, 120-char lines
 - `mypy` — type annotation correctness
 - `shellcheck bin/<name>.sh` for bash scripts
 - Note: `bin/` scripts use `print()` for output — intentional, not stray. Add `"bin/**" = ["T20"]` to `[tool.ruff.lint.per-file-ignores]` in `pyproject.toml`
 
 **`foundry:qa-specialist`** — for test coverage review and edge-case matrix:
+
 - Public API surface: `main()`, all exported pure functions
 - Edge cases: empty input, bad args, missing files, unsupported markers
 - Parametrize where 3+ cases share same structure
-
----
 
 ## Resilience Replication Marker
 
@@ -523,15 +497,11 @@ HARD_CUTOFF=${HARD_CUTOFF:-900}
 
 **When to use**: block appears in 2+ plugin files with only constant differences AND is not a bin/ extraction candidate — e.g. health-monitoring constants, plugin-availability checks, unsupported-flag resilience boilerplate. See `plugins/CLAUDE.md` §Fallback / Resilience Infrastructure for design rationale.
 
----
-
 ## Integration with `foundry:manage create skill`
 
 When `foundry:manage create skill <name>` scaffolds a new SKILL.md, include this instruction:
 
 > Before writing any fenced code block, run `cat "$_FOUNDRY_SHARED/bin-authoring-guide.md"` via the Bash tool and apply the extraction gate. Write bin/ script directly if verdict is MEDIUM or HIGH. For any bin/ script returning 2+ values: apply §Script Output Routing — write each value to `${TMPDIR:-/tmp}/<skill>-<name>-${CSID}` file; never `eval` stdout.
-
----
 
 ## Integration with Check 33 Auto-Fix
 

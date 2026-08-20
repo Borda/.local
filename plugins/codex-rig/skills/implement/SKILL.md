@@ -1,6 +1,6 @@
 ---
 name: implement
-description: "Implement changes with a linear plan-build-verify workflow and measurable quality gates."
+description: Implement changes with a linear plan-build-verify workflow and measurable quality gates.
 ---
 
 # Implement
@@ -81,7 +81,7 @@ Read and apply `../../shared/specialist-orchestration.md` only when the task cro
 Before spawning or substituting specialists, write `<run-directory>/specialist-plan.md` with one row per planned pass:
 
 | role | trigger | context pack | expected output | mode |
-| --- | --- | --- | --- | --- |
+| -- | -- | -- | -- | -- |
 
 Required orchestration patterns:
 

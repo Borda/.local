@@ -6,7 +6,7 @@ description: |
   audit|plan|apply|sync|demo [--runtime {claude,codex,both}] ...`. Default (no args) is `audit`.
   Skip for: running a structural query (use `/codemap-py:query-code`); explicit standalone index
   rebuild (use `/codemap-py:scan-codebase`).
-argument-hint: "audit [--runtime {claude,codex,both}] [--json] [--since YYYY-MM-DD] | plan [--runtime ...] [--consumers <csv>] [--source {local-candidate,release}] [--out <artifact>] | apply --plan <artifact> --approve <sha256> | sync --source {local-candidate,release} --plan <artifact> --approve <sha256> [--runtime ...] | demo [--runtime ...]"
+argument-hint: audit [--runtime {claude,codex,both}] [--json] [--since YYYY-MM-DD] | plan [--runtime ...] [--consumers <csv>] [--source {local-candidate,release}] [--out <artifact>] | apply --plan <artifact> --approve <sha256> | sync --source {local-candidate,release} --plan <artifact> --approve <sha256> [--runtime ...] | demo [--runtime ...]
 effort: medium
 allowed-tools: Bash, AskUserQuestion
 model: sonnet
@@ -19,7 +19,7 @@ Runtime adapter over `codemap-py integrate` engine (`src/codemap_py/integration.
 Five exact pinned CLI modes; retired `check` removed:
 
 | Mode | Args | Mutation | Exit |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | `audit` | `[--runtime {claude,codex,both}] [--json] [--since YYYY-MM-DD]` | none | 0 pass/warn; 1 fail; 2 bad syntax |
 | `plan` | `[--runtime ...] [--consumers <csv>] [--source {local-candidate,release}] [--out <artifact>]` | report artifact only | 0; 2 bad syntax |
 | `apply` | `--plan <artifact> --approve <sha256>` | verified source checkout only | 0; 1 drift/fs; 2 bad approve/syntax |

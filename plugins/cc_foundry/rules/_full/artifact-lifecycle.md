@@ -6,8 +6,7 @@ paths:
 
 ## Canonical artifact layout
 
-Runtime artifacts at **project root**, not inside `.claude/`.
-Skill output dirs use dot-prefix (`.reports/`, `.temp/`, `.plans/`, etc.) — signals ephemeral.
+Runtime artifacts at **project root**, not inside `.claude/`. Skill output dirs use dot-prefix (`.reports/`, `.temp/`, `.plans/`, etc.) — signals ephemeral.
 
 ```text
 .plans/
@@ -52,15 +51,14 @@ mkdir -p "$REPORT_DIR"
 # RUN_DIR=".<skill>/$(date -u +%Y-%m-%dT%H-%M-%SZ)"   # .experiments/, .developments/
 ```
 
-Format: `YYYY-MM-DDTHH-MM-SSZ` (UTC, dashes throughout, filesystem-safe).
-Example: `.reports/calibrate/2026-03-27T20-06-22Z/`.
+Format: `YYYY-MM-DDTHH-MM-SSZ` (UTC, dashes throughout, filesystem-safe). Example: `.reports/calibrate/2026-03-27T20-06-22Z/`.
 
-Completed run always has `result.jsonl`.
-Incomplete runs (crashed, timed out) lack it — TTL hook skips them (kept for debugging).
+Completed run always has `result.jsonl`. Incomplete runs (crashed, timed out) lack it — TTL hook skips them (kept for debugging).
+
 ## TTL policy
 
 | Location | TTL | Condition |
-| --- | --- | --- |
+| -- | -- | -- |
 | `.reports/<skill>/YYYY-MM-DDTHH-MM-SSZ/`, `.<skill>/YYYY-MM-DDTHH-MM-SSZ/` | 30 days | only dirs containing `result.jsonl` |
 | `.reports/review/YYYY-MM-DDTHH-MM-SSZ/` | 30 days | keyed on dir mtime (no result.jsonl — hook uses separate find) |
 | `.temp/<skill>/YYYY-MM-DDTHH-MM-SSZ/` | 30 days | keyed on file mtime (intermediate subagent handover dirs) |

@@ -21,7 +21,7 @@ TaskCreate(
 If `CODEX_AVAILABLE=false`: degrade gracefully — match `action-item-dispatch.md` routing. Classify the comment by intended `change` type (infer from comment text: mentions of tests → `test`; mentions of docs/README → `docs`; mentions of style/lint → `style`; configuration/CI → `config`/`ci`; default → `code`). Route to internal agent:
 
 | Inferred `change` value | Fallback agent |
-| --- | --- |
+| -- | -- |
 | `code` · `refactor` · `config` · `ci` | `foundry:sw-engineer` |
 | `test` | `foundry:qa-specialist` |
 | `docs` | `foundry:doc-scribe` |

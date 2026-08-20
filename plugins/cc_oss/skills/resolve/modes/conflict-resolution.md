@@ -1,6 +1,9 @@
 <!-- oss:resolve Steps 5-7 — executed via: cat $_OSS_RESOLVE/modes/conflict-resolution.md; execute -->
+
 <!-- fragment — no <workflow> wrapper; executed inline by SKILL.md -->
+
 <!-- Input: PR branch checked out (Step 4 complete), $MERGE_BASE, $HEAD_REF, $BASE_REF, $BASE_REPO_OWNER -->
+
 <!-- Output: conflicts resolved or NO_CONFLICTS_FOUND=true set -->
 
 ## Step 5: Conflict detection
@@ -72,6 +75,7 @@ git merge --abort
 ```
 
 Report count + file list; `AskUserQuestion` with options:
+
 - (a) "Retry with base only — merge origin/$BASE_REF in batches (manual)" — re-attempt merge in chunks outside this workflow
 - (b) "Open PR in browser for manual resolution" — `gh pr view <PR#> --web`
 - (c) "Stop — merge aborted" — workflow complete; branch left on $SAVED_BRANCH

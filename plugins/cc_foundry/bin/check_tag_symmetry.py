@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 """check_tag_symmetry.py — Check structural XML tag symmetry in agent/skill .md files.
 
-Detects three failure modes, each independently selectable via ``--check``:
+Detects four failure modes, each independently selectable via ``--check``:
 
-  empty-block  — <tag></tag> with only whitespace between open and close.
-  unbalanced   — <tag> count differs from </tag> count.
-  escaped-tag  — \\<tag> in prose; should be unescaped for Claude navigation [low].
+  empty-block     — <tag></tag> with only whitespace between open and close.
+  unbalanced      — <tag> count differs from </tag> count.
+  escaped-tag     — \\<tag> in prose; should be unescaped for Claude navigation [low].
+  underscore-tag  — <tag_name> on its own line; CommonMark reads it as prose, not a tag.
 
-All three are facts about the source tree, so each drives exit code 1 on its own.
+All four are facts about the source tree, so each drives exit code 1 on its own.
 The ``escaped-tag`` mode carries [low] severity in its message; splitting it into a
 separate pre-commit entry is what makes it independently skippable, not a demotion of
 its exit code (bare invocation must keep reporting all three and exiting identically).
@@ -16,7 +17,14 @@ Read errors are reported unconditionally regardless of ``--check`` — a file th
 be opened is never silently dropped by a subset run.
 
 Applies to structural tags: objective, workflow, inputs, notes, constants,
-calibration, not-for, role, initialization, antipatterns_to_flag, core_knowledge.
+calibration, not-for, role, initialization, antipatterns-to-flag, core-knowledge.
+
+``empty-block`` and ``escaped-tag`` are registry-driven. ``underscore-tag`` and
+``unbalanced`` are not: the registry cannot list a block invented after it was written,
+and an unregistered block breaks exactly the same way. ``underscore-tag`` flags any
+block-level ``<name_with_underscore>`` line whatever the name; ``unbalanced`` checks the
+registry plus every name the file itself uses as a standalone tag line (see
+:func:`discover_tags`), so a new block is covered the moment it is written.
 
 Usage:
     python "${CLAUDE_PLUGIN_ROOT}/bin/check_tag_symmetry.py" [files...] [options]
@@ -65,6 +73,7 @@ class FindingKind(str, Enum):
     EMPTY_BLOCK = "empty-block"
     UNBALANCED = "unbalanced"
     ESCAPED_TAG = "escaped-tag"
+    UNDERSCORE_TAG = "underscore-tag"
     READ_ERROR = "read-error"
 
 
@@ -73,6 +82,7 @@ SELECTABLE_KINDS: tuple[FindingKind, ...] = (
     FindingKind.EMPTY_BLOCK,
     FindingKind.UNBALANCED,
     FindingKind.ESCAPED_TAG,
+    FindingKind.UNDERSCORE_TAG,
 )
 
 
@@ -89,6 +99,23 @@ class Finding:
     message: str
 
 
+#: Head and word-segment of a structural tag name, shared by every grammar below so the
+#: underscore and discovery patterns cannot drift apart as the convention evolves.
+_NAME_HEAD = r"[a-z][a-z0-9]*"
+_NAME_SEGMENT = r"[a-z0-9]+"
+
+#: A block-level tag line whose name carries an underscore. CommonMark's raw-HTML
+#: tagname is a letter followed by letters, digits or hyphens — an underscore ends the
+#: tag, so the line is parsed as prose and every formatter escapes the `<`.
+UNDERSCORE_TAG_LINE = re.compile(rf"^[ \t]*</?({_NAME_HEAD}(?:_{_NAME_SEGMENT})+)>[ \t]*$", re.MULTILINE)
+
+#: A tag standing alone on its own line — how every structural block is opened and closed.
+#: Standing alone is the signal that separates a structural block from a `<path>`-style
+#: placeholder in prose, so it is what qualifies a name for discovery. Legacy underscore
+#: names are admitted deliberately: they are still blocks, and a balance defect in one
+#: must be reported alongside the rename advice rather than waiting for the rename.
+STRUCTURAL_TAG_LINE = re.compile(rf"^[ \t]*</?({_NAME_HEAD}(?:[_-]{_NAME_SEGMENT})*)>[ \t]*$", re.MULTILINE)
+
 STRUCTURAL_TAGS = (
     "objective",
     "workflow",
@@ -99,17 +126,80 @@ STRUCTURAL_TAGS = (
     "not-for",
     "role",
     "initialization",
-    "antipatterns_to_flag",
-    "core_knowledge",
+    "antipatterns-to-flag",
+    "core-knowledge",
 )
+
+
+def strip_fenced_blocks(text: str) -> str:
+    """Drop every fenced code block, honouring fences longer than three backticks.
+
+    A regex over ```` ```…``` ```` mis-pairs when a block is opened with four backticks
+    because it contains a literal ```` ``` ```` — it closes on the inner delimiter and
+    leaves the block's body in the output. Matching the closing run's length to the
+    opening one keeps such templates fully stripped.
+
+    Args:
+        text: Markdown source.
+
+    Returns:
+        The source with fenced blocks (and their delimiters) removed.
+
+    Examples:
+        >>> strip_fenced_blocks("a\\n```\\n<x>\\n```\\nb\\n")
+        'a\\nb\\n'
+        >>> strip_fenced_blocks("a\\n````\\n```\\n<x>\\n```\\n````\\nb\\n")
+        'a\\nb\\n'
+    """
+    out: list[str] = []
+    fence: str | None = None
+    for line in text.split("\n"):
+        stripped = line.lstrip()
+        if fence is None:
+            match = re.match(r"(`{3,}|~{3,})", stripped)
+            if match:
+                fence = match.group(1)
+                continue
+            out.append(line)
+        elif re.fullmatch(re.escape(fence[0]) + f"{{{len(fence)},}}", stripped.rstrip()):
+            fence = None
+    return "\n".join(out)
+
+
+def discover_tags(normalized: str) -> list[str]:
+    """Return the structural tag names a file actually uses, in first-seen order.
+
+    The registry cannot know about a block someone invented last week, and that gap is
+    exactly where an unbalanced pair hides. A name qualifies when it appears at least once
+    standing alone on its own line: that is how structural blocks are written, and it is
+    what a `<output-path>` placeholder mentioned mid-sentence never does. Counting then
+    uses every occurrence of the discovered name, so a block opened inline still pairs
+    with its own closing line.
+
+    Args:
+        normalized: Markdown with fenced blocks, code spans and HTML comments removed.
+
+    Returns:
+        Tag names, deduplicated, in the order first encountered.
+
+    Examples:
+        >>> discover_tags("<workflow>\\nstep\\n</workflow>\\n")
+        ['workflow']
+        >>> discover_tags("Pass `--out <output-path>` to the script.\\n")
+        []
+        >>> discover_tags("<legacy_block>\\nx\\n</legacy_block>\\n")
+        ['legacy_block']
+    """
+    return list(dict.fromkeys(STRUCTURAL_TAG_LINE.findall(normalized)))
 
 
 def check_file(path: Path) -> list[Finding]:
     """Return every violation for path, empty list if clean.
 
-    All subchecks always run; callers filter by :attr:`Finding.kind`. Findings keep
-    their historical order — escaped tags first, then per-tag empty/unbalanced pairs —
-    so a bare run prints byte-identical output to the pre-split version.
+    All subchecks always run; callers filter by :attr:`Finding.kind`. Findings are
+    grouped by subcheck in ``SELECTABLE_KINDS`` order — escaped tags, underscore names,
+    empty blocks, then unbalanced pairs — so a filtered run and a bare run agree on the
+    relative order of whatever they both report.
 
     Args:
         path: Path to the .md file to check.
@@ -135,18 +225,18 @@ def check_file(path: Path) -> list[Finding]:
 
     violations: list[Finding] = []
 
-    # Strip HTML comments (<!-- ... -->) first to avoid false positives from
-    # convention-note comments that mention structural tag names by example.
-    content_no_comments = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
-
-    # For empty-block check: use comment-stripped content but preserve code fences
+    # For empty-block check: strip HTML comments but preserve code fences
     # (a block is empty only when it has no content at all, including no code blocks).
-    content_for_empty = content_no_comments
+    content_for_empty = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
 
-    # For balance check: also strip fences and inline backticks to avoid counting
-    # tags that appear inside example code or inline code spans.
-    content_for_balance = re.sub(r"```.*?```", "", content_no_comments, flags=re.DOTALL)
+    # For balance check: fences, then code spans, then comments. Order matters — comments
+    # first deletes the innards of a span that quotes one (`<!-- policy-sibling: … -->`),
+    # leaving its two backticks adjacent; every later span on the line then pairs one
+    # delimiter off and real prose survives as if it were code, leaking whatever tags it
+    # mentions. Stripping spans while their delimiters still bracket text avoids that.
+    content_for_balance = strip_fenced_blocks(content)
     content_for_balance = re.sub(r"`[^`\n]+`", "", content_for_balance)
+    content_for_balance = re.sub(r"<!--.*?-->", "", content_for_balance, flags=re.DOTALL)
 
     # Escaped structural tags: \<tag> in prose (after comment+fence+backtick stripping).
     # Severity: low — prevents Claude navigation; autofix unsafe (may be intentional).
@@ -161,15 +251,33 @@ def check_file(path: Path) -> list[Finding]:
             )
         )
 
+    # Underscore tag names: not registry-driven — any block-level <a_b> line qualifies,
+    # including names nobody has added to STRUCTURAL_TAGS yet. Reported once per name.
+    for name in dict.fromkeys(UNDERSCORE_TAG_LINE.findall(content_for_balance)):
+        violations.append(
+            Finding(
+                FindingKind.UNDERSCORE_TAG,
+                f"{path}: underscore in structural tag <{name}> — CommonMark tag names take "
+                f"letters, digits and hyphens only; rename to <{name.replace('_', '-')}>",
+            )
+        )
+
     for tag in STRUCTURAL_TAGS:
         # Empty block: open + optional whitespace + close (check before fence-stripping)
         if re.search(rf"<{tag}>\s*</{tag}>", content_for_empty, re.IGNORECASE):
             violations.append(Finding(FindingKind.EMPTY_BLOCK, f"{path}: empty block <{tag}></{tag}>"))
 
-        # Unbalanced: open count != close count (check after fence+comment stripping).
+    # Balance runs over the registry plus whatever this file actually uses. The registry
+    # stays in the union so a known block still reports when its only occurrences got
+    # mangled into prose and no whole-line form survives to be discovered.
+    for tag in dict.fromkeys((*STRUCTURAL_TAGS, *discover_tags(content_for_balance))):
+        # Unbalanced: open count != close count (check after fence+span+comment stripping).
+        # The open form tolerates attributes (`<details open>`) so an attributed block
+        # still pairs with its plain closing tag; the closing form never carries any.
         # Exclude backslash-escaped form \<tag> — those are flagged separately above.
-        opens = len(re.findall(rf"(?<!\\)<{tag}>", content_for_balance, re.IGNORECASE))
-        closes = len(re.findall(rf"(?<!\\)</{tag}>", content_for_balance, re.IGNORECASE))
+        name = re.escape(tag)
+        opens = len(re.findall(rf"(?<!\\)<{name}(?:\s[^>]*)?>", content_for_balance, re.IGNORECASE))
+        closes = len(re.findall(rf"(?<!\\)</{name}>", content_for_balance, re.IGNORECASE))
         if opens != closes:
             violations.append(
                 Finding(FindingKind.UNBALANCED, f"{path}: unbalanced <{tag}> — {opens} open, {closes} close")
@@ -225,7 +333,7 @@ def main(argv: list[str] | None = None) -> int:
         "--check",
         default=",".join(k.value for k in SELECTABLE_KINDS),
         metavar="KINDS",
-        help="Comma-separated subchecks to run: empty-block, unbalanced, escaped-tag (default: all).",
+        help=("Comma-separated subchecks to run: empty-block, unbalanced, escaped-tag, underscore-tag (default: all)."),
     )
     parser.add_argument(
         "--timeout",

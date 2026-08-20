@@ -1,7 +1,7 @@
 ---
 name: session
 description: 'Session state that outlives a context reset — `dump` sweeps the live conversation and writes a compact handover doc (goal, decisions + why, lessons, standing instructions, files-touched table, outstanding items, next step), then prints `/clear`; the `session-restore.js` SessionStart hook re-injects it automatically. `park` stashes a diverging idea mid-session without derailing; `sweep` audits the conversation for unlanded work. TRIGGER when: user says "dump the session", "handover before clear", "save state before clearing", "carry this over", "I want to clear but keep the plan", "park this for later", "what did we defer", "anything unfinished before I close". SKIP: surviving auto-compact at 85% (that is the skill contract in `.temp/state/skill-contract.md` per `compaction.md`, written by the running skill); reviving a *finished* conversation (Claude Code native `/resume`).'
-argument-hint: "dump [name] | recall [name] | list | park <idea> | sweep | drop <item>"
+argument-hint: dump [name] | recall [name] | list | park <idea> | sweep | drop <item>
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, TaskList, AskUserQuestion
 effort: low
 model: sonnet
@@ -47,6 +47,7 @@ NOT for: auto-compact survival (`compaction.md` skill contract); reviving a fini
 <workflow>
 
 **Task hygiene**: load and follow the protocol below.
+
 ```bash
 # audit-skip: resilience-replication
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/load_shared_doc.py" foundry skills/_shared task-hygiene.md  # timeout: 5000
@@ -57,6 +58,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/load_shared_doc.py" foundr
 Extract first word of `$ARGUMENTS` as `MODE`.
 
 If `MODE` matches:
+
 - `dump` (alias: `save`) → **Mode: dump**
 - `recall` (aliases: `restore`, `load`) → **Mode: recall**
 - `list` → **Mode: list**
@@ -64,11 +66,12 @@ If `MODE` matches:
 - `sweep` → **Mode: sweep**
 - `drop` (alias: `archive`) → **Mode: drop**
 
-**Unsupported flag check** — after extracting the mode token, scan `$ARGUMENTS` for remaining `--<token>` patterns. If found: print `! Unknown flag(s): \`--<token>\`. Supported modes: dump, recall, list, park, sweep, drop.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke correctly) · (b) **Continue ignoring** (skip unknown flags, proceed with recognized mode).
+**Unsupported flag check** — after extracting the mode token, scan `$ARGUMENTS` for remaining `--<token>` patterns. If found: print `` ! Unknown flag(s): `--<token>`. Supported modes: dump, recall, list, park, sweep, drop. `` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke correctly) · (b) **Continue ignoring** (skip unknown flags, proceed with recognized mode).
 
 Otherwise (empty, unrecognized, misspelled): use `AskUserQuestion`:
 
 > "Which session mode did you want?"
+>
 > Options: (a) `dump [name]` — write the handover doc now, (b) `park <idea>` — stash one open loop without derailing, (c) `sweep` — audit the conversation for unlanded work, (d) `list` — stored handovers and open items
 
 ## Step 1 / Mode: dump
@@ -261,7 +264,7 @@ Print one line: `Parked: <slug>` plus the current open count. Terminal only.
 Read the **conversation**, not the filesystem. Nothing to run — the history is already in context. Collect, in this order:
 
 | Type | Trigger |
-| --- | --- |
+| -- | -- |
 | Unanswered question | Claude asked, user sent a new top-level request instead of answering |
 | Deferred exploration | "come back to that", "park this", "later" — idea named, not pursued |
 | Diverging idea | feature/design idea raised while solving something else |
@@ -318,7 +321,7 @@ End with a `## Confidence` block per `quality-gates.md` — score on: match unam
 **Two state mechanisms — they do not overlap.**
 
 | Mechanism | Survives | Trigger | Store |
-| --- | --- | --- | --- |
+| -- | -- | -- | -- |
 | Skill contract (`compaction.md`) | in-flight skill phase state | auto-compact at 85% | `.temp/state/skill-contract.md` |
 | Session handover (this skill) | plan, decisions, lessons, files table, open loops | explicit `dump` before `/clear` | `.claude/state/session/` |
 

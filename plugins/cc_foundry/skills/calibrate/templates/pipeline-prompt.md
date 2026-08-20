@@ -1,7 +1,6 @@
 Calibration pipeline runner for `<TARGET>`. Complete all phases in sequence.
 
-AB mode: `<AB_MODE>` — when `true`, also run `general-purpose` baseline on every problem and compute delta metrics.
-Local mode: `<LOCAL_MODE>` — when `true`, resolve target file from source tree (`plugins/`) first; see Pre-flight below.
+AB mode: `<AB_MODE>` — when `true`, also run `general-purpose` baseline on every problem and compute delta metrics. Local mode: `<LOCAL_MODE>` — when `true`, resolve target file from source tree (`plugins/`) first; see Pre-flight below.
 
 Run dir: `.reports/calibrate/<TIMESTAMP>/<TARGET>/`
 
@@ -78,7 +77,7 @@ When `LOCAL_MODE=false` or source file not found: Phase 2 dispatches normally (a
 Split `<N>` in-scope problems between two generators. Claude always owns 1 out-of-scope problem.
 
 | Pace | N_CLAUDE in-scope | N_CODEX in-scope | Scope (Claude) | Total |
-| --- | --- | --- | --- | --- |
+| -- | -- | -- | -- | -- |
 | fast (N=3) | 1 | 2 | 1 | 4 |
 | full (N=10) | 5 | 5 | 1 | 11 |
 
@@ -390,6 +389,7 @@ Determine target file path for curator proposals:
 When `LOCAL_MODE=true` and `TARGET_FILE` set: use `TARGET_FILE` directly.
 
 Otherwise resolve (first match wins):
+
 - Agent: `.claude/agents/<NAME>.md` → `~/.claude/plugins/cache/borda-ai-rig/<PLUGIN>/*/agents/<NAME>.md` (latest mtime) → `plugins/<PLUGIN>/agents/<NAME>.md`
 - Skill: `.claude/skills/<NAME>/SKILL.md` → `~/.claude/plugins/cache/borda-ai-rig/<PLUGIN>/*/skills/<NAME>/SKILL.md` (latest mtime) → `plugins/<PLUGIN>/skills/<NAME>/SKILL.md`
 
@@ -415,7 +415,7 @@ Spawn **foundry:curator** subagent using **Agent tool** — never via Bash or CL
 >
 > ### Change 1: <gap name>
 > **File**: `<file path>`
-> **Section**: `<antipatterns_to_flag>` / `<workflow>` / `<notes>` / etc.
+> **Section**: `<antipatterns-to-flag>` / `<workflow>` / `<notes>` / etc.
 > **Current**: [exact verbatim text to replace; or "none" if inserting new content]
 > **Proposed**: [exact replacement text]
 > **Rationale**: one sentence — why this closes the gap

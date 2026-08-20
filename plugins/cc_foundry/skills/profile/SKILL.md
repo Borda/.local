@@ -1,7 +1,7 @@
 ---
 name: profile
-description: 'Session clock-time AND token/cost analyzer. Reads the foundry plugin''s timings.jsonl and invocations.jsonl logs (written by task-log.js) for wall-time, plus Claude Code transcripts (~/.claude/projects/**, main-loop + subagent files) for token usage and USD cost, and merges both into one per-session and per-skill report — local-tool vs subagent-spawn vs Skill vs AskUserQuestion idle vs main-loop reasoning residual time, and main-loop vs subagent spend by model tier. Useful for answering "why did /oss:resolve run 30 minutes?", "what did this session cost?", or "which skill burns the most tokens?". Pure log/transcript read — no instrumentation, no skill edits, no LLM calls. TRIGGER when: user asks where wall-clock time OR tokens/cost go during a skill/session, why a skill is slow or expensive, what dominates total runtime or spend, or wants a per-skill rollup over a recent window; phrases: "where does time go", "why so slow", "what did this cost", "token spend", "why so expensive", "profile last session", "clock breakdown", "session timing", "which skill burns tokens". SKIP: per-line Python perf (use foundry:perf-optimizer); known failure or hang (use /foundry:investigate); a real billing statement (prices are public list rates, not effective plan rates).'
-argument-hint: "[--since 24h|7d|30d] [--session-id ID] [--top-n N]"
+description: "Session clock-time AND token/cost analyzer. Reads the foundry plugin's timings.jsonl and invocations.jsonl logs (written by task-log.js) for wall-time, plus Claude Code transcripts (~/.claude/projects/**, main-loop + subagent files) for token usage and USD cost, and merges both into one per-session and per-skill report — local-tool vs subagent-spawn vs Skill vs AskUserQuestion idle vs main-loop reasoning residual time, and main-loop vs subagent spend by model tier. Useful for answering \"why did /oss:resolve run 30 minutes?\", \"what did this session cost?\", or \"which skill burns the most tokens?\". Pure log/transcript read — no instrumentation, no skill edits, no LLM calls. TRIGGER when: user asks where wall-clock time OR tokens/cost go during a skill/session, why a skill is slow or expensive, what dominates total runtime or spend, or wants a per-skill rollup over a recent window; phrases: \"where does time go\", \"why so slow\", \"what did this cost\", \"token spend\", \"why so expensive\", \"profile last session\", \"clock breakdown\", \"session timing\", \"which skill burns tokens\". SKIP: per-line Python perf (use foundry:perf-optimizer); known failure or hang (use /foundry:investigate); a real billing statement (prices are public list rates, not effective plan rates)."
+argument-hint: '[--since 24h|7d|30d] [--session-id ID] [--top-n N]'
 allowed-tools: Read, Write, Bash, TaskCreate, TaskUpdate, AskUserQuestion
 model: sonnet
 effort: low
@@ -140,6 +140,7 @@ Backed structurally by `hooks/enforce-profile-header.js`: while the Step 1 state
 ## Step 5: Follow-up gate
 
 Invoke `AskUserQuestion` (denied by `enforce-profile-header.js` until Step 2 has written `report.md` — if the analyzer found no sessions, report that and stop instead of asking):
+
 - (a) Drill into slowest session — re-run with `--session-id <id>`
 - (b) Re-run with different window (`--since 7d`, `--since 30d`)
 - (c) Skip — done

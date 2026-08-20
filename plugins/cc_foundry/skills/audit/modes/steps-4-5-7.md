@@ -5,7 +5,7 @@
 > **Full implementation instructions** are split across 5 scope files in `$AUDIT_TPL/` (resolved in Pre-flight). Read only the file(s) for the active scope at the start of this step — do not read all 5 files unless running a full sweep.
 >
 > | Scope | File(s) to read |
-> | --- | --- |
+> | -- | -- |
 > | `setup` | `checks-setup.md` (Checks 1–11, 39) + `checks-install.md` (I1–I3) + `checks-security.md` (Check 37) |
 > | `plugin` | `checks-setup.md` (Checks 7, 8 only) |
 > | `plugins` | `checks-setup.md` (7, 8) + `checks-agents.md` + `checks-skills.md` + `checks-shared.md` (14a, 14b, 15, 17, 12, 13, 25, 26, 29, 41, 45) + checks 32, 32d, 33, 38, 40 + `checks-install.md` (R1–R5 — LOCAL_MODE) + `checks-security.md` (35, 36, 37) |
@@ -38,7 +38,7 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 > Checks 42, 43 (and 14a/14b/14c/14d/14e, 32d, cli-flag-drift, R3) run in Step 1b on every invocation regardless of scope — never list them here; SKILL.md:198 forbids prose re-derivation.
 
 - `agents` — Checks 14a, 14b, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29, 35, 36, 40, 41 (files: `.claude/agents/*.md` + `plugins/*/agents/*.md`)
-- `skills` — Checks 14a, 14b, 15, 16, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36, 37,  38, 40, 41 (files: `.claude/skills/*/SKILL.md` + `plugins/*/skills/*/SKILL.md`)
+- `skills` — Checks 14a, 14b, 15, 16, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36, 37, 38, 40, 41 (files: `.claude/skills/*/SKILL.md` + `plugins/*/skills/*/SKILL.md`)
 - `rules` — Checks 18, 12, 13, 29, 32c, 41 (32d skipped — no plugin bin/ in rules scope)
 - `communication` — Checks 15, 16, 12, 13, 29
 - `setup` — Checks 1, 2, 3, 4, 5, 9, 10, 11, 7, 6, 8, 30, 37, 39, I1, I2, I3 (Step 3: one foundry:curator spawn for `setup` SKILL.md only; I1–I3 read `~/.claude/`)
@@ -53,7 +53,9 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 ### Check summary
 
 <!-- loads: checks-index.md -->
+
 <!-- loads: checks-security.md -->
+
 ```bash
 IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -115,7 +117,7 @@ Main context receives only that one-liner. Orchestrator MUST NOT read `aggregate
 
 Parse confidence scores from each file's `## Confidence` block in `<RUN_DIR>/<slug>.md` output files (use Glob + Read — batch envelopes carry aggregate confidence, not per-file scores; individual file reports are the authoritative source). For each slug where `Score` < **0.80**, run three parallel passes:
 
-**Fan-out ceiling**: when MORE THAN 8 slugs score <0.80, do NOT run per-slug passes (4 spawns × N is unbounded) — instead spawn ONE consolidated **foundry:curator** re-run covering all low-confidence slugs (batched prompt listing every slug + its `Gaps:` block, one combined `<RUN_DIR>/lowconf-batch-rerun.md`) plus one Codex pass over same batch when available; run pass B (docs check) only for slugs whose gaps explicitly cite schema/docs uncertainty. Systematically low confidence signals a rubric or curator problem, not N independent file problems — remediate once, not N×4 times.
+**Fan-out ceiling**: when MORE THAN 8 slugs score \<0.80, do NOT run per-slug passes (4 spawns × N is unbounded) — instead spawn ONE consolidated **foundry:curator** re-run covering all low-confidence slugs (batched prompt listing every slug + its `Gaps:` block, one combined `<RUN_DIR>/lowconf-batch-rerun.md`) plus one Codex pass over same batch when available; run pass B (docs check) only for slugs whose gaps explicitly cite schema/docs uncertainty. Systematically low confidence signals a rubric or curator problem, not N independent file problems — remediate once, not N×4 times.
 
 **Health monitoring** (CLAUDE.md §6): apply the honest protocol in `$_FS/agent-spawn-protocol.md` — passes A–C return on completion; read each pass's output file afterwards. For a background probe, a single `find $RUN_DIR -newer "$SENTINEL" \( -name "*-rerun.md" -o -name "docs-recheck-*.md" -o -name "codex-recheck-*.md" \) | wc -l` per turn (`health_sentinel.py` §8b) — no sleep loop. On empty/missing output: mark `timed_out`, surface with ⏱ in final report.
 

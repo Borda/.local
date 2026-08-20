@@ -1,5 +1,5 @@
----
 <!-- Loaded by research:scientist (opus + xhigh) -->
+
 # ML Concepts Reference — research:scientist
 
 Loaded on demand for ML-domain experiments. CPU/non-ML or basic experiments do not need this file — keep base agent context lean.
@@ -43,10 +43,10 @@ Compare from task's Papers With Code leaderboard across PyTorch, JAX/Flax, Huggi
 ## LLM Evaluation & Benchmarking
 
 Standard benchmarks (MMLU, HumanEval/MBPP, MT-Bench, GSM8K) + `lm-evaluation-harness`; validate LLM-as-judge against human preferences; always include task-specific downstream eval. **Contamination check** (training data leaking into benchmark test sets) — apply by data-access tier:
+
 - **Open training corpus**: run n-gram overlap (≥13-gram exact match = common threshold) between corpus and each benchmark test set; EleutherAI decontamination scripts or `lm-evaluation-harness --check_integrity` = standard tools.
 - **Opaque/proprietary training data**: run model on PARAPHRASED versions of benchmark questions — large accuracy drop vs originals indicates likely contamination; only viable proxy without training-data access.
-- Always report whether contamination check was possible (which tier) + result; "we did not check" is itself a finding.
-**Benchmark scores are proxies** — test on actual task distribution.
+- Always report whether contamination check was possible (which tier) + result; "we did not check" is itself a finding. **Benchmark scores are proxies** — test on actual task distribution.
 
 ## Experiment Tracking & Reproducibility
 

@@ -4,7 +4,7 @@ description: |
   Atomic rename of Python symbols or modules via the structural index — static callers, import sites, __all__ re-exports, Sphinx cross-refs; optional deprecated alias (--deprecate) or hard-delete (--remove-if-no-callers).
   TRIGGER: "rename X to Y" (function/class/method/module), "move module X to Y", "update all references to X".
   SKIP: non-Python; index not built (/codemap-py:scan-codebase first); local-variable rename; grep-only rename wanted; 1:N symbol splits; package directory rename (git mv).
-argument-hint: "symbol <old_qname> <new_qname> [--dry-run] [--deprecate[=\"@deprecated(...)\"|\"@deprecated_class(...)\"]] [--since <ver>] [--removed-in <ver>] [--remove-if-no-callers] | module <old_module_path> <new_module_path> [--dry-run]"
+argument-hint: symbol <old_qname> <new_qname> [--dry-run] [--deprecate[="@deprecated(...)"|"@deprecated_class(...)"]] [--since <ver>] [--removed-in <ver>] [--remove-if-no-callers] | module <old_module_path> <new_module_path> [--dry-run]
 allowed-tools: Bash, Read, Edit, Write, AskUserQuestion
 model: sonnet
 effort: medium
@@ -13,6 +13,7 @@ effort: medium
 <objective>
 
 Atomically rename Python symbol/module. Coverage:
+
 - Definition site (def/class line)
 - `__all__` re-exports in `__init__.py` files
 - Import call sites across all callers (fn-rdeps + symbol line-range narrowing)
@@ -21,16 +22,19 @@ Atomically rename Python symbol/module. Coverage:
 - Optional hard-delete when exhaustive=true + zero callers
 
 **Subcommands**:
+
 - `symbol <old_qname> <new_qname>` — function/class/method. qname bare (`MyClass`) or qualified (`MyClass.method`); matches symbol-local `qualified_name`. Module-qualified form (`module::symbol`) is not accepted by `find-symbol`.
 - `module <old_module_path> <new_module_path>` — dotted path (`mypackage.old_name`). Renames file + all import lines.
 
 **Flags**:
+
 - `--dry-run` — show change sites; no edits
 - `--deprecate[=<decorator>]` — symbol only: preserve old name as pyDeprecate `@deprecated` wrapper → new; needs `pyDeprecate`. Bare derives decorator from symbol type; value pins it (`--deprecate="@deprecated_class(...)"`).
 - `--since <ver>` / `--removed-in <ver>` — deprecation decorator values; default `"?"`
 - `--remove-if-no-callers` — symbol only: confirm then delete definition when exhaustive=true + zero callers
 
 **Hard limits** (static-analysis boundary):
+
 - `getattr(obj, "old_name")` — statically unbound string; Step 6 emits grep advisory
 - Cross-repo callers — out of scope; public APIs need `--deprecate` + semver bump
 
@@ -179,6 +183,7 @@ printf '%s\n' "$EXHAUSTIVE"  > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-EXHAU
 ```
 
 `fn-rdeps` returns `{qname, called_by:[{caller, module, path}], count, index:{query_complete,...}}`.
+
 - `called_by` has **no line numbers**; Step 4c runs `codemap-py query symbol <caller>` per entry.
 - `EXHAUSTIVE` first reads `result["index"]["query_complete"]`; only if absent, use legacy `result["index"]["exhaustive"]`; neither → `false`. Incomplete → note in blast report.
 
@@ -231,6 +236,7 @@ Deprecation wrapper: <OLD_REF> kept as @deprecated alias → <NEW_REF>
 ```
 
 **Budget gate**: caller count > 50 → derive BRANCH and a free (non-colliding) output path first:
+
 ```bash
 # timeout: 3000
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-'); BRANCH="${BRANCH:-main}"
@@ -239,7 +245,9 @@ BLAST_OUT=".temp/output-rename-refs-blast-${BRANCH}-$(date +%Y-%m-%d).md"; _n=1
 while [ -e "$BLAST_OUT" ]; do _n=$((_n+1)); BLAST_OUT=".temp/output-rename-refs-blast-${BRANCH}-$(date +%Y-%m-%d)-${_n}.md"; done
 printf '%s\n' "$BLAST_OUT"
 ```
+
 Write all callers to printed `$BLAST_OUT`, beginning with YAML header:
+
 ```yaml
 ---
 Title:      rename-refs blast-radius — <OLD_REF>
@@ -253,6 +261,7 @@ Next steps: apply edits for callers 1–50; callers 51–N in this file require 
 Path:       → <the resolved $BLAST_OUT path>
 ---
 ```
+
 Print path + count, then `⚠ >50 callers — capping edit pass at first 50. Callers 51–N listed in blast file as manual advisories.` Edit first 50 only. Step 7 labels residual old-name hits for 51–N "skipped callers"; expected, not missed dynamics.
 
 **`--remove-if-no-callers` guards** — evaluated before any rename edits:
@@ -272,6 +281,7 @@ IFS= read -r EXHAUSTIVE < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-EXHAUSTIVE
 - Otherwise (`REMOVE_IF_ZERO=false`): proceed with normal rename flow.
 
 **`--dry-run`**: derive branch and a free output path first, then write the report:
+
 ```bash
 # timeout: 3000
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-'); BRANCH="${BRANCH:-main}"
@@ -279,7 +289,9 @@ DRY_OUT=".temp/output-rename-refs-dry-${BRANCH}-$(date +%Y-%m-%d).md"; _n=1
 while [ -e "$DRY_OUT" ]; do _n=$((_n+1)); DRY_OUT=".temp/output-rename-refs-dry-${BRANCH}-$(date +%Y-%m-%d)-${_n}.md"; done
 printf '%s\n' "$DRY_OUT"
 ```
+
 Write report to the printed `$DRY_OUT` path via Write, beginning with YAML header:
+
 ```yaml
 ---
 Title:      rename-refs dry-run — <OLD_REF> → <NEW_REF>
@@ -293,6 +305,7 @@ Next steps: re-invoke without --dry-run to apply; or abort
 Path:       → <the resolved $DRY_OUT path>
 ---
 ```
+
 Print path; `AskUserQuestion`: (a) Apply for real (re-invoke without --dry-run); (b) Done. Stop.
 
 Otherwise `AskUserQuestion`: (a) Apply edits; (b) Abort. Abort → stop.
@@ -301,8 +314,8 @@ Otherwise `AskUserQuestion`: (a) Apply edits; (b) Abort. Abort → stop.
 
 Skip to Step 5 if `SUBCOMMAND=module`.
 
-**4a — Rename definition site**:
-Read find-symbol `path`; edit definition at `start_line`:
+**4a — Rename definition site**: Read find-symbol `path`; edit definition at `start_line`:
+
 - `def old_name(` → `def new_name(`
 - `class OldName(` / `class OldName:` → `class NewName(` / `class NewName:`
 - Method: match `def old_method(self` within class body
@@ -351,6 +364,7 @@ printf '' > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-processed-import-files-${CSID}"
 ```
 
 Before each caller-file import edit, check + mark:
+
 ```bash
 # timeout: 3000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -363,6 +377,7 @@ grep -qxF "$TARGET_FILE" "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-processed-import-f
 Edit imports only when `SKIP_IMPORT=false`.
 
 Per caller (`called_by[i].caller` already `module::function`; pass directly to `codemap-py query`):
+
 1. Run `codemap-py query symbol "<caller_qname>"` — timeout: 10000; result `{symbols:[{path, start_line, end_line, qualified_name, ...}]}`
    - 0 matches → log `⚠ symbol not found for caller <caller_qname> — skipping caller` and continue
    - Filter `symbols[]` by `qualified_name`: exact preferred, else first
@@ -442,6 +457,7 @@ fi
 Insert `$DEPRECATION_CODE` immediately after new definition (`end_line` from Step 2). Target needs pyDeprecate; otherwise inserted `from deprecate import ...` raises import-time `ImportError`. Surface Step 6 advisory.
 
 Type→decorator mapping:
+
 - `"class"` → `@deprecated_class(target=NewName, ...)`; transparent proxy preserves `isinstance`
 - `"function"` / `"method"` → `@deprecated(target=new_fn, ...)`; `...` body, pydeprecate forwards calls
 
@@ -608,6 +624,7 @@ codemap-py query --timeout 20 find-symbol "$OLD_REF" --limit 0  # timeout: 25000
 ```
 
 For `module`:
+
 ```bash
 # timeout: 25000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"

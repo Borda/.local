@@ -1,6 +1,6 @@
 ---
 name: sweep
-description: "Non-interactive end-to-end pipeline — auto-configure program.md (accept defaults), run judge+refine loop (up to 3 iterations), then run the campaign. Single command from goal to result."
+description: Non-interactive end-to-end pipeline — auto-configure program.md (accept defaults), run judge+refine loop (up to 3 iterations), then run the campaign. Single command from goal to result.
 argument-hint: '"<goal>" [--team] [--compute=local|colab|docker] [--colab[=H100|L4|T4|A100]] [--codex] [--researcher] [--architect] [--journal] [--hypothesis <path>] [--skip-validation] [--out <path>] [--keep "<items>"]'
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 effort: medium
@@ -17,11 +17,11 @@ NOT for: interactive planning (use `/research:plan`); methodology review only (u
 
 <compaction>
 
-Key boundaries: end of S2 — program.md written and confirmed; end of S3 — judge+refinement verdict settled.
-Preserve at S2: program-path (output of plan), GOAL string, OUT path (TMPDIR key).
-Mid-loop refresh: after each S3 fix-apply the contract is rewritten with refine-iter/no-fixes-iter/last-verdict (placed after fixes so the "fixes applied" claim is true) — a mid-loop compaction resumes at the current iteration instead of restarting REFINE_ITER=0.
-Preserve at S3: judge verdict, JUDGE_REPORT path, program-path, GOAL.
-Clear at S1 start (stale prior run) and after S5 pipeline completes.
+- Key boundaries: end of S2 — program.md written and confirmed; end of S3 — judge+refinement verdict settled.
+- Preserve at S2: program-path (output of plan), GOAL string, OUT path (TMPDIR key).
+- Mid-loop refresh: after each S3 fix-apply the contract is rewritten with refine-iter/no-fixes-iter/last-verdict (placed after fixes so the "fixes applied" claim is true) — a mid-loop compaction resumes at the current iteration instead of restarting REFINE_ITER=0.
+- Preserve at S3: judge verdict, JUDGE_REPORT path, program-path, GOAL.
+- Clear at S1 start (stale prior run) and after S5 pipeline completes.
 
 </compaction>
 
@@ -51,6 +51,7 @@ Triggered by `sweep "goal" [--flags]`. Non-interactive end-to-end: auto-plan →
 **Shared path resolution** (always runs before S1):
 
 `_RESEARCH_SHARED` does NOT survive the Agent Resolution block — each Bash call is a fresh shell — so re-resolve it here alongside `_RESEARCH_SKILLS`, and again in every later block that loads a skill file:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
@@ -118,6 +119,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/extract-keep-flag.py" swe
 ```
 
 **Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--skip-validation`, `--out`, `--keep`.
+
 ```bash
 # loads: unsupported-flag-protocol.md
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -194,6 +196,7 @@ Repeat up to `MAX_REFINE` times:
 
    - Pass `--skip-validation` if user provided it; else include validation (J4).
    - Capture J6 verdict and judge report path (`JUDGE_REPORT`).
+
 2. Print: `` sweep: judge iteration `REFINE_ITER`/`MAX_REFINE` → `VERDICT`  ``
 
 3. **If `APPROVED`** — exit loop, outcome `approved`.
@@ -204,8 +207,11 @@ Repeat up to `MAX_REFINE` times:
 
    - `REFINE_ITER < MAX_REFINE`:
      - Read `JUDGE_REPORT`. Extract `### Required Changes` section.
+
      - `### Required Changes` section absent: increment `NO_FIXES_ITER`. `NO_FIXES_ITER >= 2` (two consecutive judge runs returning NEEDS-REVISION without `### Required Changes` section): exit loop with outcome `judge-report-malformed` and print `! sweep: judge emitted NEEDS-REVISION but report contains no Required Changes section in 2 consecutive iterations — possible judge formatting issue. Inspect <JUDGE_REPORT>.` Invoke `AskUserQuestion` — (a) `proceed to run anyway` · (b) `abort`. On (a): proceed to S5. On (b): print follow-up hint and stop. Otherwise (NO_FIXES_ITER < 2): print `sweep: judge report missing Required Changes section — re-judging without edits (NO_FIXES_ITER=N)` and continue loop (re-judge with unchanged file).
+
      - Present: reset `NO_FIXES_ITER = 0`. Apply each fix to program file via Edit tool. **Always re-read program file before each sequential Edit call; never assume file content stable between tool calls** — earlier Edits in batch may have shifted line offsets or modified surrounding context, so stale `old_string` from judge report may no longer match. Count applied fixes as `N_FIXES`; track failures as `N_FAILS`. Any Edit call fails (old_string not found or not unique): increment `N_FAILS`, continue remaining fixes. After all fixes attempted: `N_FAILS > 0` → print `⚠ N_FAILS edit(s) failed — file may have changed since judge run; re-judging with partial fixes (N_FIXES applied)`. `N_FIXES == 0` AND `N_FAILS > 0` → print `! All edits failed — re-judging without changes (edit conflict; check program file manually)`. Print: `sweep: applied N_FIXES fix(es) to <program path> — re-judging`
+
      - **Refresh compaction contract now** — fixes for this iteration applied, so contract can truthfully assert them. Substitute literal `REFINE_ITER`, `NO_FIXES_ITER`, `VERDICT`, `JUDGE_REPORT` values tracked (fill-in template like judge-report tokens, not verbatim-run block — counters are prose loop state, not shell vars):
 
        ```bash
@@ -236,7 +242,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/write-skill-contract.py" 
 ### Step S4: Gate on loop outcome
 
 | Outcome | Action |
-| --- | --- |
+| -- | -- |
 | `approved` | Print `sweep: plan approved (REFINE_ITER/MAX_REFINE iteration(s)) ✓` → proceed to S5 |
 | `blocked` | Print `sweep: judge → BLOCKED ✗`; show all critical findings from report; print follow-up hint; stop |
 | `unresolved` | Print `sweep: judge unresolved after MAX_REFINE iterations ✗`; show remaining Required Changes from last report; call `AskUserQuestion` tool — do NOT write options as plain text: question "Unresolved — how to proceed?", (a) label `proceed to run anyway`, (b) label `fix manually then re-run`, (c) label `abort` — if `a`, proceed to S5; if `b` or `c`, print follow-up hint and stop |

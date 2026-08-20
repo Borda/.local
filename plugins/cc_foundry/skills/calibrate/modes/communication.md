@@ -64,6 +64,7 @@ Scorer (Phase 3) evaluates two additional dimensions independently:
 2. **Token overhead** — response size vs. minimum faithful representation → `token_overhead_ratio`
 
 **`token_overhead_ratio` baseline — ground truth JSON char count**: compute `len(JSON.stringify(ground_truth))` (char count of serialised `GROUND_TRUTH_JSON` scorer holds). Minimum lossless representation of all required findings. Ratio `response_chars / gt_json_chars` measures overhead above that floor.
+
 - ≤1.5 ✓ compact — fits within 1.5× bare findings (allows confidence block, location formatting, severity labels)
 - 1.5–2.0 ~ moderate — some prose wrapping, acceptable
 - > 2.0 ⚠ verbose — significant narrative overhead above minimum content

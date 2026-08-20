@@ -1,5 +1,7 @@
 <!-- oss:resolve Step 3b — executed inline: cat $_OSS_RESOLVE/modes/pr-intelligence.md; execute -->
+
 <!-- fragment — no <workflow> wrapper; executed inline by SKILL.md orchestrator -->
+
 <!-- consumer: plugins/cc_oss/skills/resolve/SKILL.md (Step 3b) -->
 
 ## Step 3b: PR intelligence
@@ -39,7 +41,7 @@ REPO_NAME=$(gh repo view --json name --jq .name 2>/dev/null)  # timeout: 6000
 Infer `INTEL_AGENT` from `PR_LABELS` + `PR_TITLE` (lowercase, first match wins) using the same routing table as `action-item-dispatch.md`:
 
 | Signal keywords in labels/title | `INTEL_AGENT` |
-| --- | --- |
+| -- | -- |
 | `test`, `spec`, `pytest`, `coverage` | `foundry:qa-specialist` |
 | `doc`, `readme`, `changelog`, `sphinx` | `foundry:doc-scribe` |
 | `lint`, `style`, `format`, `ruff`, `mypy`, `typing`, `type hint`, `annotation`, `annotate`, `docstring`, `comments` | `foundry:linting-expert` |

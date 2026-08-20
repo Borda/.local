@@ -71,6 +71,7 @@ fi
 ```
 
 When `PASS_COUNT < RETRY_COUNT` and `PASS_COUNT > 0` (test is genuinely flaky):
+
 - Print `⚠ FLAKY: test(s) passed $PASS_COUNT/$RETRY_COUNT retries`
 - **Do NOT fall through** — invoke `AskUserQuestion`:
   - (a) **Mark and continue** — add `@pytest.mark.flaky(reruns=3)` marker and `# TODO: flaky — investigate <date>` comment to failing test(s); then continue quality stack

@@ -1,7 +1,7 @@
 ---
 name: review
-description: "Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Scope: Python source files in local working tree. Python-file-free targets (pure JS/TS/Go/Rust projects) are out of scope. TRIGGER when: user asks to review local Python files, a directory, or the current git diff/working-tree changes, with no GitHub PR number involved; phrases: \"review this\", \"review my changes\", \"code review this diff\", \"review src/foo.py\". SKIP when: input is a bare GitHub PR/issue number (use `/oss:review <PR#>`, requires oss plugin); user wants the Codex-native tiered `$code-review` workflow (codex-rig plugin, JSON artifact + specialist fan-out) — different toolchain; implementation work (use `/develop:fix` or `/develop:feature`); non-Python-only projects."
-argument-hint: "[python-file|dir] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--semble] [--worktree] [--full] [--keep \"<items>\"]"
+description: 'Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Scope: Python source files in local working tree. Python-file-free targets (pure JS/TS/Go/Rust projects) are out of scope. TRIGGER when: user asks to review local Python files, a directory, or the current git diff/working-tree changes, with no GitHub PR number involved; phrases: "review this", "review my changes", "code review this diff", "review src/foo.py". SKIP when: input is a bare GitHub PR/issue number (use `/oss:review <PR#>`, requires oss plugin); user wants the Codex-native tiered `$code-review` workflow (codex-rig plugin, JSON artifact + specialist fan-out) — different toolchain; implementation work (use `/develop:fix` or `/develop:feature`); non-Python-only projects.'
+argument-hint: '[python-file|dir] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--semble] [--worktree] [--full] [--keep "<items>"]'
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, EnterWorktree, ExitWorktree
 disable-model-invocation: true
 effort: high
@@ -54,6 +54,7 @@ If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you pas
 
 <constants>
 
+```text
 FANOUT_MAX=3            # default: top-N most relevant of the classification-preselected dimensions
                         # 3 not 4 — bridge review runs outside this cap, so 3 keeps the
                         # observed agent count at 4, not 5
@@ -63,15 +64,16 @@ CHALLENGE_ENABLED=true  # set to false via --no-challenge
 CHALLENGE_FORCED=false  # set to true via --challenge — forces Agent 7 even on small diffs (overrides small-diff auto-skip)
 CODEMAP_ENABLED=auto    # on by default if codemap installed + index found; --no-codemap = off; --codemap = strict (stop if not installed)
 SEMBLE_ENABLED=false    # set to true via --semble
+```
 
 </constants>
 
 <compaction>
 
-Key boundary: end of Step 3 — parallel review-agent fan-out outputs collected, before Step 5 consolidation.
-Second boundary: end of Step 5 — consolidated report written, before Step 6 follow-up.
-Preserve at boundary 1: RUN_DIR, REPORT_DIR, target, per-agent finding file paths, --keep items.
-Preserve at boundary 2: final report path.
+- Key boundary: end of Step 3 — parallel review-agent fan-out outputs collected, before Step 5 consolidation.
+- Second boundary: end of Step 5 — consolidated report written, before Step 6 follow-up.
+- Preserve at boundary 1: RUN_DIR, REPORT_DIR, target, per-agent finding file paths, --keep items.
+- Preserve at boundary 2: final report path.
 
 </compaction>
 
@@ -141,7 +143,7 @@ IFS= read -r FANOUT_FULL < "${TMPDIR:-/tmp}/dev-review-fanout-full-${CSID}" 2>/d
 FANOUT_CAP=3; [ "$FANOUT_FULL" = "true" ] && FANOUT_CAP=0  # 0 = no cap: all preselected dimensions
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--worktree\`, \`--full\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. If found: print `` ! Unknown flag(s): `--<token>`. Supported: `--no-challenge`, `--challenge`, `--codemap`, `--no-codemap`, `--semble`, `--worktree`, `--full`, `--keep`. `` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Worktree isolation
 
@@ -180,6 +182,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-gates.md"
 ```
+
 Follow Gate A and Gate B.
 
 If `SEMBLE_ENABLED=true`: verify `mcp__semble__search` in available tools. DMI skill — stop enforced via bash exit when semble not configured:
@@ -265,7 +268,7 @@ Skip optional agents by classification:
 - REFACTOR → skip Agent 6 (solution-architect), same exception — an already-exported public function's signature change still fires Agent 6
 - CHORE (config/deps, no logic) → skip Agent 2 (qa-specialist), Agent 3 (perf-optimizer), and Agent 6 (solution-architect); keep Agent 1 (sw-engineer), Agent 4 (doc-scribe), Agent 5 (linting-expert). No logic means no test-gap, perf, or architecture surface — same saving pattern as `oss:review`'s DOCS_TYPING/TESTS_CI pre-classification (cc_oss/skills/review/SKILL.md:182,198).
 - FEATURE/MIXED → spawn all agents
-- **Small-diff challenger skip** (any classification) — unless `--challenge` was passed (`CHALLENGE_FORCED=true`): diff is single file, <50 lines changed, and introduces no new public API / exported symbol → also skip Agent 7 (challenger). Multi-file, ≥50 lines, or any new public API → challenger runs. `--no-challenge` (`CHALLENGE_ENABLED=false`) disables Agent 7 entirely regardless.
+- **Small-diff challenger skip** (any classification) — unless `--challenge` was passed (`CHALLENGE_FORCED=true`): diff is single file, \<50 lines changed, and introduces no new public API / exported symbol → also skip Agent 7 (challenger). Multi-file, ≥50 lines, or any new public API → challenger runs. `--no-challenge` (`CHALLENGE_ENABLED=false`) disables Agent 7 entirely regardless.
 
 ### Structural context + review pre-flight (codemap-py — only if `CODEMAP_ENABLED=true`)
 
@@ -319,7 +322,7 @@ Codemap context propagation in Step 3:
 
 > Per-agent consumption guidance kept in sync with `$_DEV_SHARED/codemap-context.md` §Review-pipeline injection — update both on change.
 
-Tier annotation for Agent 1 (sw-engineer) only: label each module's `imported_by` count — **high risk** (>20), **moderate** (5–20), **low** (<5). Agent 1 uses this to prioritize: high `imported_by` modules warrant deeper scrutiny on API compatibility, error handling, behavioural correctness — downstream callers outside diff not otherwise visible.
+Tier annotation for Agent 1 (sw-engineer) only: label each module's `imported_by` count — **high risk** (>20), **moderate** (5–20), **low** (\<5). Agent 1 uses this to prioritize: high `imported_by` modules warrant deeper scrutiny on API compatibility, error handling, behavioural correctness — downstream callers outside diff not otherwise visible.
 
 **Semble companion** (only if `SEMBLE_ENABLED=true`): include in Agent 1 spawn prompt:
 
@@ -409,6 +412,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/file-handoff-protocol.md"
 ```
+
 Run directory created in Step 2 (`$RUN_DIR`).
 
 <!-- $REPORT_DIR pre-expanded into $REPORT_DIR_LITERAL — substitute literal vars in Agent spawn prompt strings. Run-dir is the exception: agents self-resolve it (see run-dir preamble below), never hand-substituted. -->
@@ -486,7 +490,7 @@ Launch agents simultaneously with Agent tool (security augmentation folded into 
 **Error path analysis** (new/changed code in diff): For each error-handling path introduced or modified, produce table:
 
 | Location | Exception/Error | Caught? | Action if caught | User-visible? |
-| --- | --- | --- | --- | --- |
+| -- | -- | -- | -- | -- |
 
 Flag rules:
 
@@ -635,6 +639,7 @@ IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codex-delegation.md"
 ```
+
 Apply delegation criteria defined there (when found).
 
 Print `### Codex Delegation` section to terminal only when tasks actually delegated — omit entirely if nothing delegated.
@@ -648,6 +653,7 @@ Print `### Codex Delegation` section to terminal only when tasks actually delega
 **Suggested next steps** (plain text, not selectable — `/develop:fix` and `/develop:refactor` both carry `disable-model-invocation: true`, so `Skill()` dispatch is impossible for either): blocking issues found → `Run: /develop:fix` to reproduce with a test and apply a targeted fix; structural/quality issues found → `Run: /develop:refactor` for test-first improvements.
 
 **Follow-up gate (NEVER SKIP)** — Call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
+
 - question: "What next?"
 - (a) label: `walk through findings` — description: go through each finding interactively
 - (b) label: `skip` — description: no action

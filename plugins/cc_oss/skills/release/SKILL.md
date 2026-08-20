@@ -1,7 +1,7 @@
 ---
 name: release
 description: "Prepare release communication and check readiness. Main mode: notes with optional flags --changelog, --summary, --migration, --append (incremental: reruns the full pipeline scoped to newly-landed commits, integrating results into existing DRAFT.md/CHANGELOG.md/SUMMARY.md/MIGRATION.md instead of full regenerate — non-destructive except revert/pivot); range as v1->v2. Other modes: prepare (full pipeline: audit → all artifacts), audit (pre-release readiness: blockers, docs alignment, version consistency, CVEs), demo (story-telling release notebook in jupytext # %% format). TRIGGER when: user requests release notes, CHANGELOG entry, migration guide, internal summary, release readiness audit, release demo, or an incremental update to an already-drafted release; phrases: 'draft release notes', 'prepare release', 'audit release readiness', 'generate CHANGELOG for v1->v2', 'release demo notebook', 'update release notes with the latest commits'. SKIP: actual git tagging or PyPI/registry upload (use git tag, gh release create, twine upload directly); release communication for a non-Python project where this skill's pytest-centric audit assumptions do not apply; PR-level review (use /oss:review); thread/issue analysis (use /oss:analyse)."
-argument-hint: "[notes] [v1->v2] [--changelog] [--summary] [--migration] [--append] | prepare <version> | audit [version] | demo [range]"
+argument-hint: '[notes] [v1->v2] [--changelog] [--summary] [--migration] [--append] | prepare <version> | audit [version] | demo [range]'
 allowed-tools: Read, Write, Edit, Bash, TaskList, TaskCreate, TaskUpdate, Agent, AskUserQuestion, WebFetch
 model: sonnet
 effort: high
@@ -22,7 +22,7 @@ NOT for ecosystem impact without release (use oss:analyse (requires `oss` plugin
 Mode comes **first**; range or flags follow:
 
 | Invocation | Arguments | Writes to disk |
-| --- | --- | --- |
+| -- | -- | -- |
 | `/release [notes] [range]` | optional range (default: last-tag..HEAD); use `v1->v2` for explicit range | `DRAFT.md` |
 | `/release notes [range] --changelog` | optional range + flag | `DRAFT.md` + prepends `CHANGELOG.md` |
 | `/release notes [range] --summary` | optional range + flag | `DRAFT.md` + `.temp/output-release-summary-<branch>-<date>.md` |
@@ -30,26 +30,27 @@ Mode comes **first**; range or flags follow:
 | `/release notes [range] --changelog --summary --migration` | all flags | All four outputs |
 | `/release notes --append` | no range (derived from last-processed marker); compose with `--changelog`/`--summary`/`--migration` | Runs the full pipeline scoped to the incremental range, integrating results into every existing artifact **in place** (`DRAFT.md` always; `CHANGELOG.md`/`SUMMARY.md`/`MIGRATION.md` when their flag is set) instead of regenerating from scratch |
 | `/release prepare <version>` | version to stamp, e.g. `v1.3.0` | All artifacts in `releases/<version>/`: `DRAFT.md` + `CHANGELOG.md` + `SUMMARY.md` + `MIGRATION.md` + `demo.py` |
-| `/release audit [version]` | optional target version | Terminal readiness report; emits `verdict: READY | NEEDS_ATTENTION | BLOCKED` as final line for orchestrator consumption |
+| `/release audit [version]` | optional target version | Terminal readiness report; emits `verdict: READY \| NEEDS_ATTENTION \| BLOCKED` as final line for orchestrator consumption |
 | `/release demo [range]` | optional range (default: last-tag..HEAD) | `releases/<version>/demo.py` or `.temp/release-demo-<branch>-<date>.py` |
 
 Range notation: `v1->v2` (e.g. `v1.2->v2.0`) — converted internally to git range. No mode → defaults to `notes`. `prepare` = full pipeline — runs audit first, then all artifacts; use when cutting release, not drafting.
 
 `--append`: assumes an earlier `notes` run already produced `DRAFT.md` (and, when their flags were used, `CHANGELOG.md`/`SUMMARY.md`/`MIGRATION.md`) and reruns the **full pipeline** — Gather changes through Draft executive summary, unchanged — scoped to only the commits landed since then, via a per-branch marker at `.temp/release-last-processed-<branch>` (see `bin/release_append_marker.py`). No marker found (first use, or history rewritten by rebase/force-push) → falls back to the default `$LAST_TAG..HEAD` range and full-overwrite write, same as plain `notes` — establishing the baseline for the next `--append` run. Every successful `notes`-mode write (append or full) refreshes the marker to current `HEAD`.
 
-**Non-destructive except revert/pivot**: integration is purely additive — new bullets/blocks/paragraphs join existing artifacts without touching untouched content — *unless* this cycle's Classify/Truth-check phases detect that a new commit reverts or materially changes something a PRIOR cycle already wrote (see Gather changes' "Cross-cycle revert/pivot detection"); that stale entry is struck or superseded, never left stale alongside a contradicting new one. After merge, a **Post-merge re-validation** pass (see `modes/release-draft-template.md`) re-runs Truth check, Identify highlights re-ranking, Validate migration docs, and Validate docs against the FINAL merged content — catches prior-cycle content that went stale from THIS cycle's changes without being a clean detected revert/pivot (e.g. a Spotlight built on a commit a later cycle reverts).
-</inputs>
+**Non-destructive except revert/pivot**: integration is purely additive — new bullets/blocks/paragraphs join existing artifacts without touching untouched content — *unless* this cycle's Classify/Truth-check phases detect that a new commit reverts or materially changes something a PRIOR cycle already wrote (see Gather changes' "Cross-cycle revert/pivot detection"); that stale entry is struck or superseded, never left stale alongside a contradicting new one. After merge, a **Post-merge re-validation** pass (see `modes/release-draft-template.md`) re-runs Truth check, Identify highlights re-ranking, Validate migration docs, and Validate docs against the FINAL merged content — catches prior-cycle content that went stale from THIS cycle's changes without being a clean detected revert/pivot (e.g. a Spotlight built on a commit a later cycle reverts). </inputs>
 
 <workflow>
 
 **Task hygiene**: Call `TaskList`; triage found tasks (`completed` / `deleted` / `in_progress`).
 
 **Task tracking** — create ALL tasks upfront, execute sequentially; mark completed as each phase finishes. After mode detection, mark inapplicable tasks `deleted`:
+
 - `demo` mode: mark deleted — Classify each change, Classify breaking changes, Validate migration docs, Audit changelog, Extract contributors, Draft migration guide, Draft executive summary, Write release draft, Post-merge re-validation
 - bug-fix-only release (no 🚀 Added items): mark deleted — Generate release demo
 - not `--append`, or `--append` with no valid marker (`$MARKER_VALID` computed false during Write release draft — see release-draft-template.md): mark deleted — Post-merge re-validation
 
 Tasks:
+
 - Gather changes (git log + find common base tag)
 - Explore codebase (changed files, impl detail)
 - Validate docs alignment
@@ -85,11 +86,13 @@ In `prepare` and `audit` modes, delegate gather/explore/validate to subagent via
    IFS= read -r SKILL_DIR < "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || SKILL_DIR=""
    cat "$SKILL_DIR/templates/gather-prompt.md"  # timeout: 5000
    ```
+
 > **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
 
-   Template (loaded above). Substitute `<REPO_ROOT>`, `<RANGE>`, `<GATHER_FILE>` with literal values. Spawn:
-   > loads: gather-prompt.md
-   `Agent(subagent_type="foundry:sw-engineer", prompt=<substituted gather-prompt.md content>)`
+Template (loaded above). Substitute `<REPO_ROOT>`, `<RANGE>`, `<GATHER_FILE>` with literal values. Spawn:
+
+> loads: gather-prompt.md `Agent(subagent_type="foundry:sw-engineer", prompt=<substituted gather-prompt.md content>)`
+
 3. Validate envelope; every "abort" is a hard `exit 1`:
    ```bash
    STATUS=$(echo "$ENVELOPE" | jq -r '.status' 2>/dev/null)
@@ -105,15 +108,15 @@ In `prepare` and `audit` modes, delegate gather/explore/validate to subagent via
 
 When `unconfirmed > 0`, surface removed items as notification (not a gate — already removed). Read REMOVED log from `$GATHER_FILE`:
 
-   ```bash
-   if [ "${UNCONFIRMED:-0}" -gt 0 ] 2>/dev/null; then
-       REMOVED_ITEMS=$(grep '^REMOVED:' "$GATHER_FILE" | head -20)  # timeout: 3000
-       echo "Truth check removed ${UNCONFIRMED} unverified claim(s) from release notes (not found in HEAD):"
-       echo "$REMOVED_ITEMS"
-   fi
-   ```
+```bash
+if [ "${UNCONFIRMED:-0}" -gt 0 ] 2>/dev/null; then
+    REMOVED_ITEMS=$(grep '^REMOVED:' "$GATHER_FILE" | head -20)  # timeout: 3000
+    echo "Truth check removed ${UNCONFIRMED} unverified claim(s) from release notes (not found in HEAD):"
+    echo "$REMOVED_ITEMS"
+fi
+```
 
-   Pass `$GATHER_FILE` path to artifact phase — do NOT read gather file into main context; REMOVED log grep above = sole sanctioned exception.
+Pass `$GATHER_FILE` path to artifact phase — do NOT read gather file into main context; REMOVED log grep above = sole sanctioned exception.
 
 **Phases 5–6 parallel delegation** (`prepare`/`audit` modes, after phases 1–4 complete): Audit changelog and Extract contributors are independent — delegate concurrently to reclaim tokens.
 
@@ -139,9 +142,11 @@ cat "$SKILL_DIR/modes/changelog-audit-prompt.md"  # timeout: 5000
 ```
 
 <!-- loads: modes/changelog-audit-prompt.md -->
+
 Prompt (loaded above) — execute (spawn Agent A + Agent B per instructions in that file).
 
 Validate both envelopes:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 STATUS_A=$(echo "$ENVELOPE_A" | jq -r '.status' 2>/dev/null)
@@ -182,7 +187,7 @@ mkdir -p .temp  # timeout: 5000
 ## Mode Detection
 
 | First token | MODE | Routing |
-| --- | --- | --- |
+| -- | -- | -- |
 | `prepare` | prepare | **Shared setup** first, then **Mode: prepare** |
 | `audit` | audit | **Shared setup** first, then **Mode: audit** |
 | `demo` | demo | **Shared setup** first, then **Mode: demo** |
@@ -207,6 +212,7 @@ echo "${DO_APPEND}" > "${TMPDIR:-/tmp}/release-do-append-${CSID}"
 ```
 
 <!-- branch: unsupported-flags — isolated; ≤1 call; fires only when unknown flags present -->
+
 **Unknown flags**: if any `⚠ unknown flag:` lines printed above, invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke) · (b) **Continue ignoring**. On Abort: stop.
 
 ## Shared setup
@@ -237,6 +243,7 @@ IFS= read -r SOURCE_TAG_REF < "${TMPDIR:-/tmp}/release-setup-${CSID}/SOURCE_TAG_
 ```
 
 <!-- branch: no-stable-tags — isolated; ≤1 call; fires only when repo has no stable git tags -->
+
 When no stable tags exist, `LAST_TAG` resolves to initial commit — surface via `AskUserQuestion` ("No stable tags found. Range base is initial commit — proceed?"). Options: (a) Proceed with initial commit as base · (b) Abort — stop release process. On (b): stop, print "Release aborted — no stable tags found; create a tag first with `git tag v0.1.0`" and exit.
 
 ## Gather changes
@@ -328,22 +335,24 @@ Check public API surface in docs/ (or README) matches diff. Flag public symbol a
 **Doc weight check** — for each 🚀 Added change identifying significant new entity (new public skill, new command, new agent, new submodule, new mode): compute **doc weight** for that feature and 2–3 comparable existing features of same nature in relevant README or docs file.
 
 Doc weight = `header_score + coverage_score + example_score`:
+
 - `header_score`: H2 = 3, H3 = 2, H4/deeper = 1, no heading = 0
 - `coverage_score`: `min(non_blank_lines_in_section / 5, 5)` — lines from feature heading to next same-or-higher heading
 - `example_score`: fenced code blocks in section, capped at 3
 
-Weight ratio = `new_feature_weight / mean(comparable_weights)`. Flag UNDERTREATED when ratio < 0.5.
-Report: `- [UNDERTREATED] <feature> in <doc-file> — weight N vs peers M1/M2 (ratio R)`. Collect as `doc_proportionality` list in findings.
+Weight ratio = `new_feature_weight / mean(comparable_weights)`. Flag UNDERTREATED when ratio < 0.5. Report: `- [UNDERTREATED] <feature> in <doc-file> — weight N vs peers M1/M2 (ratio R)`. Collect as `doc_proportionality` list in findings.
 
 ## Classify each change
 
 <!-- loads: modes/classify-truth-check.md (single load — Classify/Truth check/Breaking-change classification below run sequentially in this same path, no branch skips an earlier phase while running a later one; file content stays in context for the two "Follow above" refs below) -->
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # reload SKILL_DIR (Check 41)
 IFS= read -r SKILL_DIR < "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || SKILL_DIR=""
 cat "$SKILL_DIR/modes/classify-truth-check.md"  # timeout: 5000
 ```
+
 Follow above and execute. Contains: category table, PR accumulation rules, dedup rules, OMIT-INTERNAL body-signal override, cherry-pick annotation.
 
 ## Truth check
@@ -359,6 +368,7 @@ Follow `modes/classify-truth-check.md` (Breaking-change classification section, 
 Gate — runs after Truth check. Only when project has migration docs page.
 
 **Detect** — migration doc OR any alternative describing API changes between versions:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # reload REPO_ROOT (Check 41)
@@ -380,11 +390,13 @@ Skip entirely when `$MIGRATION_DOC` empty — no migration/upgrade docs exist in
 **When found**: for every classified item in ⚠ Breaking Changes, 🗑️ Deprecated, and ✗ Removed — verify present and described in `$MIGRATION_DOC`. "Present" = migration doc contains symbol name or semantically equivalent reference with upgrade instructions.
 
 Check each item:
+
 ```bash
 grep -i "<symbol_or_key>" "$MIGRATION_DOC" 2>/dev/null  # timeout: 3000
 ```
 
 **Outcomes**:
+
 - Found with upgrade path → `✓ <symbol> covered`
 - Found but no upgrade path → `[SHALLOW] <symbol> in <doc> — present but missing upgrade instructions`
 - Not found → `[MISSING-MIGRATION] <symbol> — ⚠ Breaking/🗑️ Deprecated but absent from <doc>`
@@ -396,11 +408,13 @@ Collect all findings as `migration_gaps` list. Zero findings → migration doc c
 ## Audit changelog
 
 **`prepare`/`audit` modes**: delegated in parallel (see Delegation strategy). Reload paths:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CHANGELOG_AUDIT_FILE < "${TMPDIR:-/tmp}/release-changelog-audit-${CSID}" 2>/dev/null || CHANGELOG_AUDIT_FILE=""
 IFS= read -r CHANGELOG_FILE < "${TMPDIR:-/tmp}/release-changelog-file-${CSID}" 2>/dev/null || CHANGELOG_FILE=""
 ```
+
 Read `$CHANGELOG_AUDIT_FILE` for audit findings; report added/flagged counts from delegation envelope. If file missing (delegation skipped), fall back to inline below.
 
 **`notes` mode or delegation fallback**:
@@ -420,10 +434,12 @@ Always report: "N items added, M flagged for review, K scope-flagged (non-PR bra
 ## Extract contributors
 
 **`prepare`/`audit` modes**: delegated in parallel (see Delegation strategy). Reload path:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CONTRIBUTORS_FILE < "${TMPDIR:-/tmp}/release-contributors-${CSID}" 2>/dev/null || CONTRIBUTORS_FILE=""
 ```
+
 Read `$CONTRIBUTORS_FILE` for formatted contributors list. If file missing (delegation skipped), fall back to inline below.
 
 **`notes` mode or delegation fallback**:
@@ -444,20 +460,25 @@ Resolve GitHub handle from PR author data (`author.login` field). Match on name 
 For each resolved handle, find a LinkedIn link via this ordered chain — stop at first hit, never guess/infer/search-by-name at any step. Contributor **name is never a matching key anywhere in this chain** — only the resolved GitHub handle (steps 1, 2, 4 below) or an anchor href read directly from fetched page content (step 3):
 
 1. **Primary — Social Accounts API** (strongest signal: explicitly added by the person to their own GitHub profile):
+
    ```bash
    gh api "/users/<login>/social_accounts" --jq '.[] | select(.provider=="linkedin") | .url' 2>/dev/null  # timeout: 6000
    ```
+
    Non-empty output → use directly, done.
 
 2. **Fallback A — `.blog` field**:
+
    ```bash
    gh api /users/<login> --jq '{blog: .blog, twitter: .twitter_username}' 2>/dev/null  # timeout: 6000
    ```
+
    `.blog` contains `linkedin.com` → use directly, done.
 
 3. **Fallback B — personal-page exception**: `.blog` is a non-empty URL that is NOT a `linkedin.com` URL → `WebFetch` that page and scan its actual returned content for `linkedin.com/in/...` anchor links (real hrefs read from the page, never inferred from surrounding text). Exactly one distinct such link found → use it, done. Zero or multiple distinct links found → do not guess; omit LinkedIn for this contributor.
 
 4. **Fallback C — past releases**: search for a Contributors entry, keyed by this EXACT GitHub handle, that a prior release already resolved and credited with a `[LinkedIn](...)` link:
+
    ```bash
    grep -rn "@<login>" CHANGELOG.md docs/CHANGELOG.md releases/*/SUMMARY.md releases/*/DRAFT.md 2>/dev/null | grep -m1 '\[LinkedIn\]('  # timeout: 5000
    # only when the above finds nothing — scan published release bodies (stop at first match):
@@ -465,6 +486,7 @@ For each resolved handle, find a LinkedIn link via this ordered chain — stop a
        gh release view "$tag" --json body --jq '.body' 2>/dev/null | grep -m1 "@<login>.*\[LinkedIn\]("  # timeout: 6000
    done | head -1
    ```
+
    Found → reuse that URL verbatim, done. Not found → omit.
 
 5. No step produced a link → omit LinkedIn, same as today's no-match behavior.
@@ -504,11 +526,13 @@ Write demo to `$DEMO_OUT`. (`prepare` mode: `releases/$VERSION/demo.py` — see 
 **Gate: demo must execute to completion before proceeding to Draft executive summary.**
 
 <!-- branch: demo-approval — only in demo/prepare mode; isolated from notes/changelog path; ≤1 call -->
+
 Invoke `AskUserQuestion` — "Ready to run demo script `$DEMO_OUT`?" Options: (a) Run now · (b) Review first · (c) Skip and **exclude from release artifacts**.
 
 On option (c): mark demo excluded, skip to Draft executive summary — do NOT invoke the failure-path AskUserQuestion below.
 
 On (a) or (b) confirmed:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r DEMO_OUT < "${TMPDIR:-/tmp}/release-demo-out-${CSID}" 2>/dev/null || DEMO_OUT=""
@@ -518,6 +542,7 @@ echo "${DEMO_EXIT}" > "${TMPDIR:-/tmp}/release-demo-exit-${CSID}"
 ```
 
 <!-- policy-sibling: plugins/cc_oss/skills/release/modes/prepare.md §Phase 4a execution gate (demo retry bound) -->
+
 **Guard**: only proceed to failure handling when `$DEMO_EXIT -ne 0` after attempting a fix. Success (`$DEMO_EXIT = 0`) → proceed directly to Draft executive summary — no AskUserQuestion. Failure → fix and re-run (max 3 iterations total). Only after 3 failed attempts invoke `AskUserQuestion` ("Demo still failing after 3 attempts. Exclude from release and continue, or abort?"). Self-contained: package installed in current env; no live API calls or network deps; deterministic synthetic data; `# !pip install` lines are Python comments — interpreter skips.
 
 ## Draft executive summary
@@ -555,6 +580,7 @@ LATEST_TAG=$(gh release list --limit 100 --json tagName --jq '[.[] | select(.tag
 Existing releases deviate from templates → match tone and prose style only. **Never** use `# Changelog` structure for DRAFT.md — always use `release-draft.md` structure. `gh release list` empty → use template defaults.
 
 Fetch origin URL for full changelog link:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 ORIGIN_URL=$(git remote get-url origin 2>/dev/null || echo "")  # timeout: 3000
@@ -577,15 +603,18 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r SKILL_DIR < "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || SKILL_DIR=""
 cat "$SKILL_DIR/modes/adversarial-review.md"  # timeout: 5000
 ```
+
 Follow above and execute.
 
 <!-- loads: modes/release-draft-template.md -->
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # reload SKILL_DIR (Check 41)
 IFS= read -r SKILL_DIR < "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || SKILL_DIR=""
 cat "$SKILL_DIR/modes/release-draft-template.md"  # timeout: 5000
 ```
+
 Follow above and execute (format templates, semantic consistency review, polish, shepherd spawn, write to disk).
 
 ## Mode: prepare
@@ -597,7 +626,9 @@ IFS= read -r SKILL_DIR < "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/de
 [ -f "$SKILL_DIR/modes/prepare.md" ] || { echo "Error: modes/prepare.md not found at $SKILL_DIR/modes/prepare.md — verify oss plugin installation"; exit 1; }
 cat "$SKILL_DIR/modes/prepare.md"  # timeout: 5000
 ```
+
 Follow above and execute.
+
 > Confidence block — prepare mode: end response with `## Confidence` block per CLAUDE.md output standards after prepare.md completes.
 
 ## Mode: audit
@@ -618,7 +649,9 @@ if [ -n "$_AUDIT_VERSION" ]; then
 fi
 cat "$SKILL_DIR/modes/audit.md"  # timeout: 5000
 ```
+
 Follow above and execute.
+
 > Confidence block — audit mode: end response with `## Confidence` block per CLAUDE.md output standards after audit.md completes.
 
 ## Mode: demo
@@ -630,7 +663,9 @@ IFS= read -r SKILL_DIR < "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/de
 [ -f "$SKILL_DIR/modes/demo.md" ] || { echo "Error: modes/demo.md not found at $SKILL_DIR/modes/demo.md — verify oss plugin installation"; exit 1; }
 cat "$SKILL_DIR/modes/demo.md"  # timeout: 5000
 ```
+
 Follow above and execute.
+
 > Confidence block — demo mode: end response with `## Confidence` block per CLAUDE.md output standards after demo.md completes.
 
 </workflow>
@@ -650,7 +685,9 @@ Follow above and execute.
   cat "$_OSS_SHARED/shepherd-voice.md"  # timeout: 5000
   ```
 - **Demo mode output**: jupytext percent format — convert with `jupytext --to notebook <file>.py`; replace placeholder URLs before publishing; Colab badge URL must point to actual notebook after upload
+
 <!-- branch: demo-synthetic-fallback — only when real data unavailable; isolated deep in demo path -->
+
 - **Demo real-world-only policy**: use actual project data/fixtures/API — synthetic requires explicit user approval; fallback: (1) document each failed attempt in `## Demo attempts`, (2) ask Codex if available, (3) ask user via `AskUserQuestion`, (4) synthetic only on explicit approval
 - **Changelog audit non-destructive**: adds missing entries, flags extras, never removes automatically
 - **`--append` marker**: `.temp/release-last-processed-<branch>` — not date-stamped like sibling `.temp/release-*` artifacts (must survive across days/sessions); losing it (TTL cleanup, gitignore) degrades safely to the existing full-range/full-overwrite behavior, never to corruption — see `bin/release_append_marker.py` docstring for the full rationale.

@@ -17,8 +17,7 @@ paths:
 
 ## Bash Timeouts
 
-Every Bash call must include explicit `timeout` — **3× expected P90 duration**.
-Never rely on default 120 s cap; fail fast, let caller retry.
+Every Bash call must include explicit `timeout` — **3× expected P90 duration**. Never rely on default 120 s cap; fail fast, let caller retry.
 
 - Use 3× fastest plausible time — not worst case
 - Unknown-duration command → estimate P90 conservatively, 3× that, minimum `timeout: 15000`

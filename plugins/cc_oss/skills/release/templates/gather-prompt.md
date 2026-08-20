@@ -1,5 +1,6 @@
 <!-- file: gather-prompt.md — consumers: oss/skills/release/SKILL.md (Delegation strategy) -->
-Working directory: <REPO_ROOT>. Run all git commands from that directory (use: git -C <REPO_ROOT> <cmd> or cd <REPO_ROOT> first). For git range <RANGE>:
+
+Working directory: \<REPO_ROOT>. Run all git commands from that directory (use: git -C \<REPO_ROOT> <cmd> or cd \<REPO_ROOT> first). For git range <RANGE>:
 
 Run gather phase: git log, git diff --stat, gh pr list.
 
@@ -9,6 +10,6 @@ Run explore phase: top 3–5 most significant changed files (read actual diffs).
 
 Run truth check phase: for each item classified as 🚀 Added or ⚠️ Breaking Changes naming specific symbol (function, class, method, config key, CLI flag), verify symbol actually DEFINED in codebase at HEAD — not just mentioned in comment, docstring, or leftover reference. Prefer codemap over grep: first check if codemap index available (`codemap-py query list 2>/dev/null | wc -l` — non-zero = available), then run `codemap-py query find-symbol '^<symbol>$' 2>/dev/null`; empty output = absent. When codemap unavailable, fall back to definition-pattern grep: `git -C <REPO_ROOT> grep -wl 'def <symbol>\|class <symbol>' HEAD -- '*.py' 2>/dev/null` for Python, then `git -C <REPO_ROOT> grep -wl '<symbol>' HEAD -- '*.ts' '*.js' '*.go' '*.rs' 2>/dev/null` for other languages. If both return nothing symbol is absent — remove from classified section entirely, log 'REMOVED: <item> — symbol not found in HEAD'. Repeat for any newly revealed dependencies. Track count of removed items (unconfirmed_total) and how many were in ⚠️ Breaking Changes (unconfirmed_breaking).
 
-Write full findings — commit list, verified-only classified change table, diff excerpts, and REMOVED log — to <GATHER_FILE> using the Write tool.
+Write full findings — commit list, verified-only classified change table, diff excerpts, and REMOVED log — to \<GATHER_FILE> using the Write tool.
 
-Return ONLY: {"status":"done","file":"<GATHER_FILE>","changes":N,"breaking":N,"unconfirmed":N,"unconfirmed_breaking":N,"confidence":0.N}
+Return ONLY: {"status":"done","file":"\<GATHER_FILE>","changes":N,"breaking":N,"unconfirmed":N,"unconfirmed_breaking":N,"confidence":0.N}

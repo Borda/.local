@@ -81,6 +81,7 @@ fi
 **Severity**: **low** per stale entry. Fix: remove stale entry from `settings.json` (report only — `settings.json` never auto-edited per audit policy).
 
 **Important**: some allow entries intentionally grant broad patterns (e.g., `Bash(mkdir -p .reports/audit/*)`) not appearing verbatim in config files — exercised at runtime. Flag only entries whose command fragment appears nowhere in any `.claude/` file.
+
 ## Check 7 — bridge-to-Codex plugin integration check
 
 Skip when `bridge@borda-ai-rig` is absent.
@@ -374,7 +375,6 @@ MEMORY.md has 200-line truncation limit. Three sub-checks:
 
 **Check 11a — Duplicate with CLAUDE.md**: Read both MEMORY.md and CLAUDE.md. For each MEMORY.md section, check if same rule or directive exists verbatim or near-verbatim in CLAUDE.md. Flag duplicates **low**.
 
-
 **11b — Stale version pins**:
 
 ```bash
@@ -456,6 +456,7 @@ Note: `agents/` and `skills/` lazy-loaded — never flag for token overhead.
 `plugins/CLAUDE.md` versioning policy requires bumping `plugin.json` version in every commit that modifies plugin files. A frozen version misrepresents what changed and defeats changelog reconstruction.
 
 Skip if `LOCAL_MODE != true` (no git history accessible).
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
@@ -481,5 +482,4 @@ else
 fi
 ```
 
-**Severity**: medium — commit mislabeling; no runtime breakage, but release notes and changelog reconstruction are unreliable.
-Fix: bump `plugin.json` patch or minor version per `plugins/CLAUDE.md` versioning policy before committing.
+**Severity**: medium — commit mislabeling; no runtime breakage, but release notes and changelog reconstruction are unreliable. Fix: bump `plugin.json` patch or minor version per `plugins/CLAUDE.md` versioning policy before committing.

@@ -1,7 +1,7 @@
 ---
 name: create
-description: "Interactive outline co-creation for developer advocacy content — collects format, audience profile, story arc (Problem→Journey→Insight→Action), and voice/tone; detects out-of-scope requests (FAQs, comparison tables); surfaces conflicts between user brief and audience needs. Writes approved outline to .plans/content/<slug>-outline.md for foundry:creator to execute. Use when starting a blog post, Marp slide deck, social thread, talk abstract, or lightning talk."
-argument-hint: "[topic]"
+description: Interactive outline co-creation for developer advocacy content — collects format, audience profile, story arc (Problem→Journey→Insight→Action), and voice/tone; detects out-of-scope requests (FAQs, comparison tables); surfaces conflicts between user brief and audience needs. Writes approved outline to .plans/content/<slug>-outline.md for foundry:creator to execute. Use when starting a blog post, Marp slide deck, social thread, talk abstract, or lightning talk.
+argument-hint: '[topic]'
 disable-model-invocation: true
 allowed-tools: Write, Bash, TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Agent
 effort: medium
@@ -52,11 +52,13 @@ Propose four-beat arc from topic + audience:
 - **Action**: specific next step for audience
 
 **Editorial conflict check**: if brief implies expert audience but topic introductory, or vice versa — surface before continuing:
+
 > "Your brief suggests [X] but audience profile is [Y] — recommend adjusting [Z]. Proceed as-is or adjust?"
 
 **Arc approval + voice** (single AskUserQuestion call): show proposed arc, then ask voice choice — option (d) redirects to arc adjustment.
 
 Options:
+
 - (a) Approve arc — neutral developer advocate (balanced, educational) ★
 - (b) Approve arc — opinionated / direct first-person, no hedging
 - (c) Approve arc — conversational / approachable, informal
@@ -105,10 +107,11 @@ created: YYYY-MM-DD
 ```
 
 - Confirm file path to user.
+
 - Derive the artifact extension `<ext>` from the format selected in Step 2 — substitute the literal value into the spawn prompt before invoking `Agent()`; do not pass the literal `<ext>` placeholder. Mapping:
 
   | Format (Step 2 choice) | `<ext>` |
-  | --- | --- |
+  | -- | -- |
   | a) blog post | `md` |
   | b) conference / meetup talk with Marp slide deck | `md` (Marp markdown) |
   | c) social thread (X/LinkedIn) | `md` |
@@ -119,16 +122,16 @@ created: YYYY-MM-DD
 
 > **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
 
-- End with an `AskUserQuestion` gate with two options:
-  (a) **Generate the full artifact now** — spawn `foundry:creator` via `Agent(subagent_type='foundry:creator', prompt='Read <outline-path> and generate the complete <format> artifact. Output file path: .plans/content/<slug>.<ext>')` where `<outline-path>` is the resolved path from the anti-overwrite step above, and `<slug>`, `<format>`, `<ext>` are substituted from the generated outline (see extension table above) before the call — never pass literal angle-bracket placeholders to the spawned agent.
-  (b) **Stop here** — I'll invoke `foundry:creator` manually when ready.
+- End with an `AskUserQuestion` gate with two options: (a) **Generate the full artifact now** — spawn `foundry:creator` via `Agent(subagent_type='foundry:creator', prompt='Read <outline-path> and generate the complete <format> artifact. Output file path: .plans/content/<slug>.<ext>')` where `<outline-path>` is the resolved path from the anti-overwrite step above, and `<slug>`, `<format>`, `<ext>` are substituted from the generated outline (see extension table above) before the call — never pass literal angle-bracket placeholders to the spawned agent. (b) **Stop here** — I'll invoke `foundry:creator` manually when ready.
 
   **Substitution verification before issuing the Agent call (mandatory)**:
-    1. Construct the final prompt string with all placeholders replaced
-    2. Scan the constructed string for any remaining `<` or `>` characters; if either is present, substitution is incomplete — resolve the missing value(s) before spawning
-    3. Confirm the outline file path in the prompt matches `<outline-path>` exactly (the resolved path including any counter suffix, not a guess)
+
+  1. Construct the final prompt string with all placeholders replaced
+  2. Scan the constructed string for any remaining `<` or `>` characters; if either is present, substitution is incomplete — resolve the missing value(s) before spawning
+  3. Confirm the outline file path in the prompt matches `<outline-path>` exactly (the resolved path including any counter suffix, not a guess)
 
   If the user selects (a), issue the Agent() call in the same response turn AFTER the verification above passes. Do not narrate intent — call the tool.
+
 - End with `## Confidence` block per quality-gates.md protocol, score based on outline coverage of topic, arc, audience.
 
 </workflow>
@@ -138,12 +141,19 @@ created: YYYY-MM-DD
 - **Execution model**: `disable-model-invocation: true` — Claude itself follows this SKILL.md as workflow template directly in the main context (no autonomous sub-agent dispatch during the outline phase). When the Step 4 gate selects (a), exactly one sub-agent is spawned: `foundry:creator` (executes the outline and writes the full artifact). No other sub-agent invocations are made by this skill.
 
 - 5 questions in baseline flow; up to 7 with arc-conflict resolution (steps 2–4 use exactly 4; step 1 adds one only when $ARGUMENTS absent; arc conflicts in step 3 may add 1–2 more).
+
 - Each AskUserQuestion uses lettered options with one ★ recommended default.
+
 - After each answer, restate understanding 1–2 sentences before proceeding.
+
 - Never silently adjust arc to match audience — always surface conflicts explicitly (Step 3).
+
 - Refuse FAQs / comparison tables / ref docs at Step 1 gate; name `foundry:doc-scribe` as redirect.
+
 - Write outline exactly once after approval — no second draft unless user requests.
+
 - `foundry:creator` reads output outline file and generates full artifact autonomously.
+
 - Outline spec files written to `.plans/content/` — see `artifact-lifecycle.md` for TTL policy (30d).
 
 </notes>

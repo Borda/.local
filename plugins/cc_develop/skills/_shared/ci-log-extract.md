@@ -2,11 +2,10 @@
 
 Fetch and parse GitHub Actions failed-job logs from a run ID or URL. Used by skills accepting `--ci-run <run-id-or-url>` to substitute CI logs for local pytest evidence.
 
----
-
 ## §URL Normalization
 
 Accept any of:
+
 - Bare run ID: `12345678`
 - Actions run URL: `https://github.com/owner/repo/actions/runs/12345678`
 - Job-specific URL: `https://github.com/owner/repo/actions/runs/12345678/jobs/98765432`
@@ -21,8 +20,6 @@ fi
 
 After normalization `CI_RUN_ID` is a bare integer. Fail fast if URL present but no `/runs/<digits>` segment found.
 
----
-
 ## §Log Fetching
 
 ```bash
@@ -34,8 +31,6 @@ fi
 ```
 
 Non-zero exit: print warning, continue. Empty or metadata-only result triggers §Re-fetch Fallback below.
-
----
 
 ## §Log Parsing
 
@@ -49,7 +44,7 @@ Non-zero exit: print warning, continue. Empty or metadata-only result triggers �
 **Signals to extract** (scan full log; surface each distinct failure mode separately):
 
 | Signal | Pattern |
-| --- | --- |
+| -- | -- |
 | Failing test name | `FAILED tests/path/test_file.py::test_name` |
 | Assertion failure | `AssertionError: <message>` |
 | Import failure | `ModuleNotFoundError: No module named '...'` or `ImportError: ...` |
@@ -61,11 +56,10 @@ Non-zero exit: print warning, continue. Empty or metadata-only result triggers �
 **Multiple failing jobs**: process each job block independently. Surface distinct failure modes as separate bullet points — do not merge unrelated failures into one summary.
 
 **Set evidence variable**:
+
 ```bash
 CI_LOG_EVIDENCE=$(echo "$CI_LOG_EVIDENCE" | grep -v '::set-output\|##\[group\]\|##\[endgroup\]')
 ```
-
----
 
 ## §Re-fetch Fallback
 
@@ -78,8 +72,6 @@ CI_LOG_EVIDENCE=$(gh run view "$CI_RUN_ID" --log 2>&1 \
 
 Full log fetch is larger — use grep to limit to failure-adjacent context. Still empty after fallback: note "CI log unavailable for run $CI_RUN_ID" in Final Report and fall back to local pytest if possible.
 
----
-
 ## §Integration Pattern
 
 Skills use extracted evidence as follows:
@@ -89,6 +81,7 @@ Skills use extracted evidence as follows:
 3. Note in Final Report: `Diagnosed from CI run $CI_RUN_ID — local reproduction not attempted`.
 
 Evidence handoff to agent spawn prompt:
+
 ```
 CI evidence (run $CI_RUN_ID):
 <paste $CI_LOG_EVIDENCE — truncate to 200 lines if longer>

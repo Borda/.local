@@ -1,7 +1,7 @@
 Write for reader, not commit author.
 
 | Element | Rule |
-| --- | --- |
+| -- | -- |
 | Feature heading | Bold title, period, then plain-English description — no jargon |
 | PR numbers (CHANGELOG) | Full Markdown link — `([#947](https://github.com/owner/repo/pull/947))` |
 | PR numbers (DRAFT.md) | Short inline ref — `(#947)` — never `[#947](url)`; strip full links when sourcing from intermediate files |

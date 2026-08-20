@@ -1,4 +1,4 @@
-<!-- file: codemap-context.md — consumers: codemap-py `integrate apply` (managed-block host, CONSUMER_MANAGED_FILE["foundry"]); foundry agents run the equivalent pre-flight inline in their own <codemap_context> block and do not read this file yet -->
+<!-- file: codemap-context.md — consumers: codemap-py `integrate apply` (managed-block host, CONSUMER_MANAGED_FILE["foundry"]); foundry agents run the equivalent pre-flight inline in their own <codemap-context> block and do not read this file yet -->
 
 **Structural context (codemap-py) — foundry wrapper.** Provider ships the shared mechanics; this file adds only the foundry-specific dimension. Run only when caller sets `CODEMAP_ENABLED=true`; skip if flag absent.
 

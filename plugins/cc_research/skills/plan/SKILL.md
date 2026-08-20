@@ -1,7 +1,7 @@
 ---
 name: plan
-description: "Interactive wizard that scans the codebase, proposes a metric/guard/agent config, and writes a program.md run spec. Also runs cProfile on a file path to surface bottlenecks before prompting for optimization goal."
-argument-hint: "<goal> | <file.py> [out.md] [--team]"
+description: Interactive wizard that scans the codebase, proposes a metric/guard/agent config, and writes a program.md run spec. Also runs cProfile on a file path to surface bottlenecks before prompting for optimization goal.
+argument-hint: <goal> | <file.py> [out.md] [--team]
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -26,6 +26,7 @@ NOT for: running experiments (use `/research:run`); methodology validation (use 
 **bin/ scripts this skill depends on** (deployed inside `${CLAUDE_PLUGIN_ROOT}/bin/`): `resolve_shared.py`, `make_run_dir.py`. Each call below followed by explicit empty-result guard — silent failure surfaces as fail-fast error, never empty-string path.
 
 **Agent resolution**: load and follow the protocol below. Contains: foundry check + fallback table. Foundry not installed → substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:solution-architect`, `foundry:perf-optimizer`, `research:scientist`.
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
@@ -43,6 +44,7 @@ Triggered by `plan <goal|file>`. Wizard configures run.
 **Task tracking**: create tasks for P-P0, P-P1, P-P2, P-P2b, P-P3 at start; add P-P4 only if `--team` detected in arguments.
 
 **Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--team`.
+
 ```bash
 # loads: unsupported-flag-protocol.md
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -178,9 +180,9 @@ When gate fires, before constructing the Agent() call, substitute the actual com
 
 > **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
 
-```text
+````text
 Agent(subagent_type="foundry:solution-architect", prompt="Review a proposed research experiment scope.\n\nGoal: <goal>\nScope files (newline-separated paths in a markdown code block):\n```\n<scope_files — one path per line>\n```\nMetric command: <metric_cmd>\n\nCheck: (1) Do scope_files cover the components relevant to the goal? List architectural dependencies outside scope that the ideation agent would need to touch. (2) Are there shared abstractions (base classes, imports, shared state) outside scope required for changes within it?\n\nWrite your full review to `<PLAN_RUN_DIR>/plan-review-architect.md` using the Write tool.\nReturn ONLY: {\"ok\":true|false,\"gaps\":[\"...\"],\"suggestions\":[\"...\"],\"file\":\"<PLAN_RUN_DIR>/plan-review-architect.md\",\"confidence\":0.N}")
-```
+````
 
 **If `agent_strategy = ml` or goal contains ML keywords (accuracy, loss, model, training, inference, classification, regression)** — also spawn research:scientist. Substitute computed `$PLAN_RUN_DIR` before spawning:
 
@@ -206,13 +208,13 @@ Advisory review:
 **Pre-check output path** before presenting advisor results: resolve output path (second argument after `<goal>` if provided, else `program.md` at project root). Check if file exists: `test -f <output_path> && echo "EXISTS"`. Record result as `OUTPUT_EXISTS`.
 
 Any agent returns `ok: false` → surface suggestions, then invoke `AskUserQuestion` combining advisor feedback and (if `OUTPUT_EXISTS`) overwrite decision in one call:
+
 - question: "Advisor flagged issues (listed above). How to proceed?"
 - (a) **Revise config** → re-present P-P2 config block (re-enter P-P2; max 3 re-entries before forcing proceed-or-abort)
 - (b) **Proceed with current config** — if `OUTPUT_EXISTS`: warn "will overwrite `<output_path>`"; if not: proceed silently
 - (c) **Abort** — stop
 
-All advisors return `ok: true` AND `OUTPUT_EXISTS`: invoke `AskUserQuestion` — (a) Overwrite `<output_path>` — proceed; (b) Abort — stop.
-All advisors return `ok: true` AND NOT `OUTPUT_EXISTS`: proceed directly to writing — no AskUserQuestion needed.
+All advisors return `ok: true` AND `OUTPUT_EXISTS`: invoke `AskUserQuestion` — (a) Overwrite `<output_path>` — proceed; (b) Abort — stop. All advisors return `ok: true` AND NOT `OUTPUT_EXISTS`: proceed directly to writing — no AskUserQuestion needed.
 
 ### Step P-P3: Write program.md
 

@@ -1,7 +1,6 @@
 # Native Skill Contract
 
-Codex-native skills are portable local workflows. Runnable contract: shared result schema plus the selected package
-layout recorded in `package-manifest.json`.
+Codex-native skills are portable local workflows. Runnable contract: shared result schema plus the selected package layout recorded in `package-manifest.json`.
 
 ## Required Sections
 
@@ -65,9 +64,7 @@ Apply this fixed policy to every same or plausibly shared obstacle, including on
 - Occurrence 3 stops all attempts. Ask the human for next steps and include attempted actions, current hypotheses/evidence, and the shared obstacle across differing symptoms.
 - Reset the count only when evidence falsifies the shared cause or a material external-state change occurs. Record the reset and its evidence.
 
-Only recurrence-lifecycle owners link this policy directly: the `implement`, `code-remediate`, and `investigate`
-skills plus the `delegation-lead` role. Other skills use their own linear or bounded iteration contracts, and leaf
-specialists leave recurrence counting to their caller. They must not duplicate this link.
+Only recurrence-lifecycle owners link this policy directly: the `implement`, `code-remediate`, and `investigate` skills plus the `delegation-lead` role. Other skills use their own linear or bounded iteration contracts, and leaf specialists leave recurrence counting to their caller. They must not duplicate this link.
 
 ## Reasoning-Progress Escalation
 
