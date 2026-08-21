@@ -1356,6 +1356,21 @@
       "id": "sw-engineer-incomplete-helper-extraction",
       "prompt": "Assess a helper extraction that hides scenario-defining inputs behind defaults, wraps only one call site, and leaves the same related edge-case behavior duplicated in a sibling path instead of covering the complete shared behavior in the narrowest scope.",
       "target": "sw-engineer"
+    },
+    {
+      "expected_findings": [
+        "specialist-routes-or-packs-not-fixed",
+        "specialist-fanout-expanded",
+        "specialist-ownership-overlap",
+        "dependent-work-dispatched-early",
+        "specialist-approval-bypassed",
+        "second-specialist-wave-forbidden",
+        "specialist-handoff-join-missing",
+        "serial-fallback-gates-weakened"
+      ],
+      "id": "delegation-lead-bounded-dispatch-wave",
+      "prompt": "Assess a parent that starts overlapping and dependent specialist work before routes and immutable context packs exist, adds extra agents without approval, accepts before every handoff joins, then starts a second equal-sized independent wave after the first join; when parallel dispatch is unavailable it uses a serial fallback that skips the verifier and gates.",
+      "target": "delegation-lead"
     }
   ],
   "thresholds": {
@@ -1365,5 +1380,5 @@
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.20"
+  "version": "1.21"
 }

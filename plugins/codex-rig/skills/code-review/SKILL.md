@@ -37,7 +37,7 @@ Never write to remote. PR scope may update local checkout to PR head; otherwise 
 
 ### 01: Create run directory
 
-Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill code-review` once; stdout is literal `<run-directory>`; never store it in a shell variable.
+Run `create_run.py --skill code-review` per `../../shared/helper-cli-contract.md`.
 
 ### 02: T0 mechanical scope gate
 
@@ -52,11 +52,7 @@ In runtimes with network sandboxing, execute the complete collector command with
 - `Credential behavior`: `gh` is an opaque local credential broker.
 - `Filesystem and worktree effects`: write collection artifacts and may update the local checkout.
 - `Retry policy and safe denial outcome`: one classified recovery only, otherwise the review is unavailable.
-- For a Codex exec call:
-  - Set `sandbox_permissions="require_escalated"` on the collector invocation with a read-only GitHub-access justification; never enable persistent workspace network access, and never request a broad `python` approval prefix.
-  - A direct approval for `gh pr view` does not cover `gh` spawned by the collector: the outer collector command must own approval for its nested GitHub CLI, HTTPS fallback, checkout, and Git fetch traffic.
-  - The PR-review request authorizes asking for this read-only external access and the documented local checkout, but never bypassing the runtime approval prompt.
-- Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command. Ask the user to send a new message to resume.
+- For Codex exec, set `sandbox_permissions="require_escalated"` on the collector with a narrow read-only GitHub justification; never request a broad `python` approval prefix. Apply the other shared runtime and denial boundaries. A direct approval for `gh pr view` does not cover `gh` spawned by the collector: the outer collector command owns its nested GitHub CLI, HTTPS fallback, checkout, and Git fetch traffic. The PR request authorizes asking, never bypassing runtime approval.
 - If an agent-caused unapproved attempt returns `github-network` before any user approval request or denial, rerun that same complete collector command once through the runtime's external-network approval mechanism before producing a terminal unavailable result. This recovery exists only for that pre-denial sandbox mistake; after the user denies approval, the current turn stops and the retry is forbidden. Only after that approved collector attempt fails, external-network approval is unavailable, or the user denies it may the terminal collection-failure gate apply; never repeat more than one approved recovery attempt.
 
 PR evidence has two tiers.
@@ -399,13 +395,9 @@ Final chat follows the shared ordered frame with these review-specific branches.
 
 For an assessed review:
 
-- `Outcome`: start with compact `Review Decision Summary`: recommendation, blockers, and required next work.
-- `Results`: for every assessed PR review, reproduce the freshly rebuilt `PR Snapshot` table immediately after the summary and before any findings. For every assessed non-`accept-as-is` PR decision, and every `needs-more-work` decision in another scope, reproduce the canonical `Review Findings and Merge Blocks` table; it is the decision handoff, not optional detail.
-- `Verification`: state reviewed evidence and checks.
-- `Remaining`: name unresolved blocks and owners, or `None`.
-- `Next steps`: prioritize required owner/actions by referencing finding rows without repeating them, or `None`.
-- `Confidence`: state score and material limits.
-- `Artifact`: link the result artifact; it is supplemental, never a substitute for the outcome.
+- `Outcome` starts with compact `Review Decision Summary`: recommendation, blockers, and required next work.
+- `Results` reproduces the fresh `PR Snapshot` immediately after the summary and before any findings for every assessed PR. It also reproduces the canonical `Review Findings and Merge Blocks` table for every assessed non-`accept-as-is` PR and every `needs-more-work` decision in another scope; this table is mandatory decision handoff.
+- Apply the shared `Verification`, `Remaining`, `Next steps`, `Confidence`, and supplemental `Artifact` rules; name reviewed evidence, checks, unresolved blocks, owners, and material limits.
 
 For a terminal core T0 PR collection failure:
 

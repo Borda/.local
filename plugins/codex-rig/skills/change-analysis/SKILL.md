@@ -24,7 +24,7 @@ Codex provides this selected `SKILL.md` path. Resolve `PLUGIN_ROOT` as the direc
 
 ### 01: Create run directory
 
-Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill change-analysis` once; stdout is literal `<run-directory>`; never store it in a shell variable.
+Run `create_run.py --skill change-analysis` per `../../shared/helper-cli-contract.md`.
 
 ### 02: Normalize the analysis mode
 
@@ -33,7 +33,7 @@ Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create
 - `report`: `.reports/**` or `.reports/codex/**` artifact.
 - `ecosystem`: downstream/API/dependency impact; current external claims need live web evidence. Do not invoke `gh` outside `github_read.py`.
 
-For every `github_read.py` or `collect_pr.py` execution, apply the networked CLI approval contract in `../../shared/native-skill-contract.md`: run the complete owning command with external network approval from its first attempt. Before requesting it, state: `Action and purpose`: collect current GitHub analysis evidence; `External capability`: read-only GitHub network access; `Credential behavior`: `gh`, when used, is an opaque local credential broker; `Filesystem and worktree effects`: write evidence only to the analysis run directory, except a selected PR collector may create its documented local checkout; `Retry policy and safe denial outcome`: do not repeat an equivalent request in this turn, and use only already-available local or pasted evidence when the selected mode permits it. In a Codex exec call, set `sandbox_permissions="require_escalated"` with a narrow read-only GitHub justification; never enable persistent workspace network access or approve only the nested `gh` executable. Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command. Ask the user to send a new message to resume. Runtime web tools used for ecosystem evidence keep their own permission path and do not receive shell escalation.
+For every `github_read.py` or `collect_pr.py` execution, apply the full networked CLI approval and denial contract in `../../shared/native-skill-contract.md` to the complete owning command from its first attempt. The operation-specific brief is: `Action and purpose`: collect current GitHub analysis evidence; `External capability`: read-only GitHub network access; `Credential behavior`: `gh`, when used, is an opaque local credential broker; `Filesystem and worktree effects`: write evidence only to the analysis run directory, except a selected PR collector may create its documented local checkout; `Retry policy and safe denial outcome`: stop the turn on denial and use only already-available local or pasted evidence when the selected mode permits it. Runtime web tools keep their own permission path and receive no shell escalation.
 
 Unsupported/ambiguous mode => fail with usage note, unless pasted evidence supports `local`.
 
@@ -143,20 +143,6 @@ Use `../../shared/quality-gates.md`.
 
 ### Final chat
 
-Final chat follows this order:
-
-1. `Outcome`: analysis conclusion and recommended decision.
-
-2. `Results`: one row per ranked finding in a Markdown table with exactly `Finding | Impact | Decision | Evidence | Next action`.
-
-3. `Verification`: examined sources, checks, and exact results.
-
-4. `Remaining`: open assumptions, unavailable evidence, and next check.
-
-5. `Next steps`: prioritized recommended work or evidence check with owner; reference result rows without repeating them, or `None`.
-
-6. `Confidence`: score, evidence basis, and material limits.
-
-7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+Final chat follows the shared ordered frame. `Outcome` states the analysis conclusion and recommended decision. `Results` has one ranked finding per row and exactly `Finding | Impact | Decision | Evidence | Next action`. Apply the shared `Verification`, `Remaining`, `Next steps`, `Confidence`, and supplemental `Artifact` rules; remaining analysis limits include open assumptions, unavailable evidence, and the next check.
 
 Minimum artifact payload template: `result-template.json`.

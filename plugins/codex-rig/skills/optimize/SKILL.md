@@ -29,7 +29,7 @@ Metric-driven optimization with explicit guards, rollback criteria, experiment l
 
 ### 01: Create run directory
 
-Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill optimize` once; stdout is literal `<run-directory>`; never store it in a shell variable.
+Run `create_run.py --skill optimize` per `../../shared/helper-cli-contract.md`.
 
 ### 02: Validate metric and guard commands
 
@@ -159,20 +159,6 @@ Use `../../shared/quality-gates.md`.
 
 ### Final chat
 
-Final chat follows this order:
-
-1. `Outcome`: kept, reverted, inconclusive, or failed decision.
-
-2. `Results`: one row per material iteration or campaign in a Markdown table with exactly `Iteration | Baseline | After | Delta | Guard | Decision`.
-
-3. `Verification`: measurement method, guard checks, and exact results.
-
-4. `Remaining`: uncertainty, deferred experiments, and next action.
-
-5. `Next steps`: prioritized next experiment, rollback, or owner action; reference result rows without repeating them, or `None`.
-
-6. `Confidence`: score, noise limits, and evidence basis.
-
-7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+Final chat follows the shared frame with `Next steps`. `Outcome`: `kept|reverted|inconclusive|failed`. `Results`: exactly `Iteration | Baseline | After | Delta | Guard | Decision`, one row/material iteration or campaign. Include method, guards, uncertainty, deferred experiments, noise limits.
 
 Minimum artifact payload template: `result-template.json`.

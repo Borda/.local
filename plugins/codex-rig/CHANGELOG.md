@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.0
+
+- Centralize generic final-chat and network-approval mechanics in their existing shared contracts while every skill retains its outcome vocabulary, exact result schema, terminal branches, five operation-specific approval values, and recovery exceptions.
+- Dispatch approved independent specialist workstreams in one wave only after routes and immutable narrow context packs are fixed; join every handoff before parent acceptance, preserve serial fallback with equal gates, and forbid a second wave, added fan-out, overlapping ownership, approval bypass, or premature dependent work.
+- Add regression and behavioral-calibration coverage for the bounded specialist wave and shared network-contract ownership, retain review/remediation scope and exact-plan approval boundaries, and document the whole-plugin efficiency contract.
+
 ## 0.10.1
 
 - Restructure dense README policy, sync, PR workflow, and verification passages into labeled lists, a comparison table, and explicit safety blockquotes while preserving commands, caveats, and remote-mutation boundaries.

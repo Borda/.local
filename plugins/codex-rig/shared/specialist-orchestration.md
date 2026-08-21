@@ -26,6 +26,10 @@ Stay single-agent when:
 - Context/wait/consolidation cost exceeds quality gain.
 - State change needs serial safety more than speed.
 
+## Bounded Dispatch Wave
+
+Each parent work item gets one approved dispatch wave after routes/immutable packs. Parent overlaps only unowned work; joins all handoffs before acceptance. A second wave is forbidden: handle discoveries parent-serially or stop and re-plan with the user. Never add fan-out, overlap ownership, bypass approval, or start dependencies; unsafe/unavailable parallelism records equal-gate serial fallback.
+
 ## Delegation Lead And Model Routing
 
 Use `delegation-lead` for 2+ separable workstreams when delegation beats context/consolidation cost. Request nested specialists only when the active runtime proves the required depth; otherwise keep delegation at the parent. The lead returns one consolidated handover, never final ownership.

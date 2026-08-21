@@ -31,14 +31,10 @@ After successful install, update, or removal, tell the user to start a fresh Cod
 
 ## Output Contract
 
-Final chat follows the ordered frame from `../../shared/quality-gates.md`, proportionate to this one-action lifecycle tool:
+Final chat follows the ordered frame from `../../shared/quality-gates.md`:
 
-1. `Outcome`: selected action, `Healthy|Degraded|Blocked|Removed|Rejected`, manager exit code, and whether any file changed.
-2. `Results`: render one row per action in a Markdown table with exactly `Action | Outcome | Verification | Remaining limit`; for `doctor` and `status`, include every non-pass check once.
-3. `Verification`: manager path, action, exit-code meaning, exact-digest or read-only evidence, and changed-file state.
-4. `Remaining`: drift, blocked prerequisite, untrusted state, or `None`.
-5. `Next steps`: the narrow safe recovery already defined above, or `None`; never recommend destructive recursive permission or deletion commands.
-6. `Confidence`: numeric score plus material evidence limits; never infer custom-profile selection from a matching task name or child path.
-7. `Artifact`: link manager JSON when retained; otherwise state `None — this lifecycle helper created no durable result artifact`. Raw JSON alone never substitutes for the outcome.
+- `Outcome` includes the action, `Healthy|Degraded|Blocked|Removed|Rejected`, exit code, and whether files changed.
+- `Results` has one action per row and exactly `Action | Outcome | Verification | Remaining limit`; `doctor` and `status` include every non-pass check once.
+- Apply shared `Verification`, `Remaining`, `Next steps`, and `Confidence`, retaining exact-digest/read-only evidence, safe recovery only, and no inferred custom-profile selection. `Artifact` links retained manager JSON or states `None — this lifecycle helper created no durable result artifact`. Raw JSON alone never substitutes for the outcome.
 
 Keep usage rejection and exit codes `2|3|4|5|6|7` explicit. Do not present a blocked install, cancelled remove, drift/conflict, untrusted state, or recovery failure as success.

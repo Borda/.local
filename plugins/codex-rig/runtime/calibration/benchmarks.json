@@ -249,7 +249,7 @@
       "Final chat follows",
       "Next steps",
       "Item \\| Severity / impact \\| Decision \\| Evidence \\| Next action",
-      "supplemental, never a substitute for the outcome",
+      "shared frame",
       "helper-cli-contract.md"
     ],
     "calibrate": [
@@ -274,7 +274,7 @@
       "Final chat follows",
       "Next steps",
       "Check / metric \\| Result \\| Evidence \\| Next action",
-      "supplemental, never a substitute for the outcome",
+      "shared ordered frame",
       "helper-cli-contract.md"
     ],
     "change-analysis": [
@@ -289,7 +289,7 @@
       "Final chat follows",
       "Next steps",
       "Finding \\| Impact \\| Decision \\| Evidence \\| Next action",
-      "supplemental, never a substitute for the outcome",
+      "shared ordered frame",
       "helper-cli-contract.md"
     ],
     "code-remediate": [
@@ -449,7 +449,7 @@
       "Final chat follows",
       "Next steps",
       "Item \\| Severity \\| Finding \\| Sources \\| Outcome \\| Evidence / next action",
-      "supplemental, never a substitute for the outcome table",
+      "shared ordered frame",
       "helper-cli-contract.md"
     ],
     "code-review": [
@@ -545,7 +545,7 @@
       "Final chat follows",
       "Next steps",
       "Review Decision Summary",
-      "supplemental, never a substitute for the outcome",
+      "shared ordered frame",
       "helper-cli-contract.md"
     ],
     "implement": [
@@ -577,7 +577,7 @@
       "Final chat follows",
       "Next steps",
       "Surface \\| Outcome \\| Verification \\| Remaining limit",
-      "supplemental, never a substitute for the outcome",
+      "ordered frame",
       "helper-cli-contract.md"
     ],
     "investigate": [
@@ -595,7 +595,7 @@
       "Final chat follows",
       "Next steps",
       "Hypothesis \\| Evidence \\| Disposition \\| Next action",
-      "supplemental, never a substitute for the outcome",
+      "shared frame",
       "helper-cli-contract.md"
     ],
     "kaggle": [
@@ -606,7 +606,7 @@
       "Final chat follows",
       "Next steps",
       "Artifact \\| Mode \\| Verification \\| Runtime limit",
-      "supplemental, never a substitute for the outcome",
+      "shared ordered frame",
       "helper-cli-contract.md"
     ],
     "manage": [
@@ -631,7 +631,7 @@
       "Final chat follows",
       "Next steps",
       "Surface \\| Outcome \\| Verification \\| Remaining limit",
-      "supplemental, never a substitute for the outcome",
+      "shared ordered frame",
       "helper-cli-contract.md"
     ],
     "optimize": [
@@ -647,7 +647,7 @@
       "Final chat follows",
       "Next steps",
       "Iteration \\| Baseline \\| After \\| Delta \\| Guard \\| Decision",
-      "supplemental, never a substitute for the outcome",
+      "shared frame",
       "helper-cli-contract.md"
     ],
     "release": [
@@ -661,7 +661,7 @@
       "Final chat follows",
       "Next steps",
       "Change \\| SemVer impact \\| Status / blocker \\| Evidence",
-      "supplemental, never a substitute for the outcome",
+      "shared ordered frame",
       "helper-cli-contract.md"
     ],
     "research": [
@@ -674,7 +674,7 @@
       "Final chat follows",
       "Next steps",
       "Recommendation \\| Evidence \\| Decision \\| Caveat / next check",
-      "supplemental, never a substitute for the outcome",
+      "shared frame",
       "helper-cli-contract.md"
     ],
     "sync": [
@@ -694,7 +694,7 @@
       "Final chat follows",
       "Next steps",
       "Surface \\| Outcome \\| Verification \\| Remaining limit",
-      "supplemental, never a substitute for the outcome",
+      "shared ordered frame",
       "helper-cli-contract.md"
     ]
   }

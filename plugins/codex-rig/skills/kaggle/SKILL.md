@@ -40,7 +40,7 @@ Create `.reports/codex/kaggle/<timestamp>/` and keep the active plan current. Re
 
 Prefer the authenticated `kaggle` CLI over the competition page for anything the CLI can read. Competition pages are login-walled and often return partial content; the CLI reads real file names, sizes, and the actual sample submission.
 
-Apply the networked CLI approval contract in `../../shared/native-skill-contract.md` to every `kaggle` invocation, including probes, help, listings, and downloads: execute the complete owning command with external network approval from its first attempt. Before requesting it, state: `Action and purpose`: read competition metadata or download the selected Kaggle data; `External capability`: Kaggle network read or download; `Credential behavior`: use configured Kaggle CLI credentials without reading, creating, or authenticating them; `Filesystem and worktree effects`: write the evidence profile and, after validation, selected data under `.experiments/kaggle/`; `Retry policy and safe denial outcome`: do not repeat an equivalent request in this turn, and use page or user-supplied evidence only when the requested mode permits degraded grounding. In a Codex exec call, set `sandbox_permissions="require_escalated"` with a narrow Kaggle-read/download justification; never enable persistent workspace network access or approve only a nested executable. The user's Kaggle task authorizes requesting the runtime permission, not bypassing its prompt. Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command. Ask the user to send a new message to resume. Kaggle CLI installation and authentication are user-owned prerequisites; never run an installer or authentication setup from this workflow.
+Apply the full networked CLI approval and denial contract in `../../shared/native-skill-contract.md` to the complete owning command for every `kaggle` invocation, including probes, help, listings, and downloads. The operation-specific brief is: `Action and purpose`: read competition metadata or download selected Kaggle data; `External capability`: Kaggle network read or download; `Credential behavior`: use configured Kaggle CLI credentials without reading, creating, or authenticating them; `Filesystem and worktree effects`: write the evidence profile and, after validation, selected data under `.experiments/kaggle/`; `Retry policy and safe denial outcome`: stop the turn on denial and use page or user-supplied evidence only when the requested mode permits degraded grounding. The task authorizes requesting runtime permission, not bypassing it. Kaggle CLI installation and authentication remain user-owned; never install or authenticate from this workflow.
 
 **CLI probe.** `command -v kaggle`, then `kaggle competitions list -p 1` — succeeds only with valid credentials, and needs no rules acceptance, so it separates an auth failure from a rules failure. Record the resulting state in `profile.md` as `ready`, `unauthorized`, or `absent`. Absence is never fatal: fall back to the page and user-supplied facts, and record the degraded grounding as a residual limit.
 
@@ -172,18 +172,4 @@ Review calibration when this workflow changes grounding, mode routing, model sel
 
 Write the notebook under `.experiments/kaggle/` and the canonical run result under `.reports/codex/kaggle/<timestamp>/result.json`. Use the common fields and confidence metadata from `../../shared/quality-gates.md`; `result-template.json` is the minimum payload shape.
 
-Final chat follows this order:
-
-1. `Outcome`: pass, fail, partial, or blocked; state whether the requested notebook was produced and grounded.
-
-2. `Results`: render one row per produced or resumed notebook in a Markdown table with exactly `Artifact | Mode | Verification | Runtime limit`.
-
-3. `Verification`: report grounding, structural, conversion, smoke, and review checks with exact results; label unavailable checks.
-
-4. `Remaining`: list unresolved placeholders, grounding gaps, runtime limits, owner, and next action.
-
-5. `Next steps`: prioritized grounding, runtime, or submission action with owner; reference result rows without repeating them, or `None`.
-
-6. `Confidence`: score, evidence basis, and material residual limits.
-
-7. `Artifact`: give the validated `result.json` path. It is supplemental, never a substitute for the outcome.
+Final chat follows the shared ordered frame. `Outcome` is `pass`, `fail`, `partial`, or `blocked` and states whether the notebook was produced and grounded. `Results` has one produced or resumed notebook per row and exactly `Artifact | Mode | Verification | Runtime limit`. Apply the shared `Verification`, `Remaining`, `Next steps`, `Confidence`, and supplemental `Artifact` rules; include grounding, structural, conversion, smoke, and review checks plus every placeholder, grounding gap, and runtime limit.

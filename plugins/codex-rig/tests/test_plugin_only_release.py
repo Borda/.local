@@ -914,6 +914,34 @@ def test_specialist_fallback_ladder_and_evidence_are_complete() -> None:
     assert "Persistent named shims are platform-blocked for routing" in policy
 
 
+def test_specialist_wave_joins_before_acceptance_without_expanding_fanout() -> None:
+    """Keep parallel scheduling bounded by fixed packs, ownership, and final join."""
+    policy = normalized_text(PLUGIN_ROOT / "shared" / "specialist-orchestration.md")
+
+    assert "## Bounded Dispatch Wave" in policy
+    assert "one approved dispatch wave" in policy
+    assert "immutable packs" in policy
+    assert "joins all handoffs before acceptance" in policy
+    assert "A second wave is forbidden" in policy
+    assert "parent-serially or stop and re-plan with the user" in policy
+    assert "Never add fan-out, overlap ownership, bypass approval, or start dependencies" in policy
+    assert "equal-gate serial fallback" in policy
+
+    cases = load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
+    case = next(item for item in cases if item["id"] == "delegation-lead-bounded-dispatch-wave")
+    assert case["target"] == "delegation-lead"
+    assert case["expected_findings"] == [
+        "specialist-routes-or-packs-not-fixed",
+        "specialist-fanout-expanded",
+        "specialist-ownership-overlap",
+        "dependent-work-dispatched-early",
+        "specialist-approval-bypassed",
+        "second-specialist-wave-forbidden",
+        "specialist-handoff-join-missing",
+        "serial-fallback-gates-weakened",
+    ]
+
+
 def test_public_payload_has_no_private_release_references() -> None:
     """Prevent internal planning identifiers and personal paths from entering the release."""
     forbidden_references = ("plugin-" + "package.json",)

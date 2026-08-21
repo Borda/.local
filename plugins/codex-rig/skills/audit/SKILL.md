@@ -25,7 +25,7 @@ Run linear configuration/workflow audit.
 
 ### 01: Create run directory
 
-Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill audit` once; stdout is literal `<run-directory>`; never store it in a shell variable.
+Run `create_run.py --skill audit` per `../../shared/helper-cli-contract.md`.
 
 ### 02: Normalize scope and collect inventory
 
@@ -163,21 +163,7 @@ Use `../../shared/quality-gates.md`.
 
 ### Final chat
 
-Final chat follows this order:
-
-1. `Outcome`: accepted, rejected, or insufficient-evidence decision.
-
-2. `Results`: one row per material audit item in a Markdown table with exactly `Item | Severity / impact | Decision | Evidence | Next action`.
-
-3. `Verification`: completed gates and exact results.
-
-4. `Remaining`: unresolved limits, owner, and closure action.
-
-5. `Next steps`: prioritized accepted recommendations with owner/action; reference result rows without repeating them, or `None`.
-
-6. `Confidence`: score, evidence basis, and material limits.
-
-7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+Final chat follows the shared frame with `Next steps`. `Outcome`: `accepted|rejected|insufficient-evidence`. `Results`: exactly `Item | Severity / impact | Decision | Evidence | Next action`, one row/material item. `Remaining`: owner and closure action.
 
 `AUDIT_METADATA.value_per_token` records schema version, status (`not-run|insufficient-evidence|rejected|accepted`), scope roots, baseline/candidate hashes, static measurements, conditional-load trace, obligation-map path, static gates, behavioral/live comparisons, decision, and residual limits.
 

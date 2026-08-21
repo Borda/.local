@@ -24,7 +24,7 @@ Source-backed research for documentation, API migration, paper, or state-of-the-
 
 ### 01: Create run directory
 
-Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill research` once; stdout is literal `<run-directory>`; never store it in a shell variable.
+Run `create_run.py --skill research` per `../../shared/helper-cli-contract.md`.
 
 ### 02: Define research question, mode, and constraints
 
@@ -130,20 +130,6 @@ Use `../../shared/quality-gates.md`.
 
 ### Final chat
 
-Final chat follows this order:
-
-1. `Outcome`: recommended decision and its support level.
-
-2. `Results`: one row per material recommendation in a Markdown table with exactly `Recommendation | Evidence | Decision | Caveat / next check`.
-
-3. `Verification`: sources, freshness checks, and completed gates.
-
-4. `Remaining`: evidence gaps, caveats, and next verification action.
-
-5. `Next steps`: prioritized adoption or validation action with owner; reference result rows without repeating them, or `None`.
-
-6. `Confidence`: score, evidence basis, and material limits.
-
-7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+Final chat follows the shared frame with `Next steps`. `Outcome`: recommendation/support level. `Results`: exactly `Recommendation | Evidence | Decision | Caveat / next check`, one row/recommendation. Include source freshness and each gap/caveat's next check.
 
 Minimum artifact payload template: `result-template.json`.

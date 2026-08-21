@@ -24,7 +24,7 @@ Diagnosis-first loop for unclear failures: failing tests, tracebacks, regression
 
 ### 01: Create run directory
 
-Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill investigate` once; stdout is literal `<run-directory>`; never store it in a shell variable.
+Run `create_run.py --skill investigate` per `../../shared/helper-cli-contract.md`.
 
 ### 02: Capture symptom and reproduction context
 
@@ -149,20 +149,6 @@ Use `../../shared/quality-gates.md`.
 
 ### Final chat
 
-Final chat follows this order:
-
-1. `Outcome`: root-cause status and remediation readiness.
-
-2. `Results`: one row per tested hypothesis in a Markdown table with exactly `Hypothesis | Evidence | Disposition | Next action`.
-
-3. `Verification`: probes, falsification checks, and exact results.
-
-4. `Remaining`: unresolved hypotheses, blocked evidence, and owner.
-
-5. `Next steps`: prioritized probe, fix handoff, or owner action; reference result rows without repeating them, or `None`.
-
-6. `Confidence`: score, supporting evidence, and material limits.
-
-7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+Final chat follows the shared frame with `Next steps`. `Outcome`: root-cause status/remediation readiness. `Results`: exactly `Hypothesis | Evidence | Disposition | Next action`, one row/hypothesis. Include probes/falsifiers; unresolved hypotheses or blocked evidence name owner.
 
 Minimum artifact payload template: `result-template.json`.

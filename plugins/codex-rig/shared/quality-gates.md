@@ -61,6 +61,8 @@ Every final chat is a compact, outcome-coupled handoff in this order:
 
 Keep headings and tables proportional to the result. A single decision may use one short result row or compact field list; branch-heavy results use separate bullets or tables instead of one long paragraph. Preserve skill-specific terminal-close or unavailable-output exceptions when their contracts prohibit normal tables or recommendations.
 
+Skill contracts retain local outcomes, exact results, domain content, and terminal exceptions; other fields inherit.
+
 ## Native contract
 
 Skill files should follow `native-skill-contract.md`. Configured skills require:

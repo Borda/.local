@@ -54,7 +54,7 @@ Show the installed state, marketplace source, configured ref or default-branch t
 
 After approval, use only commands confirmed by authoritative help:
 
-Apply the networked CLI approval contract in `../../shared/native-skill-contract.md` to each Git marketplace add/upgrade command or to the complete `sync_codex.py` wrapper that owns one: execute that complete owning command with external network approval from its first attempt. Before requesting it, state: `Action and purpose`: refresh the approved marketplace and reconcile the selected Codex Rig plugin; `External capability`: marketplace download and lifecycle refresh; `Credential behavior`: use configured Codex marketplace access without reading or changing credentials; `Filesystem and worktree effects`: change the local plugin cache and Codex-home plugin state, never the source worktree; `Retry policy and safe denial outcome`: do not repeat an equivalent lifecycle request in this turn, and leave the existing checked state without mutation. In a Codex exec call, set `sandbox_permissions="require_escalated"` with a narrow approved-marketplace lifecycle justification; never enable persistent workspace network access or request a broad `codex` prefix. This runtime permission is separate from the explicit lifecycle approval above and never expands the allowed marketplace, plugin, ref, or mutation scope. Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command. Ask the user to send a new message to resume. Local marketplace/plugin listing remains sandboxed because it reads configured state without intentionally refreshing remote data. `codex plugin add` installs from the configured marketplace snapshot and receives no separate network escalation; when the complete sync wrapper runs it, the wrapper is already approved because it also owns marketplace add/upgrade.
+Apply the full networked CLI approval and denial contract in `../../shared/native-skill-contract.md` to the complete owning command for each Git marketplace add/upgrade or `sync_codex.py` wrapper that owns one. The operation-specific brief is: `Action and purpose`: refresh the approved marketplace and reconcile the selected Codex Rig plugin; `External capability`: marketplace download and lifecycle refresh; `Credential behavior`: use configured Codex marketplace access without reading or changing credentials; `Filesystem and worktree effects`: change the local plugin cache and Codex-home plugin state, never the source worktree; `Retry policy and safe denial outcome`: stop the turn on denial and leave the checked state unchanged. Runtime approval is separate from lifecycle approval and never expands marketplace, plugin, ref, or mutation scope; never request a broad `codex` approval prefix. Local marketplace/plugin listing remains sandboxed. `codex plugin add` from the configured snapshot needs no separate network escalation; an approved wrapper already owns its nested marketplace add/upgrade.
 
 ```bash
 codex plugin marketplace add Borda/AI-Rig
@@ -97,18 +97,4 @@ Networked CLI owning-command approval is required calibration coverage for Git m
 
 ## Output Contract
 
-Use `../../shared/quality-gates.md` and `result-template.json`. Final chat follows this order:
-
-1. `Outcome`: pass, fail, partial, or blocked; state whether the requested check or approved refresh completed.
-
-2. `Results`: render one row per inspected or refreshed surface in a Markdown table with exactly `Surface | Outcome | Verification | Remaining limit`.
-
-3. `Verification`: report state, version/package hash, commands run, package validation, and verified changes with exact results.
-
-4. `Remaining`: list unresolved lifecycle limits, external-agent residue, owner, and next action.
-
-5. `Next steps`: prioritized approval, refresh, or human action with owner; reference result rows without repeating them, or `None`.
-
-6. `Confidence`: score, evidence basis, and material residual limits.
-
-7. `Artifact`: give the validated `result.json` path. It is supplemental, never a substitute for the outcome.
+Use `../../shared/quality-gates.md` and `result-template.json`. Final chat follows the shared ordered frame. `Outcome` is `pass`, `fail`, `partial`, or `blocked` and states whether the requested check or approved refresh completed. `Results` has one inspected or refreshed surface per row and exactly `Surface | Outcome | Verification | Remaining limit`. Apply the shared `Verification`, `Remaining`, `Next steps`, `Confidence`, and supplemental `Artifact` rules; include state/version/package hashes, commands, package validation, verified changes, lifecycle limits, and external-agent residue.

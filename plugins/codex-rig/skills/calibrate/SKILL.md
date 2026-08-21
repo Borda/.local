@@ -93,7 +93,7 @@ Role checks:
 - Behavioral metrics measure supplied observations only. `fixture-selftest` validates scoring; live Codex quality requires replacing/appending live-prompt observations.
 - Missing route coverage is `insufficient-evidence`, never acceptance; `require_live_routes=true` exits nonzero.
 - Compare thresholds with `gate_metrics_raw`, not rounded display.
-- Paid paired campaigns: `../../runtime/calibration/run_live_ab.py`; plans by default, executes only `--confirm-paid-run=chatgpt-subscription`, verified local ChatGPT subscription login, no API key env, no `CI`/`GITHUB_ACTIONS`. An executing paid campaign applies the networked CLI approval contract in `../../shared/native-skill-contract.md`: run the complete owning command with external network approval because it spawns `codex exec`. Before requesting it, state: `Action and purpose`: run the confirmed paid paired calibration; `External capability`: paid ChatGPT subscription execution through `codex exec`; `Credential behavior`: use the verified local ChatGPT subscription login without reading API keys or credentials; `Filesystem and worktree effects`: write calibration artifacts only to the selected run directory; `Retry policy and safe denial outcome`: do not repeat a paid request in this turn, and retain sandboxed planning or offline scoring only. In a Codex exec call set `sandbox_permissions="require_escalated"` with a narrow paid-calibration justification, and never enable persistent workspace network access or approve only the nested `codex` executable. Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command. Ask the user to send a new message to resume. Planning and offline scoring remain sandboxed.
+- Paid paired campaigns: `../../runtime/calibration/run_live_ab.py`; plans by default, executes only `--confirm-paid-run=chatgpt-subscription`, verified local ChatGPT subscription login, no API key env, no `CI`/`GITHUB_ACTIONS`. An executing campaign applies the full networked CLI approval and denial contract in `../../shared/native-skill-contract.md` to the complete owning command because it spawns `codex exec`. The operation-specific brief is: `Action and purpose`: run the confirmed paid paired calibration; `External capability`: paid ChatGPT subscription execution through `codex exec`; `Credential behavior`: use the verified local ChatGPT subscription login without reading API keys or credentials; `Filesystem and worktree effects`: write calibration artifacts only to the selected run directory; `Retry policy and safe denial outcome`: stop the turn on denial and retain sandboxed planning or offline scoring only. Planning and offline scoring remain sandboxed.
 - Each live task names a canonical role. Plugin layout prepends the exact packaged role card to both prompts; source layout preserves project-instruction plus source-agent prompt construction. Tool pairs can accept a candidate passing an executable gate when the successfully invoked baseline fails; infrastructure timeout is never a candidate win.
 - Sol critical-only unless paired quality exceeds Terra configured minimum; tie retains Terra.
 - Do not claim currency savings from `normalized-token-v1`; need dated authoritative model-specific price.
@@ -145,20 +145,6 @@ Use `../../shared/quality-gates.md`.
 
 ### Final chat
 
-Final chat follows this order:
-
-1. `Outcome`: pass, fail, or insufficient-evidence decision.
-
-2. `Results`: one row per measured check or metric in a Markdown table with exactly `Check / metric | Result | Evidence | Next action`.
-
-3. `Verification`: runner mode, coverage, and completed gates.
-
-4. `Remaining`: failed, skipped, or deferred checks and closure action.
-
-5. `Next steps`: prioritized recovery or evidence action with owner; reference result rows without repeating them, or `None`.
-
-6. `Confidence`: score, calibration limits, and recovery evidence.
-
-7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+Final chat follows the shared ordered frame. `Outcome` is `pass`, `fail`, or `insufficient-evidence`. `Results` has one measured check or metric per row and exactly `Check / metric | Result | Evidence | Next action`. Apply the shared `Verification`, `Remaining`, `Next steps`, `Confidence`, and supplemental `Artifact` rules; include runner mode/coverage, every failed/skipped/deferred check, and calibration recovery evidence.
 
 Minimum artifact payload template: `result-template.json`.

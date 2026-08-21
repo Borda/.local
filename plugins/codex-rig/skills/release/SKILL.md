@@ -22,7 +22,7 @@ SemVer-aware release readiness/communication. Prepares release evidence/docs; ne
 
 ### 01: Create run directory
 
-Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill release` once; stdout is literal `<run-directory>`; never store it in a shell variable.
+Run `create_run.py --skill release` per `../../shared/helper-cli-contract.md`.
 
 ### 02: Determine mode, range, and target version
 
@@ -37,7 +37,7 @@ Unknown mode/ambiguous range => fail before release docs.
 
 Use the supplied `range`; when absent, run `git describe --tags --abbrev=0` as argv and form `<printed-tag>..HEAD`. Retain that literal release range in workflow state, run `git log --oneline <release-range>` as argv, and write stdout to `<run-directory>/commits.txt`. Record range or log collection failure instead of treating empty output as success.
 
-When current GitHub release metadata is required, use `python PLUGIN_ROOT/shared/github_read.py --out <run-directory>/github-release.json -- gh release view <tag-or-url> --json <fields>`. It prefers `gh`; a public `api.github.com` fallback is allowed only for public REST resources and cannot supply private release evidence. Never invoke `gh` directly. Apply the networked CLI approval contract in `../../shared/native-skill-contract.md`: run this complete owning command with external network approval from its first attempt. Before requesting it, state: `Action and purpose`: collect current release metadata for the selected tag or URL; `External capability`: read-only GitHub network access, with public HTTPS fallback only when eligible; `Credential behavior`: `gh` is an opaque local credential broker and no credential output is retained; `Filesystem and worktree effects`: write `github-release.json` to the release run directory without changing the worktree; `Retry policy and safe denial outcome`: do not repeat an equivalent request in this turn, and record current release metadata as unavailable evidence. In a Codex exec call set `sandbox_permissions="require_escalated"` with a narrow read-only GitHub justification, and never enable persistent workspace network access or approve only the nested `gh` executable. Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command. Ask the user to send a new message to resume.
+When current GitHub release metadata is required, use `python PLUGIN_ROOT/shared/github_read.py --out <run-directory>/github-release.json -- gh release view <tag-or-url> --json <fields>`. It prefers `gh`; public HTTPS fallback is only for public REST resources and cannot supply private evidence. Never invoke `gh` directly. Apply the full networked CLI approval and denial contract in `../../shared/native-skill-contract.md` to this complete owning command. The operation-specific brief is: `Action and purpose`: collect current release metadata for the selected tag or URL; `External capability`: read-only GitHub network access, with public HTTPS fallback only when eligible; `Credential behavior`: `gh` is an opaque local credential broker and no credential output is retained; `Filesystem and worktree effects`: write `github-release.json` without changing the worktree; `Retry policy and safe denial outcome`: stop the turn on denial and record current release metadata as unavailable evidence.
 
 Inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect `commit` scope for the retained release range into `<run-directory>/range`. Collection failure is evidence gap, not empty release.
 
@@ -117,20 +117,6 @@ Use `../../shared/quality-gates.md`.
 
 ### Final chat
 
-Final chat follows this order:
-
-1. `Outcome`: release-ready, blocked, or warning-only decision.
-
-2. `Results`: one row per material change or blocker in a Markdown table with exactly `Change | SemVer impact | Status / blocker | Evidence`.
-
-3. `Verification`: release gates, checked artifacts, and exact results.
-
-4. `Remaining`: release blockers or warnings, owner, and closure action.
-
-5. `Next steps`: prioritized blocker closure or human release action with owner; reference result rows without repeating them, or `None`.
-
-6. `Confidence`: score, evidence basis, and material limits.
-
-7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+Final chat follows the shared ordered frame. `Outcome` is `release-ready`, `blocked`, or `warning-only`. `Results` has one material change or blocker per row and exactly `Change | SemVer impact | Status / blocker | Evidence`. Apply the shared `Verification`, `Remaining`, `Next steps`, `Confidence`, and supplemental `Artifact` rules; include release gates and every blocker/warning with owner and closure action.
 
 Minimum artifact payload template: `result-template.json`.

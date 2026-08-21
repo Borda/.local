@@ -27,7 +27,7 @@ Run linear code remediation to close findings.
 
 ### 01: Create Run Directory
 
-Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill code-remediate` once; stdout is literal `<run-directory>`; never store it in a shell variable.
+Run `create_run.py --skill code-remediate` per `../../shared/helper-cli-contract.md`.
 
 ### 02: Normalize input and copy findings
 
@@ -55,11 +55,7 @@ In runtimes with network sandboxing, execute the complete collector command with
 - `Credential behavior`: `gh` is an opaque local credential broker.
 - `Filesystem and worktree effects`: write collection artifacts and may update the local checkout.
 - `Retry policy and safe denial outcome`: one classified recovery only, otherwise remediation uses its core collection-failure path.
-- For a Codex exec call:
-  - Set `sandbox_permissions="require_escalated"` on the collector invocation with a read-only GitHub-access justification; never enable persistent workspace network access, and never request a broad `python` approval prefix.
-  - A direct approval for `gh pr view` does not cover `gh` spawned by the collector: the outer collector command must own approval for its nested GitHub CLI, HTTPS fallback, checkout, and Git fetch traffic.
-  - The PR-remediation request authorizes asking for this read-only external access and the documented local checkout, but never bypassing the runtime approval prompt.
-- Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command. Ask the user to send a new message to resume.
+- For Codex exec, set `sandbox_permissions="require_escalated"` on the collector with a narrow read-only GitHub justification; never request a broad `python` approval prefix. Apply the other shared runtime and denial boundaries. A direct approval for `gh pr view` does not cover `gh` spawned by the collector: the outer collector command owns its nested GitHub CLI, HTTPS fallback, checkout, and Git fetch traffic. The PR request authorizes asking, never bypassing runtime approval.
 - If an agent-caused unapproved attempt returns `github-network` before any user approval request or denial, rerun that same complete collector command once through the runtime's external-network approval mechanism before treating collection as terminal. This recovery exists only for that pre-denial sandbox mistake; after the user denies approval, the current turn stops and the retry is forbidden. Only after that approved collector attempt fails, external-network approval is unavailable, or the user denies it may remediation apply its core collection-failure path; never repeat more than one approved recovery attempt.
 
 `github_read.py` is the plugin-wide GitHub data boundary: do not invoke `gh` outside it.
@@ -542,34 +538,21 @@ Update calibration when resolution policy/output shape changes:
 
 Use `../../shared/quality-gates.md`.
 
-Apply shared confidence band policy from `../../shared/quality-gates.md` for score, recovery, confidence-gap closure output.
+Apply the shared confidence band policy.
 
-Keep the complete, unabridged resolution ledger in `<run-directory>/action-items.md`: every ingested item, validated columns/counts/status vocabulary, resolved evidence, scope selection, workplan, PR relevance, unresolved classes, and confidence recovery.
+Keep the complete, unabridged resolution ledger in `<run-directory>/action-items.md`: every ingested item, validated column/count/status vocabulary, resolved evidence, scope selection, workplan, PR relevance, unresolved class, and confidence recovery.
 
 Record source coverage with exact counters `source_records_total`, `represented_source_records_total`, `omitted_source_records_total`, and `grouped_items_total`; reconcile them against the item source records and require zero omissions.
 
-The pre-edit scope context is deliberately unabridged. Print the full `<run-directory>/resolution-scope.md` to the terminal and emit the same content plus the `Full report` path in a user-visible assistant message before the selection control, as required in the Terminal Scope Context Contract. Keep every interaction on one rendering channel: context messages contain evidence only, each control exclusively owns its question and choices, and a plain-text fallback replaces rather than accompanies a control.
+The pre-edit scope context and one-channel interaction behavior remain exactly as required by the Terminal Scope Context Contract; this output contract does not abridge or replace them.
 
 Final chat follows the shared ordered frame:
 
 - `Outcome`: start `Remediation Summary` with requested scope; ingested/selected/implemented/unresolved/deferred totals; whether all selected local actionable items closed; and gate status.
-
 - `Results`: render `## Final Outcome Table` from `CODE_REMEDIATE_METADATA.final_resolution_table.items`, with one row for every ingested item, including non-selectable, rejected, resolved, and unselected rows. Preserve item and source order. Use exactly `Item | Severity | Finding | Sources | Outcome | Evidence / next action`. The `Sources` cell renders every source using the same unabridged `report|online`, stable ID, location, complete body, and evidence-path format as the durable table; grouped rows must show all contributing sources.
-
-- `Verification`: report exact gate results and skips. For `mode=pr`, add merge-prestage evidence and remaining collision risk.
-
-- `Remaining`: list every unresolved/deferred item with owner and next action, or `None`.
-
-- `Next steps`: prioritize owner/actions for unresolved or deferred rows by reference instead of repeating them, or `None`.
-
-- `Confidence`: state score and material limits.
-
-- `Artifact`: link the result artifact and full ledger; they are supplemental, never a substitute for the outcome table.
-
+- Apply the shared `Verification`, `Remaining`, `Next steps`, `Confidence`, and supplemental `Artifact` rules. List every unresolved/deferred item with owner/action; link the result and full ledger; for `mode=pr`, add merge-prestage evidence and remaining collision risk.
 - `Item`: combine the selection index, when present, with the stable input item ID or source location.
-
 - `Outcome`: use `Implemented — <exact change>`, `Rejected — <duplicate, stale, not-applicable, or user-confirmed out-of-scope rationale>`, `Skipped / unselected — <user selection and remaining owner/action>`, `Already closed — <existing closure evidence>`, or `Unresolved — <blocker and next owner/action>`.
-
 - Do not collapse rows sharing an outcome. Group exact duplicate sources only under the source-preservation contract above. Say `resolved all` only when `selected_items_unresolved=0`.
 
 Minimum artifact payload template: `result-template.json`.

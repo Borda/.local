@@ -44,19 +44,14 @@ def test_networked_cli_skills_require_complete_owning_command_approval(
 
     assert network_marker in skill
     assert "complete owning command" in skill or "complete collector command" in skill
-    approval_paragraphs = [
-        paragraph for paragraph in skill.split("\n\n") if '`sandbox_permissions="require_escalated"`' in paragraph
-    ]
+    assert "native-skill-contract.md" in skill
+    approval_paragraphs = [paragraph for paragraph in skill.split("\n\n") if "Action and purpose" in paragraph]
 
     assert len(approval_paragraphs) == 1
     approval_paragraph = approval_paragraphs[0]
-    assert "never enable persistent workspace network access" in approval_paragraph
     for field in APPROVAL_BRIEF_FIELDS:
         assert field in approval_paragraph
-    assert "Denial aborts the active tool call and may end the assistant turn" in approval_paragraph
-    assert "Do not issue an equivalent approval request in the current turn" in approval_paragraph
-    assert "Do not switch to a broader command" in approval_paragraph
-    assert "Ask the user to send a new message to resume" in approval_paragraph
+    assert "denial" in approval_paragraph.lower()
 
 
 def test_shared_contract_covers_known_networked_cli_families() -> None:
@@ -108,10 +103,7 @@ def test_pr_collector_owning_boundary_explains_approval_brief_and_denial_recover
     assert "outer collector command" in approval_boundary
     for field in APPROVAL_BRIEF_FIELDS:
         assert field in approval_boundary
-    assert "Denial aborts the active tool call and may end the assistant turn" in approval_boundary
-    assert "Do not issue an equivalent approval request in the current turn" in approval_boundary
-    assert "Do not switch to a broader command" in approval_boundary
-    assert "Ask the user to send a new message to resume" in approval_boundary
+    assert "Apply the other shared runtime and denial boundaries" in approval_boundary
     assert "before any user approval request or denial" in approval_boundary
     assert "after the user denies approval" in approval_boundary
     assert "retry is forbidden" in approval_boundary
@@ -171,3 +163,10 @@ def test_calibration_covers_approval_brief_and_denial_turn_recovery() -> None:
         "broader-command-after-denial",
         "denial-outcome-misreported",
     ]
+
+
+def test_sync_rejects_broad_codex_approval_prefix() -> None:
+    """Keep marketplace lifecycle approval narrower than the whole Codex CLI."""
+    sync_skill = (PLUGIN_ROOT / "skills" / "sync" / "SKILL.md").read_text(encoding="utf-8")
+
+    assert "never request a broad `codex` approval prefix" in sync_skill

@@ -26,7 +26,7 @@ Run linear implementation with strict gates.
 
 ### 01: Create run directory
 
-Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill implement` once; stdout is literal `<run-directory>`; never store it in a shell variable.
+Run `create_run.py --skill implement` per `../../shared/helper-cli-contract.md`.
 
 ### 02: Record baseline diff and branch
 
@@ -183,20 +183,6 @@ Update calibration when implementation routing or output expectations change:
 
 ## Output Contract
 
-Use `../../shared/quality-gates.md`. Final chat follows this order, with the outcome before the artifact reference:
-
-1. `Outcome`: pass, fail, partial, or blocked; state whether `done_when` was met.
-
-2. `Results`: when multiple surfaces changed, render a Markdown table with exactly `Surface | Outcome | Verification | Remaining limit`.
-
-3. `Verification`: name every executed gate and exact result; name every skipped gate and reason.
-
-4. `Remaining`: list unresolved, deferred, or failed items with owner and next action.
-
-5. `Next steps`: prioritized owner/action for remaining work or the next safe continuation; reference result rows without repeating them, or `None`.
-
-6. `Confidence`: score, band, recovery actions, material gaps/degradation reasons, and closure status from `metadata.confidence_gaps` and `metadata.confidence_gap_closures`.
-
-7. `Artifact`: give the validated `result.json` path. It is supplemental, never a substitute for the outcome.
+Use `../../shared/quality-gates.md`. Final chat follows its ordered frame. `Outcome` is `pass`, `fail`, `partial`, or `blocked` and states whether `done_when` was met. When multiple surfaces changed, `Results` uses exactly `Surface | Outcome | Verification | Remaining limit`. Apply the shared `Verification`, `Remaining`, `Next steps`, and supplemental `Artifact` rules. `Confidence` also includes band, recovery actions, material gaps/degradation reasons, and closure status from `metadata.confidence_gaps` and `metadata.confidence_gap_closures`.
 
 Minimum artifact payload template: `result-template.json`.

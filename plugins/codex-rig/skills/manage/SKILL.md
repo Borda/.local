@@ -24,7 +24,7 @@ The installed plugin tree is immutable input. Resolve requested targets against 
 
 ### 01: Create run directory
 
-Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill manage` once; stdout is literal `<run-directory>`; never store it in a shell variable.
+Run `create_run.py --skill manage` per `../../shared/helper-cli-contract.md`.
 
 ### 02: Parse intent and target
 
@@ -132,20 +132,6 @@ Use `../../shared/quality-gates.md`.
 
 ### Final chat
 
-Final chat follows this order:
-
-1. `Outcome`: completed, rejected, or blocked management action.
-
-2. `Results`: one row per changed or evaluated surface in a Markdown table with exactly `Surface | Outcome | Verification | Remaining limit`.
-
-3. `Verification`: ownership, policy, and executable checks with results.
-
-4. `Remaining`: unresolved limits, required human action, and owner.
-
-5. `Next steps`: prioritized human or follow-up action with owner; reference result rows without repeating them, or `None`.
-
-6. `Confidence`: score, evidence basis, and material limits.
-
-7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+Final chat follows the shared ordered frame. `Outcome` is a completed, rejected, or blocked management action. `Results` has one changed or evaluated surface per row and exactly `Surface | Outcome | Verification | Remaining limit`. Apply the shared `Verification`, `Remaining`, `Next steps`, `Confidence`, and supplemental `Artifact` rules; include ownership/policy checks and every required human action with owner.
 
 Minimum artifact payload template: `result-template.json`.
