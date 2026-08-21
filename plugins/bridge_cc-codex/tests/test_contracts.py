@@ -15,6 +15,7 @@ SCHEMAS_ROOT = PLUGIN_ROOT / "schemas"
 CORE_SCHEMA_PATH = SCHEMAS_ROOT / "envelope.schema.json"
 HARNESS_SCHEMA_PATH = SCHEMAS_ROOT / "harness-envelope.schema.json"
 MCP_SCHEMA_PATH = SCHEMAS_ROOT / "mcp-tools.schema.json"
+SETUP_SCHEMA_PATH = SCHEMAS_ROOT / "setup-result.schema.json"
 MCP_CONFIG_PATH = PLUGIN_ROOT / ".mcp.json"
 
 CORE_FIELDS = {"status", "verdict", "findings", "files_touched", "remaining", "blockers"}
@@ -73,15 +74,18 @@ CODEX_SKILL_CONTRACTS = {
         "never inline peer `details`",
     ),
     "setup": (
-        "MCP inventory",
-        "`python --version` >= 3.10",
-        '`python "${PLUGIN_ROOT}/bin/bridge_diagnose.py" --direction claude`',
-        "command help and retained health records",
-        "provider authentication",
-        "structured-output schema compatibility",
-        "paid authenticated inference",
-        "explicit user request",
-        "Never repair authentication or edit CLI configuration",
+        "action=all target=peer scope=auto live=prompt",
+        "bridge_setup.py",
+        '`--approve "<approval_digest>"`',
+        "action-bound, expires, and is consumed",
+        "`--action authenticate`",
+        "`--action verify-live`",
+        "provider-owned interactive login",
+        "Never accept, request, pipe, echo, inspect, or store",
+        "bridge_status",
+        "paid provider call",
+        "To prepare both integrations",
+        "Never equate static readiness",
     ),
 }
 
@@ -134,12 +138,18 @@ CLAUDE_SKILL_CONTRACTS = {
         "Return JSON status unchanged",
     ),
     "setup": (
-        "bridge_diagnose.py",
+        "bridge_setup.py",
         "Python 3.10",
-        "`--live` only on explicit user request",
-        "paid inference",
-        "point-in-time evidence",
-        "Never repair authentication or modify CLI configuration",
+        "action=all target=peer scope=auto live=prompt",
+        '`--approve "<approval_digest>"`',
+        "action-bound, expires, and is consumed",
+        "`--action authenticate`",
+        "`--action verify-live`",
+        "provider-owned interactive login",
+        "Never accept, request, pipe, echo, inspect, or store",
+        "paid provider call",
+        "To prepare both integrations",
+        "Never equate static readiness",
     ),
 }
 
@@ -160,6 +170,7 @@ def _assert_value_matches_contract(schema: Mapping[str, object], value: object) 
         assert isinstance(allowed_types, list)
         type_matches = {
             "array": isinstance(value, list),
+            "boolean": isinstance(value, bool),
             "integer": isinstance(value, int) and not isinstance(value, bool),
             "null": value is None,
             "number": isinstance(value, (int, float)) and not isinstance(value, bool),
@@ -231,6 +242,7 @@ def test_claude_skills_retain_the_runtime_safety_contract() -> None:
         "schemas/envelope.schema.json",
         "schemas/harness-envelope.schema.json",
         "schemas/mcp-tools.schema.json",
+        "schemas/setup-result.schema.json",
     ),
 )
 def test_contract_artifacts_exist(relative_path: str) -> None:
@@ -361,16 +373,66 @@ def test_harness_schema_adds_observed_metadata_and_terminal_statuses() -> None:
         )
 
 
+def test_setup_result_schema_cannot_impersonate_a_model_or_provider_result() -> None:
+    """Keep setup lifecycle evidence separate from inference, transcript, token, cost, and verb claims."""
+    schema = _read_json(SETUP_SCHEMA_PATH)
+    properties = schema["properties"]
+    forbidden = {"model", "effort", "cost", "tokens", "transcript_path", "incident", "verb", "findings"}
+
+    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert schema["additionalProperties"] is False
+    assert forbidden.isdisjoint(properties)
+    assert properties["status"]["enum"] == ["ready", "partial", "blocked", "manual", "unsupported", "denied", "failed"]
+    assert properties["authentication"]["enum"] == [
+        "not-checked",
+        "auth-flow-launched",
+        "host-authenticated",
+        "inference-unverified",
+        "live-verified",
+    ]
+    assert properties["provider_call"] == {"type": "boolean"}
+
+    _assert_value_matches_contract(
+        schema,
+        {
+            "status": "partial",
+            "current_host": "codex",
+            "target": "claude",
+            "direction": "codex_to_claude",
+            "requested": {"action": "all", "target": "peer", "scope": "auto", "live": "prompt"},
+            "canonical_workspace": "/workspace",
+            "workspace_fingerprint": "a" * 64,
+            "resolved_scope": "user",
+            "approval_digest": "approval",
+            "state_fingerprint": "b" * 64,
+            "operations": [],
+            "classification": "static-ready",
+            "authentication": "host-authenticated",
+            "verification_level": "host-authenticated",
+            "state_changed": False,
+            "provider_call": False,
+            "ready_to_use": False,
+            "remaining": ["session-workspace-verification", "live-verification"],
+            "manual_next_action": "Verify the loaded session and workspace.",
+            "confidence": "high",
+            "limits": ["No provider call made."],
+        },
+    )
+
+
 def test_mcp_input_contract_rejects_unknown_or_incomplete_request_fields() -> None:
     """Prevent an MCP tool from receiving a request the bridge cannot safely route."""
     schema = _read_json(MCP_SCHEMA_PATH)
     definitions = schema["$defs"]
-    assert set(definitions) == {"bridge_implement", "bridge_advise", "bridge_review"}
+    assert set(definitions) == {"bridge_implement", "bridge_advise", "bridge_review", "bridge_status"}
     request = definitions["bridge_advise"]
     assert isinstance(request, Mapping)
     assert request["additionalProperties"] is False
     assert set(request["required"]) == {"task"}
-    for definition in definitions.values():
+    for name, definition in definitions.items():
+        if name == "bridge_status":
+            assert definition == {"additionalProperties": False, "properties": {}, "type": "object"}
+            continue
         assert "workspace" not in definition["properties"]
         assert "background" not in definition["properties"]
         assert "session_id" not in definition["properties"]
@@ -411,7 +473,8 @@ def test_reverse_timeout_limit_leaves_a_response_margin_before_the_mcp_deadline(
     config = _read_json(MCP_CONFIG_PATH)
     definitions = schema["$defs"]
     timeout_limits = {
-        name: definition["properties"]["timeout_seconds"]["maximum"] for name, definition in definitions.items()
+        name: definitions[name]["properties"]["timeout_seconds"]["maximum"]
+        for name in ("bridge_implement", "bridge_advise", "bridge_review")
     }
     maximum_attempts = {"bridge_implement": 1, "bridge_advise": 2, "bridge_review": 2}
 

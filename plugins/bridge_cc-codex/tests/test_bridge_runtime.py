@@ -217,7 +217,7 @@ def test_mcp_containment_rejection_returns_a_generic_error_without_provider_disp
     assert responses[0]["error"] == {"code": -32603, "message": "bridge execution failed"}
     assert str(outside) not in responses[0]["error"]["message"]
     assert not (outside / "bridge").exists()
-    assert set(tool["name"] for tool in responses[1]["result"]["tools"]) == set(bridge_mcp.TOOL_NAMES)
+    assert set(tool["name"] for tool in responses[1]["result"]["tools"]) == set(bridge_mcp.EXPECTED_TOOL_INVENTORY)
 
 
 @pytest.mark.parametrize("timeout", ("nan", "inf", "-inf"), ids=("nan", "positive-infinity", "negative-infinity"))
@@ -968,11 +968,74 @@ def test_diagnostics_detect_missing_help_flag_without_live_request(
     assert "--output-schema" in result["findings"][0]["missing"]
 
 
+def test_static_diagnosis_binds_itself_to_one_complete_installed_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prevent sync from accepting a doctor detached from its manifests, setup core, or schemas."""
+    baseline = bridge_diagnose._load_baseline()
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        target = "codex" if command[0] == "codex" else "claude"
+        return subprocess.CompletedProcess(command, 0, stdout=" ".join(baseline[target]["required"]), stderr="")
+
+    monkeypatch.setattr(bridge_diagnose.subprocess, "run", fake_run)
+    result = bridge_diagnose.diagnose("claude", tmp_path, live=False)
+    expected_version = json.loads(
+        (Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+    )["version"]
+
+    assert result["ok"] is True
+    assert result["payload"]["name"] == "bridge"
+    assert result["payload"]["version"] == expected_version
+    assert result["payload"]["complete"] is True
+    assert len(result["payload"]["fingerprint"]) == 64
+
+
+def test_incomplete_payload_is_reported_structurally_before_the_baseline_loads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prevent a truncated install from dying on the baseline read instead of naming missing payload files.
+
+    An install missing rules/cli-baseline.json is exactly the incomplete-payload
+    case the payload block diagnoses; loading the baseline first turned it into a
+    bare error object with no missing list, and no help probe should run at all.
+    """
+    monkeypatch.setattr(
+        bridge_diagnose,
+        "_regular_payload_file",
+        lambda path: path.name != "cli-baseline.json",
+    )
+    monkeypatch.setattr(
+        bridge_diagnose,
+        "_load_baseline",
+        lambda: pytest.fail("baseline must not load while the payload is incomplete"),
+    )
+    monkeypatch.setattr(
+        bridge_diagnose.subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("no help probe may run for an incomplete payload"),
+    )
+
+    result = bridge_diagnose.diagnose("claude", tmp_path, live=False)
+
+    assert result["ok"] is False
+    assert result["findings"] == []
+    assert result["payload"]["complete"] is False
+    assert result["payload"]["missing"] == ["rules/cli-baseline.json"]
+
+
 def test_diagnostics_report_a_malformed_baseline_without_a_traceback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Prevent a corrupted shipped baseline from crashing setup instead of reporting a finding."""
     with monkeypatch.context() as patched:
+        # The payload gate runs before the baseline loads, so it must pass here
+        # for the corrupted baseline content to be the failure under test.
+        patched.setattr(
+            bridge_diagnose,
+            "_installed_payload_identity",
+            lambda: {"name": "bridge", "version": "0.0.0", "complete": True, "fingerprint": "0" * 64, "missing": []},
+        )
         patched.setattr(
             bridge_diagnose.json,
             "loads",
@@ -1099,7 +1162,7 @@ def test_mcp_handshake_tools_call_and_recursion_guard_preserve_run_id(
     tools = bridge_mcp.handle_message({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     assert initialized["result"]["capabilities"] == {"tools": {}}
     listed = {item["name"]: item for item in tools["result"]["tools"]}
-    assert set(listed) == {"bridge_implement", "bridge_advise", "bridge_review"}
+    assert set(listed) == {"bridge_implement", "bridge_advise", "bridge_review", "bridge_status"}
     assert "background" not in listed["bridge_implement"]["inputSchema"]["properties"]
     assert "workspace" not in listed["bridge_advise"]["inputSchema"]["properties"]
 
@@ -1436,7 +1499,7 @@ def test_mcp_stdio_returns_one_response_per_request_without_peer_cli(tmp_path: P
     responses = [json.loads(line) for line in result.stdout.splitlines()]
     assert result.returncode == 0
     assert [response["id"] for response in responses] == [1, 2]
-    assert set(item["name"] for item in responses[1]["result"]["tools"]) == set(bridge_mcp.TOOL_NAMES)
+    assert set(item["name"] for item in responses[1]["result"]["tools"]) == set(bridge_mcp.EXPECTED_TOOL_INVENTORY)
 
 
 def test_mcp_stdio_malformed_tool_name_returns_invalid_params_and_keeps_serving(tmp_path: Path) -> None:
@@ -1461,7 +1524,7 @@ def test_mcp_stdio_malformed_tool_name_returns_invalid_params_and_keeps_serving(
     assert result.returncode == 0
     assert [response["id"] for response in responses] == [1, 2]
     assert responses[0]["error"]["code"] == -32602
-    assert set(tool["name"] for tool in responses[1]["result"]["tools"]) == set(bridge_mcp.TOOL_NAMES)
+    assert set(tool["name"] for tool in responses[1]["result"]["tools"]) == set(bridge_mcp.EXPECTED_TOOL_INVENTORY)
 
 
 def test_mcp_stdio_raw_nonfinite_timeout_returns_invalid_params_without_a_provider(tmp_path: Path) -> None:
@@ -1488,7 +1551,7 @@ def test_mcp_stdio_raw_nonfinite_timeout_returns_invalid_params_without_a_provid
     assert result.returncode == 0
     assert [response["id"] for response in responses] == [1, 2]
     assert responses[0]["error"]["code"] == -32602
-    assert set(tool["name"] for tool in responses[1]["result"]["tools"]) == set(bridge_mcp.TOOL_NAMES)
+    assert set(tool["name"] for tool in responses[1]["result"]["tools"]) == set(bridge_mcp.EXPECTED_TOOL_INVENTORY)
 
 
 def test_cli_invalid_input_has_one_json_error_and_nonzero_exit(tmp_path: Path) -> None:

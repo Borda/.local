@@ -23,12 +23,12 @@
     {
       "mode": "0644",
       "path": ".codex-plugin/plugin.json",
-      "sha256": "b6a5afaa7edcd968702d0f90078c4fb7862435f10875af06ccb05625cac5801a"
+      "sha256": "4669ece44f021ee9d4530510a1f74a989235269ba37f09174abcae5f00b79953"
     },
     {
       "mode": "0644",
       "path": "CHANGELOG.md",
-      "sha256": "4d6e9aaf3ec271bfec0d8a4394502252d9fe90623b5e1355a908056398c8741b"
+      "sha256": "0495298ae140f75cebad793337dc95993d3e747e4bbfad2aeccd5351f60243b0"
     },
     {
       "mode": "0644",
@@ -43,7 +43,7 @@
     {
       "mode": "0644",
       "path": "README.md",
-      "sha256": "1ff6aa6a41be0b747a7b2e945c9a8bb44cbd19802f033238ccb73ef6eedc9d18"
+      "sha256": "85dd707b86ec0f20103b9e3170792343d20e376e21bb3fd0e29c8202d3c022e5"
     },
     {
       "mode": "0644",
@@ -608,7 +608,7 @@
     {
       "mode": "0644",
       "path": "tests/_platform.py",
-      "sha256": "e2fe222769a153a3b327991abfb487134c8dc5829093c3e300d29ff3919b80f4"
+      "sha256": "724f599db04c5b7b3df80543ebe593385f9fc2473e7d2a2fa96354c7d0ff7d58"
     },
     {
       "mode": "0644",
@@ -813,7 +813,7 @@
     {
       "mode": "0644",
       "path": "tests/test_sync_setup_dispatch.py",
-      "sha256": "d399f6c0be6f70ab2de90274ae2ad17b252561a42cb2dc3a43de1829ebddf0ba"
+      "sha256": "4352ec426f47c69971834703028d5673e2ba9c1c479249beab528efdaa21281c"
     }
   ],
   "generator": {
@@ -1049,5 +1049,5 @@
       "path": "skills/sync/SKILL.md"
     }
   ],
-  "version": "0.9.1"
+  "version": "0.9.2"
 }

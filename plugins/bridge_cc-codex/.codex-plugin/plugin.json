@@ -3,27 +3,29 @@
     "name": "Jiri Borovec",
     "url": "https://github.com/Borda/AI-Rig"
   },
-  "description": "bridge_CC-Codex provides bidirectional Claude Code and Codex implementation, advice, and review with explicit models, budgets, compact results, and recursion safety.",
+  "description": "bridge_CC-Codex provides bidirectional Claude Code and Codex implementation, advice, review, and approval-bound setup with explicit models, budgets, compact results, no-capture authentication, and recursion safety.",
   "homepage": "https://github.com/Borda/AI-Rig",
   "interface": {
     "brandColor": "#1F2937",
     "capabilities": [
       "Implement bounded work with Claude Code",
       "Request read-only advice from Claude Code",
-      "Request compact adversarial reviews from Claude Code"
+      "Request compact adversarial reviews from Claude Code",
+      "Run approval-bound Bridge setup and readiness checks"
     ],
     "category": "Productivity",
     "composerIcon": "./assets/bridge.svg",
     "defaultPrompt": [
       "Use bridge_CC-Codex to implement a bounded change with Claude Code.",
       "Use bridge_CC-Codex to request read-only advice from Claude Code.",
-      "Use bridge_CC-Codex to request an adversarial review from Claude Code."
+      "Use bridge_CC-Codex to request an adversarial review from Claude Code.",
+      "Use bridge_CC-Codex setup to configure the peer safely; authentication and live inference require separate approval."
     ],
     "developerName": "Borda",
     "displayName": "bridge_CC-Codex",
     "logo": "./assets/bridge.svg",
-    "longDescription": "Connect Codex to Claude Code through a sandbox-external MCP server for bounded implementation, advice, and review with explicit model selection, compact results, and a cross-host recursion guard.",
-    "shortDescription": "bridge_CC-Codex: two-way implementation, advice, and review",
+    "longDescription": "Connect Codex to Claude Code through a sandbox-external MCP server for bounded implementation, advice, review, and approval-bound setup with explicit model selection, compact results, no-capture provider authentication, and a cross-host recursion guard.",
+    "shortDescription": "bridge_CC-Codex: two-way work and approval-bound setup",
     "websiteURL": "https://github.com/Borda/AI-Rig"
   },
   "keywords": [
@@ -37,5 +39,5 @@
   "name": "bridge",
   "repository": "https://github.com/Borda/AI-Rig",
   "skills": "./codex-skills/",
-  "version": "0.2.1"
+  "version": "0.3.0"
 }

@@ -1,26 +1,30 @@
 # Operations and troubleshooting
 
-This document covers local setup, routine invocation, detached-job lifecycle, and the failure signals emitted by `bridge_CC-Codex`. The normalized plugin identifier is `bridge`. The bridge never repairs host authentication or CLI configuration automatically; use the host's own login and permission workflow when setup reports a prerequisite failure.
+This document covers local setup, routine invocation, detached-job lifecycle, and the failure signals emitted by `bridge_CC-Codex`. The normalized plugin identifier is `bridge`. The default setup path performs safe inspection, configuration, and one closed repair when the operator approves the exact plan; provider-owned authentication, fresh-session activation, and live inference remain separate human-approved gates.
 
 ## Prerequisites
 
 For Claude Code to Codex calls, make `codex` available on `PATH` and authenticate it for the requested model. For Codex to Claude Code calls, make `claude` available on `PATH` and authenticate it for the requested model. Both directions require a `python` executable on `PATH` that reports Python 3.10 or newer. The selected workspace must permit creation of `.temp/bridge/`.
 
-The selected workspace does not need to be a Git repository. The bridge uses Codex's supported `--skip-git-repo-check` option when needed; that option only permits execution outside Git and never chooses or widens the workspace. The caller and host remain responsible for selecting and trusting the intended directory.
+The selected workspace does not need to be a Git repository. The bridge uses Codex's supported `--skip-git-repo-check` option when needed; that option only permits execution outside Git and never chooses or widens the workspace. The caller and host remain responsible for selecting and trusting the intended directory. Setup uses the host-selected launch workspace and rejects a model-controlled override.
 
-Run a static diagnosis before a live probe. From a Claude Code session, use:
+The loaded current host must already have the Bridge plugin, trust, authentication, and fresh session needed to invoke setup. Current-host bootstrap is external and human-owned. From either host, invoke the canonical setup lifecycle:
 
-```bash
-python "${CLAUDE_PLUGIN_ROOT}/bin/bridge_diagnose.py"
+```text
+/bridge:setup action=all target=peer scope=auto live=prompt
+$bridge:setup action=all target=peer scope=auto live=prompt
 ```
 
-From a Codex session, diagnose the Claude direction with:
+Plain setup uses `action=all target=peer scope=auto live=prompt`. It first runs credential-free inspection and displays every proposed operation, exact native argv, resolved target/scope, external capability, credential behavior, filesystem and host effects, rollback evidence, retry policy, and safe denial outcome. Safe configuration or repair runs only after one expiring, one-use approval bound to the action, workspace, plan, and observed state, then re-inspects host inventory before reporting whether the configuration is visible or a fresh session is required. Authentication and live verification are separately planned actions with distinct digests; the operator runs authentication in their own terminal outside model-captured tool streams, while live verification permits one paid provider call through the setup executor. A denial, changed or expired digest, replay, failed probe, or failed operation stops without a hidden retry.
 
-```bash
-python "${PLUGIN_ROOT}/bin/bridge_diagnose.py" --direction claude
+```text
+/bridge:setup action=check target=peer scope=auto live=skip
+$bridge:setup action=check target=peer scope=auto live=skip
 ```
 
-The setup procedure first confirms that `python --version` reports Python 3.10 or newer. Its static check then inspects command availability and the required help surface against `rules/cli-baseline.json`, and summarizes existing bridge health records. It does not prove authentication, structured-output schema compatibility, or provider inference. Add `--live` only after explicitly accepting one authenticated provider call per selected direction and its possible quota cost.
+Use `action=check` for inspection only. The setup result is defined by `schemas/setup-result.schema.json` and reports the strongest evidence reached: `static`, `host-authenticated`, `session-ready`, `workspace-ready`, or `live-verified`. Static readiness, authentication, session/workspace binding, and inference are separate claims. `live=skip` remains `inference-unverified`; `live=required` is non-ready when approval or verification fails. A successful setup-CLI live probe is point-in-time evidence and remains partial until the host skill has applicable loaded-session/workspace evidence. The deterministic planner records only credential-free state and operation fingerprints; it never stores provider tokens, API keys, browser/device codes, account secrets, or raw login output. It does create one random per-user HMAC key solely to authenticate approval payloads.
+
+Ordinary `sync.sh` does not invoke setup. It calls only the direct static doctor with explicit read-only semantics, bounded timeout, and structured output. Sync does not invoke a model, pass an approval token, authenticate, configure, repair, restart a host, claim an active session/workspace, or make a provider call. A direct doctor result proves only the named machine/static probes.
 
 ## Foreground calls
 
@@ -61,7 +65,13 @@ A recorded `running` job whose supervisor process no longer exists — or a `que
 | `refused` with `recursion-depth` | The trusted call chain already contains a peer dispatch. | Start a fresh outer call rather than attempting another cross-host hop. |
 | `effort_substituted` | The requested effort was valid but unsupported by the target capability declaration. | Review the recorded requested and applied levels; repeat only with an intentional supported choice. |
 | Missing command or changed flags | A host CLI is absent or no longer matches `rules/cli-baseline.json`. | Install or upgrade the host CLI, or use a bridge version that supports it; never edit the baseline at runtime. |
+| `bootstrap-required` | The current host cannot prove the loaded Bridge skill, trust, authentication, or fresh session needed to invoke setup. | Complete the external host bootstrap and start a fresh session; setup cannot repair its own invocation surface. |
+| `configuration-needed` or `repairable` | The peer host has a supported native operation that can be applied safely. | Review the exact plan and approve its digest; do not substitute a generic CLI command. |
+| `authentication-needed` or `auth-flow-launched` | The peer provider login is separate from Bridge configuration and may require a browser or device flow. | Approve the no-capture provider flow; only a separate redacted status probe can establish `host-authenticated`. |
+| `fresh-session-required` | A host restart or newly loaded MCP/plugin surface is needed. | Restart the relevant host manually and invoke setup again; setup never terminates or restarts a host. |
+| `trust-required` | The host requires an operator trust decision before loading the plugin or MCP server. | Complete the host trust prompt outside setup, then use a fresh session. |
+| `workspace mismatch` | The canonical workspace reported by the loaded session differs from the host-selected launch workspace. | Stop and reopen the host in the intended workspace; never accept a model-selected relocation. |
 
 ## Artifact inspection
 
-The bridge stores raw transcripts at `.temp/bridge/raw-<timestamp>.txt`, detached-job records at `.temp/bridge/jobs/<job-id>.json`, durable cancellation markers at `.temp/bridge/jobs/<job-id>.cancel.json`, health records at `.temp/bridge/health.jsonl`, and sanitized fault records at `.temp/bridge/incidents/<timestamp>-<fault>.json`. The compact envelope's public fields carry decisions, blockers, and remaining work; its `transcript_path` is the authoritative pointer to transcript-only `details` and raw child output for additional evidence. Details never hide required work, and `incident` points to a compact diagnostic file when a fault is classified. Preserve incident and review evidence before applying local retention or cleanup.
+The bridge stores raw transcripts at `.temp/bridge/raw-<timestamp>.txt`, detached-job records at `.temp/bridge/jobs/<job-id>.json`, durable cancellation markers at `.temp/bridge/jobs/<job-id>.cancel.json`, health records at `.temp/bridge/health.jsonl`, and sanitized fault records at `.temp/bridge/incidents/<timestamp>-<fault>.json`. Approved setup execution uses the platform user-state root under `bridge-setup/`: one owner-only HMAC key authenticates approval payloads, per-target/scope locks prevent concurrent user-scoped mutation across workspaces, and regular non-symlink JSONL records enforce one-use approvals and recurrence. These credential-free records contain only allowlisted identities, fingerprints, timestamps, classifications, outcomes, and rollback metadata; they never contain native output, authentication output, provider credentials, or raw native argv. Planning and checks do not create state. Setup retains this state by default so replay and repeated-fault evidence survives across workspaces; a journal larger than the bounded reader limit fails closed. Cleanup is operator-owned: archive evidence first and remove the complete `bridge-setup` state only when no setup operation or unexpired approval remains, accepting that removal invalidates approvals and recurrence history. The compact envelope's public fields carry decisions, blockers, and remaining work; its `transcript_path` is the authoritative pointer to transcript-only `details` and raw child output for additional evidence. Details never hide required work, and `incident` points to a compact diagnostic file when a fault is classified. Preserve incident and review evidence before applying local retention or cleanup.

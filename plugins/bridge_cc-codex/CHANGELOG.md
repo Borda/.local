@@ -2,6 +2,18 @@
 
 All notable changes to `bridge_CC-Codex` are documented here.
 
+## 0.3.0
+
+- Make `/bridge:setup` and `$bridge:setup` truthful approval-bound lifecycle entrypoints with default `action=all target=peer scope=auto live=prompt` behavior.
+- Add credential-free setup planning, HMAC-authenticated expiring one-use action approvals, separate no-capture provider-owned authentication, approval-bound live verification, post-configuration reinspection, user-scoped mutation locks and sanitized records, bounded rollback metadata, and explicit bootstrap/fresh-session boundaries.
+- Add the zero-provider read-only `bridge_status` MCP tool for sanitized session/workspace evidence and keep setup results in a dedicated schema separate from model envelopes.
+- Keep ordinary synchronization static-only: no setup skill, model call, approval token, authentication, repair, restart, or provider call.
+- Gate host CLIs on a minimum supported version instead of an exact pin, so routine CLI self-updates no longer fail every setup action as `unsupported-version`.
+- Report the denial for an empty trailing `--approve` from the actually parsed arguments, keep `verify-live` plans empty under `live=skip`, and reject a zero-exit `Not logged in` Codex status as unauthenticated.
+- Give the approved marketplace install a network-sized timeout, expire recorded operation failures after a bounded retry window, and extend the setup-result schema to cover the sensitive-input rejection placeholders.
+- Fingerprint the complete installed payload including `.mcp.json` and the CLI baseline, report missing payload members before the baseline loads, derive the MCP-reported version from the plugin manifest, and report the status workspace in canonical POSIX form.
+- Update both host manifests and maintainer documentation for the setup contract.
+
 ## 0.2.1
 
 - Compress Claude- and Codex-side skill instructions while preserving explicit effort selection, caller-selected arguments, host-bound workspace/session authority, recursion refusal, detached-job lifecycle, compact-envelope/transcript boundaries, and paid live-probe consent.

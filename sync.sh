@@ -17,7 +17,9 @@
 #   --codex-ref REF — pin Codex Rig to one Git ref (default: latest default branch)
 #   --no-codex-global-agents — leave $CODEX_HOME/AGENTS.md unchanged; model defaults still mirror
 #
-# Setup skills shipped by installed managed plugins run headlessly at the end of Claude sync. Codex sync runs Bridge's installed static doctor directly without model inference; MCP inventory still requires a fresh project session.
+# Setup skills shipped by installed non-Bridge managed plugins run headlessly at the end of Claude sync. Bridge is
+# excluded from Claude model dispatch; Codex sync runs Bridge's installed static diagnosis directly without model
+# inference. Bridge authentication and live MCP verification remain explicit skill actions.
 
 set -e
 
@@ -261,6 +263,45 @@ for p in "${PLUGINS[@]}"; do
     ' "$INSTALLED_PLUGINS")
     if [[ -z "$install_path" ]]; then
         echo "  – ${p} not installed, skipping setup"
+        continue
+    fi
+    if [[ "$p" == "bridge" ]]; then
+        bridge_doctor="$install_path/bin/bridge_diagnose.py"
+        if [[ ! -f "$bridge_doctor" || -L "$bridge_doctor" ]]; then
+            echo "  ✗ bridge static diagnosis is incomplete or linked" >&2
+            exit 1
+        fi
+        if ! python_version=$(python3 --version 2>&1); then
+            echo "  ✗ bridge requires Python 3.10 or newer" >&2
+            exit 1
+        fi
+        if [[ ! "$python_version" =~ Python[[:space:]]+([0-9]+)\.([0-9]+) ]]; then
+            echo "  ✗ bridge requires Python 3.10 or newer" >&2
+            exit 1
+        fi
+        if (( BASH_REMATCH[1] < 3 || (BASH_REMATCH[1] == 3 && BASH_REMATCH[2] < 10) )); then
+            echo "  ✗ bridge requires Python 3.10 or newer; found $python_version" >&2
+            exit 1
+        fi
+        # A Claude-only machine legitimately has no codex CLI; probing the codex
+        # direction there would abort the whole sync before the Codex stage and
+        # the summary. Check the direction that is actually installed, and keep
+        # the hard failure for a present-but-broken host surface.
+        if command -v codex >/dev/null 2>&1; then
+            bridge_direction="codex"
+        else
+            echo "  – codex CLI not found; bridge diagnosis covers the claude direction only"
+            bridge_direction="claude"
+        fi
+        if ! bridge_diagnosis=$(python3 "$bridge_doctor" --direction "$bridge_direction"); then
+            echo "  ✗ bridge static diagnosis command failed" >&2
+            exit 1
+        fi
+        if ! jq -e '(.ok == true and .live == false and .payload.complete == true)' <<<"$bridge_diagnosis" >/dev/null; then
+            echo "  ✗ bridge static diagnosis failed" >&2
+            exit 1
+        fi
+        echo "  ✓ bridge static diagnosis passed; no provider call made"
         continue
     fi
     setup_skill=""

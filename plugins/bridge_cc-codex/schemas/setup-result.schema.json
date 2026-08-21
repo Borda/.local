@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "approval_digest": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "authentication": {
+      "enum": [
+        "not-checked",
+        "auth-flow-launched",
+        "host-authenticated",
+        "inference-unverified",
+        "live-verified"
+      ],
+      "type": "string"
+    },
+    "canonical_workspace": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "classification": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "limited"
+      ],
+      "type": "string"
+    },
+    "current_host": {
+      "enum": [
+        "codex",
+        "claude",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "direction": {
+      "enum": [
+        "codex_to_claude",
+        "claude_to_codex",
+        null
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "limits": {
+      "items": {
+        "maxLength": 500,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "manual_next_action": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "operations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "configure",
+              "repair",
+              "authenticate",
+              "verify-live"
+            ],
+            "type": "string"
+          },
+          "argv": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "credential_behavior": {
+            "enum": [
+              "none",
+              "provider-owned-interactive-no-capture",
+              "separately-approved-provider-request"
+            ],
+            "type": "string"
+          },
+          "external_capability": {
+            "enum": [
+              "configured-marketplace-snapshot",
+              "provider-authentication",
+              "paid-peer-inference"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "argv",
+          "credential_behavior",
+          "external_capability"
+        ],
+        "type": "object"
+      },
+      "maxItems": 1,
+      "type": "array"
+    },
+    "provider_call": {
+      "type": "boolean"
+    },
+    "ready_to_use": {
+      "type": "boolean"
+    },
+    "remaining": {
+      "items": {
+        "maxLength": 500,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "requested": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "all",
+            "check",
+            "configure",
+            "authenticate",
+            "repair",
+            "verify-live",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "live": {
+          "enum": [
+            "prompt",
+            "skip",
+            "required",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "auto",
+            "user",
+            "project",
+            "local",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "target": {
+          "enum": [
+            "peer",
+            "codex",
+            "claude",
+            "unknown"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "target",
+        "scope",
+        "live"
+      ],
+      "type": "object"
+    },
+    "resolved_scope": {
+      "enum": [
+        "user",
+        "project",
+        "local",
+        null
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "state_changed": {
+      "type": "boolean"
+    },
+    "state_fingerprint": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "enum": [
+        "ready",
+        "partial",
+        "blocked",
+        "manual",
+        "unsupported",
+        "denied",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "target": {
+      "enum": [
+        "peer",
+        "codex",
+        "claude",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "verification_level": {
+      "enum": [
+        "static",
+        "host-authenticated",
+        "session-ready",
+        "workspace-ready",
+        "live-verified"
+      ],
+      "type": "string"
+    },
+    "workspace_fingerprint": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "current_host",
+    "target",
+    "direction",
+    "requested",
+    "canonical_workspace",
+    "workspace_fingerprint",
+    "resolved_scope",
+    "approval_digest",
+    "state_fingerprint",
+    "operations",
+    "classification",
+    "authentication",
+    "verification_level",
+    "state_changed",
+    "provider_call",
+    "ready_to_use",
+    "remaining",
+    "manual_next_action",
+    "confidence",
+    "limits"
+  ],
+  "title": "Bridge setup result",
+  "type": "object"
+}

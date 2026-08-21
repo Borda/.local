@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
 import shutil
 import subprocess
@@ -68,3 +69,22 @@ def _find_posix_bash() -> str | None:
 
 
 POSIX_BASH = _find_posix_bash()
+
+
+def _shebang_safe_path(path: str | None) -> str | None:
+    """Return path usable on a script's ``#!`` line, which has no quoting mechanism.
+
+    The interpreter directive splits on its first whitespace, so a space in the path — as in
+    Windows' default ``C:\\Program Files\\Git\\bin\\bash.exe`` — truncates to the text before it
+    and fails with "bad interpreter". Windows also exposes every long path through a space-free
+    8.3 short name, so resolving to that name keeps the shebang usable without touching the value
+    used for direct process invocation, which needs no such escaping.
+    """
+    if path is None or os.name != "nt":
+        return path
+    buffer = ctypes.create_unicode_buffer(260)
+    length = ctypes.windll.kernel32.GetShortPathNameW(path, buffer, len(buffer))  # type: ignore[attr-defined]
+    return buffer.value if 0 < length <= len(buffer) else path
+
+
+POSIX_BASH_SHEBANG = _shebang_safe_path(POSIX_BASH)

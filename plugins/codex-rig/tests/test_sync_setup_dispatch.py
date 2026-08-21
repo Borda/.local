@@ -12,9 +12,9 @@ from the shipped script rather than from a copy kept here. Only the surroundings
 (``MARKETPLACE`` and ``INSTALLED_PLUGINS``) are supplied by the harness, both pointed at throwaway fixtures. Any edit to
 the loop's dispatch logic therefore runs in these tests instead of being paraphrased by them.
 
-Isolation: HOME, the plugin registry, every install tree, and the ``claude`` executable are all synthetic and live under
-``tmp_path``. The harness never expands ``$HOME``, so the real ``~/.claude`` registry is unreachable from the executed
-slice, and the fake ``claude`` shadows any real CLI from the front of PATH.
+Isolation: HOME, the plugin registry, every install tree, and the ``claude``, ``python3``, ``jq``, and optional ``codex``
+executables are synthetic and live under ``tmp_path``. The harness never expands ``$HOME`` or inherits executable
+discovery from the runner, so real host CLIs and the real ``~/.claude`` registry are unreachable from the executed slice.
 """
 
 from __future__ import annotations
@@ -23,12 +23,13 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
-from _platform import POSIX_BASH
+from _platform import POSIX_BASH, POSIX_BASH_SHEBANG
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +53,33 @@ case "$*" in
     *"$FAKE_CLAUDE_FAIL_ON"*) exit 7 ;;
 esac
 exit 0
+"""
+
+FAKE_PYTHON_SOURCE = """#!/usr/bin/env bash
+printf '%s\\t' "$@" >> "$FAKE_PYTHON_LOG"
+printf '\\n' >> "$FAKE_PYTHON_LOG"
+if [[ "$1" == "--version" ]]; then
+    printf 'Python %s\\n' "$FAKE_PYTHON_VERSION"
+    exit 0
+fi
+exec "$REAL_PYTHON" "$@"
+"""
+
+FAKE_JQ_SOURCE = """#!/usr/bin/env bash
+exec "$REAL_JQ" "$@"
+"""
+
+FAKE_CODEX_SOURCE = """#!/usr/bin/env bash
+exit 0
+"""
+
+FAKE_BRIDGE_DOCTOR_SOURCE = """import json
+import os
+import sys
+from pathlib import Path
+
+Path(os.environ["FAKE_BRIDGE_DIAGNOSE_LOG"]).write_text(json.dumps(sys.argv[1:]), encoding="utf-8")
+print(json.dumps({"ok": True, "live": False, "payload": {"complete": os.environ["FAKE_BRIDGE_PAYLOAD_COMPLETE"] == "true"}}))
 """
 
 Record = tuple[str, bool]
@@ -93,6 +121,8 @@ class DispatchRun:
     home: Path
     registry: Path
     path_head: str
+    doctor_invocations: tuple[str, ...] = ()
+    python_invocations: tuple[tuple[str, ...], ...] = ()
 
 
 def read_sync_lines() -> list[str]:
@@ -164,6 +194,10 @@ def build_registry(root: Path, records: dict[str, tuple[Record, ...]]) -> Path:
                 skill = install_path / setup_root / "setup" / "SKILL.md"
                 skill.parent.mkdir(parents=True, exist_ok=True)
                 skill.write_text("# setup\n", encoding="utf-8")
+                if key.startswith("bridge@"):
+                    doctor = install_path / "bin" / "bridge_diagnose.py"
+                    doctor.parent.mkdir(parents=True, exist_ok=True)
+                    doctor.write_text(FAKE_BRIDGE_DOCTOR_SOURCE, encoding="utf-8")
             rendered.append({"installPath": install_path.as_posix(), "installedAt": installed_at})
         plugins[key] = rendered
     registry = root / "installed_plugins.json"
@@ -172,7 +206,14 @@ def build_registry(root: Path, records: dict[str, tuple[Record, ...]]) -> Path:
 
 
 def run_setup_dispatch(
-    root: Path, posix_bash: str, records: dict[str, tuple[Record, ...]], *, fail_on: str = NEVER_MATCHED
+    root: Path,
+    posix_bash: str,
+    records: dict[str, tuple[Record, ...]],
+    *,
+    fail_on: str = NEVER_MATCHED,
+    python_version: str = "3.12.0",
+    doctor_complete: bool = True,
+    codex_available: bool = True,
 ) -> DispatchRun:
     """Execute the extracted dispatch loop against a fake registry, a fake HOME, and a fake claude executable.
 
@@ -181,6 +222,9 @@ def run_setup_dispatch(
         posix_bash: POSIX Bash interpreter supplied by the shared fixture.
         records: Registry contents keyed by ``<plugin>@<marketplace>``.
         fail_on: Substring of a claude invocation that makes the fake CLI exit 7; defaults to an unmatchable sentinel.
+        python_version: Version reported by the isolated Python launcher.
+        doctor_complete: Whether the isolated Bridge doctor reports a complete installed payload.
+        codex_available: Whether the isolated executable inventory contains Codex.
 
     Returns:
         The completed process together with the recorded invocations and the isolated paths involved.
@@ -189,9 +233,29 @@ def run_setup_dispatch(
     fake_bin = root / "bin"
     fake_bin.mkdir()
     fake_claude = fake_bin / "claude"
-    fake_claude.write_text(FAKE_CLAUDE_SOURCE, encoding="utf-8")
+    fake_claude.write_text(
+        FAKE_CLAUDE_SOURCE.replace("#!/usr/bin/env bash", f"#!{POSIX_BASH_SHEBANG}"), encoding="utf-8"
+    )
     fake_claude.chmod(0o755)
+    fake_python = fake_bin / "python3"
+    fake_python.write_text(
+        FAKE_PYTHON_SOURCE.replace("#!/usr/bin/env bash", f"#!{POSIX_BASH_SHEBANG}"), encoding="utf-8"
+    )
+    fake_python.chmod(0o755)
+    real_jq = shutil.which("jq")
+    assert real_jq is not None
+    fake_jq = fake_bin / "jq"
+    fake_jq.write_text(FAKE_JQ_SOURCE.replace("#!/usr/bin/env bash", f"#!{POSIX_BASH_SHEBANG}"), encoding="utf-8")
+    fake_jq.chmod(0o755)
+    if codex_available:
+        fake_codex = fake_bin / "codex"
+        fake_codex.write_text(
+            FAKE_CODEX_SOURCE.replace("#!/usr/bin/env bash", f"#!{POSIX_BASH_SHEBANG}"), encoding="utf-8"
+        )
+        fake_codex.chmod(0o755)
     log = root / "claude-calls.log"
+    python_log = root / "python-calls.log"
+    doctor_log = root / "bridge-diagnose-calls.json"
     home = root / "home"
     home.mkdir()
     registry = build_registry(root, records)
@@ -200,11 +264,17 @@ def run_setup_dispatch(
     harness_path.write_text(harness, encoding="utf-8")
 
     env = os.environ.copy()
-    path = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    path = str(fake_bin)
     env.update(
         {
             "FAKE_CLAUDE_FAIL_ON": fail_on,
             "FAKE_CLAUDE_LOG": log.as_posix(),
+            "FAKE_PYTHON_LOG": python_log.as_posix(),
+            "FAKE_PYTHON_VERSION": python_version,
+            "FAKE_BRIDGE_DIAGNOSE_LOG": doctor_log.as_posix(),
+            "FAKE_BRIDGE_PAYLOAD_COMPLETE": str(doctor_complete).lower(),
+            "REAL_JQ": real_jq,
+            "REAL_PYTHON": sys.executable,
             "HOME": str(home),
             "PATH": path,
         }
@@ -219,6 +289,9 @@ def run_setup_dispatch(
 
     transcript = log.read_text(encoding="utf-8") if log.exists() else ""
     invocations = tuple(tuple(line.split("\t")[:-1]) for line in transcript.splitlines())
+    python_transcript = python_log.read_text(encoding="utf-8") if python_log.exists() else ""
+    python_invocations = tuple(tuple(line.split("\t")[:-1]) for line in python_transcript.splitlines())
+    doctor_invocations = tuple(json.loads(doctor_log.read_text(encoding="utf-8"))) if doctor_log.exists() else ()
     return DispatchRun(
         process=process,
         invocations=invocations,
@@ -227,6 +300,8 @@ def run_setup_dispatch(
         home=home,
         registry=registry,
         path_head=str(fake_bin),
+        doctor_invocations=doctor_invocations,
+        python_invocations=python_invocations,
     )
 
 
@@ -342,8 +417,8 @@ def test_a_failed_purge_uninstall_does_not_fail_the_sync(tmp_path: Path, posix_b
     assert ("plugin", "uninstall", "codex@openai-codex") in run.invocations
 
 
-def test_setup_dispatch_runs_once_per_installed_managed_plugin_in_roster_order(tmp_path: Path, posix_bash: str) -> None:
-    """Prove each installed managed plugin shipping a setup skill is invoked exactly once, in PLUGINS order."""
+def test_setup_dispatch_runs_peers_and_static_bridge_doctor(tmp_path: Path, posix_bash: str) -> None:
+    """Keep peer setup headless while directly running Bridge's free static Codex-side doctor."""
     run = run_setup_dispatch(tmp_path, posix_bash, MANAGED_RECORDS)
 
     assert run.process.returncode == 0, run.process.stderr
@@ -351,12 +426,47 @@ def test_setup_dispatch_runs_once_per_installed_managed_plugin_in_roster_order(t
         ("--print", "/foundry:setup --approve"),
         ("--print", "/oss:setup --approve"),
         ("--print", "/codemap-py:setup --approve"),
-        ("--print", "/bridge:setup --approve"),
     )
+    assert all("bridge" not in argument for invocation in run.invocations for argument in invocation)
+    assert run.doctor_invocations == ("--direction", "codex")
+    assert run.python_invocations[0] == ("--version",)
+    assert run.python_invocations[1][0].endswith("/bridge_diagnose.py")
+    assert run.python_invocations[1][1:] == ("--direction", "codex")
+    assert not {"--approve", "--auth", "--live"}.intersection(run.python_invocations[1])
     # The dash in sync.sh's skip lines is U+2013, so match dash-free substrings only.
     assert "develop has no setup skill, skipping" in run.process.stdout
     assert "research not installed, skipping setup" in run.process.stdout
     assert END_SENTINEL in run.process.stdout
+
+
+def test_setup_dispatch_uses_claude_doctor_when_codex_is_absent(tmp_path: Path, posix_bash: str) -> None:
+    """Keep Claude-only sync useful without inheriting a real Codex executable from the test runner."""
+    run = run_setup_dispatch(tmp_path, posix_bash, MANAGED_RECORDS, codex_available=False)
+
+    assert run.process.returncode == 0, run.process.stderr
+    assert run.doctor_invocations == ("--direction", "claude")
+    assert run.python_invocations[1][1:] == ("--direction", "claude")
+    assert "codex CLI not found; bridge diagnosis covers the claude direction only" in run.process.stdout
+    assert END_SENTINEL in run.process.stdout
+
+
+def test_setup_dispatch_rejects_incomplete_bridge_doctor_payload(tmp_path: Path, posix_bash: str) -> None:
+    """Reject a Bridge doctor response that omits the installed-payload completeness claim."""
+    run = run_setup_dispatch(tmp_path, posix_bash, MANAGED_RECORDS, doctor_complete=False)
+
+    assert run.process.returncode != 0
+    assert "bridge static diagnosis failed" in run.process.stderr
+    assert END_SENTINEL not in run.process.stdout
+
+
+def test_setup_dispatch_rejects_unsupported_bridge_python(tmp_path: Path, posix_bash: str) -> None:
+    """Stop before diagnosis when the direct Bridge launcher is below Python 3.10."""
+    run = run_setup_dispatch(tmp_path, posix_bash, MANAGED_RECORDS, python_version="3.9.19")
+
+    assert run.process.returncode != 0
+    assert "Python 3.10 or newer" in run.process.stderr
+    assert run.doctor_invocations == ()
+    assert END_SENTINEL not in run.process.stdout
 
 
 def test_setup_dispatch_never_reaches_external_or_foreign_marketplace_plugins(tmp_path: Path, posix_bash: str) -> None:

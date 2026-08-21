@@ -3,7 +3,7 @@
     "name": "Jiri Borovec",
     "url": "https://github.com/Borda/AI-Rig"
   },
-  "description": "bridge_CC-Codex provides bidirectional Claude Code and Codex implementation, advice, and review with explicit models, budgets, compact results, and recursion safety.",
+  "description": "bridge_CC-Codex provides bidirectional Claude Code and Codex implementation, advice, review, and approval-bound setup with explicit models, budgets, compact results, no-capture authentication, and recursion safety.",
   "homepage": "https://github.com/Borda/AI-Rig",
   "keywords": [
     "claude-code",
@@ -16,5 +16,5 @@
   "name": "bridge",
   "repository": "https://github.com/Borda/AI-Rig",
   "skills": "./claude-skills/",
-  "version": "0.2.1"
+  "version": "0.3.0"
 }

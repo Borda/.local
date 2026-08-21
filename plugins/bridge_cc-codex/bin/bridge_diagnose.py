@@ -1,9 +1,11 @@
 """Diagnose locally installed bridge command compatibility.
 
 Purpose: Check that the installed Codex and Claude command help surfaces still
-contain every bridge flag required by the portable supervisor. Scope: The normal
-mode reads the plugin's pinned baseline, invokes only ``--help``, and emits one
-JSON object describing missing commands or flags. The optional live mode is an
+contain every bridge flag required by the portable supervisor and bind the
+doctor to one complete installed Bridge payload. Scope: The normal mode reads
+the plugin's pinned baseline and manifests, hashes required runtime/setup files,
+invokes only ``--help``, and emits one JSON object describing missing commands,
+flags, or payload members. The optional live mode is an
 explicit operator probe that sends a minimal structured request through the
 shared bridge core; it is never enabled by default. Usage: Run
 ``bridge_diagnose.py --direction both --workspace .`` for the free static check
@@ -20,6 +22,7 @@ into live mode, and it uses standard-library subprocess handling throughout.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from collections import deque
@@ -38,8 +41,24 @@ from bridge_call import BridgePaths, DEFAULT_EFFORT, DEFAULT_MODEL, DEFAULT_TIME
 
 
 def diagnose(direction: str, workspace: Path, live: bool) -> dict[str, Any]:
-    """Run static help checks and optionally one bounded live request per host."""
+    """Run static help checks and optionally one bounded live request per host.
+
+    Payload completeness is checked before the baseline loads: a truncated
+    install may be missing the baseline file itself, and that case must still
+    produce a structured result naming the missing payload members instead of
+    a bare error object.
+    """
     targets = ("codex", "claude") if direction == "both" else (direction,)
+    payload = _installed_payload_identity()
+    if not payload["complete"]:
+        return {
+            "direction": direction,
+            "live": live,
+            "ok": False,
+            "findings": [],
+            "payload": payload,
+            "health": _health_summary(workspace),
+        }
     baseline = _load_baseline()
     findings = [_static_result(target, baseline[target]) for target in targets]
     if live:
@@ -47,10 +66,73 @@ def diagnose(direction: str, workspace: Path, live: bool) -> dict[str, Any]:
     return {
         "direction": direction,
         "live": live,
-        "ok": all(item["ok"] for item in findings),
+        "ok": payload["complete"] and all(item["ok"] for item in findings),
         "findings": findings,
+        "payload": payload,
         "health": _health_summary(workspace),
     }
+
+
+PAYLOAD_FILES = (
+    ".claude-plugin/plugin.json",
+    ".codex-plugin/plugin.json",
+    ".mcp.json",
+    "bin/bridge_call.py",
+    "bin/bridge_diagnose.py",
+    "bin/bridge_mcp.py",
+    "bin/bridge_setup.py",
+    "rules/cli-baseline.json",
+    "schemas/envelope.schema.json",
+    "schemas/harness-envelope.schema.json",
+    "schemas/mcp-tools.schema.json",
+    "schemas/setup-result.schema.json",
+)
+
+
+def _installed_payload_identity() -> dict[str, Any]:
+    """Return a sanitized identity and digest for the installed runtime closure."""
+    root = Path(__file__).resolve().parents[1]
+    missing = [relative for relative in PAYLOAD_FILES if not _regular_payload_file(root / relative)]
+    if missing:
+        return {"name": "bridge", "version": "unknown", "complete": False, "fingerprint": None, "missing": missing}
+    try:
+        claude = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        codex = json.loads((root / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {
+            "name": "bridge",
+            "version": "unknown",
+            "complete": False,
+            "fingerprint": None,
+            "missing": ["valid host manifests"],
+        }
+    version = claude.get("version") if isinstance(claude, dict) else None
+    if (
+        not isinstance(codex, dict)
+        or claude.get("name") != "bridge"
+        or codex.get("name") != "bridge"
+        or not isinstance(version, str)
+        or codex.get("version") != version
+    ):
+        return {
+            "name": "bridge",
+            "version": "unknown",
+            "complete": False,
+            "fingerprint": None,
+            "missing": ["matching host manifest identity"],
+        }
+    digest = hashlib.sha256()
+    for relative in PAYLOAD_FILES:
+        normalized = Path(relative).as_posix().encode("utf-8")
+        digest.update(len(normalized).to_bytes(4, "big"))
+        digest.update(normalized)
+        digest.update((root / relative).read_bytes())
+    return {"name": "bridge", "version": version, "complete": True, "fingerprint": digest.hexdigest(), "missing": []}
+
+
+def _regular_payload_file(path: Path) -> bool:
+    """Accept only regular, non-symlink payload members."""
+    return path.is_file() and not path.is_symlink()
 
 
 MAX_HEALTH_LINES = 5_000

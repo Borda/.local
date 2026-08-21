@@ -93,6 +93,7 @@ REQUIRED_FILES = {
     "schemas/envelope.schema.json",
     "schemas/harness-envelope.schema.json",
     "schemas/mcp-tools.schema.json",
+    "schemas/setup-result.schema.json",
     "rules/cli-baseline.json",
     "rules/envelope.md",
     "rules/escalation-policy.md",
@@ -102,6 +103,7 @@ REQUIRED_FILES = {
     "bin/bridge_call.py",
     "bin/bridge_diagnose.py",
     "bin/bridge_mcp.py",
+    "bin/bridge_setup.py",
     "claude-skills/implement/SKILL.md",
     "codex-skills/implement/SKILL.md",
 }

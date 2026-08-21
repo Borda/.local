@@ -152,6 +152,11 @@
         "task"
       ],
       "type": "object"
+    },
+    "bridge_status": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

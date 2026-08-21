@@ -21,9 +21,11 @@ directory, so it remains valid after the plugin is installed outside this repo.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 from pathlib import Path
+from pathlib import PurePath
 import sys
 import uuid
 from typing import Any
@@ -65,19 +67,51 @@ TOOL_NAMES = {
     "bridge_advise": "advise",
     "bridge_review": "review",
 }
+STATUS_TOOL_NAME = "bridge_status"
+
+
+def _plugin_version() -> str:
+    """Read the authoritative plugin version from the installed Claude manifest.
+
+    The one tool whose purpose is diagnosing stale installs must never report
+    a hardcoded literal that can drift from the manifests on a release bump.
+    An unreadable manifest degrades to ``unknown`` instead of crashing the
+    stdio server at import time.
+    """
+    manifest = Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json"
+    try:
+        value = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return "unknown"
+    version = value.get("version") if isinstance(value, dict) else None
+    return version if isinstance(version, str) and version else "unknown"
+
+
+BRIDGE_VERSION = _plugin_version()
+MCP_PROTOCOL_VERSION = "2024-11-05"
+STATUS_SCHEMA_VERSION = "1.0"
+EXPECTED_TOOL_INVENTORY = (STATUS_TOOL_NAME, *TOOL_NAMES)
 
 
 def tool_definitions() -> list[dict[str, Any]]:
-    """Return MCP tool definitions with one explicit schema per bridge verb."""
+    """Return MCP tool definitions for status and each executable bridge verb."""
     schema_path = Path(__file__).resolve().parents[1] / "schemas" / "mcp-tools.schema.json"
     definitions = json.loads(schema_path.read_text(encoding="utf-8"))["$defs"]
-    return [
+    request_tools = [
         {
             "name": name,
             "description": f"Run a bounded {verb} bridge request through Claude.",
             "inputSchema": definitions[name],
         }
         for name, verb in TOOL_NAMES.items()
+    ]
+    return [
+        {
+            "name": STATUS_TOOL_NAME,
+            "description": "Report the read-only Bridge server and host-selected workspace status.",
+            "inputSchema": definitions[STATUS_TOOL_NAME],
+        },
+        *request_tools,
     ]
 
 
@@ -111,9 +145,9 @@ def handle_message(message: dict[str, Any], *, trusted_workspace: Path | None = 
         return _result(
             request_id,
             {
-                "protocolVersion": "2024-11-05",
+                "protocolVersion": MCP_PROTOCOL_VERSION,
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "bridge", "version": "0.2.1"},
+                "serverInfo": {"name": "bridge", "version": BRIDGE_VERSION},
             },
         )
     if method == "tools/list":
@@ -124,17 +158,21 @@ def handle_message(message: dict[str, Any], *, trusted_workspace: Path | None = 
 
 
 def _call_tool(request_id: Any, params: Any, trusted_workspace: Path) -> dict[str, Any]:
-    """Validate tool arguments and execute a reverse bridge request."""
+    """Validate tool arguments and execute a request or return local server status."""
     if not isinstance(params, dict):
         return _error(request_id, -32602, "tools/call params must be an object")
     name = params.get("name")
     arguments = params.get("arguments", {})
     if not isinstance(name, str) or not name:
         return _error(request_id, -32602, "bridge tool name must be a non-empty string")
-    if name not in TOOL_NAMES:
-        return _error(request_id, -32602, f"unknown bridge tool: {name}")
+    if name == STATUS_TOOL_NAME:
+        if not isinstance(arguments, dict) or arguments:
+            return _error(request_id, -32602, "bridge_status accepts an empty arguments object")
+        return _result(request_id, _status_result(trusted_workspace))
     if not isinstance(arguments, dict):
         return _error(request_id, -32602, "tool arguments must be an object")
+    if name not in TOOL_NAMES:
+        return _error(request_id, -32602, f"unknown bridge tool: {name}")
     try:
         request = _request_from_arguments(TOOL_NAMES[name], arguments, trusted_workspace)
     except ValueError as error:
@@ -150,6 +188,36 @@ def _call_tool(request_id: Any, params: Any, trusted_workspace: Path) -> dict[st
             "isError": envelope["status"] in {"blocked", "timeout", "refused"},
         },
     )
+
+
+def _status_result(trusted_workspace: Path) -> dict[str, Any]:
+    """Build sanitized server status without invoking a provider or changing state."""
+    workspace = trusted_workspace.resolve()
+    normalized_workspace = PurePath(workspace).as_posix()
+    return {
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(
+                    {
+                        "bridge_version": BRIDGE_VERSION,
+                        "expected_tool_inventory": list(EXPECTED_TOOL_INVENTORY),
+                        "plugin_version": BRIDGE_VERSION,
+                        "protocol_version": MCP_PROTOCOL_VERSION,
+                        "schema_version": STATUS_SCHEMA_VERSION,
+                        "server": {"name": "bridge", "version": BRIDGE_VERSION},
+                        # The setup skills cross-check this value against the
+                        # setup result's canonical_workspace, so both must use
+                        # the same POSIX-separator canonical form on every OS.
+                        "workspace": normalized_workspace,
+                        "workspace_fingerprint": hashlib.sha256(normalized_workspace.encode("utf-8")).hexdigest(),
+                    },
+                    sort_keys=True,
+                ),
+            }
+        ],
+        "isError": False,
+    }
 
 
 def _request_from_arguments(verb: str, arguments: dict[str, Any], trusted_workspace: Path) -> Request:

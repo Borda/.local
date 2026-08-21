@@ -31,7 +31,7 @@
       "source": "./plugins/codemap-py"
     },
     {
-      "description": "bridge_CC-Codex: implement, advise, and review across Claude Code and Codex with bounded execution and compact results.",
+      "description": "bridge_CC-Codex: guided setup plus bounded implementation, advice, and review across Claude Code and Codex.",
       "name": "bridge",
       "source": "./plugins/bridge_cc-codex"
     }

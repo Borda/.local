@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -12,6 +13,16 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = PLUGIN_ROOT.parents[1]
 BUILD_SCRIPT = PLUGIN_ROOT / "scripts" / "build_package.py"
 VALIDATE_SCRIPT = PLUGIN_ROOT / "scripts" / "validate_package.py"
+
+if str(PLUGIN_ROOT / "bin") not in sys.path:
+    sys.path.insert(0, str(PLUGIN_ROOT / "bin"))
+
+import bridge_diagnose  # noqa: E402  (loaded from the installed-plugin-equivalent bin directory)
+
+_VALIDATE_SPECIFICATION = importlib.util.spec_from_file_location("bridge_validate_package", VALIDATE_SCRIPT)
+assert _VALIDATE_SPECIFICATION is not None and _VALIDATE_SPECIFICATION.loader is not None
+validate_package = importlib.util.module_from_spec(_VALIDATE_SPECIFICATION)
+_VALIDATE_SPECIFICATION.loader.exec_module(validate_package)
 
 
 def test_build_and_validate_use_only_the_disposable_package_copy(tmp_path: Path) -> None:
@@ -39,6 +50,8 @@ def test_build_and_validate_use_only_the_disposable_package_copy(tmp_path: Path)
     assert not (output / "tests").exists()
     assert (output / "claude-skills" / "implement" / "SKILL.md").is_file()
     assert (output / "codex-skills" / "implement" / "SKILL.md").is_file()
+    assert (output / "bin" / "bridge_setup.py").is_file()
+    assert (output / "schemas" / "setup-result.schema.json").is_file()
 
 
 def test_mcp_server_resolves_from_installed_plugin_root() -> None:
@@ -70,7 +83,7 @@ def test_host_manifests_select_disjoint_skill_surfaces() -> None:
 
     assert claude["name"] == "bridge"
     assert codex["name"] == "bridge"
-    assert claude["version"] == codex["version"] == "0.2.1"
+    assert claude["version"] == codex["version"] == "0.3.0"
     assert codex["interface"]["displayName"] == "bridge_CC-Codex"
     assert claude["skills"] == "./claude-skills/"
     assert codex["skills"] == "./codex-skills/"
@@ -104,7 +117,7 @@ def test_repository_marketplaces_advertise_both_host_installations() -> None:
     codex_entry = next(entry for entry in codex_marketplace["plugins"] if entry["name"] == "bridge")
 
     assert claude_entry == {
-        "description": "bridge_CC-Codex: implement, advise, and review across Claude Code and Codex with bounded execution and compact results.",
+        "description": "bridge_CC-Codex: guided setup plus bounded implementation, advice, and review across Claude Code and Codex.",
         "name": "bridge",
         "source": "./plugins/bridge_cc-codex",
     }
@@ -128,3 +141,17 @@ def test_disposable_package_has_no_nested_marketplace(tmp_path: Path) -> None:
 
     assert built.returncode == 0, built.stderr
     assert not (output / ".claude-plugin" / "marketplace.json").exists()
+
+
+def test_diagnose_payload_fingerprint_stays_inside_the_validated_package_manifest() -> None:
+    """Keep the doctor's completeness fingerprint aligned with the validated package manifest.
+
+    The two file lists are maintained by hand in parallel; a runtime file added
+    to the package gate but not the payload list silently escapes the
+    completeness fingerprint that sync trusts, as ``.mcp.json`` and the CLI
+    baseline once did.
+    """
+    payload = set(bridge_diagnose.PAYLOAD_FILES)
+
+    assert payload <= set(validate_package.REQUIRED_FILES)
+    assert {".mcp.json", "rules/cli-baseline.json"} <= payload

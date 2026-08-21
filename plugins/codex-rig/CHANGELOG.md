@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.2
+
+- Keep ordinary Claude synchronization from invoking Bridge's newly state-capable setup skill or supplying an approval token; other managed plugins retain their existing headless setup dispatch, and executable regression coverage pins the separation.
+
 ## 0.9.1
 
 - Add a recurring `audit` value-per-token axis with matched cost measurement, loaded-reference accounting, obligation mapping, deterministic and paired-live value guards, adversarial review, and fail-closed acceptance when evidence or material savings are missing.
