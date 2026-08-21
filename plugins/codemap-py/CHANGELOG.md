@@ -2,6 +2,10 @@
 
 `codemap-py` is the renamed, direct successor to the `codemap` plugin. The maintained product and its SemVer history continue across the rename; only the plugin identity, repository directory, and skill namespace change. Pre-`0.25.0` history was recorded as `codemap` under `plugins/codemap/` — see the repository git history for that line; it is not reproduced here.
 
+## 0.31.2
+
+- Restructure dense README integration, index-lifecycle, troubleshooting, query, rename, telemetry, and cross-plugin guidance into scannable lists and decision sequences while preserving every command, flag, exit/status meaning, benchmark caveat, completeness rule, and Claude/Codex boundary.
+
 ## 0.31.1
 
 - Compress all six Codex and six Claude skill contracts without changing command syntax, routing, stop rules, safety gates, installed-root requirements, output guarantees, or Claude executable fences. Replace stale private-plan section references with self-contained constraints, including the shared contract documents' authority framing; the § labels remain as stable in-file anchors.

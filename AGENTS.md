@@ -2,16 +2,17 @@
 
 <!-- policy-sibling-sync: CLAUDE.md, AGENTS.md, plugins/AGENTS.md, plugins/CLAUDE.md -->
 
-Any policy change in one listed instruction file must trigger a relevance review of every other listed file before completion. Synchronize applicable shared policy in either direction; preserve intentional agent-specific differences and record when no counterpart change is needed.
+- Any policy change in one listed instruction file must trigger a relevance review of every other listed file before completion.
+- Synchronize applicable shared policy in either direction; preserve intentional agent-specific differences and record when no counterpart change is needed.
 
 ## Instruction Layering
 
-Repository-wide policy belongs in this top-level file. Lower-scope instruction files inherit it and must add only narrower rules or explicit exceptions, never repeat the same policy; when a top-level policy changes, review lower layers for conflicts or obsolete duplication rather than copying the new text into them.
+- Repository-wide policy belongs in this top-level file.
+- Lower-scope instruction files inherit it and must add only narrower rules or explicit exceptions, never repeat the same policy; when a top-level policy changes, review lower layers for conflicts or obsolete duplication rather than copying the new text into them.
 
 ## Edit Scope
 
-All edits stay inside this project directory. Never edit `$CODEX_HOME` or `~/.claude/` directly — both are install targets populated from this checkout, and a hand-edit there is overwritten on the next sync.
-
+- All edits stay inside this project directory. Never edit `$CODEX_HOME` or `~/.claude/` directly — both are install targets populated from this checkout, and a hand-edit there is overwritten on the next sync.
 - Permitted roots: `.codex/` (Codex config, skills, session policy), `.claude/settings.json` and `.claude/settings.local.json`, `plugins/*/{agents,skills,rules,hooks,bin}/`.
 - `sync.sh` installs from the pushed GitHub remote, not the local working tree: commit and push first, then `bash sync.sh [claude|codex]`. Running it against uncommitted work silently installs the previous state.
 - Never initiate propagation mid-task; it is a deliberate human-triggered step.
@@ -39,21 +40,49 @@ Scripts, hooks, `bin/` entry points, and CI steps all run on Linux, macOS, and n
 
 ## Benchmark Isolation
 
-Benchmark task IDs, target repositories, prompt wording, expected answers, and task-specific source or symbol examples are test evidence, not production content. Never copy them into shipped plugins, Skills, templates, or user-facing docs; use neutral generic examples and encode the generalized contract in a regression test instead.
+- Benchmark task IDs, target repositories, prompt wording, expected answers, and task-specific source or symbol examples are test evidence, not production content.
+- Never copy them into shipped plugins, Skills, templates, or user-facing docs; use neutral generic examples and encode the generalized contract in a regression test instead.
 
 ## Plan Isolation
 
-Plans, reports, scratch artifacts, and private implementation notes are evidence, not production content. Never copy plan-only notation, section references, task IDs, private source or code examples, plan-only placeholder names, or private shorthand into shipped code, plugins, Skills, templates, schemas, or user-facing docs, and never make a shipped artifact depend on access to its originating `.plans/` or `.reports/` context. Re-express every adopted requirement as a self-contained contract with complete or sufficiently descriptive names, neutral examples, and all context needed to understand and verify it without the originating plan.
+- Plans, reports, scratch artifacts, and private implementation notes are evidence, not production content.
+- Never copy plan-only notation, section references, task IDs, private source or code examples, plan-only placeholder names, or private shorthand into shipped code, plugins, Skills, templates, schemas, or user-facing docs, and never make a shipped artifact depend on access to its originating `.plans/` or `.reports/` context.
+- Re-express every adopted requirement as a self-contained contract with complete or sufficiently descriptive names, neutral examples, and all context needed to understand and verify it without the originating plan.
 
 ## Focused Delegation
 
-Use the lowest-cost capable subagent for small, well-defined support work when the task splits into independent bounded workstreams and the expected time or cost saving exceeds coordination overhead. Give each subagent narrow file or evidence ownership, only the context it needs, and explicit acceptance gates; parallelize disjoint work and never assign duplicate investigation or overlapping edits.
-
-Keep indivisible or very small work in the main agent. The main agent owns integration, reviews every handoff against its gates, resolves conflicts, and retains final acceptance for behavior-changing or executable results.
+- Use the lowest-cost capable subagent for small, well-defined support work when the task splits into independent bounded workstreams and the expected time or cost saving exceeds coordination overhead.
+- Give each subagent narrow file or evidence ownership, only the context it needs, and explicit acceptance gates; parallelize disjoint work and never assign duplicate investigation or overlapping edits.
+- Keep indivisible or very small work in the main agent.
+- The main agent owns integration, reviews every handoff against its gates, resolves conflicts, and retains final acceptance for behavior-changing or executable results.
 
 ## Markdown Policy
 
-Never hard-wrap prose in any Markdown file. Keep each prose paragraph on one physical line; preserve intentional structural breaks in headings, lists, tables, blockquotes, links, HTML `<details>` blocks, and fenced code. Do not blindly unwrap or reflow a whole file; edit only the intended prose and retain its surrounding structure.
+- Never hard-wrap prose in any Markdown file.
+- Keep each prose paragraph on one physical line; preserve intentional structural breaks in headings, lists, tables, blockquotes, links, HTML `<details>` blocks, and fenced code.
+- Do not blindly unwrap or reflow a whole file; edit only the intended prose and retain its surrounding structure.
+
+Structure Markdown for scanning and correct execution, not from line length alone. When one paragraph combines multiple actions, conditions, actors, statuses, exceptions, or decision branches, use the smallest fitting structure:
+
+- Parallel obligations or independently checkable facts → bullets.
+- Ordered actions, recovery paths, or state transitions → numbered lists.
+- Compact closed mappings or comparisons with repeated fields → tables; keep long causal explanations out of table cells.
+- Genuine notes, warnings, interpretation limits, or safety boundaries → blockquotes.
+- Optional depth that would interrupt the main path → an existing or justified `<details>` block.
+- Keep causal reasoning and cohesive rationale as prose.
+- Do not convert paragraphs wholesale, add headings for every rule, or duplicate an existing navigation system.
+- Keep headings concise and move detailed contracts below them.
+- When reformatting behavior-sensitive agent, skill, setup, approval, or recovery instructions, preserve modal language, exact literals, ordering, and stop conditions; run the affected contract and calibration gates because formatting can change instruction salience even when the words remain similar.
+
+## Lossless Instruction Compression Handover Gate
+
+Compression or structural reformatting of any `AGENTS.md` or `CLAUDE.md` is behavior-sensitive and must pass every gate before handoff:
+
+1. Save a verified byte-exact pre-change backup under `.codex/caveman-compress/backups/`, outside active instruction-discovery paths; never overwrite an existing backup.
+2. Compare the backup and result for complete semantic preservation: scope, actors, obligations, modal strength, exceptions, ordering, approval and stop conditions, thresholds, examples, and cross-file relationships must remain unambiguous.
+3. Preserve headings, list hierarchy, fenced and inline code, commands, paths, URLs, identifiers, versions, numbers, environment variables, and other behavior-bearing literals exactly unless the task explicitly changes them.
+4. Run the affected Markdown, instruction-contract, and calibration gates. Broad instruction-set changes also require an independent agent followability review against the pre-change backup.
+5. Reject the compression and restore the pre-change file when any instruction is lost, weakened, broadened, made ambiguous, harder to navigate, or less reliably followed. An unresolved comparison difference blocks completion.
 
 Plugin-specific authoring, installability, cross-reference, versioning, and verification rules live in [plugins/AGENTS.md](plugins/AGENTS.md).
 

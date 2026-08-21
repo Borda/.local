@@ -2,6 +2,11 @@
 
 All notable changes to `bridge_CC-Codex` are documented here.
 
+## 0.3.1
+
+- Restructure the README's setup, request, artifact, MCP, and safety guidance into concise lists, tables, and blockquotes while preserving every command, parameter, transport boundary, and evidentiary limit.
+- Align the Claude and Codex setup skills around explicit lifecycle phases and atomic approval steps without changing host-specific workspace, authentication, fresh-session, paid-live-verification, or readiness semantics.
+
 ## 0.3.0
 
 - Make `/bridge:setup` and `$bridge:setup` truthful approval-bound lifecycle entrypoints with default `action=all target=peer scope=auto live=prompt` behavior.

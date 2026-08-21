@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.1
+
+- Restructure dense README policy, sync, PR workflow, and verification passages into labeled lists, a comparison table, and explicit safety blockquotes while preserving commands, caveats, and remote-mutation boundaries.
+- Reformat the code-review and code-remediation approval, evidence, fallback, failure, findings-intake, and specialist-routing contracts into atomic steps with concise workflow headings; retain validator-facing literals, retry limits, and workflow behavior.
+
 ## 0.10.0
 
 - Standardize every workflow and the agent-shim lifecycle helper's final chat as an outcome-first, structured handoff with skill-specific result tables, exact verification, remaining obligations, prioritized recommendations/next steps, confidence limits, and supplemental artifact links.

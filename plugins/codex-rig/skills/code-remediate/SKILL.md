@@ -29,7 +29,7 @@ Run linear code remediation to close findings.
 
 Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill code-remediate` once; stdout is literal `<run-directory>`; never store it in a shell variable.
 
-### 02: Normalize Shorthand Input And Copy Findings Source
+### 02: Normalize input and copy findings
 
 Shorthand rules:
 
@@ -48,16 +48,58 @@ Copy the exact bytes from the retained findings-source path to `<run-directory>/
 
 For `mode=pr`, inspect `python PLUGIN_ROOT/shared/collect_pr.py --help`; collect `PR_TARGET` into `<run-directory>/pr` with checkout enabled for current online evidence, target/head refresh, local checkout.
 
-In runtimes with network sandboxing, execute the complete collector command with approved external network access from its first attempt under `../../shared/native-skill-contract.md`. Before requesting it, state: `Action and purpose`: collect current PR evidence before remediation; `External capability`: read-only GitHub access plus the documented local checkout; `Credential behavior`: `gh` is an opaque local credential broker; `Filesystem and worktree effects`: write collection artifacts and may update the local checkout; `Retry policy and safe denial outcome`: one classified recovery only, otherwise remediation uses its core collection-failure path. For a Codex exec call, set `sandbox_permissions="require_escalated"` on the collector invocation with a read-only GitHub-access justification; never enable persistent workspace network access, and never request a broad `python` approval prefix. A direct approval for `gh pr view` does not cover `gh` spawned by the collector: the outer collector command must own approval for its nested GitHub CLI, HTTPS fallback, checkout, and Git fetch traffic. The PR-remediation request authorizes asking for this read-only external access and the documented local checkout, but never bypassing the runtime approval prompt. Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command. Ask the user to send a new message to resume. If an agent-caused unapproved attempt returns `github-network` before any user approval request or denial, rerun that same complete collector command once through the runtime's external-network approval mechanism before treating collection as terminal. This recovery exists only for that pre-denial sandbox mistake; after the user denies approval, the current turn stops and the retry is forbidden. Only after that approved collector attempt fails, external-network approval is unavailable, or the user denies it may remediation apply its core collection-failure path; never repeat more than one approved recovery attempt.
+In runtimes with network sandboxing, execute the complete collector command with approved external network access from its first attempt under `../../shared/native-skill-contract.md`. Before requesting it, state:
 
-`github_read.py` is the plugin-wide GitHub data boundary: do not invoke `gh` outside it. It uses `gh` as an opaque local credential broker, never invokes `gh auth`, reads token/keychain state, or persists GitHub CLI failure output. It permits only audited built-in view groups (`gist`, `issue`, `pr`, `project`, `release`, `repo`, `ruleset`, `run`, `workflow`), REST GET, and GraphQL queries; no remote mutation is permitted. Its public HTTPS fallback cannot establish private PR evidence. `collect_pr.py` treats PR identity/body plus exact local source as core evidence: it uses numbered fork-aware `gh pr checkout <number>` when needed, verifies the PR head SHA, and derives `diff.patch` locally. GraphQL review-thread resolution status is supplemental; if unavailable, the collector writes empty normalized thread arrays plus `review-threads-error.txt` and continues. Record that online-triage coverage gap in `action-items.md`, result confidence gaps, and unresolved/deferred closure rationale; never treat it as a code finding or silently claim complete thread triage. On core collection failure, use `<run-directory>/pr/pr-error.txt` and `<run-directory>/pr/command-failure.json` when present to distinguish the classified process failure from source-review findings; do not treat it as a merge recommendation.
+- `Action and purpose`: collect current PR evidence before remediation.
+- `External capability`: read-only GitHub access plus the documented local checkout.
+- `Credential behavior`: `gh` is an opaque local credential broker.
+- `Filesystem and worktree effects`: write collection artifacts and may update the local checkout.
+- `Retry policy and safe denial outcome`: one classified recovery only, otherwise remediation uses its core collection-failure path.
+- For a Codex exec call:
+  - Set `sandbox_permissions="require_escalated"` on the collector invocation with a read-only GitHub-access justification; never enable persistent workspace network access, and never request a broad `python` approval prefix.
+  - A direct approval for `gh pr view` does not cover `gh` spawned by the collector: the outer collector command must own approval for its nested GitHub CLI, HTTPS fallback, checkout, and Git fetch traffic.
+  - The PR-remediation request authorizes asking for this read-only external access and the documented local checkout, but never bypassing the runtime approval prompt.
+- Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command. Ask the user to send a new message to resume.
+- If an agent-caused unapproved attempt returns `github-network` before any user approval request or denial, rerun that same complete collector command once through the runtime's external-network approval mechanism before treating collection as terminal. This recovery exists only for that pre-denial sandbox mistake; after the user denies approval, the current turn stops and the retry is forbidden. Only after that approved collector attempt fails, external-network approval is unavailable, or the user denies it may remediation apply its core collection-failure path; never repeat more than one approved recovery attempt.
 
-When `gh pr view` metadata fails, public unauthenticated HTTPS fallback is eligible only for `github-network`, `github-auth`, `github-rate-limit`, or `command-timeout`, and only with a trusted checkout target. A canonical PR URL must match a configured GitHub remote; a numeric target requires exactly one distinct configured GitHub repository identity. Ambiguous or unsafe targets, permission failures, not-found failures, and unclassified failures remain fail-closed. The fallback normalizes limited PR metadata, then uses the verified `refs/pull/<number>/head` ref for a detached checkout and derives the local diff; it never establishes private PR evidence. `online-review-summary.json` must list unavailable fallback evidence as sorted IDs, and raw GitHub CLI stderr is never persisted; terminal diagnostics may include a safe `failure_reason` enum alongside non-secret classification metadata.
+`github_read.py` is the plugin-wide GitHub data boundary: do not invoke `gh` outside it.
+
+- It uses `gh` as an opaque local credential broker, never invokes `gh auth`, reads token/keychain state, or persists GitHub CLI failure output.
+- It permits only audited built-in view groups (`gist`, `issue`, `pr`, `project`, `release`, `repo`, `ruleset`, `run`, `workflow`), REST GET, and GraphQL queries; no remote mutation is permitted.
+- Its public HTTPS fallback cannot establish private PR evidence.
+
+Core and supplemental evidence:
+
+- `collect_pr.py` treats PR identity/body plus exact local source as core evidence: it uses numbered fork-aware `gh pr checkout <number>` when needed, verifies the PR head SHA, and derives `diff.patch` locally.
+- GraphQL review-thread resolution status is supplemental; if unavailable, the collector writes empty normalized thread arrays plus `review-threads-error.txt` and continues.
+- Record that online-triage coverage gap in `action-items.md`, result confidence gaps, and unresolved/deferred closure rationale; never treat it as a code finding or silently claim complete thread triage.
+- On core collection failure, use `<run-directory>/pr/pr-error.txt` and `<run-directory>/pr/command-failure.json` when present to distinguish the classified process failure from source-review findings; do not treat it as a merge recommendation.
+
+When `gh pr view` metadata fails, public unauthenticated HTTPS fallback is eligible only when all of these hold:
+
+- The failure is `github-network`, `github-auth`, `github-rate-limit`, or `command-timeout`.
+- The checkout target is trusted: a canonical PR URL must match a configured GitHub remote; a numeric target requires exactly one distinct configured GitHub repository identity.
+
+Ambiguous or unsafe targets, permission failures, not-found failures, and unclassified failures remain fail-closed.
+
+Fallback behavior:
+
+- The fallback normalizes limited PR metadata, then uses the verified `refs/pull/<number>/head` ref for a detached checkout and derives the local diff; it never establishes private PR evidence.
+- `online-review-summary.json` must list unavailable fallback evidence as sorted IDs.
+- Raw GitHub CLI stderr is never persisted; terminal diagnostics may include a safe `failure_reason` enum alongside non-secret classification metadata.
 
 Findings intake:
 
 - For `mode=report`, normalize only the review report after confirming it is assessed. Reject `review_status=unavailable` and `review_status=closed`; the latter is a close disposition without source findings. Do not read, collect, or infer any `<run-directory>/pr/` evidence.
-- For `mode=pr`, normalize the review report plus `<run-directory>/pr/comments.json`, `<run-directory>/pr/reviews.json`, `<run-directory>/pr/review-threads.json`, and `<run-directory>/pr/unresolved-review-threads.json`. Review report is closure contract, not only code findings: before editing normalize report findings, failed `checks_failed`, `follow_up`, `review_decision.required_next_work`, confidence gaps, confidence-recovery remaining limits, and no-finding residual risks into report-origin action items. Use local checkout in `<run-directory>/pr/local-checkout.json` as authoritative source for code triage/edits and require its `verified-local-checkout` diff provenance. `<run-directory>/pr/target-branch.json` must prove base/target fetch before conflict/review-item resolution; `<run-directory>/pr/pr-head-fetch.json` records same-repo PR refresh or cross-repository skip rationale. Checkout artifacts include `force_policy`; if checkout fails or does not match PR head, record `forced-checkout-not-attempted` and stop before forced retry. If core metadata, target refresh, checkout, or local diff fails, record failure; continue with supplied report only when user accepts stale online-review coverage and no code edits are required, else fail. If only supplemental review-thread resolution status is unavailable, continue with explicit partial-coverage evidence and do not infer that any thread is resolved. Never inspect/edit PR code from `curl`, `raw.githubusercontent.com`, or copied `head-files/` snapshots; raw-file snapshot rejection: snapshots are rejected.
+- For `mode=pr`:
+  - Normalize the review report plus `<run-directory>/pr/comments.json`, `<run-directory>/pr/reviews.json`, `<run-directory>/pr/review-threads.json`, and `<run-directory>/pr/unresolved-review-threads.json`.
+  - Treat the review report as a closure contract, not only code findings: before editing normalize report findings, failed `checks_failed`, `follow_up`, `review_decision.required_next_work`, confidence gaps, confidence-recovery remaining limits, and no-finding residual risks into report-origin action items.
+  - Use local checkout in `<run-directory>/pr/local-checkout.json` as authoritative source for code triage/edits and require its `verified-local-checkout` diff provenance.
+  - Require `<run-directory>/pr/target-branch.json` to prove base/target fetch before conflict/review-item resolution; `<run-directory>/pr/pr-head-fetch.json` records same-repo PR refresh or cross-repository skip rationale.
+  - Checkout artifacts include `force_policy`; if checkout fails or does not match PR head, record `forced-checkout-not-attempted` and stop before forced retry.
+  - If core metadata, target refresh, checkout, or local diff fails, record failure; continue with supplied report only when user accepts stale online-review coverage and no code edits are required, else fail.
+  - If only supplemental review-thread resolution status is unavailable, continue with explicit partial-coverage evidence and do not infer that any thread is resolved.
+  - Never inspect/edit PR code from `curl`, `raw.githubusercontent.com`, or copied `head-files/` snapshots; raw-file snapshot rejection: snapshots are rejected.
 
 ### 03: Understand PR Intent, Then Resolve Merge Conflicts
 

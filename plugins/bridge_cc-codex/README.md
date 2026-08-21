@@ -4,7 +4,7 @@
 
 The bridge is useful with either host integration installed and has no dependency on another plugin from this repository. Existing-plugin replacement and consumer migration are deliberately outside this standalone package.
 
-> Release: `0.3.0`. Claude- and Codex-side setup skills now provide an approval-bound lifecycle for safe configuration and repair while retaining full caller-input, workspace/session authority, recursion, asynchronous lifecycle, envelope/transcript, and approval boundaries.
+> Release: `0.3.1`. Claude- and Codex-side setup skills provide an approval-bound lifecycle for safe configuration and repair while retaining full caller-input, workspace/session authority, recursion, asynchronous lifecycle, envelope/transcript, and approval boundaries.
 
 ______________________________________________________________________
 
@@ -42,11 +42,26 @@ The two hosts expose the same three bridge request operations and an approval-bo
 | `review`    | Perform an adversarial review of the current diff or supplied artifact.    | Read-only.                                                                                             |
 | `setup`     | Inspect, configure, repair, authenticate, and verify one bridge direction. | Safe inspection/configuration by default; authentication and live inference require separate approval. |
 
-Every bridge request call carries a model and reasoning-effort selection. If the caller omits `model`, the target CLI uses its configured host default and the envelope records `model: "host-default"`. When effort is omitted from a skill invocation, the skill classifies the complete task using the shipped effort policy and passes the selected level; direct CLI or MCP calls that bypass a skill use `medium`. Supported effort aliases are normalized before dispatch, invalid values are blocked, and an explicitly supplied supported-effort list may cause one recorded downgrade.
+Every bridge request call carries a model and reasoning-effort selection:
 
-Every call also carries a soft wall-clock budget and a recursion `depth`. The budget is announced to the callee, which is asked to return a useful partial result with `remaining` and `blockers` instead of waiting indefinitely. The bridge enforces a hard cutoff at 1.2 times the soft budget. A depth of one or greater is refused, so a Claude → Codex → Claude loop cannot continue.
+- An omitted `model` uses the target CLI's configured host default; the envelope records `model: "host-default"`.
+- An omitted skill effort is classified from the complete task using the shipped effort policy; direct CLI or MCP calls that bypass a skill use `medium`.
+- Supported effort aliases are normalized before dispatch, invalid values are blocked, and an explicitly supplied supported-effort list may cause one recorded downgrade.
 
-Results are compact envelopes rather than raw transcripts. The public envelope carries decision-critical `status`, `verdict`, `findings`, `files_touched`, `remaining`, and `blockers`, plus observed harness metadata such as model, effort, cost, duration, depth, `run_id`, and a session identifier when applicable. Incomplete work and blockers must stay in those public fields; transcript-only `details` hold additional evidence and never hide required work. The envelope carries workspace-relative `transcript_path` and, for faults, `incident` references; open those artifacts only when the compact result needs investigation. Detached calls return their job identifier separately. The model-authored core is validated separately from harness metadata; model output cannot claim observed cost, timing, process, or correlation fields.
+Every call also carries a soft wall-clock budget and a recursion `depth`:
+
+- The budget is announced to the callee, which is asked to return a useful partial result with `remaining` and `blockers` instead of waiting indefinitely.
+- The bridge enforces a hard cutoff at 1.2 times the soft budget.
+- A depth of one or greater is refused, so a Claude → Codex → Claude loop cannot continue.
+
+Results are compact envelopes rather than raw transcripts:
+
+- The public envelope carries decision-critical `status`, `verdict`, `findings`, `files_touched`, `remaining`, and `blockers`, plus observed harness metadata such as model, effort, cost, duration, depth, `run_id`, and a session identifier when applicable.
+- Incomplete work and blockers must stay in those public fields; transcript-only `details` hold additional evidence and never hide required work.
+- The envelope carries workspace-relative `transcript_path` and, for faults, `incident` references; open those artifacts only when the compact result needs investigation.
+- Detached calls return their job identifier separately.
+
+> The model-authored core is validated separately from harness metadata; model output cannot claim observed cost, timing, process, or correlation fields.
 
 ## ✅ Requirements
 
@@ -57,22 +72,49 @@ Results are compact envelopes rather than raw transcripts. The public envelope c
 - A writable project-local `.temp/bridge/` directory for bridge state and transcripts.
 - A writable platform user-state directory for the host-held approval-integrity key, one-use approval receipts, per-target mutation locks, and sanitized setup records; setup never stores provider credentials or raw login output there.
 
-The setup skill can orchestrate verified native plugin/configuration operations and one closed repair per fault after an exact plan approval. It never installs runtimes, replaces the current host invocation surface, reads credentials, or grants permissions. Provider-owned authentication and live inference retain separate approvals and terminal/network boundaries. The Codex-side MCP server is host-launched outside the model's sandbox so it can reach the Claude CLI's normal authentication path; a Claude CLI that is not logged in remains a reported setup/authentication failure.
+The setup skill can orchestrate verified native plugin/configuration operations and one closed repair per fault after an exact plan approval.
+
+> It never installs runtimes, replaces the current host invocation surface, reads credentials, or grants permissions. Provider-owned authentication and live inference retain separate approvals and terminal/network boundaries. The Codex-side MCP server is host-launched outside the model's sandbox so it can reach the Claude CLI's normal authentication path; a Claude CLI that is not logged in remains a reported setup/authentication failure.
 
 ## 🧭 Set up the bridge
 
-The loaded host is the current host and `target=peer` resolves to the other integration. A current-host plugin, trust, authentication, and fresh session are external bootstrap prerequisites; a setup skill cannot repair the invocation surface from which it was loaded. After bootstrap, run the same command on either host:
+The loaded host is the current host and `target=peer` resolves to the other integration.
+
+> A current-host plugin, trust, authentication, and fresh session are external bootstrap prerequisites; a setup skill cannot repair the invocation surface from which it was loaded.
+
+After bootstrap, run the same command on either host:
 
 ```text
 /bridge:setup action=all target=peer scope=auto live=prompt
 $bridge:setup action=all target=peer scope=auto live=prompt
 ```
 
-Plain `/bridge:setup` and `$bridge:setup` invocations use those defaults. `all` inspects, proposes, and reports every supported stage, then asks for one expiring, one-use approval bound to the exact action, target, resolved scope, workspace, observed-state fingerprint, native argv, external capability, rollback record, and stop condition before safe configuration or repair. The digest is authenticated with a host-held per-user HMAC key so a caller cannot forge or alter a plan, but the digest is not consent: the operator or host permission surface must still approve the displayed operation. Authentication uses a separately planned provider-owned interactive flow that the operator runs in their own terminal, outside model-captured tool streams, so Bridge can inherit the terminal without receiving login output; live verification uses a third action-bound approval for one paid provider call. A denial, changed or expired digest, replay, failed probe, or failed operation stops without an equivalent retry.
+Plain `/bridge:setup` and `$bridge:setup` invocations use those defaults. `all`:
 
-Use `action=check` for credential-free inspection only. `action=configure` and `action=repair` apply one approved native operation and then re-inspect the host inventory before reporting whether a fresh session is required; `action=authenticate` launches only the peer's official no-capture login; `action=verify-live` performs one separately approved live probe through the same planner/executor. `live=skip` finishes at `inference-unverified`; `live=required` is non-ready when the live approval or probe fails. One setup run owns one peer target. To prepare both integrations, complete the peer lifecycle from one host, honor any fresh-session boundary, then run the other host's setup skill; no approval or readiness claim is shared across them.
+1. Inspects, proposes, and reports every supported stage.
+2. Asks for one expiring, one-use approval before safe configuration or repair, bound to the exact action, target, resolved scope, workspace, observed-state fingerprint, native argv, external capability, rollback record, and stop condition.
 
-The setup result is defined by `schemas/setup-result.schema.json`, separate from the model bridge envelope. It reports the strongest evidence level reached (`static`, `host-authenticated`, `session-ready`, `workspace-ready`, or `live-verified`) and never treats process exit, authentication, or static checks as proof of inference. The deterministic setup CLI cannot prove the loaded session/workspace and therefore remains non-ready even after a successful point-in-time live probe; the host skill may claim a stronger lifecycle result only after applicable loaded-session evidence is also present. The read-only MCP tool `bridge_status` returns sanitized server identity, version, schema/protocol version, host-selected canonical workspace, workspace fingerprint, and expected tool inventory without calling a provider or writing state.
+> The digest is authenticated with a host-held per-user HMAC key so a caller cannot forge or alter a plan, but the digest is not consent: the operator or host permission surface must still approve the displayed operation. A denial, changed or expired digest, replay, failed probe, or failed operation stops without an equivalent retry.
+
+The remaining setup stages have distinct boundaries:
+
+| Stage                                  | Behavior and boundary                                                                                                                                                                                                                                                 |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `action=check`                         | Credential-free inspection only.                                                                                                                                                                                                                                      |
+| `action=configure` and `action=repair` | Apply one approved native operation, then re-inspect the host inventory before reporting whether a fresh session is required.                                                                                                                                         |
+| `action=authenticate`                  | Launches only the peer's official no-capture login through a separately planned provider-owned interactive flow that the operator runs in their own terminal, outside model-captured tool streams, so Bridge can inherit the terminal without receiving login output. |
+| `action=verify-live`                   | Performs one separately approved live probe through the same planner/executor; live verification uses a third action-bound approval for one paid provider call.                                                                                                       |
+| `live=skip`                            | Finishes at `inference-unverified`.                                                                                                                                                                                                                                   |
+| `live=required`                        | Is non-ready when the live approval or probe fails.                                                                                                                                                                                                                   |
+
+One setup run owns one peer target. To prepare both integrations, complete the peer lifecycle from one host, honor any fresh-session boundary, then run the other host's setup skill; no approval or readiness claim is shared across them.
+
+The setup result is defined by `schemas/setup-result.schema.json`, separate from the model bridge envelope:
+
+- It reports the strongest evidence level reached: `static`, `host-authenticated`, `session-ready`, `workspace-ready`, or `live-verified`.
+- It never treats process exit, authentication, or static checks as proof of inference.
+- The deterministic setup CLI cannot prove the loaded session/workspace and therefore remains non-ready even after a successful point-in-time live probe; the host skill may claim a stronger lifecycle result only after applicable loaded-session evidence is also present.
+- The read-only MCP tool `bridge_status` returns sanitized server identity, version, schema/protocol version, host-selected canonical workspace, workspace fingerprint, and expected tool inventory without calling a provider or writing state.
 
 ## 🔌 Is MCP required?
 
@@ -97,7 +139,15 @@ Start a fresh Claude Code session after installation. Run the static local CLI c
 /bridge:setup
 ```
 
-The default setup path is end-to-end and approval-bound: it checks the installed payload and native CLI capabilities, proposes safe configuration or repair, applies only the approved exact operations, separately offers provider-owned authentication when needed, and verifies each applicable evidence level. It never captures sensitive login material or claims readiness beyond the evidence returned. Use the canonical syntax above; the legacy `--live` and `--direction` forms are accepted only for one release and are normalized to the same approval boundaries:
+The default setup path is end-to-end and approval-bound:
+
+1. Check the installed payload and native CLI capabilities.
+2. Propose safe configuration or repair.
+3. Apply only the approved exact operations.
+4. Separately offer provider-owned authentication when needed.
+5. Verify each applicable evidence level.
+
+> It never captures sensitive login material or claims readiness beyond the evidence returned. Use the canonical syntax above; the legacy `--live` and `--direction` forms are accepted only for one release and are normalized to the same approval boundaries:
 
 ```text
 /bridge:setup action=verify-live target=peer live=required
@@ -113,7 +163,13 @@ Invoke the namespaced skills directly. Pass a concrete task or question and sele
 /bridge:review --model <codex-model> --effort <effort> --timeout-seconds 300 "Review the current diff for correctness, regressions, and missing tests."
 ```
 
-The verb skills accept the bridge's task text plus caller-selected `--timeout-seconds`, `--depth`, `--run-id`, `--workspace`, and (for implement) `--background` and `--session-id` fields. Omitted budget uses the per-verb default (`advise` 120 seconds, `review` 300 seconds, `implement` 600 seconds); omitted depth starts an outermost call at zero. A write-capable implementation is never automatically retried after timeout because its process may already have changed the worktree. Read-only advice and review may receive one bounded retry at the next lower supported effort tier, so the retry can finish within the same budget.
+The verb skills accept the bridge's task text and these caller-selected fields:
+
+| Applies to            | Fields and behavior                                                                                                                                                                                                            |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| All verbs             | `--timeout-seconds`, `--depth`, `--run-id`, and `--workspace`. Omitted budget uses the per-verb default (`advise` 120 seconds, `review` 300 seconds, `implement` 600 seconds); omitted depth starts an outermost call at zero. |
+| `implement`           | `--background` and `--session-id`. A write-capable implementation is never automatically retried after timeout because its process may already have changed the worktree.                                                      |
+| `advise` and `review` | May receive one bounded retry at the next lower supported effort tier, so the retry can finish within the same budget.                                                                                                         |
 
 Long-running implementation work may be detached. Use the job identifier printed by the bridge to inspect or stop it:
 
@@ -123,9 +179,20 @@ Long-running implementation work may be detached. Use the job identifier printed
 /bridge:cancel <job-id>
 ```
 
-Background execution and lifecycle controls are available only for Claude Code → Codex `implement`. `advise` and `review` are foreground, ephemeral calls; the Codex → Claude MCP transport does not expose reverse background requests or separate status/result/cancel skills. After an implementation returns, re-read every path in `files_touched[]` before making another edit. Do not edit paths named by a still-running implementation task; the job record is the coordination boundary.
+> Background execution and lifecycle controls are available only for Claude Code → Codex `implement`. `advise` and `review` are foreground, ephemeral calls; the Codex → Claude MCP transport does not expose reverse background requests or separate status/result/cancel skills.
 
-Session continuation is also limited to Claude Code → Codex `implement`: pass the explicit session identifier returned by a prior implementation, keep the same workspace, and never use a “most recent session” selector. Advice and review always start fresh ephemeral Codex runs. The reverse MCP path does not resume Claude sessions.
+After an implementation returns:
+
+1. Re-read every path in `files_touched[]` before making another edit.
+2. Do not edit paths named by a still-running implementation task; the job record is the coordination boundary.
+
+Session continuation is also limited to Claude Code → Codex `implement`:
+
+- Pass the explicit session identifier returned by a prior implementation.
+- Keep the same workspace.
+- Never use a “most recent session” selector.
+- Advice and review always start fresh ephemeral Codex runs.
+- The reverse MCP path does not resume Claude sessions.
 
 ## 📦 Install for Codex
 
@@ -136,13 +203,19 @@ codex plugin marketplace add Borda/AI-Rig
 codex plugin add bridge@borda-ai-rig
 ```
 
-The Codex manifest declares the bridge MCP server, and the installed `.mcp.json` starts `bin/bridge_mcp.py` from the plugin root. The server treats the current directory selected by the Codex host as its trusted workspace; open the Codex session in the intended project and do not use write-capable calls if the installed host launches the MCP server from a different directory. If Codex asks you to trust or enable the installed MCP content, review the displayed command and approve it according to your local policy. Start a fresh Codex session after installation, then run the Codex-side setup skill:
+The Codex manifest declares the bridge MCP server, and the installed `.mcp.json` starts `bin/bridge_mcp.py` from the plugin root.
+
+> The server treats the current directory selected by the Codex host as its trusted workspace; open the Codex session in the intended project and do not use write-capable calls if the installed host launches the MCP server from a different directory. If Codex asks you to trust or enable the installed MCP content, review the displayed command and approve it according to your local policy.
+
+Start a fresh Codex session after installation, then run the Codex-side setup skill:
 
 ```text
 $bridge:setup
 ```
 
-The Codex half degrades cleanly when `claude` is absent or unauthenticated: setup reports the prerequisite and bridge calls return a structured blocked result. The static planner does not establish that the current MCP session is loaded or workspace-bound; use `bridge_status` from a fresh Codex session for that evidence. The bridge does not install Claude, read credentials from files, or fall back to a shell call inside the Codex sandbox.
+The Codex half degrades cleanly when `claude` is absent or unauthenticated: setup reports the prerequisite and bridge calls return a structured blocked result.
+
+> The static planner does not establish that the current MCP session is loaded or workspace-bound; use `bridge_status` from a fresh Codex session for that evidence. The bridge does not install Claude, read credentials from files, or fall back to a shell call inside the Codex sandbox.
 
 ## ⚡ Use from Codex
 
@@ -154,19 +227,53 @@ $bridge:advise --model <claude-model> --effort <effort> --timeout-seconds 120 "E
 $bridge:review --model <claude-model> --effort <effort> --timeout-seconds 300 "Review the current diff and list actionable findings."
 ```
 
-The skills invoke the bridge MCP tools `bridge_implement`, `bridge_advise`, `bridge_review`, and `bridge_status`. Each bridge request tool accepts `task`, optional `model` and `effort`, and optional `timeout_seconds`, `depth`, `run_id`, and supported-effort capability data. `bridge_status` accepts no workspace override and performs no peer, provider, write, repair, or authentication operation. Omitted model, effort, depth, and run ID use the host-default, `medium`, zero, and a new UUID respectively. Reverse implementations accept at most 700 seconds; reverse advice and review accept at most 350 seconds because their one allowed timeout retry, including per-attempt termination and drain overhead, must also finish within the MCP host's 900-second deadline. The host-launched server binds the request to its launch workspace and rejects model-supplied workspace, background, and session fields, so a tool call cannot widen filesystem authority. The bridge supplies the budget preamble, invokes `claude -p` with the narrowest permission mode for the verb, and returns the same compact envelope used by the Claude half. The peer's bounded verbose `details` remain in the raw transcript referenced by the envelope; they are not copied into the caller's context. Do not invoke `claude -p` directly from a sandboxed Codex model turn: the bridge MCP server is the supported transport because it runs in the host context where the normal Claude authentication path is available.
+The skills invoke the bridge MCP tools `bridge_implement`, `bridge_advise`, `bridge_review`, and `bridge_status`.
+
+| Tool group           | Contract                                                                                                                                                                                                                                            |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bridge request tools | Accept `task`, optional `model` and `effort`, and optional `timeout_seconds`, `depth`, `run_id`, and supported-effort capability data. Omitted model, effort, depth, and run ID use the host-default, `medium`, zero, and a new UUID respectively.  |
+| `bridge_status`      | Accepts no workspace override and performs no peer, provider, write, repair, or authentication operation.                                                                                                                                           |
+| Reverse timeouts     | Implementations accept at most 700 seconds; advice and review accept at most 350 seconds because their one allowed timeout retry, including per-attempt termination and drain overhead, must also finish within the MCP host's 900-second deadline. |
+| Host boundary        | The host-launched server binds the request to its launch workspace and rejects model-supplied workspace, background, and session fields, so a tool call cannot widen filesystem authority.                                                          |
+
+The bridge supplies the budget preamble, invokes `claude -p` with the narrowest permission mode for the verb, and returns the same compact envelope used by the Claude half. The peer's bounded verbose `details` remain in the raw transcript referenced by the envelope; they are not copied into the caller's context.
+
+> Do not invoke `claude -p` directly from a sandboxed Codex model turn: the bridge MCP server is the supported transport because it runs in the host context where the normal Claude authentication path is available.
 
 ## 🎚️ Model, effort, budget, and depth
 
-The caller's explicit model is passed to the target CLI; the bridge does not discover or validate model availability before dispatch. An omitted model uses the target host default and is represented as `host-default` in the envelope. The caller's explicit effort is normalized before dispatch; supported values are `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`, with `trivial` and `none` accepted as aliases for `minimal`. An invalid value returns `blocked`; when a caller supplies supported-effort capabilities, one lower supported value may be recorded in `effort_substituted`.
+Model and effort selection:
 
-The per-verb soft budgets are two minutes for `advise`, five minutes for `review`, and ten minutes for `implement`. A callee receives the budget in-band and is expected to scope its work to fit. The hard cutoff is 1.2× the soft budget. A `partial` result is valid work with explicit `remaining`; a `blocked` result names the permission, authentication, or input blocker; `timeout` identifies a cutoff; `refused` identifies recursion protection or another deliberate refusal.
+- The caller's explicit model is passed to the target CLI; the bridge does not discover or validate model availability before dispatch.
+- An omitted model uses the target host default and is represented as `host-default` in the envelope.
+- The caller's explicit effort is normalized before dispatch. Supported values are `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`, with `trivial` and `none` accepted as aliases for `minimal`.
+- An invalid value returns `blocked`; when a caller supplies supported-effort capabilities, one lower supported value may be recorded in `effort_substituted`.
 
-`depth` starts at zero for a caller-originated request. Before launching the peer, the transport increments it in `CC_CODEX_BRIDGE_DEPTH`; the peer CLI and MCP process inherit that trusted value, and caller input cannot lower it. Negative depth is rejected, and a call received at trusted depth one or greater returns `refused: recursion-depth`. `run_id` is minted once at the outermost call and echoed through the call chain, so health records from both hosts can be correlated without conflating a Codex thread identifier with a Claude session identifier.
+Budget and result states:
+
+| Item        | Contract                                                                                                                                                             |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Soft budget | Two minutes for `advise`, five minutes for `review`, and ten minutes for `implement`. A callee receives the budget in-band and is expected to scope its work to fit. |
+| Hard cutoff | 1.2× the soft budget.                                                                                                                                                |
+| `partial`   | Valid work with explicit `remaining`.                                                                                                                                |
+| `blocked`   | Names the permission, authentication, or input blocker.                                                                                                              |
+| `timeout`   | Identifies a cutoff.                                                                                                                                                 |
+| `refused`   | Identifies recursion protection or another deliberate refusal.                                                                                                       |
+
+Depth and correlation:
+
+- `depth` starts at zero for a caller-originated request.
+- Before launching the peer, the transport increments it in `CC_CODEX_BRIDGE_DEPTH`; the peer CLI and MCP process inherit that trusted value, and caller input cannot lower it.
+- Negative depth is rejected, and a call received at trusted depth one or greater returns `refused: recursion-depth`.
+- `run_id` is minted once at the outermost call and echoed through the call chain, so health records from both hosts can be correlated without conflating a Codex thread identifier with a Claude session identifier.
 
 ## 📊 Results and artifacts
 
-Each child attempt writes its raw host transcript once. The public envelope returns the compact decision core, including decisions, blockers, and remaining work, with observed metadata and workspace-relative transcript or incident references; verbose peer `details` stay in the transcript as additional evidence and never substitute for required public fields. Bridge state is project-local:
+Each child attempt writes its raw host transcript once.
+
+> The public envelope returns the compact decision core, including decisions, blockers, and remaining work, with observed metadata and workspace-relative transcript or incident references; verbose peer `details` stay in the transcript as additional evidence and never substitute for required public fields.
+
+Bridge state is project-local:
 
 ```text
 .temp/bridge/raw-<timestamp>.txt                    raw transcript, referenced by the envelope
@@ -176,15 +283,27 @@ Each child attempt writes its raw host transcript once. The public envelope retu
 .temp/bridge/incidents/<timestamp>-<fault>.json     sanitized fault and recovery evidence
 ```
 
-Incident records do not persist child command arguments or environment data. They preserve the classified fault, reason, model, effort, verb, budget, transcript path, and—when a write-capable process is killed—the observed worktree delta. The health log records direction, verb, model, effort, cost/tokens when reported by the host, duration, status, depth, and `run_id`. Setup summarizes blocked/timeout/refused counts, their latest timestamps, and reported cost by direction, verb, and model; static CLI findings are reported separately.
+Artifact handling:
 
-Artifacts are evidence, not authority. Read the envelope, source changes, tests, permissions, and remaining limits before accepting consequential work. Delete `.temp/bridge/` only under your project's normal retention policy and only after preserving any incident or review evidence you still need.
+- Incident records do not persist child command arguments or environment data. They preserve the classified fault, reason, model, effort, verb, budget, transcript path, and—when a write-capable process is killed—the observed worktree delta.
+- The health log records direction, verb, model, effort, cost/tokens when reported by the host, duration, status, depth, and `run_id`.
+- Setup summarizes blocked/timeout/refused counts, their latest timestamps, and reported cost by direction, verb, and model; static CLI findings are reported separately.
+
+> Artifacts are evidence, not authority. Read the envelope, source changes, tests, permissions, and remaining limits before accepting consequential work. Delete `.temp/bridge/` only under your project's normal retention policy and only after preserving any incident or review evidence you still need.
 
 ## 🔒 Privacy and security boundaries
 
 The bridge sends the task text and the selected project context to the provider CLI named by the direction of the call. Provider billing, retention, account access, and model availability remain governed by the provider and your host configuration. The bridge does not upload artifacts to a separate service or persist credentials.
 
-Use `advise` and `review` for read-only work. `implement` can modify the current worktree under the host's normal permission policy. Setup configuration and repair are state-changing operations bound to an exact approval digest; authentication failures, permission denials, unsupported models, and unknown faults are surfaced as structured results or incidents. Provider login output is never captured, and rollback never touches credentials. The bridge never bypasses host permission prompts, invents a credential, retries a write-capable timeout, or silently replaces a requested effort tier.
+Safety boundaries:
+
+- Use `advise` and `review` for read-only work.
+- `implement` can modify the current worktree under the host's normal permission policy.
+- Setup configuration and repair are state-changing operations bound to an exact approval digest.
+- Authentication failures, permission denials, unsupported models, and unknown faults are surfaced as structured results or incidents.
+- Provider login output is never captured, and rollback never touches credentials.
+
+> The bridge never bypasses host permission prompts, invents a credential, retries a write-capable timeout, or silently replaces a requested effort tier.
 
 ## ⬆️ Updating, uninstalling, and human-owned gates
 

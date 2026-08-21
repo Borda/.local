@@ -85,7 +85,7 @@ def _install_native_boundary(
                 return _completed(command, "not-json\n")
             installed = []
             if state["claude_installed"]:
-                installed.append({"id": "bridge@borda-ai-rig", "version": "0.3.0", "enabled": True})
+                installed.append({"id": "bridge@borda-ai-rig", "version": "0.3.1", "enabled": True})
             return _completed(command, json.dumps(installed) + "\n")
         if command == ["codex", "login", "status"]:
             return _completed(command, "Logged in\n")

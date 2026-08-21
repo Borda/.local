@@ -23,12 +23,12 @@
     {
       "mode": "0644",
       "path": ".codex-plugin/plugin.json",
-      "sha256": "0d48d8faa35525811e0914630f057147bc6e428ac312c1d238d1c1a40fa0268c"
+      "sha256": "d74565331ac5f4d93ddcb4c5b4ebdc59de30e448afcfc799e6ab6686c3347855"
     },
     {
       "mode": "0644",
       "path": "CHANGELOG.md",
-      "sha256": "4b67c964a94a0aa658f70ae5f5b7f1ebf4d0e5b344e0ea600c604f72af3d9f57"
+      "sha256": "a578f71df44fa974e26192de66399a4475c9c08a49d5e2176300a484fd2c5f1d"
     },
     {
       "mode": "0644",
@@ -43,12 +43,12 @@
     {
       "mode": "0644",
       "path": "README.md",
-      "sha256": "2b768efde9842679b10de9fd767662e3f151a7f866a2fac73b7a5732b4a41198"
+      "sha256": "df89ad6689184cd7daa0c78ab91878d5a36d2935c37154858e7ab2f39c940705"
     },
     {
       "mode": "0644",
       "path": "assets/AGENTS.md",
-      "sha256": "14477cdade16cc27060776ea2bf425518cfadca6e26f2ecc9e5b96691027d610"
+      "sha256": "6a71e64342cf241fb56f64ba44222913a1eb9626d034563d9e7c039832ee2b43"
     },
     {
       "mode": "0644",
@@ -458,7 +458,7 @@
     {
       "mode": "0644",
       "path": "skills/code-remediate/SKILL.md",
-      "sha256": "ce87beb69614196876a1f7a5b9095819be9c5933c313684761529559354c95e7"
+      "sha256": "31528e8a1cc762025661f60313bec5a78f888a341e4ee34c1d0afdc6ef988111"
     },
     {
       "mode": "0644",
@@ -468,7 +468,7 @@
     {
       "mode": "0644",
       "path": "skills/code-review/SKILL.md",
-      "sha256": "a487f160de0d72261571109c2ebfff2139d348ebad26db22a2f0c8988600287b"
+      "sha256": "be07c290426e419ce7d6bf3a31fd5f98fce38636da7977b457fd5bdd4595d6b3"
     },
     {
       "mode": "0644",
@@ -708,7 +708,7 @@
     {
       "mode": "0644",
       "path": "tests/test_code_review_routing_contract.py",
-      "sha256": "702bebcffe707eb6bf2559daa07bc0b15834b72a9617dedfa8a777e933427417"
+      "sha256": "7b6f4a16a033a73240afd1da114497c42e121a5c2513c4367b58ae28cc1db2e9"
     },
     {
       "mode": "0644",
@@ -1064,5 +1064,5 @@
       "path": "skills/sync/SKILL.md"
     }
   ],
-  "version": "0.10.0"
+  "version": "0.10.1"
 }

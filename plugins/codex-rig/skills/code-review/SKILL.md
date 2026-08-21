@@ -39,17 +39,57 @@ Never write to remote. PR scope may update local checkout to PR head; otherwise 
 
 Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill code-review` once; stdout is literal `<run-directory>`; never store it in a shell variable.
 
-### 02: T0 mechanical scope gate: resolve scope, collect diff, and classify review risk before any model-level judgment
+### 02: T0 mechanical scope gate
 
 For local scopes, inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect normalized `scope`, optional `target`, and the literal `<run-directory>` path.
 
 For PR scope, inspect `python PLUGIN_ROOT/shared/collect_pr.py --help`; collect the exact target into the literal `<run-directory>` path with checkout enabled.
 
-In runtimes with network sandboxing, execute the complete collector command with approved external network access from its first attempt under `../../shared/native-skill-contract.md`. Before requesting it, state: `Action and purpose`: collect current PR evidence; `External capability`: read-only GitHub access plus the documented local checkout; `Credential behavior`: `gh` is an opaque local credential broker; `Filesystem and worktree effects`: write collection artifacts and may update the local checkout; `Retry policy and safe denial outcome`: one classified recovery only, otherwise the review is unavailable. For a Codex exec call, set `sandbox_permissions="require_escalated"` on the collector invocation with a read-only GitHub-access justification; never enable persistent workspace network access, and never request a broad `python` approval prefix. A direct approval for `gh pr view` does not cover `gh` spawned by the collector: the outer collector command must own approval for its nested GitHub CLI, HTTPS fallback, checkout, and Git fetch traffic. The PR-review request authorizes asking for this read-only external access and the documented local checkout, but never bypassing the runtime approval prompt. Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command. Ask the user to send a new message to resume. If an agent-caused unapproved attempt returns `github-network` before any user approval request or denial, rerun that same complete collector command once through the runtime's external-network approval mechanism before producing a terminal unavailable result. This recovery exists only for that pre-denial sandbox mistake; after the user denies approval, the current turn stops and the retry is forbidden. Only after that approved collector attempt fails, external-network approval is unavailable, or the user denies it may the terminal collection-failure gate apply; never repeat more than one approved recovery attempt.
+In runtimes with network sandboxing, execute the complete collector command with approved external network access from its first attempt under `../../shared/native-skill-contract.md`. Before requesting it, state:
 
-PR evidence has two tiers. Core evidence is `gh pr view` metadata including contributor description/body, authoritative base-repository identity, refreshed target ancestry, an exact local PR head, and a diff derived with local `git diff <base>...<head>` after SHA verification. Supplemental evidence is GraphQL review-thread resolution state and derived diff statistics. The collector delegates remote GitHub state reads to `github_read.py`, which uses `gh` as an opaque local credential broker: it never invokes `gh auth`, reads token/keychain state, or writes CLI failure output to artifacts. That read-only boundary permits audited view commands, REST GET, and GraphQL query operations; public HTTPS fallback cannot establish private PR evidence. A classified core command failure is recorded in `command-failure.json` when diagnostics exist. For an open PR, use fork-aware `gh pr checkout <number>` unless the current HEAD already exactly equals PR metadata; historical collection fetches GitHub's `refs/pull/<number>/head`, verifies its exact SHA, and checks it out detached. Inspect source only in the local checkout recorded by `<run-directory>/local-checkout.json`; `diff.patch` must record `diff_source=verified-local-checkout` provenance there. Never reconstruct changed source from `curl`, `raw.githubusercontent.com`, or `head-files/` snapshots. If checkout or local-diff verification fails, fail instead of reviewing remote raw files. Do not retry with `--force` unless user explicitly confirms after receiving force reason and overwrite risk.
+- `Action and purpose`: collect current PR evidence.
+- `External capability`: read-only GitHub access plus the documented local checkout.
+- `Credential behavior`: `gh` is an opaque local credential broker.
+- `Filesystem and worktree effects`: write collection artifacts and may update the local checkout.
+- `Retry policy and safe denial outcome`: one classified recovery only, otherwise the review is unavailable.
+- For a Codex exec call:
+  - Set `sandbox_permissions="require_escalated"` on the collector invocation with a read-only GitHub-access justification; never enable persistent workspace network access, and never request a broad `python` approval prefix.
+  - A direct approval for `gh pr view` does not cover `gh` spawned by the collector: the outer collector command must own approval for its nested GitHub CLI, HTTPS fallback, checkout, and Git fetch traffic.
+  - The PR-review request authorizes asking for this read-only external access and the documented local checkout, but never bypassing the runtime approval prompt.
+- Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command. Ask the user to send a new message to resume.
+- If an agent-caused unapproved attempt returns `github-network` before any user approval request or denial, rerun that same complete collector command once through the runtime's external-network approval mechanism before producing a terminal unavailable result. This recovery exists only for that pre-denial sandbox mistake; after the user denies approval, the current turn stops and the retry is forbidden. Only after that approved collector attempt fails, external-network approval is unavailable, or the user denies it may the terminal collection-failure gate apply; never repeat more than one approved recovery attempt.
 
-When `gh pr view` metadata fails, public unauthenticated HTTPS fallback is eligible only for `github-network`, `github-auth`, `github-rate-limit`, or `command-timeout`, and only with a trusted checkout target. A canonical PR URL must match a configured GitHub remote; a numeric target requires exactly one distinct configured GitHub repository identity. Ambiguous or unsafe targets, permission failures, not-found failures, and unclassified failures remain fail-closed. The fallback normalizes limited PR metadata, then uses the verified `refs/pull/<number>/head` ref for a detached checkout and derives the local diff; it never establishes private PR evidence. `online-review-summary.json` must list unavailable fallback evidence as sorted IDs, and raw GitHub CLI stderr is never persisted; terminal diagnostics may include a safe `failure_reason` enum alongside non-secret classification metadata.
+PR evidence has two tiers.
+
+- Core evidence: `gh pr view` metadata including contributor description/body, authoritative base-repository identity, refreshed target ancestry, an exact local PR head, and a diff derived with local `git diff <base>...<head>` after SHA verification.
+- Supplemental evidence: GraphQL review-thread resolution state and derived diff statistics.
+
+Collector and source boundary:
+
+- The collector delegates remote GitHub state reads to `github_read.py`, which uses `gh` as an opaque local credential broker: it never invokes `gh auth`, reads token/keychain state, or writes CLI failure output to artifacts.
+- That read-only boundary permits audited view commands, REST GET, and GraphQL query operations; public HTTPS fallback cannot establish private PR evidence.
+- A classified core command failure is recorded in `command-failure.json` when diagnostics exist.
+
+Checkout and source requirements:
+
+- For an open PR, use fork-aware `gh pr checkout <number>` unless the current HEAD already exactly equals PR metadata; historical collection fetches GitHub's `refs/pull/<number>/head`, verifies its exact SHA, and checks it out detached.
+- Inspect source only in the local checkout recorded by `<run-directory>/local-checkout.json`; `diff.patch` must record `diff_source=verified-local-checkout` provenance there.
+- Never reconstruct changed source from `curl`, `raw.githubusercontent.com`, or `head-files/` snapshots.
+- If checkout or local-diff verification fails, fail instead of reviewing remote raw files.
+- Do not retry with `--force` unless user explicitly confirms after receiving force reason and overwrite risk.
+
+When `gh pr view` metadata fails, public unauthenticated HTTPS fallback is eligible only when all of these hold:
+
+- The failure is `github-network`, `github-auth`, `github-rate-limit`, or `command-timeout`.
+- The checkout target is trusted: a canonical PR URL must match a configured GitHub remote; a numeric target requires exactly one distinct configured GitHub repository identity.
+
+Ambiguous or unsafe targets, permission failures, not-found failures, and unclassified failures remain fail-closed.
+
+Fallback behavior:
+
+- The fallback normalizes limited PR metadata, then uses the verified `refs/pull/<number>/head` ref for a detached checkout and derives the local diff; it never establishes private PR evidence.
+- `online-review-summary.json` must list unavailable fallback evidence as sorted IDs.
+- Raw GitHub CLI stderr is never persisted; terminal diagnostics may include a safe `failure_reason` enum alongside non-secret classification metadata.
 
 Classify diff; write `<run-directory>/scope.txt`:
 
@@ -62,9 +102,24 @@ For `scope=pr`, merge-oriented code review is limited to an `OPEN` PR. `collect_
 
 If `files.txt` and `untracked.txt` are empty with no explicit target, fail before gates. If `scope=pr` and `pr-error.txt` exists, fail with captured reason and do not begin T1/T2 source review.
 
-**Terminal review-unavailable output gate:** A core T0 PR collection failure is a process failure, not a review result. State `PR Review Availability: unavailable`; `Source findings: not assessed`; and `Merge decision: not made`. Use plain diagnostic prose with exactly a process diagnostic, recovery action, and evidence path. Do not emit a Markdown table: neither `PR Evidence Collection Recovery` nor `Review Findings and Merge Blocks` applies before source assessment. Do not emit `needs-more-work`, `minor-changes`, `reject`, `not-aligned`, or any other merge recommendation. Retain current-attempt metadata, checkout state, or partial diff artifacts for diagnosis, but label them unassessed and never turn them into findings. Name the classified failure and `<run-directory>/pr-error.txt`, then stop. Still write a canonical `result.json` with `status=fail`, zero findings, `review_status=unavailable`, and `collection_failure={"code": "<pr-error.txt text>", "artifact": "pr-error.txt"}`; the review-specific validator rejects a review decision, source findings, specialist artifacts, any table, or assessed-review sections.
+**Terminal review-unavailable output gate:** A core T0 PR collection failure is a process failure, not a review result.
 
-For retryable `github-network`, `github-rate-limit`, or `command-timeout` that remains after the required collector-approval handling, explain that no review occurred and ask the user to retry the unchanged collector later; rate-limit diagnostics deliberately retain no server interval. If `checkout-state.json` exists, say the local checkout command may have changed the worktree, tell the user to inspect that local state before retrying, and never claim no checkout was produced. For `github-auth` or a permission failure, stop and explain that the local `gh` configuration/account access needs repair; tell the user to run `gh auth status` and, if needed, `gh auth login` privately outside the agent workflow, verify repository access, and never paste tokens, keychain data, or credential output into chat. For `missing-command:gh`, tell the user to install or repair `gh` locally before retrying. For `github-not-found`, ask for the canonical PR URL and repository identity. For definitive `unsafe-gh-command`, invalid protocol/JSON, missing required PR identity, or an unclassified deterministic collector error, stop at the unavailable result, explain the classified code and artifact, and suggest filing a Codex Rig bug with the plugin version, command label, failure code, and sanitized artifacts. Never retry a deterministic target, permission, safety-guard, or plugin-contract failure automatically.
+- State `PR Review Availability: unavailable`; `Source findings: not assessed`; and `Merge decision: not made`.
+- Use plain diagnostic prose with exactly a process diagnostic, recovery action, and evidence path.
+- Do not emit a Markdown table: neither `PR Evidence Collection Recovery` nor `Review Findings and Merge Blocks` applies before source assessment.
+- Do not emit `needs-more-work`, `minor-changes`, `reject`, `not-aligned`, or any other merge recommendation.
+- Retain current-attempt metadata, checkout state, or partial diff artifacts for diagnosis, but label them unassessed and never turn them into findings.
+- Name the classified failure and `<run-directory>/pr-error.txt`, then stop.
+- Still write a canonical `result.json` with `status=fail`, zero findings, `review_status=unavailable`, and `collection_failure={"code": "<pr-error.txt text>", "artifact": "pr-error.txt"}`; the review-specific validator rejects a review decision, source findings, specialist artifacts, any table, or assessed-review sections.
+
+For retryable `github-network`, `github-rate-limit`, or `command-timeout`, explain that no review occurred and ask the user to retry the unchanged collector later; rate-limit diagnostics deliberately retain no server interval.
+
+- If `checkout-state.json` exists, say the local checkout command may have changed the worktree, tell the user to inspect that local state before retrying, and never claim no checkout was produced.
+- For `github-auth` or a permission failure, stop and explain that the local `gh` configuration/account access needs repair; tell the user to run `gh auth status` and, if needed, `gh auth login` privately outside the agent workflow, verify repository access, and never paste tokens, keychain data, or credential output into chat.
+- For `missing-command:gh`, tell the user to install or repair `gh` locally before retrying.
+- For `github-not-found`, ask for the canonical PR URL and repository identity.
+- For definitive `unsafe-gh-command`, invalid protocol/JSON, missing required PR identity, or an unclassified deterministic collector error, stop at the unavailable result, explain the classified code and artifact, and suggest filing a Codex Rig bug with the plugin version, command label, failure code, and sanitized artifacts.
+- Never retry a deterministic target, permission, safety-guard, or plugin-contract failure automatically.
 
 **Terminal close gate (PR only):** After successful T0 collection for an `OPEN` PR and before structural context or T1/T2, screen the PR goal, description, minimal verified diff evidence, authoritative project policy/history, and linked upstream evidence for one conclusive proposal-level close reason. This is a disposition decision, not a source review. If evidence is inconclusive, continue to T1/T2; never close from suspicion, reviewer preference, contributor identity, AI authorship/style, or a merely related change.
 
@@ -87,7 +142,7 @@ On close, skip structural context, T1, T2, specialist routing, detailed findings
 
 **Structural context (optional)**: after the diff is collected, also probe codemap-py once for changed-symbol blast radius: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category review --out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with T1/T2 as scoped by `scope.txt` alone. Persist the diff-impact evidence once here; T2 specialist fan-out (step 04) includes `<run-directory>/codemap-context.json` in each triggered context pack, never a fresh per-specialist query.
 
-### 03: T1 primary diff review. Read the changed files end-to-end from the local working tree or checked-out PR branch and identify findings before considering any fix or gate outcome
+### 03: T1 primary diff review
 
 Review axes, in order:
 
@@ -112,9 +167,16 @@ Blocking defaults guide merge judgment; they are not automatic labels:
 | Incomplete implementation | blocking | Includes TODOs in changed paths, missing expected error handling, or an unfinished public contract. |
 | Missing CLA/DCO signature | blocking only when the project requires it | Verify a CLA/DCO bot check or explicit contribution policy first; without such a requirement it is not applicable. |
 
-### 04: T2 risk-routed specialist fan-out. Route independent review from explicit behavior signals, not the file-count tier alone
+### 04: T2 risk-routed specialist fan-out
 
-Always write `<run-directory>/review-routing.json`: `schema_version=1`; declared risk tier; every exact boolean signal below; `signal_evidence` as an object containing every signal with a non-empty JSON `list[str]` value for each true/false decision; sorted `triggered_roles`; `trigger_reasons` as an object containing only triggered roles with a non-empty JSON `list[str]` value. For example, write `"signal_evidence": {"bug_fix": ["PR body and changed test identify the corrected behavior."]}` and `"trigger_reasons": {"qa-specialist": ["Bug-fix and test-path evidence require QA."]}`. Bare strings are invalid. Then run `python PLUGIN_ROOT/skills/code-review/review_routing.py --out <run-directory>` so the shipped deterministic producer replaces `mechanical_risk_tier` and `mechanical_risk_evidence` from `files.txt`, `untracked.txt`, and `numstat.txt`; never calculate or copy those fields manually. Declared tier cannot be below mechanical file/line, binary-size, config/dependency, CI, migration, or security-path evidence. Mechanically detected test, docs, data/tensor, CI, and security paths force matching signals true. Always write `<run-directory>/specialist-manifest.json`, with empty `passes` when no role triggers. Never add untriggered manifest roles.
+Always:
+
+- Write `<run-directory>/review-routing.json` with `schema_version=1`; declared risk tier; every exact boolean signal below; `signal_evidence` as an object containing every signal with a non-empty JSON `list[str]` value for each true/false decision; sorted `triggered_roles`; and `trigger_reasons` as an object containing only triggered roles with a non-empty JSON `list[str]` value.
+- For example, write `"signal_evidence": {"bug_fix": ["PR body and changed test identify the corrected behavior."]}` and `"trigger_reasons": {"qa-specialist": ["Bug-fix and test-path evidence require QA."]}`. Bare strings are invalid.
+- Then run `python PLUGIN_ROOT/skills/code-review/review_routing.py --out <run-directory>` so the shipped deterministic producer replaces `mechanical_risk_tier` and `mechanical_risk_evidence` from `files.txt`, `untracked.txt`, and `numstat.txt`; never calculate or copy those fields manually.
+- Keep the declared tier at or above mechanical file/line, binary-size, config/dependency, CI, migration, or security-path evidence.
+- Set matching signals true for mechanically detected test, docs, data/tensor, CI, and security paths.
+- Write `<run-directory>/specialist-manifest.json`, with empty `passes` when no role triggers. Never add untriggered manifest roles.
 
 Required routing signals:
 
@@ -129,9 +191,20 @@ Routing rules:
 - `BROAD` and `HIGH_RISK`: always real QA and challenger passes.
 - Conditional role only when matching `axis_<role>` signal is true.
 
-Create `<run-directory>/specialists` and one markdown output per triggered spawned/substituted pass. Apply `../../shared/specialist-orchestration.md`. Before each pass, write narrow `<run-directory>/specialists/<role>-context.md`: objective, axis, relevant evidence, excluded noise, concrete questions, output contract, stop rule. Never give every specialist whole PR/repository. Parent owns final severity, duplicate merge, conflict resolution, decision.
+For every triggered pass:
 
-For spawned attempt, hash completed context before spawn; task name `review_<role_with_underscores>_<first_12_context_sha256>_a<attempt>`. Record full agent path. This binds runtime child identity to role, context artifact, and attempt even when rollout schema leaves `agent_role` null. Runtime encrypts actual inter-agent payload: do not claim cryptographic proof plaintext exactly equals saved context; record residual limit in confidence metadata.
+- Create `<run-directory>/specialists` and one markdown output per triggered spawned/substituted pass.
+- Apply `../../shared/specialist-orchestration.md`.
+- Before the pass, write narrow `<run-directory>/specialists/<role>-context.md`: objective, axis, relevant evidence, excluded noise, concrete questions, output contract, stop rule.
+- Never give every specialist whole PR/repository.
+
+Parent owns final severity, duplicate merge, conflict resolution, and decision.
+
+For a spawned attempt:
+
+- Hash completed context before spawn; task name `review_<role_with_underscores>_<first_12_context_sha256>_a<attempt>`.
+- Record full agent path. This binds runtime child identity to role, context artifact, and attempt even when rollout schema leaves `agent_role` null.
+- Runtime encrypts actual inter-agent payload: do not claim cryptographic proof plaintext exactly equals saved context; record residual limit in confidence metadata.
 
 Compute SHA-256 for `diff.patch` and every context pack. Require exact first specialist line (replace placeholders):
 
@@ -145,13 +218,32 @@ Routed specialist axes:
 - `challenger`: adversarial assumptions, high findings, migration/API risks, material no-finding conclusions.
 - Conditional roles: `data-steward`, `cicd-steward`, `linting-expert`, `doc-scribe`, `oss-shepherd`, `squeezer`, `scientist`, and `web-explorer` cover named domains. `solution-architect` and `security-auditor` are Sol-pinned and never triggered by a matching domain alone: use either only when the user expressly requests Sol or selects that role, then return its bounded read-only evidence artifact to the Terra parent/session for review acceptance.
 
-Use runtime-provided subagents when independence materially helps and follow the portable route order in the shared orchestration policy. A built-in/default child receives the exact canonical role card before its context pack. It may count as independent only when it has a separate child identity/output and the artifact records the card hash, route, actual model, and observed controls. If no safe subagent route exists, write a labeled in-main substitute for each triggered role and set `fanout_substituted=true`. Substitution lowers confidence and never satisfies independence for critical findings.
+Use runtime-provided subagents when independence materially helps and follow the portable route order in the shared orchestration policy.
 
-`specialist-manifest.json` uses schema version 2: `review_run_id`, `parent_thread_id=$CODEX_THREAD_ID`, `review_input_sha256`, triggered passes only. Each spawn records role-card hash, route, attempted routes, fallback reason, requested and observed controls, parent spawn event ID, child thread ID/path, turn ID, actual model/effort, context/output paths/hashes, status, and transient error type when applicable. `selected_attempt` identifies completed output. Validator checks hash-derived child name, parent spawn, child linkage, actual model/effort, final child message, hashes, and provenance header against Codex rollout logs.
+- A built-in/default child receives the exact canonical role card before its context pack.
+- It may count as independent only when it has a separate child identity/output and the artifact records the card hash, route, actual model, and observed controls.
+- If no safe subagent route exists, write a labeled in-main substitute for each triggered role and set `fanout_substituted=true`.
+- Substitution lowers confidence and never satisfies independence for critical findings.
 
-At most two attempts/role. Retry only `timeout`, `transport_error`, or `rate_limited`; never retry deterministic findings, validation failures, completed work. Preserve completed outputs/context. Checkpoint is evidence only, never completed output/provenance replacement.
+`specialist-manifest.json` uses schema version 2 and contains `review_run_id`, `parent_thread_id=$CODEX_THREAD_ID`, `review_input_sha256`, and triggered passes only.
 
-`BROAD`/`HIGH_RISK` pass only with real independent QA/challenger outputs. Set `independence_required=true` only when QA/challenger risk-triggered; set `independence_satisfied=true` only when every triggered required role has validated spawned provenance. If either output unavailable, fail/timeout with `independence_satisfied=false` and `needs-independent-review`. Risk-triggered `LOCAL` may pass with explicit substitutes only if every triggered axis is covered and confidence is reduced.
+- Each spawn records role-card hash, route, attempted routes, fallback reason, requested and observed controls, parent spawn event ID, child thread ID/path, turn ID, actual model/effort, context/output paths/hashes, status, and transient error type when applicable.
+- `selected_attempt` identifies completed output.
+- Validator checks hash-derived child name, parent spawn, child linkage, actual model/effort, final child message, hashes, and provenance header against Codex rollout logs.
+
+Attempt policy:
+
+- At most two attempts/role.
+- Retry only `timeout`, `transport_error`, or `rate_limited`; never retry deterministic findings, validation failures, completed work.
+- Preserve completed outputs/context.
+- Checkpoint is evidence only, never completed output/provenance replacement.
+
+Independence gate:
+
+- `BROAD`/`HIGH_RISK` pass only with real independent QA/challenger outputs.
+- Set `independence_required=true` only when QA/challenger risk-triggered; set `independence_satisfied=true` only when every triggered required role has validated spawned provenance.
+- If either output is unavailable, fail/timeout with `independence_satisfied=false` and `needs-independent-review`.
+- Risk-triggered `LOCAL` may pass with explicit substitutes only if every triggered axis is covered and confidence is reduced.
 
 ### 05: Cross-check every blocking finding against surrounding context and existing project patterns before reporting it. Critical/blocking findings require an independent second pass when feasible; if unconfirmed, downgrade or mark the evidence gap explicitly
 
@@ -244,7 +336,7 @@ Apply shared confidence band policy from `../../shared/quality-gates.md`. Record
 
 Confidence must be honest/objectively verifiable. Never raise it to pass a gate; improve evidence, narrow claims, or fail with named gap.
 
-### 11: If no findings are present, state that explicitly and note residual risks from T0 classification and any substituted specialist passes
+### 11: Declare no findings and residual risk
 
 ### 12: Write and validate the mandatory result artifact
 

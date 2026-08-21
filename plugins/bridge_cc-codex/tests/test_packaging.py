@@ -83,7 +83,7 @@ def test_host_manifests_select_disjoint_skill_surfaces() -> None:
 
     assert claude["name"] == "bridge"
     assert codex["name"] == "bridge"
-    assert claude["version"] == codex["version"] == "0.3.0"
+    assert claude["version"] == codex["version"] == "0.3.1"
     assert codex["interface"]["displayName"] == "bridge_CC-Codex"
     assert claude["skills"] == "./claude-skills/"
     assert codex["skills"] == "./codex-skills/"

@@ -32,6 +32,7 @@ docs/specs/
 .codemapignore
 
 # Agent auto-memory (machine-local, not source)
+.codex/caveman-compress/
 .claude/agent-memory/
 benchmarks/.claude/
 plugins/*/.claude/

@@ -110,7 +110,8 @@ def test_skill_requires_deterministic_routing_synchronization_before_specialists
     invocation = "python PLUGIN_ROOT/skills/code-review/review_routing.py --out <run-directory>"
 
     assert invocation in skill
-    assert skill.index(invocation) < skill.index("Always write `<run-directory>/specialist-manifest.json`")
+    manifest_path = "`<run-directory>/specialist-manifest.json`"
+    assert skill.index(invocation) < skill.index(manifest_path)
 
 
 def test_skill_requires_list_valued_routing_evidence_and_reasons() -> None:
