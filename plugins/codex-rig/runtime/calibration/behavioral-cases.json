@@ -634,10 +634,23 @@
         "ingested-entry-count-missing",
         "item-name-type-columns-missing",
         "resolved-how-column-missing",
-        "status-counts-missing"
+        "status-counts-missing",
+        "machine-readable-outcomes-missing",
+        "markdown-outcome-coverage-mismatch"
       ],
       "id": "code-remediate-final-table-incomplete",
-      "prompt": "Assess a code-remediate run whose durable action-items artifact only lists unresolved process items and changed code findings. It omits resolved, already-applied, duplicate, stale, and non-selected ingested rows, has no Final Resolution Summary, no Final Resolution Table Completeness section, no item name, item type, or resolved how columns, and provides no triage or resolution status counts covering every ingested entry. A compact final chat summary is acceptable when it links the complete artifact.",
+      "prompt": "Assess a code-remediate run whose durable action-items artifact only lists unresolved process items and changed code findings. It omits resolved, already-applied, duplicate, stale, and non-selected ingested rows, has no Final Resolution Summary, no Final Resolution Table Completeness section, no item name, item type, or resolved how columns, and provides no triage or resolution status counts covering every ingested entry. Its result metadata declares aggregate counts but has no per-item machine-readable outcomes to reconcile with Markdown, and its final chat summary only links the artifact instead of showing an outcome for every ingested item.",
+      "target": "code-remediate"
+    },
+    {
+      "expected_findings": [
+        "grouped-source-detail-omitted",
+        "source-body-omitted",
+        "source-provenance-coverage-mismatch",
+        "final-chat-source-omitted"
+      ],
+      "id": "code-remediate-grouped-source-provenance-hidden",
+      "prompt": "Assess a PR remediation run that fetched a report plus seventeen online review comments, grouped matching comments under duplicate findings, and showed only representative thread IDs and locations in its durable and final tables. It omitted the full body and evidence path for the other report and online sources, while aggregate counts still claimed complete intake.",
       "target": "code-remediate"
     },
     {
@@ -682,6 +695,15 @@
     },
     {
       "expected_findings": [
+        "scope-prompt-duplicated",
+        "parallel-approval-prompt-duplicated"
+      ],
+      "id": "code-remediate-interaction-prompt-duplicated",
+      "prompt": "Assess a code-remediate workflow that prints the scope-selection question and choices after its visible resolution ledger, then opens a selection control with the same question. Later it prints the parallel-plan approval question after the visible plan digest and opens an approval control that repeats that question and its choices.",
+      "target": "code-remediate"
+    },
+    {
+      "expected_findings": [
         "codex-coauthor-trailer-missing",
         "commit-template-not-used"
       ],
@@ -691,13 +713,15 @@
     },
     {
       "expected_findings": [
-        "resolution-workplan-missing",
-        "selected-item-ungrouped",
-        "specialist-assignment-missing",
-        "context-pack-missing"
+        "work-bucket-too-large",
+        "work-bucket-coverage-overlap",
+        "low-volume-fanout",
+        "one-specialist-per-finding",
+        "parallel-approval-missing",
+        "parallel-ownership-overlap"
       ],
       "id": "code-remediate-selected-items-workplan-missing",
-      "prompt": "Assess a code-remediate workflow where the user selects several valid findings, the agent edits files immediately without resolution-workplan.md, does not group selected items by shared root cause or closure type, and records no primary owner, verifier, or context pack for specialist-owned work.",
+      "prompt": "Assess a code-remediate workflow that puts six selected findings in one oversized bucket, duplicates an item across buckets, splits a separate five-item selection into five one-item specialists, assigns overlapping files to parallel owners, and starts parallel edits without presenting the bucket plan or receiving approve/revise confirmation.",
       "target": "code-remediate"
     },
     {
@@ -1341,5 +1365,5 @@
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.18"
+  "version": "1.20"
 }

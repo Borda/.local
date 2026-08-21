@@ -130,4 +130,22 @@ Co-authored-by: Codex <codex@openai.com>
 
 Use `../../shared/quality-gates.md`.
 
+### Final chat
+
+Final chat follows this order:
+
+1. `Outcome`: completed, rejected, or blocked management action.
+
+2. `Results`: one row per changed or evaluated surface in a Markdown table with exactly `Surface | Outcome | Verification | Remaining limit`.
+
+3. `Verification`: ownership, policy, and executable checks with results.
+
+4. `Remaining`: unresolved limits, required human action, and owner.
+
+5. `Next steps`: prioritized human or follow-up action with owner; reference result rows without repeating them, or `None`.
+
+6. `Confidence`: score, evidence basis, and material limits.
+
+7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+
 Minimum artifact payload template: `result-template.json`.

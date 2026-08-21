@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.0
+
+- Standardize every workflow and the agent-shim lifecycle helper's final chat as an outcome-first, structured handoff with skill-specific result tables, exact verification, remaining obligations, prioritized recommendations/next steps, confidence limits, and supplemental artifact links.
+- Make code-remediation work buckets mechanically bounded and complete: at most five selected items per bucket, one agent scope for five or fewer items, exact non-overlapping ownership, supported role/context evidence, no one-specialist-per-finding fan-out, and explicit plan-digest-bound approval before useful parallel execution.
+- Reconcile the durable code-remediation table against an ordered per-item machine ledger so aggregate counts cannot conceal an omitted or changed disposition; grouped duplicates retain every `report|online` source ID, location, complete body, and evidence path in both durable and final-chat tables.
+- Give each code-remediation interaction one rendering owner: visible scope and work-plan messages contain context only, while the selection or approval control exclusively presents its question and choices; runtimes without controls use one plain-text fallback instead of both channels.
+- Add regression and behavioral-calibration coverage for duplicate scope-selection and parallel-approval prompts.
+- Add focused artifact-validator, output-contract, behavioral-calibration, and package-contract coverage for the new reporting, source provenance, and batching behavior.
+
 ## 0.9.2
 
 - Keep ordinary Claude synchronization from invoking Bridge's newly state-capable setup skill or supplying an approval token; other managed plugins retain their existing headless setup dispatch, and executable regression coverage pins the separation.

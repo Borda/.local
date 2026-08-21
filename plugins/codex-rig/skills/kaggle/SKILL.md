@@ -170,4 +170,20 @@ Review calibration when this workflow changes grounding, mode routing, model sel
 
 ## Output Contract
 
-Write the notebook under `.experiments/kaggle/` and the canonical run result under `.reports/codex/kaggle/<timestamp>/result.json`. Use the common fields and confidence metadata from `../../shared/quality-gates.md`; `result-template.json` is the minimum payload shape. Report the notebook path, mode, verified checks, unresolved placeholders or runtime limits, and final confidence in chat.
+Write the notebook under `.experiments/kaggle/` and the canonical run result under `.reports/codex/kaggle/<timestamp>/result.json`. Use the common fields and confidence metadata from `../../shared/quality-gates.md`; `result-template.json` is the minimum payload shape.
+
+Final chat follows this order:
+
+1. `Outcome`: pass, fail, partial, or blocked; state whether the requested notebook was produced and grounded.
+
+2. `Results`: render one row per produced or resumed notebook in a Markdown table with exactly `Artifact | Mode | Verification | Runtime limit`.
+
+3. `Verification`: report grounding, structural, conversion, smoke, and review checks with exact results; label unavailable checks.
+
+4. `Remaining`: list unresolved placeholders, grounding gaps, runtime limits, owner, and next action.
+
+5. `Next steps`: prioritized grounding, runtime, or submission action with owner; reference result rows without repeating them, or `None`.
+
+6. `Confidence`: score, evidence basis, and material residual limits.
+
+7. `Artifact`: give the validated `result.json` path. It is supplemental, never a substitute for the outcome.

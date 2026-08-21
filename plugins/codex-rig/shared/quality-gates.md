@@ -47,6 +47,20 @@ Optional but recommended:
 - Path: `.reports/codex/<skill>/<YYYY-MM-DDTHH-MM-SSZ>/result.json`
 - Optional: `notes.md` in same directory
 
+## Final Chat Contract
+
+Every final chat is a compact, outcome-coupled handoff in this order:
+
+1. `Outcome`: state the decision or completed result first, including gate status when it changes whether the work is complete.
+2. `Results`: show every decision unit needed to understand the outcome. Use the skill's required table when multiple findings, changes, checks, iterations, recommendations, or artifacts need distinct dispositions; do not collapse skipped, rejected, deferred, or unresolved rows.
+3. `Verification`: name the checks run and their exact results, including skips, failures, and unavailable checks.
+4. `Remaining`: list every unresolved, deferred, skipped, externally owned, or environment-blocked obligation with its owner and next action. Write `None` only when evidence closes all obligations.
+5. `Recommendations / next steps`: give prioritized owner/action entries that move unresolved work or the accepted recommendation forward. Reference result rows instead of repeating them; write `None` when no follow-up is justified.
+6. `Confidence`: report the score, material limits, and any unresolved confidence gap under the shared confidence-band policy.
+7. `Artifact`: link the canonical result artifact and any essential supporting report. An artifact is supplemental, never a substitute for the outcome, result rows, verification, remaining-work disclosure, or next steps.
+
+Keep headings and tables proportional to the result. A single decision may use one short result row or compact field list; branch-heavy results use separate bullets or tables instead of one long paragraph. Preserve skill-specific terminal-close or unavailable-output exceptions when their contracts prohibit normal tables or recommendations.
+
 ## Native contract
 
 Skill files should follow `native-skill-contract.md`. Configured skills require:

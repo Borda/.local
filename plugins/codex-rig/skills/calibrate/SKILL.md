@@ -143,4 +143,22 @@ Behavioral coverage includes networked CLI owning-command approval for paid live
 
 Use `../../shared/quality-gates.md`.
 
+### Final chat
+
+Final chat follows this order:
+
+1. `Outcome`: pass, fail, or insufficient-evidence decision.
+
+2. `Results`: one row per measured check or metric in a Markdown table with exactly `Check / metric | Result | Evidence | Next action`.
+
+3. `Verification`: runner mode, coverage, and completed gates.
+
+4. `Remaining`: failed, skipped, or deferred checks and closure action.
+
+5. `Next steps`: prioritized recovery or evidence action with owner; reference result rows without repeating them, or `None`.
+
+6. `Confidence`: score, calibration limits, and recovery evidence.
+
+7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+
 Minimum artifact payload template: `result-template.json`.

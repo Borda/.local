@@ -161,6 +161,24 @@ Update calibration when audit scope, contract requirements, or routing checks ch
 
 Use `../../shared/quality-gates.md`.
 
+### Final chat
+
+Final chat follows this order:
+
+1. `Outcome`: accepted, rejected, or insufficient-evidence decision.
+
+2. `Results`: one row per material audit item in a Markdown table with exactly `Item | Severity / impact | Decision | Evidence | Next action`.
+
+3. `Verification`: completed gates and exact results.
+
+4. `Remaining`: unresolved limits, owner, and closure action.
+
+5. `Next steps`: prioritized accepted recommendations with owner/action; reference result rows without repeating them, or `None`.
+
+6. `Confidence`: score, evidence basis, and material limits.
+
+7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+
 `AUDIT_METADATA.value_per_token` records schema version, status (`not-run|insufficient-evidence|rejected|accepted`), scope roots, baseline/candidate hashes, static measurements, conditional-load trace, obligation-map path, static gates, behavioral/live comparisons, decision, and residual limits.
 
 Minimum artifact payload template: `result-template.json`.

@@ -97,4 +97,18 @@ Networked CLI owning-command approval is required calibration coverage for Git m
 
 ## Output Contract
 
-Use `../../shared/quality-gates.md` and `result-template.json`. Report state, version/package hash, commands run, possible external-agent residue, verified changes, unresolved lifecycle limits, artifact path, and confidence.
+Use `../../shared/quality-gates.md` and `result-template.json`. Final chat follows this order:
+
+1. `Outcome`: pass, fail, partial, or blocked; state whether the requested check or approved refresh completed.
+
+2. `Results`: render one row per inspected or refreshed surface in a Markdown table with exactly `Surface | Outcome | Verification | Remaining limit`.
+
+3. `Verification`: report state, version/package hash, commands run, package validation, and verified changes with exact results.
+
+4. `Remaining`: list unresolved lifecycle limits, external-agent residue, owner, and next action.
+
+5. `Next steps`: prioritized approval, refresh, or human action with owner; reference result rows without repeating them, or `None`.
+
+6. `Confidence`: score, evidence basis, and material residual limits.
+
+7. `Artifact`: give the validated `result.json` path. It is supplemental, never a substitute for the outcome.

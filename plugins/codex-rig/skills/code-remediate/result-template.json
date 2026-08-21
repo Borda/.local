@@ -42,13 +42,18 @@
       "status": "shared-confidence-band-status"
     },
     "final_resolution_table": {
+      "grouped_items_total": 0,
       "ingested_entries_total": 0,
+      "items": [],
       "nonselectable_rows_total": 0,
       "omitted_entries_total": 0,
+      "omitted_source_records_total": 0,
+      "represented_source_records_total": 0,
       "required_columns": [
         "input item",
         "item name",
         "item type",
+        "sources",
         "triage status",
         "resolution",
         "owner/status",
@@ -68,6 +73,7 @@
         "unresolved": 0
       },
       "selectable_rows_total": 0,
+      "source_records_total": 0,
       "table_rows_total": 0,
       "triage_status_counts": {
         "already-applied": 0,
@@ -110,11 +116,24 @@
       "selection_source": "explicit-input|user-prompt|none-selectable"
     },
     "resolution_workplan": {
+      "approved_plan_sha256": null,
+      "bucket_plan_path": ".reports/codex/code-remediate/<timestamp>/work-bucket-plan.json",
+      "bucket_plan_sha256": "sha256 of exact work-bucket-plan.json bytes",
+      "execution_mode": "parent-owned|sequential-specialists|parallel-specialists",
       "groups_total": 0,
+      "max_items_per_bucket": 5,
+      "parallel_approval_path": ".reports/codex/code-remediate/<timestamp>/parallel-approval.json",
+      "parallel_approval_required": false,
+      "parallel_approval_response": "not-required|approve|parent-only",
+      "parallel_approval_source": "not-required|explicit-input|user-prompt",
+      "parallel_approval_status": "not-required|approved|parent-only",
+      "parallel_eligible": false,
+      "parallel_prompt_presented": false,
       "parent_owned_groups": 0,
       "specialist_owned_groups": 0,
       "unassigned_selected_items": 0,
       "verifier_groups": 0,
+      "work_buckets": [],
       "workplan_path": ".reports/codex/code-remediate/<timestamp>/resolution-workplan.md"
     },
     "review_report_intake": {

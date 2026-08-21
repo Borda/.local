@@ -115,4 +115,22 @@ On SemVer, deprecation, changelog, or release-blocker policy change, update cali
 
 Use `../../shared/quality-gates.md`.
 
+### Final chat
+
+Final chat follows this order:
+
+1. `Outcome`: release-ready, blocked, or warning-only decision.
+
+2. `Results`: one row per material change or blocker in a Markdown table with exactly `Change | SemVer impact | Status / blocker | Evidence`.
+
+3. `Verification`: release gates, checked artifacts, and exact results.
+
+4. `Remaining`: release blockers or warnings, owner, and closure action.
+
+5. `Next steps`: prioritized blocker closure or human release action with owner; reference result rows without repeating them, or `None`.
+
+6. `Confidence`: score, evidence basis, and material limits.
+
+7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+
 Minimum artifact payload template: `result-template.json`.

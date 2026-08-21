@@ -157,4 +157,22 @@ On metric/guard-policy change, update calibration:
 
 Use `../../shared/quality-gates.md`.
 
+### Final chat
+
+Final chat follows this order:
+
+1. `Outcome`: kept, reverted, inconclusive, or failed decision.
+
+2. `Results`: one row per material iteration or campaign in a Markdown table with exactly `Iteration | Baseline | After | Delta | Guard | Decision`.
+
+3. `Verification`: measurement method, guard checks, and exact results.
+
+4. `Remaining`: uncertainty, deferred experiments, and next action.
+
+5. `Next steps`: prioritized next experiment, rollback, or owner action; reference result rows without repeating them, or `None`.
+
+6. `Confidence`: score, noise limits, and evidence basis.
+
+7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+
 Minimum artifact payload template: `result-template.json`.

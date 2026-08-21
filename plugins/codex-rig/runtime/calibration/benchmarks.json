@@ -224,6 +224,14 @@
     ]
   },
   "skills": {
+    "agent-shims": [
+      "## Output Contract",
+      "shared/quality-gates.md",
+      "Action \\| Outcome \\| Verification \\| Remaining limit",
+      "Next steps",
+      "Confidence",
+      "Raw JSON alone never substitutes for the outcome"
+    ],
     "audit": [
       "## Input Schema",
       "Runtime Leaks",
@@ -238,6 +246,10 @@
       "result-template.json",
       "## Quality Gates",
       "## Calibration Hooks",
+      "Final chat follows",
+      "Next steps",
+      "Item \\| Severity / impact \\| Decision \\| Evidence \\| Next action",
+      "supplemental, never a substitute for the outcome",
       "helper-cli-contract.md"
     ],
     "calibrate": [
@@ -259,6 +271,10 @@
       "result-template.json",
       "## Quality Gates",
       "## Calibration Hooks",
+      "Final chat follows",
+      "Next steps",
+      "Check / metric \\| Result \\| Evidence \\| Next action",
+      "supplemental, never a substitute for the outcome",
       "helper-cli-contract.md"
     ],
     "change-analysis": [
@@ -270,6 +286,10 @@
       "result-template.json",
       "## Quality Gates",
       "## Calibration Hooks",
+      "Final chat follows",
+      "Next steps",
+      "Finding \\| Impact \\| Decision \\| Evidence \\| Next action",
+      "supplemental, never a substitute for the outcome",
       "helper-cli-contract.md"
     ],
     "code-remediate": [
@@ -319,7 +339,11 @@
       "scope-context-not-rendered",
       "scope-report-link-missing",
       "scope-context-not-visible",
+      "scope-prompt-duplicated",
+      "parallel-approval-prompt-duplicated",
       "user-visible assistant message",
+      "sole owner of this question and its choices",
+      "ask once in plain text instead of opening the control",
       "collapsed tool output does not count",
       "commit-response-template.md",
       "Co-authored-by: Codex <codex@openai.com>",
@@ -331,13 +355,25 @@
       "selection_confirmed_by_user",
       "scope-selection-required",
       "resolution-workplan.md",
-      "Selected Finding Groups",
-      "Specialist Assignments",
+      "work-bucket-plan.json",
+      "parallel-approval.json",
+      "Work Bucket Plan",
+      "Parallel Approval",
       "resolution_workplan",
       "primary owner",
       "verifier",
       "context pack",
       "unassigned_selected_items",
+      "at most five selected items",
+      "five or fewer selected items",
+      "Do not spawn one specialist per finding",
+      "non-overlapping",
+      "user confirms that exact digest before parallel dispatch",
+      "max_items_per_bucket",
+      "parallel_approval_status",
+      "bucket_plan_sha256",
+      "approved_plan_sha256",
+      "work_buckets",
       "omit resolved online PR",
       "deferred by user selection",
       "PR/diff relation",
@@ -355,11 +391,22 @@
       "all_confirmed_by_user",
       "review report intake",
       "final_resolution_table",
+      "input_item_id",
+      "resolution_status",
+      "owner_status",
+      "selectable",
       "Final Resolution Summary",
       "Final Resolution Table Completeness",
       "input item",
       "item name",
       "item type",
+      "sources",
+      "source_records_total",
+      "represented_source_records_total",
+      "omitted_source_records_total",
+      "grouped_items_total",
+      "report\\|online",
+      "complete body",
       "resolved how",
       "required_columns",
       "ingested entries",
@@ -368,6 +415,13 @@
       "triage status counts",
       "resolution status counts",
       "complete, unabridged resolution ledger",
+      "Final Outcome Table",
+      "every ingested item",
+      "Implemented \u2014",
+      "Rejected \u2014",
+      "Skipped / unselected \u2014",
+      "Already closed \u2014",
+      "Unresolved \u2014",
       "confidence_gaps",
       "confidence_recovery",
       "confidence_gap_closures",
@@ -392,6 +446,10 @@
       "result-template.json",
       "## Quality Gates",
       "## Calibration Hooks",
+      "Final chat follows",
+      "Next steps",
+      "Item \\| Severity \\| Finding \\| Sources \\| Outcome \\| Evidence / next action",
+      "supplemental, never a substitute for the outcome table",
       "helper-cli-contract.md"
     ],
     "code-review": [
@@ -484,6 +542,10 @@
       "result-template.json",
       "## Quality Gates",
       "## Calibration Hooks",
+      "Final chat follows",
+      "Next steps",
+      "Review Decision Summary",
+      "supplemental, never a substitute for the outcome",
       "helper-cli-contract.md"
     ],
     "implement": [
@@ -512,6 +574,10 @@
       "result-template.json",
       "## Quality Gates",
       "## Calibration Hooks",
+      "Final chat follows",
+      "Next steps",
+      "Surface \\| Outcome \\| Verification \\| Remaining limit",
+      "supplemental, never a substitute for the outcome",
       "helper-cli-contract.md"
     ],
     "investigate": [
@@ -526,6 +592,21 @@
       "result-template.json",
       "## Quality Gates",
       "## Calibration Hooks",
+      "Final chat follows",
+      "Next steps",
+      "Hypothesis \\| Evidence \\| Disposition \\| Next action",
+      "supplemental, never a substitute for the outcome",
+      "helper-cli-contract.md"
+    ],
+    "kaggle": [
+      "## Input Schema",
+      "result-template.json",
+      "## Quality Gates",
+      "## Calibration Hooks",
+      "Final chat follows",
+      "Next steps",
+      "Artifact \\| Mode \\| Verification \\| Runtime limit",
+      "supplemental, never a substitute for the outcome",
       "helper-cli-contract.md"
     ],
     "manage": [
@@ -547,6 +628,10 @@
       "result-template.json",
       "## Quality Gates",
       "## Calibration Hooks",
+      "Final chat follows",
+      "Next steps",
+      "Surface \\| Outcome \\| Verification \\| Remaining limit",
+      "supplemental, never a substitute for the outcome",
       "helper-cli-contract.md"
     ],
     "optimize": [
@@ -559,6 +644,10 @@
       "result-template.json",
       "## Quality Gates",
       "## Calibration Hooks",
+      "Final chat follows",
+      "Next steps",
+      "Iteration \\| Baseline \\| After \\| Delta \\| Guard \\| Decision",
+      "supplemental, never a substitute for the outcome",
       "helper-cli-contract.md"
     ],
     "release": [
@@ -569,6 +658,10 @@
       "result-template.json",
       "## Quality Gates",
       "## Calibration Hooks",
+      "Final chat follows",
+      "Next steps",
+      "Change \\| SemVer impact \\| Status / blocker \\| Evidence",
+      "supplemental, never a substitute for the outcome",
       "helper-cli-contract.md"
     ],
     "research": [
@@ -578,6 +671,10 @@
       "result-template.json",
       "## Quality Gates",
       "## Calibration Hooks",
+      "Final chat follows",
+      "Next steps",
+      "Recommendation \\| Evidence \\| Decision \\| Caveat / next check",
+      "supplemental, never a substitute for the outcome",
       "helper-cli-contract.md"
     ],
     "sync": [
@@ -594,6 +691,10 @@
       "result-template.json",
       "## Quality Gates",
       "## Calibration Hooks",
+      "Final chat follows",
+      "Next steps",
+      "Surface \\| Outcome \\| Verification \\| Remaining limit",
+      "supplemental, never a substitute for the outcome",
       "helper-cli-contract.md"
     ]
   }

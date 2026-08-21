@@ -183,8 +183,20 @@ Update calibration when implementation routing or output expectations change:
 
 ## Output Contract
 
-Use `../../shared/quality-gates.md`.
+Use `../../shared/quality-gates.md`. Final chat follows this order, with the outcome before the artifact reference:
 
-Final chat output must include the confidence score, confidence band status, recovery actions, remaining limits, and the concrete confidence gaps or degradation reasons plus closure status from `metadata.confidence_gaps` and `metadata.confidence_gap_closures`.
+1. `Outcome`: pass, fail, partial, or blocked; state whether `done_when` was met.
+
+2. `Results`: when multiple surfaces changed, render a Markdown table with exactly `Surface | Outcome | Verification | Remaining limit`.
+
+3. `Verification`: name every executed gate and exact result; name every skipped gate and reason.
+
+4. `Remaining`: list unresolved, deferred, or failed items with owner and next action.
+
+5. `Next steps`: prioritized owner/action for remaining work or the next safe continuation; reference result rows without repeating them, or `None`.
+
+6. `Confidence`: score, band, recovery actions, material gaps/degradation reasons, and closure status from `metadata.confidence_gaps` and `metadata.confidence_gap_closures`.
+
+7. `Artifact`: give the validated `result.json` path. It is supplemental, never a substitute for the outcome.
 
 Minimum artifact payload template: `result-template.json`.

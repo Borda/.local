@@ -363,6 +363,8 @@ bash sync.sh codex    # Codex scope only
 
 `sync.sh` installs from the pushed GitHub remote, not uncommitted local files. Commit and push first if you intentionally want a checkout change to become installable; never use sync as a preview of a dirty worktree.
 
+Each external Claude marketplace and plugin add, update, uninstall, or install command has a 120-second timeout. Use `--external-plugin-timeout-seconds SECONDS` or the `EXTERNAL_PLUGIN_TIMEOUT_SECONDS` environment variable to select another positive-integer deadline; managed AI-Rig plugin and setup commands retain their existing behavior.
+
 <details>
 <summary><strong>Show repository layout, distribution paths, and session-only development</strong></summary>
 

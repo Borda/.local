@@ -2,7 +2,7 @@
 # Install AI-Rig plugins for Claude Code and/or Codex from the GitHub remote.
 # Codex sync also mirrors this checkout's normal-session model defaults and personal policy into $CODEX_HOME.
 # Remote installs use pushed state — commit and push before running; release tags are optional pins.
-# Run from the project root: bash sync.sh [claude] [codex] [clear] [--no-clean] [--codex-ref REF] [--no-codex-global-agents]
+# Run from the project root: bash sync.sh [claude] [codex] [clear] [--no-clean] [--codex-ref REF] [--external-plugin-timeout-seconds SECONDS] [--no-codex-global-agents]
 #
 # Arguments (order-independent):
 #   claude   — sync Claude plugins + their installed setup skills (default: both).
@@ -15,6 +15,7 @@
 #              Leaves marketplace registrations and the external caveman plugin in place.
 #   --no-clean — skip uninstall before reinstalling (default: uninstall first)
 #   --codex-ref REF — pin Codex Rig to one Git ref (default: latest default branch)
+#   --external-plugin-timeout-seconds SECONDS — bound each external marketplace/plugin command (default: 120)
 #   --no-codex-global-agents — leave $CODEX_HOME/AGENTS.md unchanged; model defaults still mirror
 #
 # Setup skills shipped by installed non-Bridge managed plugins run headlessly at the end of Claude sync. Bridge is
@@ -28,6 +29,7 @@ SYNC_CODEX=false
 CLEAN=true
 CLEAR=false
 CODEX_REF=""
+EXTERNAL_PLUGIN_TIMEOUT_SECONDS="${EXTERNAL_PLUGIN_TIMEOUT_SECONDS:-120}"
 INSTALL_CODEX_GLOBAL_AGENTS=true
 
 while [[ $# -gt 0 ]]; do
@@ -51,6 +53,17 @@ while [[ $# -gt 0 ]]; do
                 exit 2
             fi
             ;;
+        --external-plugin-timeout-seconds)
+            shift
+            if [[ $# -eq 0 || -z "$1" ]]; then
+                echo "  ✗ --external-plugin-timeout-seconds requires a positive integer"
+                exit 2
+            fi
+            EXTERNAL_PLUGIN_TIMEOUT_SECONDS="$1"
+            ;;
+        --external-plugin-timeout-seconds=*)
+            EXTERNAL_PLUGIN_TIMEOUT_SECONDS="${1#*=}"
+            ;;
         --no-codex-global-agents) INSTALL_CODEX_GLOBAL_AGENTS=false ;;
         *)
             echo "  ✗ unknown argument: $1"
@@ -69,6 +82,10 @@ if [[ -n "$CODEX_REF" ]] && ! $SYNC_CODEX; then
     echo "  ✗ --codex-ref requires Codex sync"
     exit 2
 fi
+if [[ ! "$EXTERNAL_PLUGIN_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "  ✗ --external-plugin-timeout-seconds requires a positive integer"
+    exit 2
+fi
 
 PLUGINS=(foundry oss develop research codemap-py bridge)
 EXTERNAL_PLUGINS=(caveman@caveman)
@@ -81,6 +98,7 @@ PROJECT_DIR="$(pwd)"
 MARKETPLACE_REMOTE=$(git -C "$PROJECT_DIR" remote get-url origin 2>/dev/null | sed 's/\.git$//')  # GitHub source for cache install
 CODEX_SYNC_SCRIPT="$PROJECT_DIR/plugins/codex-rig/scripts/sync_codex.py"
 CODEX_HOME_SYNC_SCRIPT="$PROJECT_DIR/scripts/sync_codex_session_policy.py"
+TIMEOUT_RUNNER="$PROJECT_DIR/scripts/run_with_timeout.py"
 
 if $CLEAR; then
     if $SYNC_CLAUDE; then
@@ -111,6 +129,12 @@ print_claude_plugin_identity() {
     local revision="${identity#*$'\t'}"
     [[ "$revision" != "unknown" ]] && revision="${revision:0:12}"
     echo "  ✓ ${plugin_id}: version ${version}, revision ${revision}"
+}
+
+run_external_plugin_command() {
+    local label="$1"
+    shift
+    python3 "$TIMEOUT_RUNNER" --timeout-seconds "$EXTERNAL_PLUGIN_TIMEOUT_SECONDS" --label "$label" -- "$@"
 }
 
 if $SYNC_CLAUDE; then
@@ -173,9 +197,21 @@ if $CLEAN; then
 fi
 
 echo "Refreshing external plugin marketplaces..."
-claude plugin marketplace add JuliusBrussee/caveman 2>/dev/null || true
+if ! run_external_plugin_command "caveman marketplace registration" claude plugin marketplace add JuliusBrussee/caveman 2>/dev/null; then
+    echo "  ⚠ caveman marketplace registration failed or timed out; trying the existing registration"
+fi
 CAVEMAN_OK=false
-claude plugin marketplace update caveman 2>/dev/null && { echo "  ✓ caveman refreshed"; CAVEMAN_OK=true; } || echo "  ⚠ caveman refresh failed (offline?)"
+if run_external_plugin_command "caveman marketplace refresh" claude plugin marketplace update caveman 2>/dev/null; then
+    echo "  ✓ caveman refreshed"
+    CAVEMAN_OK=true
+else
+    external_status=$?
+    if [[ $external_status -eq 124 ]]; then
+        echo "  ⚠ caveman refresh timed out after ${EXTERNAL_PLUGIN_TIMEOUT_SECONDS}s"
+    else
+        echo "  ⚠ caveman refresh failed (offline?)"
+    fi
+fi
 
 echo "Updating external plugins..."
 # Skip uninstall/reinstall when this plugin's marketplace refresh failed (offline) —
@@ -189,11 +225,25 @@ for p in "${EXTERNAL_PLUGINS[@]}"; do
         echo "  – skipping $p reinstall, marketplace refresh failed"
         continue
     fi
-    claude plugin uninstall "$p" 2>/dev/null && echo "  ✓ uninstalled $p" || echo "  – $p not installed, skipping"
-    if claude plugin install "$p"; then
+    if run_external_plugin_command "$p uninstall" claude plugin uninstall "$p" 2>/dev/null; then
+        echo "  ✓ uninstalled $p"
+    else
+        external_status=$?
+        if [[ $external_status -eq 124 ]]; then
+            echo "  ⚠ $p uninstall timed out; skipping reinstall"
+            continue
+        fi
+        echo "  – $p not installed, skipping uninstall"
+    fi
+    if run_external_plugin_command "$p install" claude plugin install "$p"; then
         print_claude_plugin_identity "$p"
     else
-        echo "  ✗ $p install failed"
+        external_status=$?
+        if [[ $external_status -eq 124 ]]; then
+            echo "  ✗ $p install timed out after ${EXTERNAL_PLUGIN_TIMEOUT_SECONDS}s"
+        else
+            echo "  ✗ $p install failed"
+        fi
     fi
 done
 

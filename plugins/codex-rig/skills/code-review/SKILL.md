@@ -303,6 +303,31 @@ Update calibration when review routing, severity discipline, decision vocabulary
 
 Use `../../shared/quality-gates.md`.
 
-Final chat starts compact `Review Decision Summary` for assessed reviews: recommendation, blockers, required next work, confidence/material limits, artifact path. For every assessed PR review, reproduce its freshly rebuilt `PR Snapshot` table immediately after that summary and before any findings. For every assessed non-`accept-as-is` PR decision, and every `needs-more-work` decision in another scope, reproduce the canonical `Review Findings and Merge Blocks` table in the chat output; it is the decision handoff, not optional detail. A terminal core T0 PR collection failure instead starts `PR Review Availability: unavailable` and uses plain prose for classified process diagnostic, recovery, source findings `not assessed`, merge decision `not made`, confidence/material limits, evidence, and artifact path. A terminal close starts `Review Decision: close`, names the code, says source findings were not assessed and detailed review was skipped, lists decisive evidence and counterevidence checked, states `GitHub mutation: not performed`, and provides confidence/material limits plus the artifact path. Neither terminal result uses a table or normal recommendation. Keep full routing, recovery, closure evidence in artifact, not chat. Assessed recommendations remain `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`.
+Final chat follows the shared ordered frame with these review-specific branches.
+
+For an assessed review:
+
+- `Outcome`: start with compact `Review Decision Summary`: recommendation, blockers, and required next work.
+- `Results`: for every assessed PR review, reproduce the freshly rebuilt `PR Snapshot` table immediately after the summary and before any findings. For every assessed non-`accept-as-is` PR decision, and every `needs-more-work` decision in another scope, reproduce the canonical `Review Findings and Merge Blocks` table; it is the decision handoff, not optional detail.
+- `Verification`: state reviewed evidence and checks.
+- `Remaining`: name unresolved blocks and owners, or `None`.
+- `Next steps`: prioritize required owner/actions by referencing finding rows without repeating them, or `None`.
+- `Confidence`: state score and material limits.
+- `Artifact`: link the result artifact; it is supplemental, never a substitute for the outcome.
+
+For a terminal core T0 PR collection failure:
+
+- Start `PR Review Availability: unavailable`.
+- Use plain prose for classified process diagnostic, `Next steps` recovery, source findings `not assessed`, merge decision `not made`, confidence/material limits, evidence, and artifact path.
+- Do not use a table or normal recommendation.
+
+For a terminal close:
+
+- Start `Review Decision: close` and name the close code.
+- State source findings were not assessed, detailed review was skipped, decisive evidence, counterevidence checked, and `GitHub mutation: not performed`.
+- Provide confidence/material limits and artifact path without a table or normal recommendation.
+- Omit a separate `Next steps` recommendation because the close code is terminal.
+
+Keep full routing, recovery, and closure evidence in the artifact. Assessed recommendations remain `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`.
 
 Minimum artifact payload template: `result-template.json`.

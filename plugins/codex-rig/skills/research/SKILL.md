@@ -128,4 +128,22 @@ On source-protocol/recommendation-policy change, update calibration:
 
 Use `../../shared/quality-gates.md`.
 
+### Final chat
+
+Final chat follows this order:
+
+1. `Outcome`: recommended decision and its support level.
+
+2. `Results`: one row per material recommendation in a Markdown table with exactly `Recommendation | Evidence | Decision | Caveat / next check`.
+
+3. `Verification`: sources, freshness checks, and completed gates.
+
+4. `Remaining`: evidence gaps, caveats, and next verification action.
+
+5. `Next steps`: prioritized adoption or validation action with owner; reference result rows without repeating them, or `None`.
+
+6. `Confidence`: score, evidence basis, and material limits.
+
+7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+
 Minimum artifact payload template: `result-template.json`.

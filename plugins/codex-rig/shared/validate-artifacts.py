@@ -29,8 +29,10 @@ Malformed JSON, absent required notes/gates, inconsistent confidence metadata, o
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
-from pathlib import Path
+import re
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 COMMON_RESULT_FIELDS = {
@@ -93,11 +95,46 @@ CODE_REMEDIATE_FINAL_TABLE_REQUIRED_COLUMNS = {
     "input item",
     "item name",
     "item type",
+    "sources",
     "triage status",
     "resolution",
     "owner/status",
     "resolved how",
     "evidence",
+}
+CODE_REMEDIATE_SOURCE_KINDS = {"report", "online"}
+CODE_REMEDIATE_SOURCE_STRING_FIELDS = {"source_id", "location", "body", "evidence"}
+CODE_REMEDIATE_FINAL_ITEM_STRING_FIELDS = {
+    "input_item_id",
+    "item_name",
+    "item_type",
+    "triage_status",
+    "resolution_status",
+    "owner_status",
+    "resolved_how",
+    "evidence",
+}
+CODE_REMEDIATE_WORK_BUCKET_OWNERS = {
+    "parent",
+    "sw-engineer",
+    "qa-specialist",
+    "doc-scribe",
+    "cicd-steward",
+    "linting-expert",
+    "data-steward",
+    "scientist",
+    "squeezer",
+    "oss-shepherd",
+}
+CODE_REMEDIATE_WORK_BUCKET_VERIFIERS = {
+    "parent",
+    "qa-specialist",
+    "security-auditor",
+    "linting-expert",
+    "cicd-steward",
+    "challenger",
+    "solution-architect",
+    "none",
 }
 PR_THREAD_CONFIDENCE_GAP = "PR review-thread resolution status was unavailable; online review triage may be incomplete."
 PR_PUBLIC_FALLBACK_MAX_CONFIDENCE = 0.89
@@ -540,7 +577,7 @@ def _validate_code_remediate_scope_selection(metadata: dict[str, Any], out_dir: 
 
 
 def _validate_code_remediate_workplan(metadata: dict[str, Any], out_dir: Path) -> None:
-    """Validate selected-item grouping and specialist assignment metadata."""
+    """Validate bounded work buckets, ownership, and parallel approval metadata."""
     resolution_scope = metadata.get("resolution_scope")
     if not isinstance(resolution_scope, dict):
         raise SystemExit("code-remediate-missing-resolution-scope-metadata")
@@ -563,12 +600,72 @@ def _validate_code_remediate_workplan(metadata: dict[str, Any], out_dir: Path) -
         if not isinstance(value, int) or value < 0:
             raise SystemExit(f"code-remediate-invalid-resolution-workplan:{key}")
 
+    if workplan.get("max_items_per_bucket") != 5:
+        raise SystemExit("code-remediate-invalid-resolution-workplan:max_items_per_bucket")
+    execution_mode = workplan.get("execution_mode")
+    if execution_mode not in {"parent-owned", "sequential-specialists", "parallel-specialists"}:
+        raise SystemExit("code-remediate-invalid-resolution-workplan:execution_mode")
+    for key in ("parallel_eligible", "parallel_approval_required", "parallel_prompt_presented"):
+        if not isinstance(workplan.get(key), bool):
+            raise SystemExit(f"code-remediate-invalid-resolution-workplan:{key}")
+    approval_status = workplan.get("parallel_approval_status")
+    if approval_status not in {"not-required", "approved", "parent-only"}:
+        raise SystemExit("code-remediate-invalid-resolution-workplan:parallel_approval_status")
+    approval_source = workplan.get("parallel_approval_source")
+    if approval_source not in {"not-required", "explicit-input", "user-prompt"}:
+        raise SystemExit("code-remediate-invalid-resolution-workplan:parallel_approval_source")
+
+    work_buckets = workplan.get("work_buckets")
+    if not isinstance(work_buckets, list):
+        raise SystemExit("code-remediate-invalid-resolution-workplan:work_buckets")
+
     workplan_path_value = workplan.get("workplan_path")
     if not isinstance(workplan_path_value, str) or not workplan_path_value.strip():
         raise SystemExit("code-remediate-invalid-resolution-workplan:workplan_path")
 
+    bucket_plan_path_value = workplan.get("bucket_plan_path")
+    approval_path_value = workplan.get("parallel_approval_path")
+    bucket_plan_sha256 = workplan.get("bucket_plan_sha256")
+    approval_response = workplan.get("parallel_approval_response")
+    approved_plan_sha256 = workplan.get("approved_plan_sha256")
+    if not isinstance(bucket_plan_path_value, str) or Path(bucket_plan_path_value).name != "work-bucket-plan.json":
+        raise SystemExit("code-remediate-work-bucket-plan-path-invalid")
+    if not isinstance(approval_path_value, str) or Path(approval_path_value).name != "parallel-approval.json":
+        raise SystemExit("code-remediate-parallel-approval-path-invalid")
+    if not isinstance(bucket_plan_sha256, str) or re.fullmatch(r"[0-9a-f]{64}", bucket_plan_sha256) is None:
+        raise SystemExit("code-remediate-work-bucket-plan-digest-invalid")
+    if approval_response not in {"not-required", "approve", "parent-only"}:
+        raise SystemExit("code-remediate-parallel-approval-response-invalid")
+    if approved_plan_sha256 is not None and (
+        not isinstance(approved_plan_sha256, str) or re.fullmatch(r"[0-9a-f]{64}", approved_plan_sha256) is None
+    ):
+        raise SystemExit("code-remediate-approved-plan-digest-invalid")
+
+    if len(selected_indexes) != len(set(selected_indexes)):
+        raise SystemExit("code-remediate-selected-indexes-not-unique")
+
     if not selected_indexes:
+        if work_buckets or workplan["groups_total"] != 0:
+            raise SystemExit("code-remediate-empty-selection-has-work-buckets")
         return
+
+    bucket_plan_path = out_dir / "work-bucket-plan.json"
+    approval_path = out_dir / "parallel-approval.json"
+    bucket_plan = _load_json(bucket_plan_path)
+    approval = _load_json(approval_path)
+    if bucket_plan.get("schema_version") != 1 or bucket_plan.get("work_buckets") != work_buckets:
+        raise SystemExit("code-remediate-work-bucket-plan-content-mismatch")
+    observed_plan_sha256 = hashlib.sha256(bucket_plan_path.read_bytes()).hexdigest()
+    if bucket_plan_sha256 != observed_plan_sha256:
+        raise SystemExit("code-remediate-work-bucket-plan-digest-mismatch")
+    expected_approval = {
+        "plan_sha256": bucket_plan_sha256,
+        "prompt_presented": workplan["parallel_prompt_presented"],
+        "response": approval_response,
+        "source": approval_source,
+    }
+    if approval != expected_approval:
+        raise SystemExit("code-remediate-parallel-approval-evidence-mismatch")
 
     if workplan["groups_total"] <= 0:
         raise SystemExit("code-remediate-selected-items-without-workplan-groups")
@@ -578,6 +675,151 @@ def _validate_code_remediate_workplan(metadata: dict[str, Any], out_dir: Path) -
         raise SystemExit("code-remediate-workplan-owner-count-mismatch")
     if workplan["verifier_groups"] > workplan["groups_total"]:
         raise SystemExit("code-remediate-workplan-verifier-count-exceeds-groups")
+    if workplan["groups_total"] != len(work_buckets):
+        raise SystemExit("code-remediate-work-bucket-count-mismatch")
+
+    observed_indexes: list[int] = []
+    observed_parent_groups = 0
+    observed_specialist_groups = 0
+    singleton_specialist_groups = 0
+    observed_verifier_groups = 0
+    parallel_owned_paths: set[str] = set()
+    parallel_bucket_count = 0
+    bucket_ids: set[str] = set()
+    for position, bucket in enumerate(work_buckets):
+        if not isinstance(bucket, dict):
+            raise SystemExit(f"code-remediate-work-bucket-not-object:{position}")
+        for key in ("bucket_id", "owner", "verifier", "context_pack_path", "execution_mode"):
+            value = bucket.get(key)
+            if not isinstance(value, str) or not value.strip():
+                raise SystemExit(f"code-remediate-work-bucket-invalid-{key}:{position}")
+        bucket_id = bucket["bucket_id"]
+        if bucket_id in bucket_ids:
+            raise SystemExit("code-remediate-work-bucket-id-duplicate")
+        bucket_ids.add(bucket_id)
+        if bucket["owner"] not in CODE_REMEDIATE_WORK_BUCKET_OWNERS:
+            raise SystemExit(f"code-remediate-work-bucket-owner-unsupported:{position}")
+        if bucket["verifier"] not in CODE_REMEDIATE_WORK_BUCKET_VERIFIERS:
+            raise SystemExit(f"code-remediate-work-bucket-verifier-unsupported:{position}")
+        bucket_indexes = bucket.get("selected_indexes")
+        if not isinstance(bucket_indexes, list) or not all(isinstance(item, int) for item in bucket_indexes):
+            raise SystemExit(f"code-remediate-work-bucket-invalid-selected-indexes:{position}")
+        if not bucket_indexes:
+            raise SystemExit(f"code-remediate-work-bucket-empty:{position}")
+        if len(bucket_indexes) > 5:
+            raise SystemExit("code-remediate-work-bucket-too-large")
+        if len(bucket_indexes) != len(set(bucket_indexes)):
+            raise SystemExit("code-remediate-work-bucket-duplicate-index")
+        observed_indexes.extend(bucket_indexes)
+
+        owned_paths = bucket.get("owned_paths")
+        if (
+            not isinstance(owned_paths, list)
+            or not owned_paths
+            or not all(isinstance(path, str) and path.strip() for path in owned_paths)
+        ):
+            raise SystemExit(f"code-remediate-work-bucket-invalid-owned-paths:{position}")
+        bucket_mode = bucket["execution_mode"]
+        if bucket_mode not in {"parent", "sequential", "parallel"}:
+            raise SystemExit(f"code-remediate-work-bucket-invalid-execution-mode:{position}")
+        if bucket["owner"] == "parent":
+            if bucket_mode != "parent":
+                raise SystemExit("code-remediate-parent-work-bucket-mode-invalid")
+            observed_parent_groups += 1
+        else:
+            if bucket_mode == "parent":
+                raise SystemExit("code-remediate-specialist-work-bucket-mode-invalid")
+            observed_specialist_groups += 1
+            if len(bucket_indexes) == 1:
+                singleton_specialist_groups += 1
+                rationale = bucket.get("singleton_rationale")
+                if not isinstance(rationale, str) or not rationale.strip():
+                    raise SystemExit("code-remediate-singleton-specialist-rationale-missing")
+            context_path = Path(bucket["context_pack_path"])
+            resolved_context_path = context_path if context_path.is_absolute() else out_dir / context_path
+            try:
+                resolved_context_path.resolve().relative_to(out_dir.resolve())
+            except ValueError as error:
+                raise SystemExit("code-remediate-specialist-context-outside-run-directory") from error
+            if not resolved_context_path.is_file():
+                raise SystemExit("code-remediate-specialist-context-pack-missing")
+        if bucket["verifier"] != "none":
+            observed_verifier_groups += 1
+        if bucket_mode == "parallel":
+            parallel_bucket_count += 1
+            bucket_owned_paths: set[str] = set()
+            for path in owned_paths:
+                raw_path = path.replace("\\", "/").strip()
+                if raw_path.startswith("/") or any(part == ".." for part in raw_path.split("/")):
+                    raise SystemExit("code-remediate-parallel-owned-path-invalid")
+                if any(character in raw_path for character in "*?[]"):
+                    raise SystemExit("code-remediate-parallel-owned-path-pattern-forbidden")
+                normalized_path = PurePosixPath(raw_path).as_posix().removeprefix("./").rstrip("/").casefold()
+                if not normalized_path or normalized_path == "." or normalized_path in bucket_owned_paths:
+                    raise SystemExit("code-remediate-parallel-owned-path-invalid")
+                bucket_owned_paths.add(normalized_path)
+                if any(
+                    normalized_path == existing
+                    or normalized_path.startswith(f"{existing}/")
+                    or existing.startswith(f"{normalized_path}/")
+                    for existing in parallel_owned_paths
+                ):
+                    raise SystemExit("code-remediate-parallel-ownership-overlap")
+                parallel_owned_paths.add(normalized_path)
+
+    if sorted(observed_indexes) != sorted(selected_indexes) or len(observed_indexes) != len(set(observed_indexes)):
+        raise SystemExit("code-remediate-work-bucket-coverage-mismatch")
+    if len(selected_indexes) <= 5 and len(work_buckets) != 1:
+        raise SystemExit("code-remediate-low-volume-fanout")
+    if (
+        len(selected_indexes) > 1
+        and len(work_buckets) == len(selected_indexes)
+        and singleton_specialist_groups == len(work_buckets)
+    ):
+        raise SystemExit("code-remediate-one-specialist-per-finding")
+    if observed_parent_groups != workplan["parent_owned_groups"]:
+        raise SystemExit("code-remediate-workplan-parent-count-mismatch")
+    if observed_specialist_groups != workplan["specialist_owned_groups"]:
+        raise SystemExit("code-remediate-workplan-specialist-count-mismatch")
+    if observed_verifier_groups != workplan["verifier_groups"]:
+        raise SystemExit("code-remediate-workplan-verifier-count-mismatch")
+
+    if execution_mode == "parallel-specialists":
+        if parallel_bucket_count < 2 or not workplan["parallel_eligible"]:
+            raise SystemExit("code-remediate-parallel-plan-not-eligible")
+        if not workplan["parallel_approval_required"]:
+            raise SystemExit("code-remediate-parallel-approval-not-required")
+        if approval_status != "approved":
+            raise SystemExit("code-remediate-parallel-approval-missing")
+        if approval_source not in {"explicit-input", "user-prompt"}:
+            raise SystemExit("code-remediate-parallel-approval-source-missing")
+        if approval_source == "user-prompt" and not workplan["parallel_prompt_presented"]:
+            raise SystemExit("code-remediate-parallel-prompt-not-presented")
+        if approval_response != "approve" or approved_plan_sha256 != bucket_plan_sha256:
+            raise SystemExit("code-remediate-parallel-approved-plan-not-bound")
+    elif parallel_bucket_count:
+        raise SystemExit("code-remediate-parallel-bucket-mode-mismatch")
+    elif workplan["parallel_eligible"]:
+        if not workplan["parallel_approval_required"] or approval_status != "parent-only":
+            raise SystemExit("code-remediate-eligible-fanout-approval-not-recorded")
+        if approval_source not in {"explicit-input", "user-prompt"}:
+            raise SystemExit("code-remediate-eligible-fanout-approval-source-missing")
+        if approval_source == "user-prompt" and not workplan["parallel_prompt_presented"]:
+            raise SystemExit("code-remediate-eligible-fanout-prompt-not-presented")
+        if approval_response != "parent-only" or approved_plan_sha256 is not None:
+            raise SystemExit("code-remediate-parent-only-response-invalid")
+    else:
+        if workplan["parallel_approval_required"] or approval_status != "not-required":
+            raise SystemExit("code-remediate-unneeded-parallel-approval")
+        if approval_source != "not-required" or workplan["parallel_prompt_presented"]:
+            raise SystemExit("code-remediate-unneeded-parallel-approval-source")
+        if approval_response != "not-required" or approved_plan_sha256 is not None:
+            raise SystemExit("code-remediate-unneeded-parallel-approval-response")
+
+    if execution_mode == "parent-owned" and observed_specialist_groups:
+        raise SystemExit("code-remediate-parent-owned-plan-has-specialists")
+    if execution_mode == "sequential-specialists" and observed_specialist_groups == 0:
+        raise SystemExit("code-remediate-sequential-plan-has-no-specialists")
 
     workplan_path = out_dir / "resolution-workplan.md"
     declared_path = Path(workplan_path_value)
@@ -585,13 +827,18 @@ def _validate_code_remediate_workplan(metadata: dict[str, Any], out_dir: Path) -
         raise SystemExit("code-remediate-workplan-path-name-invalid")
     _require_file_sections(
         workplan_path,
-        ["Selected Finding Groups", "Specialist Assignments", "Execution Order", "Ungrouped Items"],
+        ["Work Bucket Plan", "Parallel Approval", "Execution Order", "Ungrouped Items"],
     )
 
     workplan_text = workplan_path.read_text(encoding="utf-8").lower()
-    for required_text in ("primary", "verifier", "context", "closure"):
+    for required_text in ("owner", "verifier", "context", "closure", "approval"):
         if required_text not in workplan_text:
             raise SystemExit(f"code-remediate-workplan-missing-{required_text}")
+    if bucket_plan_sha256 not in workplan_text or approval_response not in workplan_text:
+        raise SystemExit("code-remediate-workplan-approval-binding-missing")
+    for bucket_id in bucket_ids:
+        if bucket_id.casefold() not in workplan_text:
+            raise SystemExit("code-remediate-workplan-bucket-id-missing")
 
 
 def _count_out_of_scope_items(action_text: str) -> int:
@@ -713,6 +960,43 @@ def _validate_status_counts(
         raise SystemExit(f"{error_prefix}-total-mismatch")
 
 
+def _parse_markdown_table(path: Path, heading: str) -> tuple[list[str], list[list[str]]]:
+    """Parse the first pipe table under an exact level-two Markdown heading."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    expected_heading = f"## {heading}".casefold()
+    section_start = next(
+        (index + 1 for index, line in enumerate(lines) if line.strip().casefold() == expected_heading),
+        None,
+    )
+    if section_start is None:
+        raise SystemExit("code-remediate-final-table-section-missing")
+
+    table_lines: list[str] = []
+    for line in lines[section_start:]:
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            break
+        if stripped.startswith("|") and stripped.endswith("|"):
+            table_lines.append(stripped)
+        elif table_lines:
+            break
+    if len(table_lines) < 2:
+        raise SystemExit("code-remediate-final-table-markdown-missing")
+
+    parsed = []
+    for line in table_lines:
+        parts = re.split(r"(?<!\\)\|", line)
+        parsed.append([cell.replace(r"\|", "|").strip() for cell in parts[1:-1]])
+    headers = [header.casefold() for header in parsed[0]]
+    separator = [cell.replace(" ", "") for cell in parsed[1]]
+    if len(headers) != len(separator) or not all(re.fullmatch(r":?-{3,}:?", cell) for cell in separator):
+        raise SystemExit("code-remediate-final-table-markdown-separator-invalid")
+    rows = parsed[2:]
+    if any(len(row) != len(headers) for row in rows):
+        raise SystemExit("code-remediate-final-table-markdown-row-width-invalid")
+    return headers, rows
+
+
 def _validate_code_remediate_final_resolution_table(metadata: dict[str, Any], out_dir: Path) -> None:
     """Validate the final code-remediation table covers every ingested entry."""
     table = metadata.get("final_resolution_table")
@@ -740,6 +1024,23 @@ def _validate_code_remediate_final_resolution_table(metadata: dict[str, Any], ou
     if counts["selectable_rows_total"] + counts["nonselectable_rows_total"] != counts["table_rows_total"]:
         raise SystemExit("code-remediate-final-table-selectable-count-mismatch")
 
+    source_count_keys = (
+        "source_records_total",
+        "represented_source_records_total",
+        "omitted_source_records_total",
+        "grouped_items_total",
+    )
+    source_counts = {}
+    for key in source_count_keys:
+        value = table.get(key)
+        if not isinstance(value, int) or value < 0:
+            raise SystemExit(f"code-remediate-invalid-final-resolution-table:{key}")
+        source_counts[key] = value
+    if source_counts["omitted_source_records_total"] != 0:
+        raise SystemExit("code-remediate-final-table-omitted-sources")
+    if source_counts["source_records_total"] != source_counts["represented_source_records_total"]:
+        raise SystemExit("code-remediate-final-table-source-count-mismatch")
+
     _validate_status_counts(
         table.get("triage_status_counts"),
         CODE_REMEDIATE_TRIAGE_STATUSES,
@@ -761,6 +1062,72 @@ def _validate_code_remediate_final_resolution_table(metadata: dict[str, Any], ou
     if missing_columns:
         raise SystemExit("code-remediate-final-table-required-columns-missing:" + ",".join(missing_columns))
 
+    items = table.get("items")
+    if not isinstance(items, list):
+        raise SystemExit("code-remediate-final-table-items-not-list")
+    if len(items) != counts["table_rows_total"]:
+        raise SystemExit("code-remediate-final-table-item-count-mismatch")
+
+    item_ids: set[str] = set()
+    observed_triage_counts = {status: 0 for status in CODE_REMEDIATE_TRIAGE_STATUSES}
+    observed_resolution_counts = {status: 0 for status in CODE_REMEDIATE_RESOLUTION_STATUSES}
+    observed_selectable = 0
+    observed_source_keys: set[tuple[str, str]] = set()
+    observed_source_records = 0
+    observed_grouped_items = 0
+    for position, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise SystemExit(f"code-remediate-final-table-item-not-object:{position}")
+        for field in CODE_REMEDIATE_FINAL_ITEM_STRING_FIELDS:
+            value = item.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise SystemExit(f"code-remediate-final-table-item-invalid-{field}:{position}")
+        if not isinstance(item.get("selectable"), bool):
+            raise SystemExit(f"code-remediate-final-table-item-invalid-selectable:{position}")
+        sources = item.get("sources")
+        if not isinstance(sources, list) or not sources:
+            raise SystemExit(f"code-remediate-final-table-item-sources-missing:{position}")
+        observed_grouped_items += int(len(sources) > 1)
+        for source_position, source in enumerate(sources):
+            if not isinstance(source, dict):
+                raise SystemExit(f"code-remediate-final-table-source-not-object:{position}:{source_position}")
+            kind = source.get("kind")
+            if not isinstance(kind, str) or kind not in CODE_REMEDIATE_SOURCE_KINDS:
+                raise SystemExit(f"code-remediate-final-table-source-kind-invalid:{position}:{source_position}")
+            for field in CODE_REMEDIATE_SOURCE_STRING_FIELDS:
+                value = source.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    raise SystemExit(f"code-remediate-final-table-source-{field}-invalid:{position}:{source_position}")
+            source_key = (kind, source["source_id"].strip())
+            if source_key in observed_source_keys:
+                raise SystemExit("code-remediate-final-table-source-id-duplicate")
+            observed_source_keys.add(source_key)
+            observed_source_records += 1
+        item_id = item["input_item_id"].strip()
+        if item_id in item_ids:
+            raise SystemExit("code-remediate-final-table-item-id-duplicate")
+        item_ids.add(item_id)
+        triage_status = item["triage_status"].strip().casefold()
+        resolution_status = item["resolution_status"].strip().casefold()
+        if triage_status not in CODE_REMEDIATE_TRIAGE_STATUSES:
+            raise SystemExit("code-remediate-final-table-item-triage-status-invalid")
+        if resolution_status not in CODE_REMEDIATE_RESOLUTION_STATUSES:
+            raise SystemExit("code-remediate-final-table-item-resolution-status-invalid")
+        observed_triage_counts[triage_status] += 1
+        observed_resolution_counts[resolution_status] += 1
+        observed_selectable += int(item["selectable"])
+
+    if observed_triage_counts != table.get("triage_status_counts"):
+        raise SystemExit("code-remediate-final-table-item-triage-counts-mismatch")
+    if observed_resolution_counts != table.get("resolution_status_counts"):
+        raise SystemExit("code-remediate-final-table-item-resolution-counts-mismatch")
+    if observed_selectable != counts["selectable_rows_total"]:
+        raise SystemExit("code-remediate-final-table-item-selectable-count-mismatch")
+    if observed_source_records != source_counts["represented_source_records_total"]:
+        raise SystemExit("code-remediate-final-table-represented-source-count-mismatch")
+    if observed_grouped_items != source_counts["grouped_items_total"]:
+        raise SystemExit("code-remediate-final-table-grouped-item-count-mismatch")
+
     if counts["table_rows_total"] == 0:
         return
 
@@ -781,6 +1148,46 @@ def _validate_code_remediate_final_resolution_table(metadata: dict[str, Any], ou
     ):
         if required_text not in action_text:
             raise SystemExit(f"code-remediate-final-table-missing-{required_text.replace(' ', '-')}")
+
+    headers, rows = _parse_markdown_table(out_dir / "action-items.md", "Review Item Resolution Table")
+    if set(headers) != CODE_REMEDIATE_FINAL_TABLE_REQUIRED_COLUMNS:
+        raise SystemExit("code-remediate-final-table-markdown-columns-mismatch")
+    if len(rows) != counts["table_rows_total"]:
+        raise SystemExit("code-remediate-final-table-markdown-row-count-mismatch")
+    header_indexes = {header: index for index, header in enumerate(headers)}
+    rows_by_id: dict[str, list[str]] = {}
+    for row in rows:
+        row_id = row[header_indexes["input item"]]
+        if row_id in rows_by_id:
+            raise SystemExit("code-remediate-final-table-markdown-id-duplicate")
+        rows_by_id[row_id] = row
+    if set(rows_by_id) != item_ids:
+        raise SystemExit("code-remediate-final-table-markdown-id-coverage-mismatch")
+
+    field_to_column = {
+        "input_item_id": "input item",
+        "item_name": "item name",
+        "item_type": "item type",
+        "triage_status": "triage status",
+        "resolution_status": "resolution",
+        "owner_status": "owner/status",
+        "resolved_how": "resolved how",
+        "evidence": "evidence",
+    }
+    for item in items:
+        row = rows_by_id[item["input_item_id"].strip()]
+        for field, column in field_to_column.items():
+            if row[header_indexes[column]] != item[field].strip():
+                raise SystemExit(f"code-remediate-final-table-markdown-{field}-mismatch")
+        source_cell = re.sub(r"\s+", " ", row[header_indexes["sources"]].replace("<br>", " ")).strip()
+        for source in item["sources"]:
+            for field in ("kind", "source_id", "location", "body", "evidence"):
+                expected = re.sub(r"\s+", " ", source[field]).strip()
+                if expected not in source_cell:
+                    raise SystemExit(
+                        f"code-remediate-final-table-markdown-source-{field}-missing:"
+                        f"{item['input_item_id']}:{source['source_id']}"
+                    )
 
 
 def _validate_code_remediate_unresolved_summary(metadata: dict[str, Any], out_dir: Path) -> None:

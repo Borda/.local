@@ -28,3 +28,17 @@ For `doctor` and `status`, do not return only the raw JSON or a generic safety l
 Never recommend recursive `chmod`, `chown`, deletion, or link replacement from a diagnostic alone. A protected agent target may be readable by other users, but it must be owned by the current user and have no group/world write or special permission bits. Private lifecycle state remains exact mode `0700`.
 
 After successful install, update, or removal, tell the user to start a fresh Codex session. Thin shims intentionally depend on the installed plugin cache; uninstalling the plugin makes remaining shims unavailable until safely removed or reinstalled.
+
+## Output Contract
+
+Final chat follows the ordered frame from `../../shared/quality-gates.md`, proportionate to this one-action lifecycle tool:
+
+1. `Outcome`: selected action, `Healthy|Degraded|Blocked|Removed|Rejected`, manager exit code, and whether any file changed.
+2. `Results`: render one row per action in a Markdown table with exactly `Action | Outcome | Verification | Remaining limit`; for `doctor` and `status`, include every non-pass check once.
+3. `Verification`: manager path, action, exit-code meaning, exact-digest or read-only evidence, and changed-file state.
+4. `Remaining`: drift, blocked prerequisite, untrusted state, or `None`.
+5. `Next steps`: the narrow safe recovery already defined above, or `None`; never recommend destructive recursive permission or deletion commands.
+6. `Confidence`: numeric score plus material evidence limits; never infer custom-profile selection from a matching task name or child path.
+7. `Artifact`: link manager JSON when retained; otherwise state `None — this lifecycle helper created no durable result artifact`. Raw JSON alone never substitutes for the outcome.
+
+Keep usage rejection and exit codes `2|3|4|5|6|7` explicit. Do not present a blocked install, cancelled remove, drift/conflict, untrusted state, or recovery failure as success.

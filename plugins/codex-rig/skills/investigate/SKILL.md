@@ -147,4 +147,22 @@ Update calibration when root-cause routing or workaround rejection changes:
 
 Use `../../shared/quality-gates.md`.
 
+### Final chat
+
+Final chat follows this order:
+
+1. `Outcome`: root-cause status and remediation readiness.
+
+2. `Results`: one row per tested hypothesis in a Markdown table with exactly `Hypothesis | Evidence | Disposition | Next action`.
+
+3. `Verification`: probes, falsification checks, and exact results.
+
+4. `Remaining`: unresolved hypotheses, blocked evidence, and owner.
+
+5. `Next steps`: prioritized probe, fix handoff, or owner action; reference result rows without repeating them, or `None`.
+
+6. `Confidence`: score, supporting evidence, and material limits.
+
+7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+
 Minimum artifact payload template: `result-template.json`.

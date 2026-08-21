@@ -141,4 +141,22 @@ Update calibration when routing or evidence expectations change:
 
 Use `../../shared/quality-gates.md`.
 
+### Final chat
+
+Final chat follows this order:
+
+1. `Outcome`: analysis conclusion and recommended decision.
+
+2. `Results`: one row per ranked finding in a Markdown table with exactly `Finding | Impact | Decision | Evidence | Next action`.
+
+3. `Verification`: examined sources, checks, and exact results.
+
+4. `Remaining`: open assumptions, unavailable evidence, and next check.
+
+5. `Next steps`: prioritized recommended work or evidence check with owner; reference result rows without repeating them, or `None`.
+
+6. `Confidence`: score, evidence basis, and material limits.
+
+7. `Artifact`: validated path only. It is supplemental, never a substitute for the outcome.
+
 Minimum artifact payload template: `result-template.json`.
