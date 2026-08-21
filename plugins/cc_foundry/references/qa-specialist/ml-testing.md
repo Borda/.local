@@ -2,9 +2,9 @@
 
 # ML Testing (foundry:qa-specialist specialized guidance)
 
-Read only when task scope includes ML model testing (PyTorch, TensorFlow, JAX, model inference, training-loop verification, tensor-shape checks). Skip for non-ML Python tasks.
+Read only for ML model testing: PyTorch, TensorFlow, JAX, model inference, training-loop verification, or tensor-shape checks. Skip non-ML Python tasks.
 
-> **Framework scope**: all patterns below are PyTorch-based. TF/JAX users: adapt to `tf.debugging`/`jax.test_util` equivalents — seeding, assertion APIs, and DataLoader patterns differ.
+> **Framework scope**: all patterns below use PyTorch. For TF/JAX, adapt to `tf.debugging`/`jax.test_util`; seeding, assertion APIs, and DataLoader patterns differ.
 
 ## Tensor Assertions (PyTorch)
 
@@ -43,7 +43,7 @@ def test_transform_preserves_range():
 
 > `reset_random_seeds` autouse fixture — see `_shared/pytest-config.md` for the canonical definition.
 
-Mark GPU tests with `@pytest.mark.gpu` and `@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")` so they skip on CPU-only runners without breaking suite.
+Mark GPU tests with `@pytest.mark.gpu` and `@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")` so CPU-only runners skip them without breaking the suite.
 
 ## DataLoader Testing
 

@@ -2,11 +2,11 @@
 
 # ML Concepts Reference — research:scientist
 
-Loaded on demand for ML-domain experiments. CPU/non-ML or basic experiments do not need this file — keep base agent context lean.
+Load on demand for ML-domain experiments. Omit for CPU/non-ML or basic experiments to keep base agent context lean.
 
 ## Evaluation Pitfalls
 
-Test set used for model selection → optimistic bias; max over seeds instead of mean → cherry picking; outdated baselines → unfair advantage; missing error bars; metric doesn't match task.
+Test-set model selection → optimistic bias; max over seeds instead of mean → cherry picking; outdated baselines → unfair advantage; missing error bars; metric mismatches task.
 
 ## Common Architectural Patterns
 
@@ -14,7 +14,7 @@ Attention: self/cross/sparse/Flash; Norm: BatchNorm vs LayerNorm vs RMSNorm; Sca
 
 ## Foundation Model Adaptation
 
-Evaluate all four before committing: full fine-tune (large labeled dataset, domain shift) · LoRA/PEFT (moderate data, 1 GPU) · prompt/few-shot (few examples, quick iteration) · RAG (knowledge-intensive, no training data). PEFT techniques (LoRA, IA³, prefix tuning) designed mainly for transformer attention layers — verify library support (`peft`, `loralib`) for target architecture BEFORE committing: CNNs (ResNet/EfficientNet) need custom adapter insertion at conv layers, state-space models (Mamba/S4) need non-trivial reparameterization, fused-attention decoders may not expose KV cache to prefix tuning. Compare ≥2-3 options from Papers With Code, confirm each supported on chosen base model. Evaluation: task-specific metric (exact match, ROUGE-L, pass@k, F1, mAP) + capability retention (forgetting on general benchmarks) + efficiency (latency, memory, throughput).
+Evaluate all four before committing: full fine-tune (large labeled dataset, domain shift) · LoRA/PEFT (moderate data, 1 GPU) · prompt/few-shot (few examples, quick iteration) · RAG (knowledge-intensive, no training data). PEFT techniques (LoRA, IA³, prefix tuning) mainly target transformer attention layers — verify library support (`peft`, `loralib`) for target architecture BEFORE committing: CNNs (ResNet/EfficientNet) need custom adapter insertion at conv layers, state-space models (Mamba/S4) need non-trivial reparameterization, fused-attention decoders may not expose KV cache to prefix tuning. Compare ≥2-3 options from Papers With Code; confirm each supports the chosen base model. Evaluation: task-specific metric (exact match, ROUGE-L, pass@k, F1, mAP) + capability retention (forgetting on general benchmarks) + efficiency (latency, memory, throughput).
 
 ## Implementing from Papers
 
@@ -38,7 +38,7 @@ Metrics: Detection → mAP@[.5:.95]; Instance Seg → mask mAP + boundary AP; Se
 
 ## Framework & Model Agnosticism
 
-Compare from task's Papers With Code leaderboard across PyTorch, JAX/Flax, HuggingFace/timm/Lightning; recommend smallest model meeting accuracy target; check HuggingFace Hub before suggesting training from scratch.
+Compare the task's Papers With Code leaderboard across PyTorch, JAX/Flax, HuggingFace/timm/Lightning; recommend the smallest model meeting the accuracy target; check HuggingFace Hub before suggesting training from scratch.
 
 ## LLM Evaluation & Benchmarking
 

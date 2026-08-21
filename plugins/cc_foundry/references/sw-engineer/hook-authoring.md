@@ -2,9 +2,9 @@
 
 # Hook Authoring (foundry:sw-engineer specialized guidance)
 
-Read only when working on hook code (JavaScript files under `.claude/hooks/`, hook registrations in `settings.json`, `PostToolUse`/`PreToolUse`/`SubagentStop` event handlers). Skip for Python implementation tasks.
+Read only for hook code: JavaScript under `.claude/hooks/`, hook registrations in `settings.json`, or `PostToolUse`/`PreToolUse`/`SubagentStop` handlers. Skip Python implementation tasks.
 
-Hook authoring and editing owned exclusively by `foundry:sw-engineer` (per curator NOT-for boundary — curator does not touch hook files). `foundry:curator` reviews hook-adjacent markdown config files only. For hook creation or modification, `foundry:sw-engineer` owns work end-to-end.
+`foundry:sw-engineer` exclusively owns hook authoring and editing; the curator NOT-for boundary prohibits curator edits to hook files. `foundry:curator` reviews only hook-adjacent Markdown config. For any hook creation or modification, `foundry:sw-engineer` owns the work end-to-end.
 
 ## File Header Structure
 
@@ -41,11 +41,11 @@ echo "Error: <message>" >&2
 exit 1
 ```
 
-Every hook must explicitly handle error path — never leave it implicit. For blocking hooks (`exit 1` = block), message on stderr surfaces to user; for non-blocking hooks, logged but does not stop execution.
+Every hook must explicitly handle its error path — never leave it implicit. For blocking hooks (`exit 1` = block), its stderr message surfaces to the user; for non-blocking hooks, the error is logged but execution continues.
 
 ## Exit Code Rules
 
-Exit 1 behavior depends on hook type — do not use exit 1 uniformly:
+Exit 1 behavior depends on hook type — do not use it uniformly:
 
 | Hook type | exit 0 | exit 1 | exit 2 |
 | -- | -- | -- | -- |
@@ -94,7 +94,7 @@ When `PreToolUse` hook needs to approve or block tool call, use `hookSpecificOut
 
 ## PostToolUse and SubagentStop Hooks
 
-Logging hooks (timing, file-writes, audit trails) need no output — exit 0 silently. Never emit to stdout from logging hook; unexpected output can interfere with Claude's tool-result handling.
+Logging hooks (timing, file writes, audit trails) emit no output and exit 0 silently. Never write to stdout; it can interfere with Claude's tool-result handling.
 
 - `PostToolUse` receives tool result payload on stdin — use for timing deltas, logging tool output size, or writing audit records
 - `SubagentStop` fires when spawned agent completes — use to clean up per-agent state files (e.g. `${TMPDIR:-/tmp}/claude-state-<session-id>/agents/<id>.json`) (harness-managed path: `${TMPDIR:-/tmp}/claude-state-<session-id>`; not user-configurable) <!-- tmpdir-exempt: harness-managed path, not plugin-authored -->

@@ -2,7 +2,7 @@
 
 # ML / GPU Profiling (foundry:perf-optimizer specialized guidance)
 
-Read only when workload involves GPU/ML profiling (CUDA, PyTorch training, model inference, DataLoader bottlenecks, mixed precision). Skip for pure CPU/IO profiling.
+Read only for GPU/ML profiling: CUDA, PyTorch training, model inference, DataLoader bottlenecks, or mixed precision. Skip pure CPU/IO profiling.
 
 ## PyTorch Profiler
 
@@ -33,7 +33,7 @@ uv tool install nvitop  # or: pip install nvitop
 nvitop
 ```
 
-> **Platform notes** — nvidia-smi and CUDA-specific calls above apply to NVIDIA GPUs only:
+> **Platform notes** — the nvidia-smi and CUDA calls above apply only to NVIDIA GPUs:
 >
 > - **Apple MPS**: use `torch.profiler` with `torch.device("mps")`; no nvidia-smi; monitor via Activity Monitor (GPU History) or Instruments (Metal System Trace)
 > - **AMD ROCm**: replace `nvidia-smi` with `rocm-smi`; `torch.profiler` with `ProfilerActivity.CPU` works; omit `ProfilerActivity.CUDA`
@@ -41,7 +41,7 @@ nvitop
 
 ## DataLoader Bottleneck Detection
 
-`data_fraction = data_time / step_time` then `cpu_bound = data_fraction > 0.3` → pipeline CPU-bound. Fix: increase `num_workers`, add `pin_memory=True`, `persistent_workers=True` — or switch to faster augmentations (e.g. albumentations) when augmentation dominates `data_time`.
+`data_fraction = data_time / step_time`; `cpu_bound = data_fraction > 0.3` means the pipeline is CPU-bound. Increase `num_workers`; add `pin_memory=True` and `persistent_workers=True`; or use faster augmentations (e.g. albumentations) when they dominate `data_time`.
 
 ## DataLoader Optimization
 
@@ -76,7 +76,7 @@ optimizer.step()
 
 ## Distributed Training Profiling
 
-Profile DDP overhead by measuring all-reduce time. Common bottlenecks:
+Measure all-reduce time to profile DDP overhead. Common bottlenecks:
 
 - Gradient bucket too small → too many all-reduce calls: `DDP(model, bucket_cap_mb=25)` (increase for large models)
 - Uneven data distribution → fast workers wait for slow: `DistributedSampler(drop_last=True)` equalizes batches # NOTE: drops up to (world_size-1) samples per epoch — do not use in eval loops

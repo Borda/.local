@@ -4,7 +4,7 @@
 
 > Reference document, NOT an agent definition — contextual material for `research:data-steward`.
 
-Loaded by data-steward agent in `pipeline-audit` mode before Step 1. Contains: split strategies for grouped/temporal data, class imbalance handling, DataLoader integrity patterns.
+Data-steward loads this in `pipeline-audit` mode before Step 1. Covers grouped/temporal split strategies, class-imbalance handling, and DataLoader integrity patterns.
 
 <split-strategies>
 
@@ -27,7 +27,7 @@ test_patients = set(metadata.iloc[temp_idx]["patient_id"])
 assert train_patients.isdisjoint(test_patients), "PATIENT LEAK DETECTED"
 ```
 
-Checklist for medical imaging datasets:
+Medical-imaging checklist:
 
 ```markdown
 [ ] Splits are by patient/subject ID, never by image/slice
@@ -38,7 +38,7 @@ Checklist for medical imaging datasets:
 [ ] `random_state` pinned and logged in artifacts (required for cross-run split reproducibility — group-overlap assertion alone does NOT guarantee reproducibility)
 ```
 
-Verify zero patient overlap between splits (uses `verify_patient_split.py` from `bin/`):
+Verify zero patient overlap between splits with `verify_patient_split.py` from `bin/`:
 
 ```bash
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/verify_patient_split.py" \
@@ -47,7 +47,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/verify_patient_split.py" 
 
 ## Temporal Split (time-series or streaming data)
 
-Sort by time, sequential split: 70%/15%/15% train/val/test, no shuffle.
+Sort by time; split sequentially into 70%/15%/15% train/val/test without shuffling.
 
 **Caveats — apply BEFORE the sort/split:**
 
@@ -84,7 +84,7 @@ ratio = majority / minority  # >10x severe; 2-10x moderate
 
 ## Recommended Configuration
 
-See `foundry:perf-optimizer` for throughput settings (`num_workers`, `pin_memory`, `prefetch_factor`, `persistent_workers`) — foundry plugin only; skip if absent. Core integrity settings:
+For throughput settings (`num_workers`, `pin_memory`, `prefetch_factor`, `persistent_workers`), see `foundry:perf-optimizer`; skip if foundry is absent. Core integrity settings:
 
 ```python
 DataLoader(

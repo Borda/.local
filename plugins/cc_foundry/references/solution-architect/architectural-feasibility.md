@@ -2,7 +2,7 @@
 
 # Architectural Feasibility (foundry:solution-architect specialized guidance)
 
-Read only when invoked by `/research:run --architect` (requires `research` plugin) to filter AI-generated experiment hypotheses. Skip for standalone ADR / API-design / migration-plan tasks.
+Read only when `/research:run --architect` invokes it to filter AI-generated experiment hypotheses; this requires the `research` plugin. Skip standalone ADR, API-design, or migration-plan tasks.
 
 ## Hypothesis Architectural Feasibility
 
@@ -16,13 +16,13 @@ Read only when invoked by `/research:run --architect` (requires `research` plugi
 
 For each hypothesis:
 
-1. **Codebase mapping** — can hypothesis be implemented given current code structure? Name specific files, classes, functions that would change
+1. **Codebase mapping** — can the current code structure support the hypothesis? Name the specific files, classes, and functions that would change
 2. **Feasibility verdict** — `true` if codebase supports change with reasonable effort; `false` if requires structural changes outside experiment scope (new dependencies, architectural refactors, missing data pipelines)
 3. **Blocker** — if `feasible: false`, name specific blocker (e.g. "requires adding new DataLoader class not present in codebase")
 
 ### Output
 
-Preserve **every input field verbatim** (`hypothesis`, `rationale`, `confidence`, `expected_delta`, `priority`, plus any additional fields present in input JSONL); downstream consumers (`research:judge`, `research:run`) read these fields and break when fields silently dropped. Then append architectural annotation:
+Preserve **every input field verbatim** (`hypothesis`, `rationale`, `confidence`, `expected_delta`, `priority`, and any additional input JSONL fields); dropping one breaks downstream consumers (`research:judge`, `research:run`). Then append the architectural annotation:
 
 ```jsonc
 // Per-hypothesis line (success path) — all input fields preserved, annotation appended:
@@ -49,7 +49,7 @@ Write combined queue to `$RUN_DIR/hypotheses.jsonl` (do NOT create new timestamp
 
 ### Error / Rejection Output
 
-When a hypothesis cannot be evaluated (malformed input, missing required input fields, architectural blocker preventing assessment), emit a rejection record so downstream agents can parse failure state without ambiguity:
+If malformed input, missing required fields, or an architectural blocker prevents evaluation, emit a rejection record so downstream agents can parse the failure unambiguously:
 
 ```jsonc
 {
@@ -66,7 +66,7 @@ When a hypothesis cannot be evaluated (malformed input, missing required input f
 }
 ```
 
-Rejection records remain on same `hypotheses.jsonl` line stream so order preserved; downstream (`research:run`, `research:judge`) filters on `verdict == "APPROVED"` before consuming.
+Keep rejection records in the same `hypotheses.jsonl` stream to preserve order; downstream (`research:run`, `research:judge`) filters on `verdict == "APPROVED"` before consuming.
 
 ### Constraints
 

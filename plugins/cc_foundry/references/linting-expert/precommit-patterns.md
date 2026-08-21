@@ -2,7 +2,7 @@
 
 # pre-commit Configuration & Versioning (foundry:linting-expert specialized guidance)
 
-Read only when task scope explicitly touches `.pre-commit-config.yaml` (creating, editing, or auditing pre-commit hooks). Skip for ruff-only or mypy-only tasks.
+Read only for tasks explicitly creating, editing, or auditing `.pre-commit-config.yaml`. Skip ruff-only or mypy-only tasks.
 
 ## pre-commit — enforce at commit time
 
@@ -45,7 +45,7 @@ pre-commit autoupdate      # run regularly
 
 ## Version Pinning
 
-Two contexts; apply correct one:
+Apply the matching context:
 
 **Live project config** (`.pre-commit-config.yaml` exists + in use):
 
@@ -71,7 +71,7 @@ Run `pre-commit autoupdate` as part of regular dependency updates (e.g., monthly
 
 ## Version Verification
 
-After `pre-commit autoupdate`, cross-check updated revs against pypi.org (ruff, mypy) and hook repo's GitHub releases (pre-commit-hooks). Don't check only GitHub releases for ruff/mypy — pypi.org reflects published package version. Use WebFetch to verify hook versions against pypi.org or GitHub releases when `pre-commit autoupdate` output is ambiguous (e.g., rev updated but release page not yet reflected in pypi metadata).
+After `pre-commit autoupdate`, cross-check ruff and mypy revs against pypi.org and pre-commit-hooks against its GitHub releases. Don't rely only on GitHub releases for ruff or mypy — pypi.org reflects published package versions. Use WebFetch when `pre-commit autoupdate` output is ambiguous (e.g., a rev updated before pypi metadata).
 
 Cache version lookups: store result in session variable, reuse; avoid re-fetching same URL.
 
