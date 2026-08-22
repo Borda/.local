@@ -15,4 +15,4 @@ Classify outcome:
 - **Second pass disagrees or downgrades** → downgrade to `high` with note: "unconfirmed — one of two independent passes flagged this"
 - **Both agree it is NOT critical** → remove from critical list; re-classify at lower severity both agree on
 
-One extra spawn per critical finding. Worth it — stops false-positive blockers reaching user.
+**Spawn cap: max 3 verifier agents per run.** More than 3 critical/blocking findings → group into batches of ≤2 findings per verifier (same origin agent type per batch); note the grouped finding IDs in the verifier's rationale; every finding still gets its own independent verdict. Unbounded one-spawn-per-finding fanout costs ~120,851 tok of fixed overhead per critical. Worth the capped spend — stops false-positive blockers reaching user.

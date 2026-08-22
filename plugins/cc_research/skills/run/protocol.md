@@ -25,9 +25,9 @@ Canonical layout — other run/mode files point here rather than re-explaining i
 
 ## hypotheses.jsonl Schema
 
-One JSON obj per line. Two-pass write by separate agents:
+One JSON obj per line. Single-pass write — each oracle annotates its own entries (a separate solution-architect annotation spawn was removed: the generating oracle already read the codebase, and a second agent pass costs full spawn overhead to re-derive the same facts):
 
-**Pass 1 — researcher (oracle):**
+**Core fields (every oracle):**
 
 | Field | Type | Description |
 | -- | -- | -- |
@@ -38,7 +38,7 @@ One JSON obj per line. Two-pass write by separate agents:
 | `priority` | `int` | Execution order (1 = highest); journal-sourced entries use lower values than oracle entries |
 | `source` | `str` | `"oracle"` for researcher; `"journal"` for journal-sourced; `"team"` for team-mode hypothesis agents (Phase A); `"retro"` for `/research:retro` output (feasibility fields absent — treated as `feasible: true`); `"architect"` for architect-only entries |
 
-**Pass 2 — solution-architect (feasibility filter):** annotates in place, preserves order
+**Feasibility fields (written by the same oracle in the same pass):**
 
 | Field | Type | Description |
 | -- | -- | -- |
@@ -46,7 +46,9 @@ One JSON obj per line. Two-pass write by separate agents:
 | `blocker` | `str \| null` | Required if `feasible: false`; names specific architectural blocker |
 | `codebase_mapping` | `str` | Files, classes, or functions needing change |
 
-**Minimal valid oracle entry (before feasibility pass):**
+Entries missing the feasibility fields (retro output, older queue files) are treated as `feasible: true`, `blocker: null`, `codebase_mapping: ""`.
+
+**Complete valid oracle entry:**
 
 ```json
 {
@@ -55,14 +57,7 @@ One JSON obj per line. Two-pass write by separate agents:
   "confidence": 0.85,
   "expected_delta": "+2% val_acc",
   "priority": 1,
-  "source": "oracle"
-}
-```
-
-**After feasibility annotation** (3 fields added by solution-architect — see Pass 2 table above):
-
-```json
-{
+  "source": "oracle",
   "feasible": true,
   "blocker": null,
   "codebase_mapping": "src/model.py:Encoder.forward"
@@ -135,7 +130,7 @@ Rules:
 
 ## Journal-Sourced Hypothesis Rules
 
-- Never execute journal hypothesis without feasibility annotation — `feasible` required before campaign loop
+- Never execute journal hypothesis without feasibility annotation — `feasible` required before campaign loop; the lead annotates journal entries itself when queuing them (it has full run context — no annotator spawn)
 - Journal hypotheses inherit oracle JSONL schema; `source: "journal"` only distinguishing field
 - `priority` must be numerically higher than all oracle entries — journal hypotheses run after queue exhausted
 

@@ -72,3 +72,18 @@ def test_main_check_exit_codes(tmp_path: Path) -> None:
         assert ps.main(["--root", str(tmp_path)]) == 0
     finally:
         ps.MANIFEST = original
+
+
+def test_real_manifest_prefixes_migrated_copies() -> None:
+    """Migrated _shared copies keep the ``foundry--`` source-plugin prefix.
+
+    quality-stack.md and cross-validation-protocol.md copies were renamed so a
+    consumer plugin's own _shared file can never collide with (or be silently
+    overwritten by) a propagated copy; reverting a copy to the bare canonical
+    basename would re-open that collision and orphan consumer references.
+    """
+    for entry in ps.MANIFEST:
+        canonical = str(entry["canonical"])
+        if canonical.endswith(("_shared/quality-stack.md", "_shared/cross-validation-protocol.md")):
+            for copy in entry["copies"]:
+                assert Path(str(copy)).name.startswith("foundry--"), copy

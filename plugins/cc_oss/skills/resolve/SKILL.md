@@ -333,7 +333,7 @@ Summary ≤60 chars. Loc = inline / discussion / report. Notes = `—` when empt
 
 ## Step 3d: User item selection
 
-<!-- branch: main-path — item-selection (call 1 of 4 on normal path; always fires in step 3d) -->
+<!-- branch: main-path — item-selection (always fires in step 3d; ≤6 items = one merged call incl. commit-mode, >6 = two calls) -->
 
 ! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text.
 
@@ -346,34 +346,39 @@ TaskUpdate(task_id=TASK_SELECT, status="in_progress")
 
 Pending items = ACTION_ITEMS where type ≠ `[done]` and type ≠ `[info]`. Zero pending → set `SELECTED_ITEMS` = all pending IDs, skip to Step 3e.
 
-Sort all pending items by severity descending (most impactful first). Constraint: max 3 items/question, max 4 questions/call — Q1–Q3 = item checkboxes, Q4 = bulk action. Note: `AskUserQuestion` always appends "Type something" outside the option list — 3 items + Type something = 4 visible per page; keep ≤3 items per group.
+Sort all pending items by severity descending (most impactful first). Constraint: max 3 items/question, max 4 questions/call. Note: `AskUserQuestion` always appends "Type something" outside the option list — 3 items + Type something = 4 visible per page; keep ≤3 items per group.
 
-**Q4 = bulk action — hard rule**: Q4 is always the last question, single-select, fixed options. Never put items in Q4. Items span ≤3 groups regardless of how many type categories exist.
+**Call layout — pick by pending-item count** (each AskUserQuestion window is pure human idle, median ~15 min — merge whenever the 4-question ceiling allows):
+
+- **≤6 pending items → ONE call**: Q1–Q2 = item checkboxes (≤3 each; one question when ≤3 items), next question = bulk action, LAST question = commit-mode menu (full 4-option text below, verbatim). Bulk action resolving to (d) Skip all → discard the commit-mode answer (nothing will be committed). This satisfies the distinct-menus rule below — the menus stay separate questions; only the round-trips merge.
+- **>6 pending items → two calls**: Q1–Q3 = item checkboxes, last question = bulk action; commit-mode menu asked as the follow-up call after the bulk action resolves (flow below).
+
+**Bulk action — hard rule**: single-select, fixed options, always positioned after every item-checkbox question. Never put items in it. Items span ≤3 groups regardless of how many type categories exist.
 
 ```text
-Q4 — multiSelect: FALSE (single-select only — user picks one bulk action, not a checklist)
-"Q4 — Or choose a bulk action:"
+Bulk-action question — multiSelect: FALSE (single-select only — user picks one bulk action, not a checklist)
+"Or choose a bulk action:"
   (a) +All [req] — implement all required items
   (b) +All [suggest] — implement all suggested items
   (c) ALL (req + suggest) — implement all pending items
   (d) Skip all — skip all items, exit
 ```
 
-**Bulk-action resolution from Q4**:
+**Bulk-action resolution**:
 
-- (a) → `SELECTED_ITEMS` = all `[req]` IDs; skip Call 2 in two-call flow; proceed to commit mode question
-- (b) → `SELECTED_ITEMS` = all `[suggest]` IDs; skip Call 2 in two-call flow; proceed to commit mode question
-- (c) → `SELECTED_ITEMS` = all pending [req+suggest] IDs; skip Call 2; proceed to commit mode question (do NOT hardcode `COMMIT_MODE` — scope and commit mode are orthogonal; user still chooses granularity)
-- (d) → stop; print `→ All items skipped.`; jump to Step 11
-- Q4 unanswered / "Type something" → use checked IDs from Q1–Q3; proceed to commit mode question; `COMMIT_MODE = each` (default)
+- (a) → `SELECTED_ITEMS` = all `[req]` IDs; skip Call 2 in two-call flow; proceed to commit-mode resolution
+- (b) → `SELECTED_ITEMS` = all `[suggest]` IDs; skip Call 2 in two-call flow; proceed to commit-mode resolution
+- (c) → `SELECTED_ITEMS` = all pending [req+suggest] IDs; skip Call 2; proceed to commit-mode resolution (do NOT hardcode `COMMIT_MODE` — scope and commit mode are orthogonal; user still chooses granularity)
+- (d) → stop; print `→ All items skipped.`; jump to Step 11 (merged flow: discard the commit-mode answer from the same call)
+- unanswered / "Type something" → use checked IDs from the item questions; proceed to commit-mode resolution; `COMMIT_MODE = each` (default)
 
-**Item checkbox questions (Q1–Q3)**: each `multiSelect: true`, header "Items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>` + for `location: discussion` items append `· thread (no GH resolve)`. Fill Q1→Q3 in severity order (≤3 items each). If >9 pending items: two calls — print `→ N pending items — selecting in 2 calls` before call 1; Call 2 gets remaining items + Q4 again; "ALL (req + suggest)" in Call 1 → skip Call 2.
+**Item checkbox questions**: each `multiSelect: true`, header "Items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>` + for `location: discussion` items append `· thread (no GH resolve)`. Fill in severity order (≤3 items each). If >9 pending items: two calls — print `→ N pending items — selecting in 2 calls` before call 1; Call 2 gets remaining items + the bulk-action question again; "ALL (req + suggest)" in Call 1 → skip Call 2.
 
-**≥20 pending items — context-budget mode**: skip per-item checkboxes; print compressed table (type · id · summary ≤40 chars · file) **inline to terminal** (Output-Routing exemption from Step 3c applies — never divert to `.temp`) then Q4 only; follow with commit mode question unless (d) selected.
+**≥20 pending items — context-budget mode**: skip per-item checkboxes; print compressed table (type · id · summary ≤40 chars · file) **inline to terminal** (Output-Routing exemption from Step 3c applies — never divert to `.temp`) then ONE call: bulk-action question + commit-mode question (≤6-item merged layout applies — only 2 questions needed).
 
-<!-- branch: main-path — commit-mode (call 2 of 4; skipped only when Q4=(d) skip) -->
+<!-- branch: main-path — commit-mode (same call in the ≤6-item merged layout; separate call 2 only in the >6-item flow; skipped only when bulk action = (d) skip) -->
 
-**Commit mode follow-up** — ask immediately after Q4 resolves to (a), (b), (c), or unanswered (skip only when (d) skip-all). Commit mode is always the user's choice; item scope ((c) = all items) never implies a commit mode:
+**Commit mode** — in the merged layout this menu is the LAST question of the same call; in the two-call flow ask it immediately after the bulk action resolves to (a), (b), (c), or unanswered (skip only when (d) skip-all). Commit mode is always the user's choice; item scope ((c) = all items) never implies a commit mode:
 
 ```text
 AskUserQuestion: "Commit mode for selected items:"
@@ -383,7 +388,7 @@ AskUserQuestion: "Commit mode for selected items:"
   (d) Stage only — no commits; stay staged on PR branch (⚠ cannot cleanly restore to $SAVED_BRANCH after Step 11; governs Step 8 action-item commits only — the Steps 5–7 merge commit is unconditional and always created)
 ```
 
-**ESSENTIAL — all 4 options mandatory, never emit fewer than 4** (empirically motivated: LLMs tend to drop (b) By topic group and (d) Stage only — both must appear every time). Distinct menu from Q4, never merge or pull Q4's bulk-action options in — this menu sets commit MODE (how to commit), Q4 sets item SCOPE (which items).
+**ESSENTIAL — all 4 options mandatory, never emit fewer than 4** (empirically motivated: LLMs tend to drop (b) By topic group and (d) Stage only — both must appear every time). Distinct menu from the bulk-action question, never merge or pull its options in — this menu sets commit MODE (how to commit), the bulk action sets item SCOPE (which items). Sharing one AskUserQuestion call is fine; sharing one menu never is.
 
 Set `COMMIT_MODE`:
 
@@ -454,23 +459,24 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')  # timeout: 3000
 [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}')  # timeout: 6000
 [ -z "$DEFAULT_BRANCH" ] && { printf "! BLOCKED — cannot determine default branch; refusing to proceed\n"; exit 1; }
-PR_HEAD_REF=$(gh pr view "<PR#>" --json headRefName --jq .headRefName 2>/dev/null)  # timeout: 6000
+# Step3b bound fields model-level only, no shell binding — ONE combined fetch here, at Step-4 time (3d human wait can span minutes; stale headRefOid would poison the SHA-first skip below); read by post-checkout assert, Step10 push gate, conflict-resolution.md
+PR_META=$(gh pr view "<PR#>" --json headRefName,baseRefName,isCrossRepository,headRefOid,headRepositoryOwner --jq '[.headRefName, .baseRefName, (.isCrossRepository|tostring), .headRefOid, (.headRepositoryOwner.login // "")] | join(" ")' 2>/dev/null)  # timeout: 6000
+set -- $PR_META
+PR_HEAD_REF="${1:-}"; BASE_REF="${2:-}"; IS_CROSS_REPO="${3:-}"; PR_HEAD_OID="${4:-}"; HEAD_REPO_OWNER="${5:-}"
+[ -n "$BASE_REF" ] || BASE_REF="$DEFAULT_BRANCH"
+[ -n "$IS_CROSS_REPO" ] || IS_CROSS_REPO=false
 if [ "$PR_HEAD_REF" = "$DEFAULT_BRANCH" ]; then
     echo "⛔ PR HEAD ref ($PR_HEAD_REF) equals default branch — refusing to check out and commit on default branch"
     exit 1
 fi
-# Step3b: model-level only, no shell binding — bind+persist here; read by post-checkout assert, Step10 push gate, conflict-resolution.md
 HEAD_REF="$PR_HEAD_REF"
-BASE_REF=$(gh pr view "<PR#>" --json baseRefName --jq .baseRefName 2>/dev/null)  # timeout: 6000
-[ -n "$BASE_REF" ] || BASE_REF="$DEFAULT_BRANCH"
-IS_CROSS_REPO=$(gh pr view "<PR#>" --json isCrossRepository --jq .isCrossRepository 2>/dev/null || echo false)  # timeout: 6000
 echo "$HEAD_REF" > "${TMPDIR:-/tmp}/resolve-head-ref-${CSID}"
 echo "$BASE_REF" > "${TMPDIR:-/tmp}/resolve-base-ref-${CSID}"
 echo "$IS_CROSS_REPO" > "${TMPDIR:-/tmp}/resolve-is-cross-repo-${CSID}"
+echo "$HEAD_REPO_OWNER" > "${TMPDIR:-/tmp}/resolve-head-repo-owner-${CSID}"  # read by FORK_REMOTE block — no re-fetch
 SAVED_BRANCH=$(git rev-parse --abbrev-ref HEAD)  # timeout: 3000
 echo "$SAVED_BRANCH" > "${TMPDIR:-/tmp}/resolve-saved-branch-${CSID}"
 # SHA-first: skip if at PR head — avoids worktree conflict (gh pr checkout aliases pr-N-slug if branch active elsewhere)
-PR_HEAD_OID=$(gh pr view "<PR#>" --json headRefOid --jq .headRefOid 2>/dev/null)  # timeout: 6000
 LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null)  # timeout: 3000
 # reflog trace (cf. investigate 2026-06-13T11-00-00Z: pr195 alias, opaque state)
 >&2 echo "→ Step 4 state: SAVED_BRANCH=$SAVED_BRANCH PR_HEAD_REF=$PR_HEAD_REF PR_HEAD_OID=${PR_HEAD_OID:-<empty>} LOCAL_SHA=${LOCAL_SHA:-<empty>}"
@@ -518,7 +524,8 @@ Determine `FORK_REMOTE` for push in Step 10:
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r IS_CROSS_REPO < "${TMPDIR:-/tmp}/resolve-is-cross-repo-${CSID}" 2>/dev/null || IS_CROSS_REPO="false"
 if [ "$IS_CROSS_REPO" = "true" ]; then
-    FORK_REMOTE=$(gh pr view "<PR#>" --json headRepositoryOwner --jq .headRepositoryOwner.login) # timeout: 6000
+    IFS= read -r FORK_REMOTE < "${TMPDIR:-/tmp}/resolve-head-repo-owner-${CSID}" 2>/dev/null || FORK_REMOTE=""
+    [ -n "$FORK_REMOTE" ] || FORK_REMOTE=$(gh pr view "<PR#>" --json headRepositoryOwner --jq .headRepositoryOwner.login) # sentinel-miss fallback only # timeout: 6000
     PR_REF="$PR_URL"
 else
     FORK_REMOTE="origin"
@@ -861,7 +868,7 @@ Non-calibratable — `disable-model-invocation: true` means skill dispatches to 
 - **Merge-push sequencing + escape hatch** — not atomic; concurrent push → non-fast-forward rejection; retry push only (don't re-run full merge). `git merge --abort` = undo conflict state; `git push --force-with-lease` on explicit user request only.
 - **Impl agent health + effort**: bridge implementation calls use `bridge:implement`; effort is never `low`, minimum `medium`, typo/doc `medium`, multi-file/new-feature `xhigh`, default `high`. `--agent foundry:*` stays foreground only.
 - **Two-phase challenge**: evidence = problem exists?; suggestion = fix quality?; evidence reject → skip; suggestion reject → self-resolved via `alternative` field; all in `CHALLENGE_LOG` + Step 11 report.
-- **COMMIT_MODE**: `each` (default); `all`; `stage` (⚠ branch restore skipped); `grouped` (falls back to `each` when labels skipped). Set via separate `AskUserQuestion` (Step 3d, "call 2 of 4") issued after Q4 resolves to (a), (b), (c), or unanswered — skipped only when Q4=(d) skip-all — distinct from Q4 (sets item scope, not commit strategy). Item scope never implies commit mode. Don't merge these two questions.
+- **COMMIT_MODE**: `each` (default); `all`; `stage` (⚠ branch restore skipped); `grouped` (falls back to `each` when labels skipped). Set via the commit-mode menu (Step 3d) — last question of the merged call when ≤6 pending items, separate follow-up call when >6 — skipped/discarded only when the bulk action = (d) skip-all. Distinct MENU from the bulk action (item scope vs commit strategy); item scope never implies commit mode; menus may share a call, never options.
 - **AskUserQuestion usage**: calls spread across independent branch-paths — no single sequential path exceeds 4-call limit (worst case: codex-cap adds one call when N>8 items and codex available). Compliant with sequential-call limit.
 - **`--agent <name>`**: bare name auto-prefixed `foundry:`; must be an implementation agent (not curator); omit the bridge trailer when another agent is selected.
 - **Thread resolution via GraphQL** — `isResolved` on `PullRequestReviewThread` (GraphQL only); REST doesn't expose it. `RESOLVED_THREAD_IDS` = root comment `databaseId`; GraphQL failure → `[]`.

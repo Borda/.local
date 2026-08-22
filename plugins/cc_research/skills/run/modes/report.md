@@ -10,7 +10,7 @@ Run — [goal]
 Date:        [YYYY-MM-DD]
 Scope:       [program.md path] / [N] iterations planned
 Focus:       ML optimization run
-Agents:      research:scientist (per iteration)
+Agents:      [agents actually dispatched this run — from the R3 strategy resolution + any R0/team spawns, never this placeholder verbatim]
 Outcome:     GOAL_ACHIEVED | IMPROVED | STALLED | DIVERGED
 Best:        [metric_key] = [best] ([delta]% improvement)
 Confidence:  [score] — [key gaps]

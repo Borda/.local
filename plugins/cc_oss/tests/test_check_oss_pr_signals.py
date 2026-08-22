@@ -253,3 +253,112 @@ class TestTimeoutResilience:
 
         monkeypatch.setattr(cops.subprocess, "run", _raise_timeout)
         assert cops._run(["/fake/gh", "pr", "diff", "1"], timeout=1) == ""
+
+
+# --------------------------------------------------------------------------- #
+# --diff-file snapshot mode
+# --------------------------------------------------------------------------- #
+
+_SNAPSHOT_DIFF = (
+    "diff --git a/pyproject.toml b/pyproject.toml\n"
+    "+numpy>=2.0\n"
+    "diff --git a/src/pkg/__init__.py b/src/pkg/__init__.py\n"
+    "-OldExport\n"
+    "+NewExport\n"
+    "diff --git a/src/pkg/core.py b/src/pkg/core.py\n"
+    "+password = 'longenough12'\n"
+    "diff --git a/CHANGELOG.md b/CHANGELOG.md\n"
+    "+## 1.1\n"
+)
+
+
+class TestDiffFileFiltering:
+    """Local slice filtering replaces the per-pathspec gh diff subprocesses.
+
+    The snapshot mode exists so /oss:review can fetch the PR diff once and
+    feed every consumer the same bytes — these tests pin that no gh diff
+    subprocess fires and each slice lands in its correct signal field.
+    """
+
+    def test_slices_derived_without_gh_diff_calls(self, fake_subprocess: dict[str, Any]) -> None:
+        """diff_text populates all four slices; zero gh pr diff subprocesses run.
+
+        A regression here means the snapshot silently re-fetches over the
+        network, reintroducing the redundant round-trips the flag removes.
+        """
+        fake_subprocess["responses"] = {"git:show:v1.0.0": "OldExport = None\n"}
+        signals = cops.collect_signals(
+            clean_args="42",
+            latest_tag="v1.0.0",
+            timeout=5,
+            gh="/fake/gh",
+            git="/fake/git",
+            diff_text=_SNAPSHOT_DIFF,
+        )
+        gh_diff_calls = [c for c in fake_subprocess["calls"] if c[:3] == ["/fake/gh", "pr", "diff"]]
+        assert gh_diff_calls == []
+        assert "+numpy>=2.0" in signals.deps_diff
+        assert any("password" in line for line in signals.secret_matches)
+        assert "OldExport" in signals.removed_exports
+        assert "## 1.1" in signals.changelog_diff
+
+    def test_root_init_matches_glob(self) -> None:
+        """`src/__init__.py` (zero intermediate dirs) is kept by the init slice.
+
+        Git's `src/**/__init__.py` glob matches the depth-zero path; the
+        fnmatch translation drops it unless the extra root pattern is present.
+        """
+        sections = cops._split_diff_sections("diff --git a/src/__init__.py b/src/__init__.py\n-Gone\n")
+        assert "Gone" in cops._filter_diff(sections, ["src/**/__init__.py", "src/__init__.py"])
+
+    def test_non_src_init_excluded(self) -> None:
+        """`tests/__init__.py` never enters the API-stability slice.
+
+        The deprecation check is scoped to the public package surface under
+        src/ — counting test-package inits would fabricate removed exports.
+        """
+        sections = cops._split_diff_sections("diff --git a/tests/__init__.py b/tests/__init__.py\n-x\n")
+        assert cops._filter_diff(sections, ["src/**/__init__.py", "src/__init__.py"]) == ""
+
+
+class TestDiffFileCli:
+    """--diff-file argv plumbing: happy path and unreadable-path fallback."""
+
+    def test_diff_file_read_and_used(
+        self,
+        fake_subprocess: dict[str, Any],
+        tmp_path: Path,
+    ) -> None:
+        """Readable --diff-file → slices from the file, no gh diff subprocess.
+
+        End-to-end pin of the /oss:review Step-3b invocation shape:
+        `--clean-args N --latest-tag T --diff-file SNAP --output-file OUT`.
+        """
+        snap = tmp_path / "pr.diff"
+        snap.write_text(_SNAPSHOT_DIFF, encoding="utf-8")
+        out_path = tmp_path / "signals.json"
+        rc = cops.main(
+            ["--clean-args", "42", "--latest-tag", "v1", "--diff-file", str(snap), "--output-file", str(out_path)]
+        )
+        assert rc == 0
+        gh_diff_calls = [c for c in fake_subprocess["calls"] if c[:3] == ["/fake/gh", "pr", "diff"]]
+        assert gh_diff_calls == []
+        data = json.loads(out_path.read_text())
+        assert "+numpy>=2.0" in data["deps_diff"]
+
+    def test_unreadable_diff_file_falls_back_to_gh(
+        self,
+        fake_subprocess: dict[str, Any],
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Missing --diff-file path → stderr note + gh subprocess path runs.
+
+        A broken snapshot must degrade to the pre-flag behavior, never to an
+        empty result set that would read as "no signals" downstream.
+        """
+        rc = cops.main(["--clean-args", "42", "--diff-file", str(tmp_path / "absent.diff")])
+        assert rc == 0
+        assert "falling back to gh" in capsys.readouterr().err
+        gh_diff_calls = [c for c in fake_subprocess["calls"] if c[:3] == ["/fake/gh", "pr", "diff"]]
+        assert len(gh_diff_calls) == 4

@@ -60,19 +60,6 @@ Summary below:
 
 **Note on `model=` assignments**: `model=opus`/`model=sonnet` labels above are advisory hints — effective only when actual foundry agents installed. When falling back to `general-purpose` (foundry absent), prompt-prepend `model=` does not reliably override agent-resolution fallback tier; effective model set by `agent-resolution.md`'s fallback table, not spawn prompt. Intentional — sonnet sufficient for qa-specialist and doc-scribe tasks, opus for sw-engineer implementation; on fallback, expect tier degradation noted in Final Report.
 
-**Path verification**: after team spawns, verify agents received correct paths — check expected output files exist. Re-read `$TS` from temp file (bash state lost between Bash() calls — spawn block persisted it):
-
-```bash
-# timeout: 5000
-export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r TS < "${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID}" 2>/dev/null || TS=""
-[ -n "$TS" ] || TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-for agent in sw-engineer qa-specialist doc-scribe; do
-    expected=".temp/develop/$TS/feature-${agent}-$TS.md"
-    [ -f "$expected" ] && echo "✓ $agent wrote $expected" || echo "⚠ $agent missing expected output $expected"
-done
-```
-
 **Wave 1 output gate** — verify sw-engineer wrote expected file before launching Wave 2:
 
 ```bash
@@ -101,5 +88,18 @@ IFS= read -r TS < "${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID}" 2>/dev/null || T
 ```
 
 Create sentinel `touch ${TMPDIR:-/tmp}/feature-team-check-${TS}-${CSID}`; every 5 min: `find .temp/develop/$TS -newer ${TMPDIR:-/tmp}/feature-team-check-${TS}-${CSID} -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface with ⏱; never omit timed-out teammates.
+
+**Path verification** — after Wave 2 completes (all three teammates spawned), verify agents received correct paths — check expected output files exist. Re-read `$TS` from temp file (bash state lost between Bash() calls — spawn block persisted it). Runs only once every teammate has been spawned; running it earlier would emit false "missing" warnings for Wave-2 agents that do not exist yet:
+
+```bash
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r TS < "${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID}" 2>/dev/null || TS=""
+[ -n "$TS" ] || TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+for agent in sw-engineer qa-specialist doc-scribe; do
+    expected=".temp/develop/$TS/feature-${agent}-$TS.md"
+    [ -f "$expected" ] && echo "✓ $agent wrote $expected" || echo "⚠ $agent missing expected output $expected"
+done
+```
 
 After all teammates complete: read their output files from `.temp/develop/$TS/`, synthesize, run quality stack, produce Final Report. Exit — do not continue to solo Steps 1-5.

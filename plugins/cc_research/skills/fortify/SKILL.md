@@ -47,7 +47,7 @@ The constants block defaults above are YAML-only — bash blocks read environmen
 - Key boundaries: end of F2 — ablation candidates identified by scientist; end of F4 — all ablation variant worktrees completed.
 - Preserve at F2: FORTIFY_DIR (TMPDIR key), RUN_ID (TMPDIR key), ablation-candidates.jsonl path, best_metric from source run.
 - Preserve at F4: FORTIFY_DIR, RUN_ID, results.jsonl path — ready for F5 importance ranking.
-- F4 loop is resume-safe: 4a-guard skips variants already terminal (non-timeout) in results.jsonl, so a mid-loop compaction resumes at the first pending variant — never re-runs a completed ablation; a timed-out variant still retries.
+- F4 loop is resume-safe: 4a-init's resume guard skips variants already terminal (non-timeout) in results.jsonl, so a mid-loop compaction resumes at the first pending variant — never re-runs a completed ablation; a timed-out variant still retries.
 - Clear at F1 start (stale prior run) and at start of F8 terminal summary.
 
 </compaction>
@@ -361,11 +361,13 @@ best_commit="$best_commit_sha"  # worktree add always sees a SHA → detached HE
 echo "$best_commit" > "${TMPDIR:-/tmp}/fortify-best-commit-${CSID}"  # for 4a worktree-add (Check 41)
 ```
 
-**On interrupt** (user abort or unexpected error mid-loop): `cd "$ORIG_DIR"` first, then `git worktree prune` (`timeout: 15000`) to clean up partially created worktrees before exiting. Interrupt cleanup is manual by necessity — a shell `trap` cannot survive the Bash call that registers it (see 4a-register), so the accumulator file is the durable record of what needs removing; re-run the post-loop sweep block below to drain it.
+**On interrupt** (user abort or unexpected error mid-loop): `cd "$ORIG_DIR"` first, then `git worktree prune` (`timeout: 15000`) to clean up partially created worktrees before exiting. Interrupt cleanup is manual by necessity — a shell `trap` cannot survive the Bash call that registers it (see the no-trap note below 4a), so the accumulator file is the durable record of what needs removing; re-run the post-loop sweep block below to drain it.
 
-**Loop control**: run 4a-init through 4g once per line of `variants.jsonl`, in file order. The iteration cursor lives in the `fortify-variant-idx-${CSID}` sentinel (initialized to 1 above, advanced at 4g) — never in a shell variable, which would die between blocks. Stop the loop when 4a-init reports the cursor is past the last line.
+**Loop control**: run 4a-init through 4g-advance once per line of `variants.jsonl`, in file order. The iteration cursor lives in the `fortify-variant-idx-${CSID}` sentinel (initialized to 1 above, advanced at 4g-advance — or by the resume guard on skip) — never in a shell variable, which would die between blocks. Stop the loop when 4a-init reports the cursor is past the last line.
 
-**4a-init. Read the current variant's spec from `variants.jsonl` by cursor** (must run before any 4a/4b/4c/4d/4e block, which all read the name it persists):
+Each Bash call costs a ~12 s round-trip, so adjacent steps that share a first token and have no model decision between them are merged: 4a-init now carries the cursor read, the resume guard, and the cleanup pre-registration in one block, taking the loop from 13 calls per variant to 11. The remaining splits are load-bearing, not oversight — each is annotated at its own step (4b/4b-assert and the 4f pair keep `cd` out of compound commands; 4c's two calls keep `git` in first-token position; 4d and 4e each hold a `timeout: 360000` and cannot share one call under the 600 s ceiling; 4g-advance must follow 4g's on-disk record). Do not "optimize" them back together.
+
+**4a-init. Read the current variant's spec by cursor + resume guard + pre-register cleanup path** (one block — must run before any 4a/4b/4c/4d/4e block, which all read the name it persists):
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -384,30 +386,24 @@ if [ -z "$_RAW_NAME" ] || [ "$_RAW_NAME" = "null" ]; then
 fi
 VARIANT_NAME="variant-$(echo "$_RAW_NAME" | tr ' ' '-' | tr '[:upper:]' '[:lower:]' | sed 's/^variant-//')"
 echo "$VARIANT_NAME" > "${TMPDIR:-/tmp}/fortify-variant-name-${CSID}"  # for 4a–4f this iteration (Check 41)
-echo "→ variant ${_VIDX}/${_TOTAL}: $VARIANT_NAME"
-```
-
-`! BLOCKED` or `FORTIFY_LOOP_DONE=1` printed → do NOT run 4a–4g for this iteration; halt the loop and continue at the post-loop step.
-
-**4a-guard. Resume guard — skip variants already recorded terminal in `results.jsonl`:**
-
-```bash
 # resume guard — w/o it, compact+resume re-runs completed ablations. Non-timeout terminal only; timeout still retries.
-export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r VARIANT_NAME < "${TMPDIR:-/tmp}/fortify-variant-name-${CSID}" 2>/dev/null || VARIANT_NAME=""  # reload (Check 41)
 _VN_RAW="${VARIANT_NAME#variant-}"
-IFS= read -r _FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || _FORTIFY_DIR=""; _RESULTS="$_FORTIFY_DIR/results.jsonl"
+_RESULTS="$FORTIFY_DIR/results.jsonl"
 if [ -f "$_RESULTS" ] && grep -E "\"variant\":\"(variant-)?$_VN_RAW\"" "$_RESULTS" 2>/dev/null | grep -qE '"status":"(completed|revert-conflict|revert-missing|metric-failed)"'; then
-    # no shell loop here (F4 is orchestrated) — advance cursor + emit token so skip is real, not just printed
-    IFS= read -r _VIDX < "${TMPDIR:-/tmp}/fortify-variant-idx-${CSID}" 2>/dev/null || _VIDX=1
-    echo "$((_VIDX + 1))" > "${TMPDIR:-/tmp}/fortify-variant-idx-${CSID}"
+    echo "$((_VIDX + 1))" > "${TMPDIR:-/tmp}/fortify-variant-idx-${CSID}"  # advance so skip is real, not just printed
     echo "→ $_VN_RAW already terminal (non-timeout) in results.jsonl — skipping (resume)"
     echo "FORTIFY_SKIP_VARIANT=1"
     exit 0
 fi
+# pre-register the worktree path in the cleanup accumulator BEFORE creation — closes the interrupt gap
+# between `worktree add` and a later append; sweep skips paths with no directory, so over-registering is safe
+IFS= read -r WORKTREE_PATHS_FILE < "${TMPDIR:-/tmp}/fortify-paths-ptr-${CSID}" 2>/dev/null || WORKTREE_PATHS_FILE=""
+[ -z "$WORKTREE_PATHS_FILE" ] && WORKTREE_PATHS_FILE="${TMPDIR:-/tmp}/fortify-worktree-paths-fallback-${CSID}"
+echo "${FORTIFY_WORKTREE:-$FORTIFY_DIR/worktrees/$VARIANT_NAME}" >> "$WORKTREE_PATHS_FILE"  # file persists across Bash calls; array vars don't
+echo "→ variant ${_VIDX}/${_TOTAL}: $VARIANT_NAME"
 ```
 
-`FORTIFY_SKIP_VARIANT=1` printed → the cursor is already advanced: go straight back to 4a-init for the next variant. Do NOT run 4a–4g for this one.
+`! BLOCKED` or `FORTIFY_LOOP_DONE=1` printed → do NOT run 4a–4g for this iteration; halt the loop and continue at the post-loop step. `FORTIFY_SKIP_VARIANT=1` printed → the cursor is already advanced: go straight back to 4a-init for the next variant.
 
 **4a. Create isolated worktree at best_commit:**
 
@@ -416,22 +412,11 @@ fi
 git worktree add "$(cat "${TMPDIR:-/tmp}/fortify-dir-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/null)/worktrees/$(cat "${TMPDIR:-/tmp}/fortify-variant-name-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/null)" "$(cat "${TMPDIR:-/tmp}/fortify-best-commit-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/null)"  # timeout: 15000
 ```
 
-**4a-register. Record the worktree path in the cleanup accumulator** immediately after creation:
-
-```bash
-# reload — shell var dies between Bash calls (Check 41)
-export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r WORKTREE_PATHS_FILE < "${TMPDIR:-/tmp}/fortify-paths-ptr-${CSID}" 2>/dev/null || WORKTREE_PATHS_FILE=""
-[ -z "$WORKTREE_PATHS_FILE" ] && WORKTREE_PATHS_FILE="${TMPDIR:-/tmp}/fortify-worktree-paths-fallback-${CSID}"
-IFS= read -r FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || FORTIFY_DIR=""; WORKTREE_BASE="$FORTIFY_DIR/worktrees"  # reload (Check 41)
-IFS= read -r VARIANT_NAME < "${TMPDIR:-/tmp}/fortify-variant-name-${CSID}" 2>/dev/null || VARIANT_NAME=""  # reload (Check 41)
-WORKTREE_PATH="${FORTIFY_WORKTREE:-$WORKTREE_BASE/$VARIANT_NAME}"
-echo "$WORKTREE_PATH" >> "$WORKTREE_PATHS_FILE"  # file persists across Bash calls; array vars don't
-```
+(Cleanup registration already happened in 4a-init — the path was appended to the accumulator BEFORE creation, so an interrupt right after `worktree add` is still covered.)
 
 **No `trap` here — deliberate.** A `trap ... EXIT` registered in this fence fires when *this block* ends, moments after `git worktree add` created the worktree: it would delete the worktree the loop is about to use, 4b's `cd` would fail, and 4c's `git revert` would then execute in the **main working tree** — the exact outcome the worktree-isolation invariant exists to prevent. Trap disposition is per-process and cannot outlive its own Bash call, so it can neither cover a later interrupt nor survive to the next block. Cleanup is therefore explicit: 4f per variant (happy path), plus the post-loop sweep and `git worktree prune` below (interrupted or skipped variants). The accumulator is pre-created via `mktemp` before the loop; `mktemp` ensures collision-free naming across concurrent invocations.
 
-**4b. Navigate into worktree** (two separate Bash calls — cd first, then command):
+**4b. Navigate into worktree** (two separate Bash calls — cd first, then command; CWD persists between calls):
 
 ```bash
 # inline: `cd` stays first token; CSID inlined, same reason (Check 41)
@@ -444,7 +429,9 @@ cd "$(cat "${TMPDIR:-/tmp}/fortify-dir-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/
 pwd | grep -q '/worktrees/' || { echo "! BLOCKED — not inside a variant worktree (4b cd failed); refusing to run revert/metric/guard against the main repo"; exit 1; }  # timeout: 3000
 ```
 
-`! BLOCKED` printed → do NOT run 4c/4d/4e. Nothing was created to clean up beyond the worktree itself: go to 4f, then 4g. Without this assertion a failed `cd` leaves CWD at the repo root and 4c's `git revert` commits into the user's checked-out branch.
+> **Not merged into 4b — deliberate.** Folding the assertion into the `cd` call would put directory navigation and a command in one Bash call, which `claude-config.md` §Directory Navigation Commands forbids outright: a prefix allow-rule earned by the leading `cd` then covers whatever rides behind the `&&`, and here what rides behind it is the gate protecting the main working tree from 4c's `git revert`. The saved ~12 s is not worth widening that grant.
+
+`! BLOCKED` printed → do NOT run 4c/4d/4e. Nothing was created to clean up beyond the worktree itself: go to 4f, then 4g, then 4g-advance. Without this assertion a failed `cd` leaves CWD at the repo root and 4c's `git revert` commits into the user's checked-out branch.
 
 **4c. Apply revert (skip for `full` variant):**
 
@@ -475,9 +462,9 @@ echo "$REVERT_COMMITS_SORTED" > "${TMPDIR:-/tmp}/fortify-revert-sorted-${CSID}" 
 git revert $(cat "${TMPDIR:-/tmp}/fortify-revert-sorted-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/null) --no-edit  # timeout: 15000
 ```
 
-`FORTIFY_SKIP_VARIANT=1` printed by the block above → the worktree exists and must still be removed: jump to 4f (cleanup) then 4g, skipping 4d/4e.
+`FORTIFY_SKIP_VARIANT=1` printed by the block above → the worktree exists and must still be removed: jump to 4f (cleanup), skipping 4d/4e. The block already wrote this variant's `results.jsonl` line, so 4g has nothing to add — but still run 4g-advance, or the loop re-runs this variant forever.
 
-If revert produces merge conflicts: append `{"variant":"<name>","status":"revert-conflict",...}` to `results.jsonl`, jump to 4f (cleanup).
+If revert produces merge conflicts: append `{"variant":"<name>","status":"revert-conflict",...}` to `results.jsonl`, jump to 4f (cleanup), then 4g-advance.
 
 **4d. Run metric_cmd in worktree:**
 
@@ -489,7 +476,7 @@ $METRIC_CMD  # timeout: 360000 (state.json .config.metric_cmd)
 METRIC_EXIT=$?
 ```
 
-Parse stdout for numeric metric value. If command fails or no numeric output: record `status: "metric-failed"`, jump to 4f.
+Parse stdout for numeric metric value. If command fails or no numeric output: record `status: "metric-failed"`, jump to 4f, then 4g and 4g-advance.
 
 **4e. Run guard_cmd in worktree:**
 
@@ -515,21 +502,25 @@ cd "$(cat "${TMPDIR:-/tmp}/fortify-orig-dir-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>
 git worktree remove --force "$(cat "${TMPDIR:-/tmp}/fortify-dir-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/null)/worktrees/$(cat "${TMPDIR:-/tmp}/fortify-variant-name-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/null)"  # timeout: 15000
 ```
 
+> **These two stay separate, and the cursor advance stays out of both — deliberate.** Chaining `git worktree remove --force` behind the `cd` puts navigation and a command in one call (`claude-config.md` §Directory Navigation Commands) and lets a `cd` allow-rule carry a force-remove. Advancing the cursor here would move it *before* 4g writes the result: an interrupt in that window leaves a variant with an advanced cursor and no `results.jsonl` line, so the resume guard has nothing to match on and 4a-init skips the ablation entirely — a silently dropped variant, which is worse than the re-run that the un-advanced cursor produces today.
+
 **4g. Record result** — append one JSON line to `$FORTIFY_DIR/results.jsonl`:
 
 ```json
 {"variant":"<name>","component_removed":"<name or null>","metric":0.0,"delta_from_full":0.0,"delta_pct":0.0,"guard":"pass|fail","status":"completed|revert-conflict|metric-failed|timeout","timestamp":"<ISO>"}
 ```
 
-`delta_from_full` and `delta_pct` are placeholders — computed in post-loop step below.
+`delta_from_full` and `delta_pct` are placeholders — computed in post-loop step below. Written with the Write/Edit tool, not a Bash block: the line carries model-decided values (metric, guard, status), so its text differs every iteration and would never match a blueprint digest — a bash append would prompt on every variant.
 
-**4g-advance. Move the cursor to the next variant**, then return to 4a-init:
+**4g-advance. Move the cursor to the next variant** — runs only after 4g's line is on disk, so cursor and record advance together:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _VIDX < "${TMPDIR:-/tmp}/fortify-variant-idx-${CSID}" 2>/dev/null || _VIDX=1
 echo "$((_VIDX + 1))" > "${TMPDIR:-/tmp}/fortify-variant-idx-${CSID}"
 ```
+
+Then return to 4a-init.
 
 After all variants processed (4a-init printed `FORTIFY_LOOP_DONE=1`) — sweep any worktree the per-variant 4f missed, then prune:
 

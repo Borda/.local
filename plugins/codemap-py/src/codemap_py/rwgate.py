@@ -256,12 +256,34 @@ def _emit(event: str, **fields: Any) -> None:
 
 
 def _append_event_line(log_path: str, event: str, fields: dict) -> None:
-    """Append one ``{event, ...}`` JSON line; small O_APPEND write is atomic."""
+    """Append one ``{event, ...}`` JSON line without cross-process tearing.
+
+    POSIX ``O_APPEND`` is kernel-atomic at EOF, so one ``os.write`` suffices.
+    Windows CRT ``_O_APPEND`` emulates append as seek-to-EOF-then-write — NOT
+    atomic across processes — so two concurrent emitters could interleave and
+    tear a line (observed as ``json.decoder.JSONDecodeError: Extra data`` in
+    the order oracles). There the seek+write runs under a short exclusive
+    byte-0 lock on the log itself (same ``_os_try_lock`` primitive as the
+    gate); on lock-timeout the event is dropped rather than the log corrupted.
+    """
     try:
         line = json.dumps({"event": event, **fields}, sort_keys=True) + "\n"
+        data = line.encode("utf-8")
         fd = os.open(log_path, os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0o644)
         try:
-            os.write(fd, line.encode("utf-8"))
+            if sys.platform == "win32":
+                deadline = time.time() + 2.0
+                while not _os_try_lock(fd):
+                    if time.time() > deadline:  # pragma: no cover - contention bound
+                        return
+                    time.sleep(0.001)
+                try:
+                    os.lseek(fd, 0, os.SEEK_END)
+                    os.write(fd, data)
+                finally:
+                    _os_unlock(fd)
+            else:
+                os.write(fd, data)
         finally:
             os.close(fd)
     except OSError:  # pragma: no cover - diagnostics only

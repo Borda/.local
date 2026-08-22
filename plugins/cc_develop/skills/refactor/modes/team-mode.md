@@ -14,7 +14,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_setup_worktree_wrap.py" refactor
 IFS= read -r TS < "${TMPDIR:-/tmp}/dev-refactor-team-ts-${CSID}" 2>/dev/null || TS=""
 IFS= read -r RUN_DIR_LITERAL < "${TMPDIR:-/tmp}/dev-refactor-run-dir-${CSID}" 2>/dev/null || RUN_DIR_LITERAL=""
-trap 'rm -f ${TMPDIR:-/tmp}/refactor-team-check-$TS' EXIT  # tmpdir-exempt: sentinel written by setup_worktree.py's `_sentinel_dir()`, which resolves ${TMPDIR:-/tmp} semantics — $TS run-timestamp already provides uniqueness in place of a CSID suffix
+# no EXIT trap here — it fires when THIS Bash call's shell exits (immediately), deleting the sentinel setup_worktree.py just created; the pre-spawn touch below re-arms it and the completion block below cleans up
 ```
 
 **IMPORTANT**: in spawn prompts below, substitute `$RUN_DIR_LITERAL` with actual resolved path before constructing each Agent call — agents receive literal resolved strings, not shell variable references. Same applies to `$TS` substitution.
@@ -43,4 +43,13 @@ IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/dev-refactor-run-dir-${CSID}" 2>/dev/nul
 
 Apply to each teammate independently — create sentinel `touch ${TMPDIR:-/tmp}/refactor-team-check-$TS` before each spawn (tmpdir-exempt: sentinel written by setup_worktree.py's `_sentinel_dir()`, which resolves ${TMPDIR:-/tmp} semantics — $TS run-timestamp already provides uniqueness in place of a CSID suffix); every 5 min: `find $RUN_DIR -newer ${TMPDIR:-/tmp}/refactor-team-check-$TS -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface partial results with ⏱; never omit.
 
-After both complete: read their output files from `$RUN_DIR/`, synthesize outputs, run quality stack, produce Final Report. Exit — do not continue to Steps 3–5.
+After both complete: read their output files from `$RUN_DIR/`, synthesize outputs, run quality stack, produce Final Report. Clean up the health sentinel (exact filename, never a glob — another session's sentinel may share the base name):
+
+```bash
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r TS < "${TMPDIR:-/tmp}/dev-refactor-team-ts-${CSID}" 2>/dev/null || TS=""
+[ -n "$TS" ] && rm -f "${TMPDIR:-/tmp}/refactor-team-check-$TS"
+```
+
+Exit — do not continue to Steps 3–5.

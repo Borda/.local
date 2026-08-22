@@ -205,7 +205,7 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
    - **`MANAGE_SCHEMA_CACHED=true`** → skip the spawn and health monitoring below; Read `$MANAGE_SCHEMA_FILE` (limit=60) for the field list and continue at the extraction bullet.
    - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/sub-agents` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `<MANAGE_SCHEMA_FILE>` (substitute resolved path from bash block above) using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<MANAGE_SCHEMA_FILE>\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`"
 
-   **Health monitoring** (CLAUDE.md §6): after spawning the web-explorer agent, apply the §8b boilerplate from `_shared/agent-spawn-protocol.md` with `<ID>` = `web-explorer` and find glob `agent-schema.md` (poll path `.cache/manage`).
+   Health monitoring §8b: `<ID>` = `web-explorer`, glob `agent-schema.md` (poll path `.cache/manage`).
 
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `tools`, `disallowedTools`, `model`, `permissionMode`, `maxTurns`, `effort`, `initialPrompt`, `skills`, `mcpServers`, `hooks`, `memory`, `background`, `isolation`, `color`), current model shorthands, new fields
    - Note new fields worth including. Adjust template to reflect current schema. If new field broadly useful for agent's role (e.g. `maxTurns` for long-running agents), include with sensible default and inline comment.
@@ -239,7 +239,7 @@ Write the file using the Write tool.
 Return ONLY: {"status":"done","file":".claude/agents/<name>.md","lines":N,"confidence":0.N}
 ```
 
-**Health monitoring** (CLAUDE.md §6): after spawning the foundry:sw-engineer agent, apply the §8b boilerplate from `_shared/agent-spawn-protocol.md` with `<ID>` = `sw-engineer-agent` and the find glob matching this agent's output files.
+Health monitoring §8b: `<ID>` = `sw-engineer-agent`, glob matching this agent's output files.
 
 **CRITICAL — worktree isolation copy**: `foundry:sw-engineer` runs with `isolation: worktree` — scaffolded file lands in a temporary worktree, not the main tree. After agent completes: (1) read the worktree path from the agent result (returned in `worktree` field or as part of the result message); (2) run: `cp <worktree-path>/.claude/agents/<name>.md .claude/agents/<name>.md` (substitute actual paths); (3) proceed with Steps 5–9 on the main-tree copy. Without this step, Steps 5–9 Globs find nothing.
 
@@ -257,7 +257,7 @@ Return ONLY: {"status":"done","file":".claude/agents/<name>.md","lines":N,"confi
    - **`MANAGE_SKILL_SCHEMA_CACHED=true`** → skip the spawn and health monitoring below; Read `$MANAGE_SKILL_SCHEMA_FILE` (limit=60) for the field list and continue at the extraction bullet.
    - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/skills` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `<MANAGE_SKILL_SCHEMA_FILE>` (substitute resolved path from bash block above) using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<MANAGE_SKILL_SCHEMA_FILE>\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`"
 
-   **Health monitoring** (CLAUDE.md §6): after spawning the web-explorer agent, apply the §8b boilerplate from `_shared/agent-spawn-protocol.md` with `<ID>` = `web-explorer-skill` and the find glob matching this agent's output files.
+   Health monitoring §8b: `<ID>` = `web-explorer-skill`, glob matching this agent's output files.
 
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `argument-hint`,`disable-model-invocation`, `user-invocable`, `allowed-tools`, `model`, `effort`, `shell`, `paths`, `context`, `agent`, `hooks`), new fields
    - Note new fields worth including. Adjust template to reflect current schema. Include `model` or `context: fork` only when skill's purpose clearly benefits.
@@ -285,7 +285,7 @@ Write using the Write tool.
 Return ONLY: {"status":"done","file":".claude/skills/<name>/SKILL.md","lines":N,"confidence":0.N}
 ```
 
-**Health monitoring** (CLAUDE.md §6): after spawning the foundry:sw-engineer agent, apply the §8b boilerplate from `_shared/agent-spawn-protocol.md` with `<ID>` = `sw-engineer-skill` and the find glob matching this agent's output files.
+Health monitoring §8b: `<ID>` = `sw-engineer-skill`, glob matching this agent's output files.
 
 ### Mode: Update Agent (rename)
 

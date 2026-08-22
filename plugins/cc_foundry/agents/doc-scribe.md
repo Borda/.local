@@ -175,10 +175,10 @@ See **Prompt-Scope Gate** above for scope-filtering rules.
 
 <codemap-context>
 
-Codemap pre-flight — run if `codemap-py query` available + index exists; replaces manual Grep/Read scan for undocumented symbols (requires `codemap-py` plugin). Runs regardless of invocation type (worktree, review, direct).
+Codemap pre-flight (availability + index guarded in-block; requires `codemap-py` plugin) — replaces the manual Grep/Read scan for undocumented symbols. Runs in every invocation type: worktree, review, direct.
 
 ```bash
-# index dir anchors at git root, not cwd — subdir invocation otherwise reports no_index while index exists. PROJ = raw basename; scanner writes it unsanitized (space/+/non-ASCII survive).
+# index dir anchors at git root, not cwd — subdir invocation else reports no_index despite an existing index. PROJ = raw basename, unsanitized (space/+/non-ASCII survive).
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null); [ -n "$_ROOT" ] || _ROOT="$PWD"
 PROJ=$(basename "$_ROOT")
 _IDX="${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}"
@@ -188,7 +188,7 @@ if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
         codemap-py query xrefs --broken "$TARGET_MODULE" 2>/dev/null
     else
         _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
-        # module names from index `name` field, never sed: `pkg/__init__.py` is `pkg`, not `pkg.__init__`. Files index doesn't know resolve to nothing, not a guessed name.
+        # module names from index `name` field, never sed: `pkg/__init__.py` → `pkg`, not `pkg.__init__`. Unindexed files resolve to nothing, never a guessed name.
         _CHANGED_PY=$(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | paste -sd, -)
         for _MOD in $(codemap-py query --timeout 10 central --top 100000 2>/dev/null | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_centrality.py" --files "$_CHANGED_PY" --modules-only 2>/dev/null | head -10); do
             codemap-py query undocumented "$_MOD" 2>/dev/null
@@ -198,9 +198,9 @@ if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
 fi
 ```
 
-> `undocumented` lists symbols missing docstrings — replaces step 1 Grep/Read scan for doc gaps. `xrefs --broken` surfaces stale cross-references. Auto-derive from diff fires in review/worktree context when `TARGET_MODULE` unset.
+> `undocumented` lists symbols missing docstrings — replaces the step 1 Grep/Read scan for doc gaps. `xrefs --broken` surfaces stale cross-references. Diff auto-derive fires in review/worktree when `TARGET_MODULE` unset.
 
-**Bounded call budget**: symbol/module not covered above → up to 3 additional `codemap-py query` calls this task. **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`): that result is final for its direction — no follow-up Grep/Read/query to re-confirm it.
+**Bounded call budget**: symbol/module not covered above → ≤3 more `codemap-py query` calls this task. **Hard stop on `query_complete: true`** (legacy `exhaustive: true`) — that direction is settled; no follow-up Grep/Read/query to re-confirm it.
 
 </codemap-context>
 

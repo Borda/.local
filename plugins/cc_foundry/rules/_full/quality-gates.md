@@ -82,3 +82,15 @@ After required fields, add skill-specific fields relevant to the report type (e.
 | Next steps | [recommended follow-up] |
 | Path | → .reports/<skill>/<timestamp>/<name>.md |
 ```
+
+## Pre-Handover Check
+
+Confidence < 0.9 → push back on the analysis before handing over: ask for proof for each uncertain claim (read source code, read docs, trace through examples), re-examine assumptions, rethink conclusions from first principles. If `bridge@borda-ai-rig` is available, render and call `Skill(skill="bridge:review", args="Read-only adversarial review of <exact area and target paths>. Uncertain claims: <complete claim list>. Current evidence: <source paths or observations>. Challenge each claim, identify missing evidence and alternatives, and return actionable findings with locations; do not apply fixes.")`; never pass the placeholders or a workflow step label. Incorporate findings before handover. If the bridge is absent or disabled, state the specific gap explicitly so the user can decide to re-run.
+
+## Write-Delegation Checklist (`bridge:implement`)
+
+Before calling `bridge:implement`, construct a complete brief containing the exact finding, target paths, current evidence, permitted edits, required result, stop condition, and verification command. Clean the git tree first (`git status -sb` — a dirty tree blocks; it makes the diff impossible to isolate). After it returns, read the **full diff** yourself and run the actual proof command. Repeated fix rounds on the same issue (2+) → stop delegating and finish by hand. Commit only after your own diff read plus proof run; the bridge never commits.
+
+## Reporting Findings — Block Merge Integrity
+
+After merging two blocks (combining e.g. `<antipatterns>` + `<quality-checks>` into one), diff the combined output against both originals; every named rule (`##` heading or bold title) must survive; zero silent drops.

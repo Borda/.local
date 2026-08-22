@@ -13,7 +13,7 @@ Produce sequenced, dependency-ordered implementation plan from SOTA research fin
 
 ### Step P1: Gather research findings
 
-**P1-A — From fresh research**: After Steps 1–3 complete, read generated `.reports/research/topic-<date>.md`. Extract: Recommendation section, Implementation Plan, Key Hyperparameters, Gotchas, Integration with Current Codebase.
+**P1-A — Auto-detected report**: when the no-argument auto-detect above found a recent `.reports/research/topic-*.md`, read that file. (Plan mode dispatches BEFORE Steps 2–3 and skips them — a "fresh" report never exists in the same run; the input is always a prior run's report.) Extract: Recommendation section, Implementation Plan, Key Hyperparameters, Gotchas, Integration with Current Codebase.
 
 **P1-B — From existing output**: Read file at given path directly. Extract same sections.
 

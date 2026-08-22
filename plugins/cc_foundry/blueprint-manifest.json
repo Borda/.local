@@ -18,7 +18,7 @@
     },
     "0083022a3408da227c79fd130ad46b63c9cec7362ce2599c0d805b5606652a96": {
       "kind": "command",
-      "src": "skills/audit/modes/steps-4-5-7.md:159"
+      "src": "skills/audit/modes/steps-4-5-7.md:157"
     },
     "00a773004029f3785eb2f25ca18668bcb9b4175f82dda6a1cd2dca54ab75827b": {
       "kind": "command",
@@ -454,7 +454,7 @@
     },
     "14103738647ebfbbbcc90cc479b649f8472e6f68fa2511dcb9b49bdae0d72728": {
       "kind": "command",
-      "src": "skills/audit/modes/steps-4-5-7.md:159"
+      "src": "skills/audit/modes/steps-4-5-7.md:157"
     },
     "1489f115d02e1237d13efd9af3ac7857c1dda3469fe49061ce79b60814183465": {
       "kind": "command",
@@ -658,7 +658,7 @@
     },
     "1c713f1812e8e2df22fe170dcdc9c09c1b8187762c33b5bfeaf2082c176b5575": {
       "kind": "command",
-      "src": "skills/audit/modes/steps-4-5-7.md:140"
+      "src": "skills/audit/modes/steps-4-5-7.md:138"
     },
     "1d4c46726988ee2db3d53830d4b9a564fbba75b3150f3b2d911d102f03d5e0fb": {
       "kind": "command",
@@ -2386,7 +2386,7 @@
     },
     "6c505cca0ae736e920e5e963f5bd1e097d5e14cf921abe343ab2970c82dbe7a9": {
       "kind": "block",
-      "src": "skills/audit/modes/steps-4-5-7.md:159"
+      "src": "skills/audit/modes/steps-4-5-7.md:157"
     },
     "6c8a9e9b6503a0b46f29c058c29e9f9941ffd5585b5d1a31404afd2df8e908ff": {
       "kind": "command",
@@ -3242,7 +3242,7 @@
     },
     "9503f1e353e6964950ff08c205a5da9e9cc697cf7fc1c4ae59c72ae614f19290": {
       "kind": "command",
-      "src": "skills/audit/modes/steps-4-5-7.md:159"
+      "src": "skills/audit/modes/steps-4-5-7.md:157"
     },
     "9519597b7b64cb99fd97fa814f0c5f8f5e71bb699a1c66e2b534fe00998c5303": {
       "kind": "command",
@@ -3766,7 +3766,7 @@
     },
     "aabba766bd4bfe18ec11174f4dd5b3d8f94101f82dc49ca9278aebd3aa4de7d0": {
       "kind": "block",
-      "src": "skills/audit/modes/steps-4-5-7.md:140"
+      "src": "skills/audit/modes/steps-4-5-7.md:138"
     },
     "aaebde9f01176c2c313596d2329f3d5cfa06daba6e5b28fa0bcfa7d3f56c6a9e": {
       "kind": "command",
@@ -5553,6 +5553,6 @@
       "src": "skills/investigate/SKILL.md:100"
     }
   },
-  "plugin": "cc_foundry@0.50.1",
+  "plugin": "cc_foundry@0.51.0",
   "schema": 1
 }

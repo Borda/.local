@@ -13,7 +13,16 @@ python in skill bodies is banned (audit Check 23a/30e); ``bin/*.py`` is the
 sanctioned home for this transform.
 
 Usage:
-    build_codemap_batch.py <out.json>
+    build_codemap_batch.py <out.json> [--modules "m1 m2 ..."] [--queries rdeps,uncovered]
+
+Flags:
+    ``--modules`` — space-separated dotted module names; skips git-diff
+    derivation entirely (caller already knows its scope, e.g. the refactor
+    skill's AFFECTED_MODULES list).
+    ``--queries`` — comma-separated subset of the per-module query families
+    (``rdeps``, ``mock-rdeps``, ``uncovered``, ``xrefs``, ``undocumented``).
+    When given, the ``central`` baseline item is omitted too — the caller asked
+    for exactly those queries. Unknown names exit 1 with a message.
 
 Output (stdout):
     Batch request JSON written to ``<out.json>``; derived module names printed
@@ -80,6 +89,46 @@ def build_batch_request(modules: list[str]) -> list[dict[str, object]]:
     return items
 
 
+def build_filtered_request(modules: list[str], queries: list[str]) -> list[dict[str, object]]:
+    """Assemble a batch request restricted to the named per-module query families.
+
+    The ``central`` baseline item is deliberately omitted — a caller passing an
+    explicit query list asked for exactly those queries.
+
+    Args:
+        modules: Dotted module names supplied by the caller.
+        queries: Per-module query family names (``cmd`` values from
+            :data:`PER_MODULE_QUERIES`).
+
+    Returns:
+        List of ``{"cmd": ..., "args": [...]}`` items in codemap-py query batch order.
+
+    Raises:
+        ValueError: If any name in ``queries`` is not a known query family.
+
+    Examples:
+        >>> build_filtered_request(["pkg.mod"], ["rdeps"])
+        [{'cmd': 'rdeps', 'args': ['pkg.mod']}]
+        >>> build_filtered_request([], ["rdeps"])
+        []
+        >>> build_filtered_request(["pkg.mod"], ["bogus"])
+        Traceback (most recent call last):
+        ...
+        ValueError: unknown query family: bogus
+    """
+    known = {spec[0]: spec for spec in PER_MODULE_QUERIES}
+    for name in queries:
+        if name not in known:
+            raise ValueError(f"unknown query family: {name}")
+    items: list[dict[str, object]] = []
+    for mod in modules:
+        for name in queries:
+            cmd, *flags = known[name]
+            args = [*flags, mod] if cmd == "uncovered" else [mod, *flags]
+            items.append({"cmd": cmd, "args": args})
+    return items
+
+
 def main(argv: list[str] | None = None) -> int:
     """Derive changed modules, write the batch request JSON, print the module list.
 
@@ -98,12 +147,31 @@ def main(argv: list[str] | None = None) -> int:
     # nargs="?" (not a plain required positional) so a missing path returns exit 1 — argparse's
     # own missing-required exit is 2, but callers and tests rely on the legacy exit-1 contract.
     parser.add_argument("out_json", nargs="?", help="Output path for the batch request JSON.")
+    parser.add_argument(
+        "--modules",
+        help="Space-separated dotted module names; skips git-diff derivation.",
+    )
+    parser.add_argument(
+        "--queries",
+        help="Comma-separated per-module query families; omits the central baseline item.",
+    )
     args = parser.parse_args(argv)
     if args.out_json is None:
-        print("usage: build_codemap_batch.py <out.json>", file=sys.stderr)
+        print("usage: build_codemap_batch.py <out.json> [--modules ...] [--queries ...]", file=sys.stderr)
         return 1
-    modules = derive_modules_from_diff(_git_diff_files(), limit=FALLBACK_LIMIT)
-    Path(args.out_json).write_text(json.dumps(build_batch_request(modules)), encoding="utf-8")
+    if args.modules is not None:
+        modules = args.modules.split()
+    else:
+        modules = derive_modules_from_diff(_git_diff_files(), limit=FALLBACK_LIMIT)
+    if args.queries is not None:
+        try:
+            request = build_filtered_request(modules, args.queries.split(","))
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+    else:
+        request = build_batch_request(modules)
+    Path(args.out_json).write_text(json.dumps(request), encoding="utf-8")
     print(" ".join(modules))
     return 0
 

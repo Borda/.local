@@ -104,7 +104,7 @@ Steps 2-3 execute only when neither `--team` nor `plan` mode is detected.
 
 ### 2a: SOTA literature search (issue with 2b simultaneously in one response)
 
-Conduct broad SOTA search directly using `foundry:web-explorer` (or inline WebSearch/WebFetch if web-explorer unavailable) — topic skill owns SOTA end-to-end. Find top 5 papers for `$ARGUMENTS`, produce comparison table (method, key idea, benchmark results, compute, code availability), recommend single best method given codebase constraints from Step 1.
+**One owner for the search — decide first, never both**: `foundry:web-explorer` available (check below) → the AGENT owns the entire SOTA search and writes `$AGENT_OUT`; the orchestrator issues NO WebSearch/WebFetch of its own (a second inline pass re-fetches the same 5 papers and bills the full page text twice). Web-explorer unavailable → orchestrator conducts the search inline. Either way: find top 5 papers for `$ARGUMENTS`, produce comparison table (method, key idea, benchmark results, compute, code availability), recommend single best method given codebase constraints from Step 1.
 
 **Note**: never dispatch to `research:scientist` for broad SOTA surveys — scientist scoped to deep single-paper analysis with named paper anchor. Use `research:scientist` directly only when: (a) specific paper identified and needs deep analysis, (b) hypothesis generation for identified method, or (c) experiment design for concrete approach. Broad SOTA = web-explorer territory.
 
@@ -128,11 +128,11 @@ echo "$REPORT_OUT" > "${TMPDIR:-/tmp}/topic-report-out-${CSID}"
 echo "$PWD/$REPORT_OUT" > "${TMPDIR:-/tmp}/research-topic-report-file-${CSID}"
 ```
 
-Search targets: arXiv, Papers With Code, Semantic Scholar, HuggingFace Hub. For each of top 5 papers found via WebSearch/WebFetch: extract method, key idea, benchmark results, compute cost, code availability. Write full findings (comparison table, paper analysis, recommendation, implementation plan, Confidence block) to `$AGENT_OUT`.
+Search targets (for whichever owner runs the search): arXiv, Papers With Code, Semantic Scholar, HuggingFace Hub. For each of top 5 papers: extract method, key idea, benchmark results, compute cost, code availability. The owner writes full findings (comparison table, paper analysis, recommendation, implementation plan, Confidence block) to `$AGENT_OUT`.
 
 > **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
 
-**If `foundry:web-explorer` available** (check `ls ~/.claude/plugins/cache/borda-ai-rig/foundry/*/agents/web-explorer.md 2>/dev/null`): spawn `Agent(subagent_type="foundry:web-explorer", prompt="...")` for parallel deep web research, then merge results into `$AGENT_OUT`. Otherwise conduct research inline using WebSearch and WebFetch directly.
+**Availability check** (`ls ~/.claude/plugins/cache/borda-ai-rig/foundry/*/agents/web-explorer.md 2>/dev/null`): present → spawn `Agent(subagent_type="foundry:web-explorer", prompt="...")` as the sole search owner per the rule above — its prompt carries the search targets, per-paper extraction fields, and the `$AGENT_OUT` write (resolved literal path). Absent → conduct the search inline using WebSearch and WebFetch directly.
 
 ### 2b: Check for existing implementations (main context)
 
@@ -163,7 +163,7 @@ Title:       Research — [topic]
 Date:        [YYYY-MM-DD]
 Scope:       [topic / research question]
 Focus:       SOTA literature research
-Agents:      foundry:web-explorer (Step 2a, if available), foundry:solution-architect (plan mode P2)
+Agents:      [agents actually dispatched this run — e.g. foundry:web-explorer when it ran Step 2a; solution-architect only on plan-mode runs; never the full menu]
 Outcome:     EXPLORATORY | PROMISING | CONSENSUS
 Best method: [recommended approach / architecture]
 Papers:      [N papers analyzed]
@@ -206,13 +206,12 @@ Path:        → .reports/research/topic-<branch>-<date>.md
 - [Paper title] ([year]) — [link]
 
 ### Agent Confidence
-<!-- One row per spawned agent; team mode: 2–3 rows -->
-<!-- Emit only rows for agents actually spawned — omit researcher-2 and researcher-3 rows in single-agent mode -->
+<!-- Rows come from the actual launch batch: one row per agent this run really spawned, named as dispatched. -->
+<!-- No agent spawned (orchestrator ran the search inline): single row, agent `orchestrator (inline)`. -->
+<!-- The rows below are shape examples, never emitted verbatim — a fixed researcher-1/2/3 lineup reports agents that never ran. -->
 | Agent | Score | Gaps |
 |---|---|---|
-| researcher-1 | [score] | [gaps] |
-| researcher-2 | [score] | [gaps] |
-| researcher-3 _(team mode only)_ | [score] | [gaps] |
+| [agent as dispatched, e.g. foundry:web-explorer] | [score] | [gaps] |
 ```
 
 ```bash

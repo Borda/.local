@@ -250,10 +250,10 @@ If uncertain whether finding is primary or secondary, ask: "Would this allow rea
 
 <codemap-context>
 
-Codemap pre-flight — run if `codemap-py query` available; skip manual Glob/Grep enumeration for any module codemap already covers. Runs regardless of invocation type (worktree, review, direct).
+Codemap pre-flight (availability guarded in-block) — skip manual Glob/Grep for any module codemap covers. Runs in every invocation type: worktree, review, direct.
 
 ```bash
-# index dir anchors at git root, not cwd — subdir invocation otherwise reports no_index while index exists. PROJ = raw basename; scanner writes it unsanitized (space/+/non-ASCII survive).
+# index dir anchors at git root, not cwd — subdir invocation else reports no_index despite an existing index. PROJ = raw basename, unsanitized (space/+/non-ASCII survive).
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null); [ -n "$_ROOT" ] || _ROOT="$PWD"
 PROJ=$(basename "$_ROOT")
 _IDX="${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}"
@@ -265,7 +265,7 @@ if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     else
         # review/worktree — replaces step 01 enumeration
         _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
-        # module names from index `name` field, never sed: `pkg/__init__.py` is `pkg`, not `pkg.__init__`. Files index doesn't know resolve to nothing, not a guessed name.
+        # module names from index `name` field, never sed: `pkg/__init__.py` → `pkg`, not `pkg.__init__`. Unindexed files resolve to nothing, never a guessed name.
         _CHANGED_PY=$(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | paste -sd, -)
         for _MOD in $(codemap-py query --timeout 10 central --top 100000 2>/dev/null | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_centrality.py" --files "$_CHANGED_PY" --modules-only 2>/dev/null | head -10); do
             codemap-py query uncovered --top 20 "$_MOD" 2>/dev/null
@@ -277,9 +277,9 @@ if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
 fi
 ```
 
-> `uncovered` output replaces step 01 Glob/Grep scan for indexed modules — skip manual enumeration for symbols codemap already lists as uncovered. Auto-derive from diff fires in review/worktree context when `TARGET_MODULE` unset. `mock-rdeps` prevents flagging mocked-but-untested symbols as coverage gaps. `coverage-gap` augments static analysis with runtime line coverage when `--with-coverage` index available (v5.4). `fixture-rdeps` + `fixture-graph` replace manual conftest grep when analyzing test fixture structure. After implementation change, prefer targeted test selection over a full-suite rerun: signal to the orchestrator "run /codemap-py:test-impact <module::changed_function> to select only the statically affected test files" (requires `codemap-py` plugin) — qa-specialist has no Skill tool and cannot invoke it directly.
+> `uncovered` replaces the step 01 Glob/Grep scan for indexed modules. `mock-rdeps` stops mocked-but-untested symbols counting as gaps. `coverage-gap` adds runtime line coverage when a `--with-coverage` index exists (v5.4). `fixture-rdeps` + `fixture-graph` replace conftest grep for fixture structure. Diff auto-derive fires in review/worktree when `TARGET_MODULE` unset. After an implementation change prefer targeted test selection to a full-suite rerun — signal the orchestrator: "run /codemap-py:test-impact <module::changed_function> for only the affected test files" (requires `codemap-py` plugin); qa-specialist has no Skill tool to invoke it itself.
 
-**Bounded call budget**: module/fixture not covered above → up to 3 additional `codemap-py query` calls this task. **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`): that result is final for its direction — no follow-up Grep/Read/query to re-confirm it.
+**Bounded call budget**: module/fixture not covered above → ≤3 more `codemap-py query` calls this task. **Hard stop on `query_complete: true`** (legacy `exhaustive: true`) — that direction is settled; no follow-up Grep/Read/query to re-confirm it.
 
 </codemap-context>
 

@@ -36,8 +36,9 @@ if [ "$CODEMAP_ENABLED" = "true" ] && command -v codemap-py >/dev/null 2>&1 && [
         codemap-py query --timeout 5 central --top 5 2>/dev/null
         echo
         echo "### Change-set blast radius (diff-impact)"
-        # PR diff not in local git objects — feed fetched text directly; captured (not streamed) so fn-rdeps/fn-blast loop below reuses its qname derivation
-        _DIFF_IMPACT_JSON=$(gh pr diff $CLEAN_ARGS 2>/dev/null | codemap-py query --timeout 15 diff-impact --diff-file - 2>/dev/null)
+        # PR diff not in local git objects — feed the Step-0 snapshot (no re-fetch); captured (not streamed) so fn-rdeps/fn-blast loop below reuses its qname derivation
+        IFS= read -r _SNAP_DIR < "${TMPDIR:-/tmp}/oss-review-snap-dir-${CSID}" 2>/dev/null || _SNAP_DIR=""
+        _DIFF_IMPACT_JSON=$(codemap-py query --timeout 15 diff-impact --diff-file "$_SNAP_DIR/pr.diff" 2>/dev/null)
         printf '%s\n' "$_DIFF_IMPACT_JSON"
         echo
         echo "### Changed-function callers (fn-rdeps/fn-blast)"
@@ -53,26 +54,59 @@ if [ "$CODEMAP_ENABLED" = "true" ] && command -v codemap-py >/dev/null 2>&1 && [
             echo
         done
         # while-read, NOT `for mod in $CHANGED_MODS` — zsh doesn't word-split unquoted vars, for-loop passed whole list as ONE arg → every battery call failed "module not indexed" (~all CLI errors across 4 projects)
-        printf '%s\n' "$CHANGED_MODS" | while IFS= read -r mod; do
+        # cap 10 modules — bounds battery wall time on wide PRs; truncation logged, never silent
+        _MOD_TOTAL=$(printf '%s\n' "$CHANGED_MODS" | grep -c .)
+        [ "$_MOD_TOTAL" -gt 10 ] && echo "⚠ module battery capped at 10 of $_MOD_TOTAL changed modules"
+        printf '%s\n' "$CHANGED_MODS" | head -10 | while IFS= read -r mod; do
             [ -n "$mod" ] || continue
             echo "### Module: $mod"
             codemap-py query --timeout 5 rdeps "$mod" 2>/dev/null  # importer count → risk tier; unconditional, every agent's blast-radius ref
-            # 57% of query volume, no benchmarked win — gate per consuming dimension, not per PR.
-            # Full-skip modes only; CHORE+non-deps partial left ungated (mis-encode risk > token saved).
-            if [ "$CICD_ONLY_MODE" != "true" ] && [ "$DOCS_ONLY_MODE" != "true" ] && [ "$DOCS_CICD_MODE" != "true" ]; then
-                codemap-py query --timeout 5 mock-rdeps "$mod"          2>/dev/null  # mock coverage (v4.1), Agent2 qa-specialist — skipped only CICD/DOCS/DOCS_CICD-only, gate on those
-                codemap-py query --timeout 5 uncovered    --top 20 "$mod" 2>/dev/null  # test gaps (v4.2) — same gate as mock-rdeps
-            fi
-            if [ "$CICD_ONLY_MODE" != "true" ]; then
-                codemap-py query --timeout 5 xrefs --broken        "$mod" 2>/dev/null  # stale doc refs (v4.5), Agent4 doc-scribe — skipped only CICD-only mode
-                codemap-py query --timeout 5 undocumented "$mod" 2>/dev/null  # doc coverage (v4.4) — same gate as xrefs
-            fi
             echo
         done
+        # mock-rdeps/uncovered/xrefs/undocumented moved to the post-ranking supplement below — 57% of query volume, consumed only by qa-specialist/doc-scribe; run only when the final lineup spawns them
     } > "$CODEMAP_CONTEXT_STAGE"
+    printf '%s\n' "$CHANGED_MODS" | head -10 > "${TMPDIR:-/tmp}/oss-review-changed-mods-${CLEAN_ARGS}-${CSID}"
 fi
 echo "$codemap_available"      > "${TMPDIR:-/tmp}/oss-review-codemap-available-${CLEAN_ARGS}-${CSID}"
 echo "$CODEMAP_CONTEXT_STAGE"  > "${TMPDIR:-/tmp}/oss-review-codemap-context-stage-${CLEAN_ARGS}-${CSID}"
+```
+
+## Dimension-gated supplement — Step 2, AFTER lineup ranking, BEFORE the `$RUN_DIR` copy
+
+These query families feed exactly one dimension each; under the default `FANOUT_MAX` cap that dimension is often not spawned — running them for every PR was 57% of query volume with no benchmarked win. Gate on the **final ranked lineup**, not on PR mode flags:
+
+- `foundry:qa-specialist` in the final lineup → run the qa block
+- `foundry:doc-scribe` in the final lineup → run the docs block
+- neither → skip both; the staged context is already complete
+
+qa block (mock coverage v4.1 + test gaps v4.2):
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+IFS= read -r CODEMAP_CONTEXT_STAGE < "${TMPDIR:-/tmp}/oss-review-codemap-context-stage-${CLEAN_ARGS}-${CSID}" 2>/dev/null || CODEMAP_CONTEXT_STAGE=""
+[ -n "$CODEMAP_CONTEXT_STAGE" ] && [ -f "$CODEMAP_CONTEXT_STAGE" ] && while IFS= read -r mod; do
+    [ -n "$mod" ] || continue
+    echo "### QA queries: $mod"
+    codemap-py query --timeout 5 mock-rdeps "$mod" 2>/dev/null
+    codemap-py query --timeout 5 uncovered --top 20 "$mod" 2>/dev/null
+    echo
+done < "${TMPDIR:-/tmp}/oss-review-changed-mods-${CLEAN_ARGS}-${CSID}" >> "$CODEMAP_CONTEXT_STAGE"
+```
+
+docs block (stale doc refs v4.5 + doc coverage v4.4):
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+IFS= read -r CODEMAP_CONTEXT_STAGE < "${TMPDIR:-/tmp}/oss-review-codemap-context-stage-${CLEAN_ARGS}-${CSID}" 2>/dev/null || CODEMAP_CONTEXT_STAGE=""
+[ -n "$CODEMAP_CONTEXT_STAGE" ] && [ -f "$CODEMAP_CONTEXT_STAGE" ] && while IFS= read -r mod; do
+    [ -n "$mod" ] || continue
+    echo "### Docs queries: $mod"
+    codemap-py query --timeout 5 xrefs --broken "$mod" 2>/dev/null
+    codemap-py query --timeout 5 undocumented "$mod" 2>/dev/null
+    echo
+done < "${TMPDIR:-/tmp}/oss-review-changed-mods-${CLEAN_ARGS}-${CSID}" >> "$CODEMAP_CONTEXT_STAGE"
 ```
 
 `codemap_available=true`: Step 2 copies `$CODEMAP_CONTEXT_STAGE` to `$RUN_DIR/codemap-context.md` after `$RUN_DIR` is created. Every dimension-agent spawn prompt in Step 2 must then include a literal block (substituted from `$RUN_DIR/codemap-context.md`):

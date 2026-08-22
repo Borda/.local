@@ -101,3 +101,43 @@ class TestMain:
             bcb.main(["--help"])
         assert exc.value.code == 0
         assert "usage" in capsys.readouterr().out.lower()
+
+    def test_modules_override_skips_diff_derivation(self, tmp_path, monkeypatch, capsys):
+        """``--modules`` uses the caller's module list and never touches git.
+
+        The refactor skill already holds AFFECTED_MODULES; deriving from the
+        diff here would silently swap its explicit scope for unrelated files.
+        """
+        monkeypatch.setattr(bcb, "_git_diff_files", lambda: pytest.fail("diff derivation must be skipped"))
+        out = tmp_path / "batch.json"
+        assert bcb.main([str(out), "--modules", "pkg.a pkg.b"]) == 0
+        assert capsys.readouterr().out.strip() == "pkg.a pkg.b"
+        req = json.loads(out.read_text(encoding="utf-8"))
+        assert req[0] == {"cmd": "central", "args": ["--top", "5"]}
+        assert len(req) == 11
+
+    def test_queries_filter_omits_central(self, tmp_path, monkeypatch):
+        """``--queries rdeps`` emits only per-module rdeps items, no central baseline.
+
+        A caller naming exact query families asked for exactly those — an
+        implicit central item would re-bill baseline context it never reads.
+        """
+        monkeypatch.setattr(bcb, "_git_diff_files", lambda: [])
+        out = tmp_path / "batch.json"
+        assert bcb.main([str(out), "--modules", "pkg.a pkg.b", "--queries", "rdeps"]) == 0
+        req = json.loads(out.read_text(encoding="utf-8"))
+        assert req == [
+            {"cmd": "rdeps", "args": ["pkg.a"]},
+            {"cmd": "rdeps", "args": ["pkg.b"]},
+        ]
+
+    def test_unknown_query_family_exits_1(self, tmp_path, capsys):
+        """An unknown ``--queries`` name exits 1 with the offending name on stderr.
+
+        A typo'd family silently dropped would produce an empty batch that
+        reads as "no callers found" — fail loudly instead.
+        """
+        out = tmp_path / "batch.json"
+        assert bcb.main([str(out), "--modules", "pkg.a", "--queries", "bogus"]) == 1
+        assert "bogus" in capsys.readouterr().err
+        assert not out.exists()

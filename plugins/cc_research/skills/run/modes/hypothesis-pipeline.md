@@ -11,24 +11,18 @@ Loaded by Step R0 when `--researcher` or `--architect` active. Contains oracle a
    **If `--researcher` set** — spawn `research:scientist` (`maxTurns: 15`):
 
    ```text
-   Read the program file and the project codebase. Generate 5–10 ML experiment hypotheses grounded in SOTA literature and the specific metric goal. Write to `<RUN_DIR>/hypotheses.jsonl` — one JSON object per line, each with fields: hypothesis, rationale, confidence (float 0–1), expected_delta, priority (int, 1=highest), source: "oracle". Write your full analysis, reasoning, and Confidence block to `<RUN_DIR>/oracle-researcher.md` using the Write tool. Return ONLY: {"status":"done","file":"<path>","count":N,"confidence":0.N}
+   Read the program file and the project codebase. Generate 5–10 ML experiment hypotheses grounded in SOTA literature and the specific metric goal. Write to `<RUN_DIR>/hypotheses.jsonl` — one JSON object per line, each with fields: hypothesis, rationale, confidence (float 0–1), expected_delta, priority (int, 1=highest), source: "oracle", feasible (bool — grounded in the codebase you just read), blocker (str|null, required if feasible=false), codebase_mapping (str — files/classes/functions the change touches). Write your full analysis, reasoning, and Confidence block to `<RUN_DIR>/oracle-researcher.md` using the Write tool. Return ONLY: {"status":"done","file":"<path>","count":N,"feasible":N,"confidence":0.N}
    ```
 
    **If `--architect` set** — spawn `foundry:solution-architect` (`maxTurns: 15`) as hypothesis generator (not just feasibility annotator):
 
    ```text
-   Read the program file and the project codebase. Analyze the architecture, coupling, and structural design. Generate 5–10 architectural optimization hypotheses (refactoring opportunities, coupling reductions, abstraction improvements) that could improve the metric. Write to `<RUN_DIR>/hypotheses-arch.jsonl` — one JSON object per line with the same schema as the research oracle (hypothesis, rationale, confidence, expected_delta, priority, source: "architect"). Write your full analysis, reasoning, and Confidence block to `<RUN_DIR>/oracle-solution-architect.md` using the Write tool. Return ONLY: {"status":"done","file":"<path>","count":N,"confidence":0.N}
+   Read the program file and the project codebase. Analyze the architecture, coupling, and structural design. Generate 5–10 architectural optimization hypotheses (refactoring opportunities, coupling reductions, abstraction improvements) that could improve the metric. Write to `<RUN_DIR>/hypotheses-arch.jsonl` — one JSON object per line with the same schema as the research oracle (hypothesis, rationale, confidence, expected_delta, priority, source: "architect", feasible, blocker, codebase_mapping — annotate feasibility yourself from the codebase you just read). Write your full analysis, reasoning, and Confidence block to `<RUN_DIR>/oracle-solution-architect.md` using the Write tool. Return ONLY: {"status":"done","file":"<path>","count":N,"confidence":0.N}
    ```
 
    **Both `--researcher` and `--architect` set**: run both oracle agents parallel. After both done, merge JSONL files into `<RUN_DIR>/hypotheses.jsonl`, interleaving by priority (lower = higher priority, round-robin on ties). Update priorities to reflect interleaved order.
 
-   After oracle phase(s), run feasibility annotation — spawn `foundry:solution-architect` (`maxTurns: 10`):
-
-   ```text
-   Read `<RUN_DIR>/hypotheses.jsonl` and the project codebase. For each hypothesis, annotate with: feasible (bool), blocker (str|null, required if feasible=false), codebase_mapping (str). Write the annotated queue back to the same file preserving order. Write your full analysis, reasoning, and Confidence block to `<RUN_DIR>/oracle-feasibility.md` using the Write tool. Return ONLY: {"status":"done","file":"<path>","feasible":N,"infeasible":N,"confidence":0.N}
-   ```
-
-   `--architect` only (no `--researcher`) → skip feasibility annotation — architect already validated feasibility. Set `feasible: true` implicitly.
+   No separate feasibility-annotation spawn — each oracle annotates its own hypotheses (`feasible`/`blocker`/`codebase_mapping` are in both prompts above; both oracles already read the codebase). A dedicated `foundry:solution-architect` annotator pass costs ~120,851 tok of fixed overhead to re-read the same codebase for facts the generating oracle just had in hand — the annotation is factual codebase mapping, not adversarial review. Entries missing the fields after an oracle returns (older queue files, partial output): backfill `feasible: true`, `blocker: null`, `codebase_mapping: ""` and flag the count in the R0 summary.
 
    Both agents follow handoff envelope protocol (CLAUDE.md §2). Schema: `protocol.md` (companion file, same skill dir).
 

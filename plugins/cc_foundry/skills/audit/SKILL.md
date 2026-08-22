@@ -370,7 +370,7 @@ Replace `<RUN_DIR>` with actual path, `<file-slug>` with plugin-prefixed unique 
 
 After spawns complete: short summaries in context; use to identify files with findings. Full content in run directory files.
 
-**Health monitoring** (CLAUDE.md §6): apply the honest protocol in `$_FS/agent-spawn-protocol.md` — these curator batches return on completion; after each returns, read its `$RUN_DIR` output file. For a background probe, a single `find $RUN_DIR -newer "$SENTINEL" -type f | wc -l` per turn (`health_sentinel.py` §8b) — no sleep loop. On empty/missing output: mark `timed_out`, surface with ⏱ in final report. Never omit timed-out agents.
+**Health monitoring** (CLAUDE.md §6): apply the honest protocol in `$_FS/agent-spawn-protocol.md` — these curator batches return on completion; after each returns, read its `$RUN_DIR` output file. On empty/missing output: mark `timed_out`, surface with ⏱ in final report. Never omit timed-out agents.
 
 ## Steps 4–5b: System-wide checks, aggregate, low-confidence remediation
 
@@ -515,7 +515,7 @@ After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this
 
 <notes>
 
-- **`!` Breaking findings**: when skill or agent completely non-functional (check 7, broken cross-refs, invalid hook events), prefix finding with `!` and state impact + fix in one place — don't bury in table row. Surfaces as **`! BREAKING`** in bash output and as prominent callout in final report. **`! BREAKING` findings require user acknowledgment before audit proceeds past that check**: call `AskUserQuestion` — state what is broken and impact; user must explicitly confirm awareness before continuing. One question per distinct breaking finding; group only when logically one atomic issue. Prose acknowledgment in response body does NOT count — `AskUserQuestion` mandatory.
+- **`!` Breaking findings**: when skill or agent completely non-functional (check 7, broken cross-refs, invalid hook events), prefix finding with `!` and state impact + fix in one place — don't bury in table row. Surfaces as **`! BREAKING`** in bash output and as prominent callout in final report. **`! BREAKING` findings require user acknowledgment before audit proceeds past that check**: call `AskUserQuestion` — state what is broken and impact; user must explicitly confirm awareness before continuing. One question per distinct breaking finding; group only when logically one atomic issue. Batch up to 4 of those questions into a single `AskUserQuestion` call (communication.md per-call cap) — N breaking findings become `ceil(N/4)` calls, never N. Batching changes only how many calls carry the questions; every finding still gets its own question and its own acknowledgment. Prose acknowledgment in response body does NOT count — `AskUserQuestion` mandatory.
 
 - **settings.json is hands-off**: missing permissions always reported, never auto-edited — structural JSON edits risk breaking Claude Code config loading
 

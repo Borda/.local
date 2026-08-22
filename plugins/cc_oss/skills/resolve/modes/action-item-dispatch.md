@@ -81,7 +81,7 @@ Process items in `SELECTED_ITEMS` (from Step 3e) in priority order (`[req]` firs
 
 **Caps** — soft cap 10, hard cap 20 items per dispatch. When `SELECTED_ITEMS` > 10 (`$(echo "$SELECTED_ITEMS" | wc -w)` > 10): invoke `AskUserQuestion` — (a) Apply first 10 now, re-run for remainder · (b) Apply all `[req]` only · (c) Proceed with all up to 20 (slow, context risk). Never silently start loop with >10 items; never exceed 20 in one dispatch (context budget boundary).
 
-**Parallel specialist-worktree dispatch** (replaces sequential/one-item-at-a-time execution — real wall-clock lever, not just spawn-count reduction): C1 Codex-first routing (below) still runs first, sequentially, per item — fast individual calls, no batching benefit to chase there. Everything falling through C1 splits into three passes: **Phase 1** challenge (read-only, parallel by domain), **Phase 2** implementation (one isolated `git worktree` per specialist, parallel), **Phase 3** merge-back (sequential, orchestrator-owned cherry-pick in original priority order). See Phase 1/2/3 below.
+**Parallel specialist-worktree dispatch** (replaces sequential/one-item-at-a-time execution — real wall-clock lever, not just spawn-count reduction): C1 Codex-first routing (below) still runs first — batched ≤3 disjoint-file items per call, same-file items sequential. Everything falling through C1 splits into three passes: **Phase 1** challenge (read-only, parallel by domain), **Phase 2** implementation (one isolated `git worktree` per specialist, parallel), **Phase 3** merge-back (sequential, orchestrator-owned cherry-pick in original priority order). See Phase 1/2/3 below.
 
 **Per action item** — loop over `SELECTED_ITEMS` in priority order. Per item, read full details from `$IMPL_DIR/action-items.jsonl` (written by Step 3b pr-intelligence subagent) — this is the authoritative source for `full_comment_text`, `file`, `line`, `change`, `severity`, `author`:
 
@@ -150,21 +150,22 @@ Include non-empty `$ITEM_CALLERS` in impl agent prompt — see Phase 2.
 
 **C1 — Codex-first routing for `medium` effort items** (skip Phase 1+2 when Codex handles it):
 
-When `ITEM_EFFORT=medium` AND `CODEX_AVAILABLE=true`: dispatch Codex for evidence check + implementation in one call.
+When `ITEM_EFFORT=medium` AND `CODEX_AVAILABLE=true`: dispatch Codex for evidence check + implementation. **Batch disjoint-file items** — collect all C1-eligible items first, group ≤3 per call with pairwise-distinct `file` values (two items on the SAME file always go in separate calls — a shared-file batch makes the per-item diff inseparable, breaking one-commit-per-item and per-item CHALLENGE_LOG attribution). Each blocking round-trip then covers up to 3 items instead of 1.
 
 ```text
-Skill(skill="bridge:implement", args="Effort level: medium. Review and implement this action item if valid.
-Item: <full_comment_text>
-File: <file>  Line: <line>
-The reviewer's assertion is itself an unproven claim — if it asserts a fact the file alone can't settle (name/identifier/version/count wrong or non-standard), verify against the actual authoritative source before treating it as valid; can't verify → UNCERTAIN, not DONE.
-Implement directly if the issue clearly exists. Return ONLY compact JSON as your FINAL message:
-{\"verdict\":\"DONE\"|\"UNCERTAIN\",\"reason\":\"<one sentence>\",\"files_changed\":N}")
+Skill(skill="bridge:implement", args="Effort level: medium. Review each action item independently and implement it if valid. Items touch disjoint files — never edit one item's file for another item.
+Item <id>: <full_comment_text>  File: <file>  Line: <line>
+[repeat per item, ≤3]
+Each reviewer assertion is itself an unproven claim — if it asserts a fact the file alone can't settle (name/identifier/version/count wrong or non-standard), verify against the actual authoritative source before treating it as valid; can't verify → UNCERTAIN, not DONE. Verdicts are per item — one UNCERTAIN never blocks another item's DONE.
+Return ONLY compact JSON array as your FINAL message, one element per item:
+[{\"id\":<id>,\"verdict\":\"DONE\"|\"UNCERTAIN\",\"reason\":\"<one sentence>\",\"files_changed\":[\"<path>\", …]}, …]")
 ```
 
-Parse JSON:
+Parse the JSON array — per element, in item priority order:
 
-- **DONE** → mark item resolved; stage/commit per `COMMIT_MODE`; append to `CHALLENGE_LOG`: `id=<id> finding=<full_comment_text, truncate ~80 chars> evidence=VALID evidence_why=<Codex reason> suggestion=VALID suggestion_why=<Codex reason> resolution=codex-direct detail=<Codex reason>`; skip Phase 1+2; proceed to next item
-- **UNCERTAIN** → fall through to Phase 1+2 (normal challenge + implementation flow)
+- **DONE** → mark item resolved; stage/commit that item's `files_changed` per `COMMIT_MODE` (per-item commit stays granular — the disjoint-file grouping guarantees the diff separates); append to `CHALLENGE_LOG`: `id=<id> finding=<full_comment_text, truncate ~80 chars> evidence=VALID evidence_why=<Codex reason> suggestion=VALID suggestion_why=<Codex reason> resolution=codex-direct detail=<Codex reason>`; skip Phase 1+2 for that item
+- **UNCERTAIN** → that item falls through to Phase 1+2 (normal challenge + implementation flow)
+- element missing for a dispatched item → treat as UNCERTAIN, never silently resolved
 
 When `CODEX_AVAILABLE=false` OR `ITEM_EFFORT!=medium`: skip Codex routing; use Phase 1+2 directly.
 

@@ -1,3 +1,9 @@
+---
+description: Task lifecycle sequencing — TaskUpdate ordering, subagent task prohibition, spawn-prompt lead line
+paths:
+  - '**'
+---
+
 ## Task lifecycle sequencing
 
 ### TaskUpdate before long output

@@ -4,7 +4,7 @@ paths:
   - '**'
 ---
 
-> §Evidence Grounding, §Python Code Complexity, §Output Routing, §Report File Format have worked detail (tier tables, citation tracing, per-limit rationale, exact bash/example snippets) in `_full/quality-gates.md`. Resolve + Read when that section's own trigger applies — not needed for routine work:
+> §Evidence Grounding, §Python Code Complexity, §Output Routing, §Report File Format have worked detail (tier tables, citation tracing, per-limit rationale, exact bash/example snippets) in `_full/quality-gates.md`; §Pre-Handover Check and §Write-Delegation Checklist live there in full (trigger-scoped — read at their trigger, summaries below). Resolve + Read when that section's own trigger applies — not needed for routine work:
 >
 > ```bash
 > RULE_FULL="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/rules/_full/quality-gates.md 2>/dev/null | head -1)"; [ -z "$RULE_FULL" ] && RULE_FULL="plugins/cc_foundry/rules/_full/quality-gates.md"  # timeout: 5000
@@ -14,9 +14,9 @@ paths:
 
 **Never generate without grounding in evidence** — every claim, finding, URL, or fact: read source, run command, check file first. No hypothesis as fact, no URL unverified, no finding unread. "Obvious"/"well-known"/session recall/training knowledge are **never** evidence — current disk state beats all of them. Evidence inaccessible → state `unable to verify: [reason]` explicitly, never substitute recall or inference.
 
-**Design premises gate at entry, not delivery** — any assumption, hypothesis, constraint claim, or stated fact used as a pillar for a design/implementation decision (technical constraint, feasibility assumption, recalled fact, behavioral assumption) must be grounded in evidence read now, when it first enters the design — not caught post-delivery. "Where is this documented?" first — no answer = unverified = no design built on it. A false premise caught before the first line is written costs nothing; caught after layers of implementation it can make the whole design infeasible.
+**Design premises gate at entry, not delivery** — any assumption, constraint claim, or recalled fact used as a pillar of a design/implementation decision must be grounded in evidence read now, when it first enters the design. "Where is this documented?" first — no answer = unverified = no design built on it.
 
-**Evidence tiers**: Tier 1 (official docs, source code read from disk, release notes, spec/RFC, this-session test output) — sufficient alone. Tier 2 (blog posts, tutorials, forums, training knowledge) — needs ≥3 genuinely independent sources (not citing each other / not sharing an origin) OR an experiment that empirically confirms or refutes it.
+**Evidence tiers**: Tier 1 (official docs, source code read from disk, release notes, spec/RFC, this-session test output) — sufficient alone. Tier 2 (blog posts, tutorials, forums, training knowledge) — needs ≥3 genuinely independent sources OR a confirming experiment; independence + citation-tracing rules in `_full/quality-gates.md` §Evidence Grounding (read before counting Tier 2 sources).
 
 ## Adversarial Pass (all generation)
 
@@ -53,13 +53,13 @@ Before returning: draft → self-evaluate (missed issues, unsupported claims, co
 
 Before delivering any Python function or class: cyclomatic complexity ≤12, required (no-default) arguments ≤7, branches ≤12, statements ≤50, return points ≤6. Violation → refactor before delivering. `# noqa: PLR...` / `# noqa: C901` permitted only when refactoring is genuinely impossible (generated code, protocol-mandated signature) — always paired with an inline comment explaining why. Verify: `ruff check --select C901,PLR`.
 
-## Pre-Handover Check
+## Pre-Handover Check (trigger: handing over analysis with confidence < 0.9)
 
-Confidence < 0.9 → push back on the analysis before handing over: ask for proof for each uncertain claim (read source code, read docs, trace through examples), re-examine assumptions, rethink conclusions from first principles. If `bridge@borda-ai-rig` is available, render and call `Skill(skill="bridge:review", args="Read-only adversarial review of <exact area and target paths>. Uncertain claims: <complete claim list>. Current evidence: <source paths or observations>. Challenge each claim, identify missing evidence and alternatives, and return actionable findings with locations; do not apply fixes.")`; never pass the placeholders or a workflow step label. Incorporate findings before handover. If the bridge is absent or disabled, state the specific gap explicitly so the user can decide to re-run.
+Confidence < 0.9 → push back before handover: proof per uncertain claim, re-examine assumptions from first principles. `bridge@borda-ai-rig` available → dispatch `bridge:review` with the exact-args template in `_full/quality-gates.md` §Pre-Handover Check (read it at this trigger; never pass placeholders or a workflow step label), incorporate findings; bridge absent/disabled → state the specific gap so the user can decide to re-run.
 
-## Write-Delegation Checklist (`bridge:implement`)
+## Write-Delegation Checklist (trigger: any `bridge:implement` call)
 
-Before calling `bridge:implement`, construct a complete brief containing the exact finding, target paths, current evidence, permitted edits, required result, stop condition, and verification command. Clean the git tree first (`git status -sb` — a dirty tree blocks; it makes the diff impossible to isolate). After it returns, read the **full diff** yourself and run the actual proof command. Repeated fix rounds on the same issue (2+) → stop delegating and finish by hand. Commit only after your own diff read plus proof run; the bridge never commits.
+Before the call read `_full/quality-gates.md` §Write-Delegation Checklist and follow it: complete brief (finding, paths, evidence, permitted edits, result, stop condition, verification command), clean git tree first; after return read the full diff yourself + run the proof command; 2+ fix rounds on same issue → finish by hand; commit only after own diff read + proof run — the bridge never commits.
 
 ## Link Verification
 
@@ -100,7 +100,7 @@ Size estimate: `$(( $(wc -c < file) / 4 ))` tokens.
 
 Every report file created via output routing begins with this YAML `---`-delimited block; it stays raw YAML on disk (machine-parseable by downstream skills) and is converted to the table only for the terminal print.
 
-**Value length cap — single physical line only**: every field value ≤100 chars, one line, no embedded wrap. A value that soft-wraps at terminal width breaks into a continuation line with no leading `|` — the table parser reads that as prose and drops the table from that row down. Long detail (`Focus`, `Summary`) belongs in the prose executive summary below the table, not crammed into the cell.
+**Value length cap — single physical line only**: every field value ≤100 chars, one line, no embedded wrap (a soft-wrapped value breaks GFM table parsing from that row down). Long detail (`Focus`, `Summary`) belongs in the prose executive summary below the table, not the cell.
 
 **Required minimum fields** (all reports): `Title`, `Date`, `Scope`, `Focus`, `Agents`, `Outcome`, `Confidence`, `Next steps`, `Path`. Add skill-specific fields after (e.g. Verdict/CI/Risk/Blockers for `develop:review`). Skills with dedicated output routing (audit, review, resolve, analyse, release) must include an equivalent `---` block at the top of their report files.
 
@@ -118,5 +118,5 @@ Fix: <concrete action to resolve>
 ```
 
 - Severity markers: `!` = critical (standalone alert-block prefix only, e.g. `! BREAKING`) · `⚠` = warnings · `✓` = pass · hint = fix hint. Outcome/verdict tables use `✗` for blocked/rejected instead (§Report File Format) — `!` never appears as a table-cell symbol, only as the alert-block prefix
-- **Block merge integrity**: after merging two blocks (combining e.g. `<antipatterns>` + `<quality-checks>` into one), diff the combined output against both originals; every named rule (`##` heading or bold title) must survive; zero silent drops
+- **Block merge integrity** (trigger: merging two instruction blocks): diff combined output against both originals — every named rule survives, zero silent drops; worked detail in `_full/quality-gates.md` §Reporting Findings — Block Merge Integrity
 - **Deferred work must appear in the delivered artifact**: if any analysis, rubric definition, or implementation is deferred, approximated, or left incomplete, document it explicitly in the output file ("Phase 2 / requires X / not yet implemented") — not only in conversation

@@ -2,7 +2,7 @@
 
 # J3 review prompt templates
 
-Loaded once at J3 start via `cat "$_RESEARCH_SHARED/judge-j3-prompts.md"`; supplies both templates. Expand `${PROGRAM_PATH}` and `${RUN_DIR}` to concrete values before passing to `Agent(...)` — see substitution requirement, judge/SKILL.md.
+Loaded once at J3 start via `cat "$_RESEARCH_SHARED/judge-j3-prompts.md"`; supplies both templates. Expand `${PROGRAM_PATH}` and `${RUN_DIR}` to concrete values before passing to `Agent(...)` — see substitution requirement, judge/SKILL.md. When the complexity gate fires, both templates go into ONE merged `research:scientist` spawn (arch first, then sci, separated by `---`) — per-dimension output files and Confidence blocks stay exactly as each template specifies. Assembling that merged prompt has one rule that is easy to miss: drop each template's own `Return ONLY:` line and close with the combined array instruction in § Merged spawn — envelope override below.
 
 ## J3_ARCH_PROMPT (foundry:solution-architect)
 
@@ -46,5 +46,20 @@ Review across four dimensions:
 4. **Reproducibility risks**: List concrete factors that could produce non-reproducible results (randomness seeds, dataset splits, flaky tests, environment dependencies).
 
 Write findings to `${RUN_DIR}/scientific-review.md`.
+Include a `## Confidence` block per quality-gates.md.
 Return ONLY: {"status":"done","scientific_rating":"sound|needs-refinement|fundamentally-flawed","issues":N,"file":"${RUN_DIR}/scientific-review.md","confidence":0.N,"summary":"<one-line>"}
 ```
+
+## Merged spawn — envelope override
+
+Each template above ends with its own single-object `Return ONLY:` line, written for the case where that template is the whole prompt. Concatenating the two would hand one agent two contradictory final-line contracts, and it would return one object instead of two. So when both dimensions go into one spawn, build the prompt as: J3_ARCH_PROMPT **with its `Return ONLY:` line removed**, then `---`, then J3_SCI_PROMPT **with its `Return ONLY:` line removed**, then this single closing instruction:
+
+```markdown
+---
+Both reviews above are yours to complete, in order. Write BOTH output files — `${RUN_DIR}/methodology.md` and `${RUN_DIR}/scientific-review.md` — each with its own full sections and its own `## Confidence` block. Never blend the two reviews into one file.
+
+Return ONLY a JSON array of exactly two objects on your final line, architect first, scientist second, each keeping the schema its own template declared — nothing else after it:
+[{"status":"done","review_dimensions":7,"methodology_rating":"sound|needs-refinement|fundamentally-flawed","protocol_gaps":N,"file":"${RUN_DIR}/methodology.md","confidence":0.N,"summary":"<one-line verdict>"},{"status":"done","scientific_rating":"sound|needs-refinement|fundamentally-flawed","issues":N,"file":"${RUN_DIR}/scientific-review.md","confidence":0.N,"summary":"<one-line>"}]
+```
+
+Gate-off path (scientist dimension alone) is unchanged: pass J3_SCI_PROMPT verbatim, its own `Return ONLY:` line included.

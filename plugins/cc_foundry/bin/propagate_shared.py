@@ -138,10 +138,14 @@ MANIFEST: list[dict[str, object]] = [
         ],
     },
     {
+        # Copies carry the source-plugin prefix (foundry--): a consumer plugin's
+        # own _shared file can then never collide with (or be overwritten by) a
+        # propagated copy of the same base name. Consumer references use the
+        # prefixed name; the canonical keeps its bare name in cc_foundry.
         "canonical": "plugins/cc_foundry/skills/_shared/cross-validation-protocol.md",
         "copies": [
-            "plugins/cc_oss/skills/_shared/cross-validation-protocol.md",
-            "plugins/cc_develop/skills/_shared/cross-validation-protocol.md",
+            "plugins/cc_oss/skills/_shared/foundry--cross-validation-protocol.md",
+            "plugins/cc_develop/skills/_shared/foundry--cross-validation-protocol.md",
         ],
     },
     {
@@ -151,9 +155,10 @@ MANIFEST: list[dict[str, object]] = [
         ],
     },
     {
+        # Prefixed copy — same rationale as cross-validation-protocol.md above.
         "canonical": "plugins/cc_foundry/skills/_shared/quality-stack.md",
         "copies": [
-            "plugins/cc_develop/skills/_shared/quality-stack.md",
+            "plugins/cc_develop/skills/_shared/foundry--quality-stack.md",
         ],
     },
     # No rules/*.md entries here, deliberately. Cross-cutting standards (python-code.md,

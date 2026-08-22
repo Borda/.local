@@ -335,7 +335,7 @@ Turns fuzzy idea into approved exploration tree, then spec, then ordered action 
 **Idea mode** (default):
 
 1. Scans codebase for relevant existing code + constraints
-2. Asks up to 10 clarifying questions (5 with `--tight`, 15 with `--deep`), one at a time
+2. Asks up to 10 clarifying questions (5 with `--tight`, 15 with `--deep`) — the first call batches 2-3 orientation questions, the rest follow one at a time so each can adapt to the prior answer
 3. Presents 3-5 initial branches: core idea, tension resolved, what it trades away
 4. Interactive operations loop: deepen, reject, resolve, merge, add — up to 10 rounds
 5. Saves tree to `.plans/blueprint/YYYY-MM-DD-<slug>.md` with `Status: tree`
@@ -825,24 +825,25 @@ These Python helpers are installed workflow support and maintainer surfaces, not
 
 #### Audit, consistency, and document checks
 
-| Helper                        | Purpose                                                             |
-| ----------------------------- | ------------------------------------------------------------------- |
-| `audit_churn.py`              | Emit git-history recurrence signals for `/foundry:audit`.           |
-| `audit_static.py`             | Run and aggregate the deterministic Layer-1 audit checks.           |
-| `check_bash_persistence.py`   | Detect shell variables referenced across separate Bash tool calls.  |
-| `check_cli_flag_drift.py`     | Detect drift between documented flags and `argparse` options.       |
-| `check_codemap_guard.py`      | Detect unmanaged codemap index-guard copies.                        |
-| `check_bridge.py`             | Detect whether the bridge plugin is installed and enabled.          |
-| `check_fence_symmetry.py`     | Validate Markdown code-fence pairing and nesting.                   |
-| `check_gitignored_refs.py`    | Reject tracked-file references to this repo's gitignored documents. |
-| `check_mode_dispatch.py`      | Detect dangling mode-dispatch references in skill files.            |
-| `check_orphaned_bin.py`       | Find bin scripts not referenced by plugin Markdown.                 |
-| `check_plugin_module_docs.py` | Require a module docstring on every shipped plugin module.          |
-| `check_readme_drift.py`       | Detect README version and bin-reference drift from disk.            |
-| `check_routing_links.py`      | Validate computed paths in skills and agent files.                  |
-| `check_spawn_prompt_vars.py`  | Detect unresolved variables in Markdown spawn prompts.              |
-| `check_tag_symmetry.py`       | Check XML-tag symmetry in agent and skill Markdown.                 |
-| `classify_resolver_sites.py`  | Classify resolver call sites as inline-required or cat-only.        |
+| Helper                         | Purpose                                                                       |
+| ------------------------------ | ----------------------------------------------------------------------------- |
+| `audit_churn.py`               | Emit git-history recurrence signals for `/foundry:audit`.                     |
+| `audit_static.py`              | Run and aggregate the deterministic Layer-1 audit checks.                     |
+| `check_bash_persistence.py`    | Detect shell variables referenced across separate Bash tool calls.            |
+| `check_cli_flag_drift.py`      | Detect drift between documented flags and `argparse` options.                 |
+| `check_codemap_guard.py`       | Detect unmanaged codemap index-guard copies.                                  |
+| `check_bridge.py`              | Detect whether the bridge plugin is installed and enabled.                    |
+| `check_fence_symmetry.py`      | Validate Markdown code-fence pairing and nesting.                             |
+| `check_gitignored_refs.py`     | Reject tracked-file references to this repo's gitignored documents.           |
+| `check_mode_dispatch.py`       | Detect dangling mode-dispatch references in skill files.                      |
+| `check_orphaned_bin.py`        | Find bin scripts not referenced by plugin Markdown.                           |
+| `check_plugin_module_docs.py`  | Require a module docstring on every shipped plugin module.                    |
+| `check_plugin_version_sync.py` | Require matching versions in `.claude-plugin`/`.codex-plugin` manifest pairs. |
+| `check_readme_drift.py`        | Detect README version and bin-reference drift from disk.                      |
+| `check_routing_links.py`       | Validate computed paths in skills and agent files.                            |
+| `check_spawn_prompt_vars.py`   | Detect unresolved variables in Markdown spawn prompts.                        |
+| `check_tag_symmetry.py`        | Check XML-tag symmetry in agent and skill Markdown.                           |
+| `classify_resolver_sites.py`   | Classify resolver call sites as inline-required or cat-only.                  |
 
 #### Session, install, and state helpers
 

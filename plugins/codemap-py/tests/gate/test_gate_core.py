@@ -534,3 +534,45 @@ def test_build_failure_with_contended_release_propagates_and_recovers(index: Pat
     assert not writer_path.exists(), "writer intent leaked after recovery"
     with _rwgate.read_index(index, timeout=5.0) as data:
         assert data["v"] == 7
+
+
+# ── event-log append: Windows branch runs on every host (no OS skip) ─────────
+def test_append_event_line_win32_branch_writes_parseable_lines(tmp_path: Path, monkeypatch) -> None:
+    """The lock-guarded Windows append path emits whole, parseable JSON lines.
+
+    Windows CRT ``_O_APPEND`` is seek-then-write, not atomic across processes;
+    the guarded branch is the fix for torn event lines (JSONDecodeError "Extra
+    data" in the order oracles). Simulate ``win32`` on every host — the branch
+    only touches the portable ``_os_try_lock``/``_os_unlock`` seam, so no
+    host-only API is missing on POSIX.
+    """
+    monkeypatch.setattr(_rwgate.sys, "platform", "win32")
+    log = tmp_path / "ev.jsonl"
+    for i in range(5):
+        _rwgate._append_event_line(str(log), "probe", {"pid": os.getpid(), "seq": i})
+    lines = log.read_text().splitlines()
+    assert len(lines) == 5
+    assert [json.loads(ln)["seq"] for ln in lines] == list(range(5))
+
+
+def test_append_event_line_win32_branch_spins_until_lock(tmp_path: Path, monkeypatch) -> None:
+    """A briefly contended log lock delays the append instead of tearing or dropping.
+
+    First acquisition attempt is refused (simulated contention); the spin loop
+    must retry and still land the complete event line.
+    """
+    monkeypatch.setattr(_rwgate.sys, "platform", "win32")
+    attempts = {"n": 0}
+    real_try = _rwgate._os_try_lock
+
+    def flaky_try(fd: int) -> bool:
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            return False
+        return real_try(fd)
+
+    monkeypatch.setattr(_rwgate, "_os_try_lock", flaky_try)
+    log = tmp_path / "ev.jsonl"
+    _rwgate._append_event_line(str(log), "probe", {"pid": os.getpid(), "seq": 0})
+    assert attempts["n"] >= 2, "spin loop never retried the refused lock"
+    assert json.loads(log.read_text().splitlines()[0])["event"] == "probe"

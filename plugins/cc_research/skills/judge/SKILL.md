@@ -143,7 +143,7 @@ echo "$RUN_DIR" > "${TMPDIR:-/tmp}/judge-run-dir-${CSID}"  # persist for J3 bloc
 
 **Synchronous spawn note**: J3 agents spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling unreachable mid-call. Timeout handled post-hoc — after each Agent() returns, check output file; if missing/empty mark agent timed out (⏱). See J3 post-call checks below.
 
-Dispatch agents in single response — scientist always; architect only when complexity gate fires.
+Dispatch — scientist dimension always; architect dimension only when the complexity gate fires. When BOTH dimensions are active, J3 is ONE merged spawn covering both (two opus spawns for a single-file review pay 2× ~120,851 tok of fixed overhead for a workload far under the breakeven above); when only the scientist dimension is active, it is a single scientist spawn as before. Per-dimension output files and Confidence blocks are unchanged either way.
 
 Before constructing J3 prompts, expand all bash variables into concrete paths — never pass literal `<path_to_program.md>` or `<RUN_DIR>` placeholders to agents:
 
@@ -177,7 +177,7 @@ When `SPAWN_ARCHITECT=false`: skip architect spawn; J5b precedence step 0 sets `
 
 > **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
 
-When `SPAWN_ARCHITECT=true`: spawn `foundry:solution-architect` via `Agent(subagent_type="foundry:solution-architect", prompt=$J3_ARCH_PROMPT)` (uses `opus`). Full prompt template (expand `${PROGRAM_PATH}` and `${RUN_DIR}` before passing):
+When `SPAWN_ARCHITECT=true`: spawn ONE merged reviewer via `Agent(subagent_type="research:scientist", prompt=<merged prompt>)` (opus) — build the merged prompt exactly per `judge-j3-prompts.md` §Merged spawn — envelope override (both templates with their individual `Return ONLY:` lines stripped, joined by `---`, closed with the override's single array-envelope instruction). The single spawn executes BOTH templates in order and writes `${RUN_DIR}/methodology.md` AND `${RUN_DIR}/scientific-review.md`, each with its own Confidence block. Full prompt templates (expand `${PROGRAM_PATH}` and `${RUN_DIR}` before passing):
 
 > `$J3_ARCH_PROMPT` template externalized — load and follow protocol below § J3_ARCH_PROMPT (one load supplies both J3 templates).
 
@@ -189,9 +189,9 @@ cat "$_RESEARCH_SHARED/judge-j3-prompts.md"
 
 > **Substitution requirement**: every `${RUN_DIR}` and `${PROGRAM_PATH}` token in template above MUST be replaced with concrete bash-expanded value (e.g. `.experiments/judge-2026-05-13T10-00-00Z`) before string passed to `Agent(...)`. Passing literal `${RUN_DIR}` to agent causes agent to write to directory named `${RUN_DIR}`. Applies equally to any historical `<RUN_DIR>` angle-bracket notation in older copies — both forms are text-substitution placeholders, not bash interpolation the Agent runtime expands.
 
-When `SPAWN_ARCHITECT=true` — after architect Agent() returns, check `$RUN_DIR/methodology.md`: if missing or empty, set `methodology_rating = "timed_out"`, continue to J6; surface with ⏱ in report.
+When `SPAWN_ARCHITECT=true` — after the merged Agent() returns, check `$RUN_DIR/methodology.md`: if missing or empty, set `methodology_rating = "timed_out"`, continue to J6; surface with ⏱ in report.
 
-After scientist Agent() returns, check `$RUN_DIR/scientific-review.md`: if missing or empty, set `scientific_rating = "timed_out"`, continue to J6; surface with ⏱ in Scientific Rigor section.
+After the spawn returns (merged or scientist-only), check `$RUN_DIR/scientific-review.md`: if missing or empty, set `scientific_rating = "timed_out"`, continue to J6; surface with ⏱ in Scientific Rigor section.
 
 Use `methodology_rating` from returned envelope for verdict computation in J6:
 
@@ -199,7 +199,7 @@ Use `methodology_rating` from returned envelope for verdict computation in J6:
 - `needs-refinement` → supports NEEDS-REVISION
 - `fundamentally-flawed` → supports BLOCKED
 
-Also spawn `research:scientist` in parallel (dispatch both at start of J3) to review scientific rigor. Expand `${PROGRAM_PATH}` and `${RUN_DIR}` before passing — construct `$J3_SCI_PROMPT` analogously to `$J3_ARCH_PROMPT` above (same variable substitution pattern). Spawn: `Agent(subagent_type="research:scientist", prompt=$J3_SCI_PROMPT)`.
+When `SPAWN_ARCHITECT=false`: spawn `research:scientist` alone for scientific rigor. Expand `${PROGRAM_PATH}` and `${RUN_DIR}` before passing — construct `$J3_SCI_PROMPT` per the template (same variable substitution pattern). Spawn: `Agent(subagent_type="research:scientist", prompt=$J3_SCI_PROMPT)`. (When `SPAWN_ARCHITECT=true` the scientist dimension already ran inside the merged spawn above — do NOT spawn a second agent.)
 
 > `$J3_SCI_PROMPT` template: `judge-j3-prompts.md` § J3_SCI_PROMPT (already loaded by J3_ARCH `cat` above).
 

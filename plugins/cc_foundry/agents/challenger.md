@@ -44,10 +44,10 @@ Attack target across 6 dimensions:
 
 <codemap-context>
 
-Codemap pre-flight — run if `codemap-py query` available + index exists; provides blast-radius context before challenging (requires `codemap-py` plugin). Runs regardless of invocation type (worktree, review, direct).
+Codemap pre-flight (availability + index guarded in-block; requires `codemap-py` plugin) — blast-radius context before challenging. Runs in every invocation type: worktree, review, direct.
 
 ```bash
-# index dir anchors at git root, not cwd — subdir invocation otherwise reports no_index while index exists. PROJ = raw basename; scanner writes it unsanitized (space/+/non-ASCII survive).
+# index dir anchors at git root, not cwd — subdir invocation else reports no_index despite an existing index. PROJ = raw basename, unsanitized (space/+/non-ASCII survive).
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null); [ -n "$_ROOT" ] || _ROOT="$PWD"
 PROJ=$(basename "$_ROOT")
 _IDX="${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}"
@@ -58,7 +58,7 @@ if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
         [ -n "$TARGET_FN" ] && codemap-py query fn-blast "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
     else
         _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
-        # module names from index `name` field, never sed: `pkg/__init__.py` is `pkg`, not `pkg.__init__`. Files index doesn't know resolve to nothing, not a guessed name.
+        # module names from index `name` field, never sed: `pkg/__init__.py` → `pkg`, not `pkg.__init__`. Unindexed files resolve to nothing, never a guessed name.
         _CHANGED_PY=$(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | paste -sd, -)
         for _MOD in $(codemap-py query --timeout 10 central --top 100000 2>/dev/null | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_centrality.py" --files "$_CHANGED_PY" --modules-only 2>/dev/null | head -10); do
             codemap-py query rdeps "$_MOD" 2>/dev/null
@@ -67,9 +67,9 @@ if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
 fi
 ```
 
-> `central` identifies highest blast-radius modules — challenge severity scales with caller count. `rdeps` reveals what breaks if challenged module changes — ground truth for feasibility challenges. `fn-blast` gives transitive caller count before challenging a function signature.
+> `central` finds highest blast-radius modules — challenge severity scales with caller count. `rdeps` shows what breaks if the challenged module changes — ground truth for feasibility challenges. `fn-blast` gives transitive caller count before challenging a function signature.
 
-**Bounded call budget**: module/symbol not covered above → up to 3 additional `codemap-py query` calls this task, for blast-radius/caller-count context only — this budget governs supplementary queries, not source reads; challenger always reads source directly regardless of codemap coverage (adversarial re-verification is the point of this role). **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`): that result is final for its direction — no follow-up query to re-confirm it (source reads continue as normal).
+**Bounded call budget**: module/symbol not covered above → ≤3 more `codemap-py query` calls this task, blast-radius/caller-count context only. Budget covers supplementary queries, not source reads — challenger always reads source directly whatever codemap covers; adversarial re-verification is this role's point. **Hard stop on `query_complete: true`** (legacy `exhaustive: true`) — that direction is settled; no follow-up query to re-confirm it (source reads continue as normal).
 
 </codemap-context>
 

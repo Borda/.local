@@ -23,7 +23,7 @@ Compute run directory and create health sentinel:
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_setup_worktree_wrap.py" fix
 IFS= read -r TS < "${TMPDIR:-/tmp}/dev-fix-team-ts-${CSID}" 2>/dev/null || TS=""
-trap 'rm -f ${TMPDIR:-/tmp}/fix-team-check-$TS' EXIT  # sentinel dir resolved by setup_worktree.py's _sentinel_dir() — TMPDIR when set, else system temp dir; matches this expression
+# no EXIT trap here — it fires when THIS Bash call's shell exits (immediately), deleting the sentinel setup_worktree.py just created and breaking every later health poll; cleanup happens in the completion block below
 ```
 
 > **Agent budget** — each teammate costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each teammate near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
@@ -42,6 +42,7 @@ _SPAWN_DEV_SHARED="$_DEV_SHARED"
 _SPAWN_TS="$TS"
 _SPAWN_ARGS="$ARGUMENTS"
 IFS= read -r _SPAWN_RUN_DIR < "${TMPDIR:-/tmp}/dev-fix-run-dir-${CSID}" 2>/dev/null || _SPAWN_RUN_DIR=".temp/develop/$TS"
+touch "${TMPDIR:-/tmp}/fix-team-check-$TS"  # re-arm health sentinel right before spawn (tmpdir-exempt: matches setup_worktree.py's _sentinel_dir(); $TS run-timestamp provides uniqueness in place of a CSID suffix)
 ```
 
 **Teammate 1 — foundry:sw-engineer (model=opus) — hypothesis A**: substitute `$_SPAWN_DEV_SHARED`, `$_SPAWN_TS`, `$_SPAWN_ARGS`, and `$_SPAWN_RUN_DIR` with resolved literals before constructing prompt: "You are a foundry:sw-engineer teammate investigating a bug fix. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Read `<_DEV_SHARED_LITERAL>/preflight-helpers.md` §Team Spawn Template. Bug: \<ARGUMENTS_LITERAL>. Evidence: {bug: <description>, traceback: <key lines>}. Your task: investigate hypothesis A — claim one distinct root-cause hypothesis, gather evidence, propose fix approach. Task tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state. Signal completion: 'Status: complete | blocked — <reason>'. Write full analysis to \<RUN_DIR_LITERAL>/fix-hypothesis-A-\<TS_LITERAL>.md using Write tool. Return ONLY: {"status":"done","file":"<path>","hypothesis":"<one-line>","confidence":0.N}"
@@ -60,4 +61,11 @@ IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/dev-fix-run-dir-${CSID}" 2>/dev/null || 
 
 Every 5 min: `find $RUN_DIR -newer ${TMPDIR:-/tmp}/fix-team-check-$TS -name "fix-hypothesis-*.md" | wc -l` (sentinel dir resolved by setup_worktree.py's `_sentinel_dir()` — TMPDIR when set, else system temp dir; matches this expression) — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of each `$RUN_DIR/fix-hypothesis-*.md`; surface with ⏱; never omit.
 
-After both teammates complete: read their output files from `$RUN_DIR/`, synthesize consensus root cause, facilitate cross-challenge between competing analyses. Lead then proceeds alone with Steps 2-4 (regression test, fix, review loop).
+After both teammates complete: read their output files from `$RUN_DIR/`, synthesize consensus root cause, facilitate cross-challenge between competing analyses. Lead then proceeds alone with Steps 2-4 (regression test, fix, review loop). Clean up the health sentinel (exact filename, never a glob — another session's sentinel may share the base name):
+
+```bash
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r TS < "${TMPDIR:-/tmp}/dev-fix-team-ts-${CSID}" 2>/dev/null || TS=""
+[ -n "$TS" ] && rm -f "${TMPDIR:-/tmp}/fix-team-check-$TS"
+```

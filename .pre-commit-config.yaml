@@ -318,6 +318,15 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-plugin-version-sync
+        name: 🔀 dual-host plugin manifest version sync
+        language: system
+        entry: python3 plugins/cc_foundry/bin/check_plugin_version_sync.py --scan-dir plugins
+        # General: any dir holding BOTH .claude-plugin and .codex-plugin must agree
+        # on version — one release, two host manifests (bridge, codemap-py today).
+        files: ^plugins/[^/]+/\.(claude|codex)-plugin/plugin\.json$
+        pass_filenames: false
+
       - id: check-codemap-guard
         name: 🗺️ unmanaged codemap index-guard copy
         language: system

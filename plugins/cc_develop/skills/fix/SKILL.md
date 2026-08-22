@@ -320,7 +320,7 @@ cat "$_DEV_SHARED/premise-grounding.md"
 
 §Premise Grounding Gate. Apply using **fix** context from Skill contexts table.
 
-**Scope gate**: if root cause spans 3+ modules, flag complexity smell. Use `AskUserQuestion` to present scope concern before proceeding, with options: "Narrow scope (Recommended)" / "Proceed anyway".
+**Scope gate**: if root cause spans 3+ modules, flag complexity smell — options: "Narrow scope (Recommended)" / "Proceed anyway". When the plan-inline gate below will also fire (medium/large classification), do NOT open a separate window: defer this question and ask it in the SAME `AskUserQuestion` call as plan-inline's Proceed/Stop/Abort menu (both menus verbatim, two questions, one call — the two gates test overlapping "this is big" conditions back-to-back). Plan-inline not firing → single-question call here as usual.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -611,11 +611,11 @@ Use scan to prioritize which criteria below get deepest scrutiny.
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
-_SHARED="$_DEV_SHARED"  # quality-stack.md loads its siblings from $_SHARED — this plugin's own _shared
-cat "$_DEV_SHARED/quality-stack.md"
+_SHARED="$_DEV_SHARED"  # foundry--quality-stack.md loads its siblings from $_SHARED — this plugin's own _shared
+cat "$_DEV_SHARED/foundry--quality-stack.md"
 ```
 
-Execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps. `quality-stack.md` ships in this plugin's own `_shared`, so it is always present — absence means a broken install, not a missing optional dependency.
+Execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps. `foundry--quality-stack.md` ships in this plugin's own `_shared` (propagated foundry canonical, source-plugin prefix), so it is always present — absence means a broken install, not a missing optional dependency.
 
 ## Final Report
 

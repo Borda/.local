@@ -138,7 +138,7 @@ Triggered by `run <goal|file.md>`.
 
 If no `--researcher`/`--architect`, skip to R1.
 
-**Flag combination guard**: if `--researcher` set but `--architect` NOT set, print `⚠ --researcher without --architect: hypotheses will NOT be validated for architectural feasibility before execution — infeasible hypotheses may waste iterations. Add --architect for feasibility filtering.` then continue (advisory, not blocking). If only `--architect` set without `--researcher`, feasibility filter applies to oracle-generated hypotheses — valid combination.
+**Flag combination note**: every oracle self-annotates feasibility (`feasible`/`blocker`/`codebase_mapping` are part of the oracle schema — no separate annotation spawn). `--researcher` alone, `--architect` alone, and both together are all valid; both together adds architectural hypotheses alongside the research ones.
 
 Follow `modes/hypothesis-pipeline.md`:
 
@@ -443,7 +443,7 @@ else
 fi
 ```
 
-**Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-run-codemap-enabled-${CSID}`):
+**Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-run-codemap-enabled-${CSID}`). Cat once, first iteration only — the file is static and stays in context; re-cat only if it is no longer in context (e.g. after a compaction). Re-catting every iteration re-bills ~800 tok × N iterations for identical text:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -491,7 +491,7 @@ If Agent tool unavailable (nested subagent context), implement change inline, co
 
 > loads: compute-docker.md
 >
-> Follow `modes/compute-docker.md` — full Phase 2a and 2b logic for docker sandbox. Skip entire file if `sandbox_mode = "local"`.
+> Follow `modes/compute-docker.md` — full Phase 2a and 2b logic for docker sandbox. Skip entire file if `sandbox_mode = "local"`. Cat once, first iteration only — static content stays in context; re-cat only if no longer in context (e.g. after a compaction).
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -505,7 +505,7 @@ Skip if `sandbox_mode = "local"` — handled in compute-docker.md above.
 
 #### Phase 2c — Codex co-pilot (`--codex` only)
 
-Follow `modes/codex-copilot.md` — contains full Phase 2c logic, cost-bounded gate, Codex dispatch prompt, outcome handling, and stuck escalation.
+Follow `modes/codex-copilot.md` — contains full Phase 2c logic, cost-bounded gate, Codex dispatch prompt, outcome handling, and stuck escalation. Cat once, first `--codex` iteration only — static content stays in context; re-cat only if no longer in context (e.g. after a compaction).
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -543,7 +543,7 @@ If pre-commit hooks fail:
 
 > loads: phase5-metric.md # also loads: codex-copilot.md, colab-setup.md, compute-docker.md, hypothesis-pipeline.md, report.md, resume.md, team.md
 >
-> Follow `modes/phase5-metric.md` — metric verification logic for docker, local, and colab sandbox modes.
+> Follow `modes/phase5-metric.md` — metric verification logic for docker, local, and colab sandbox modes. Cat once, first iteration only — static content stays in context; re-cat only if no longer in context (e.g. after a compaction).
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -665,7 +665,7 @@ _ITER=$(jq -r '.iteration // 0' "$_STATE_JSON" 2>/dev/null || echo "?")
 _BEST=$(jq -r '.best_metric // "?"' "$_STATE_JSON" 2>/dev/null || echo "?")
 _PROG=$(jq -r '.program_file // ""' "$_STATE_JSON" 2>/dev/null || echo "")
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
-python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/write-skill-contract.py" "research:run" "iteration-loop (after iter ${_ITER})" ".experiments/${_RUN_ID}" "state-json=${_STATE_JSON}, program=${_PROG}, iter=${_ITER}, best-metric=${_BEST}${_KEEP_APPEND}" "continue R5 from iter $(( _ITER + 1 )) or proceed to R6 when loop done"  # timeout: 5000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/write-skill-contract.py" "research:run" "iteration-loop (after iter ${_ITER})" ".experiments/${_RUN_ID}" "state-json=${_STATE_JSON}, program=${_PROG}, iter=${_ITER}, best-metric=${_BEST}, cat-once-files=_shared/codemap-context.md + modes/compute-docker.md + modes/codex-copilot.md + modes/phase5-metric.md (re-cat after compaction only)${_KEEP_APPEND}" "continue R5 from iter $(( _ITER + 1 )) or proceed to R6 when loop done"  # timeout: 5000
 ```
 
 #### Phase 9 — Progress checks

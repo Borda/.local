@@ -210,9 +210,10 @@ REFACTOR_FILES=$(find <target> -name '*.py' -type f 2>/dev/null)
 AFFECTED_MODULES=$(echo "$REFACTOR_FILES" | sed 's|^\./||;s|^src/||;s|\.py$||;s|/|.|g' | grep . || echo "")
 _IDX="${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}"   # root-anchored: skill may run from a subdir
 if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ] && [ -n "$AFFECTED_MODULES" ]; then
-    while IFS= read -r mod; do
-        codemap-py query rdeps "$mod" 2>/dev/null
-    done <<< "$AFFECTED_MODULES"
+    # one batch process for all module rdeps — a per-module query loop pays process spawn + coverage cost N times
+    _BATCH_REQ="${TMPDIR:-/tmp}/dev-refactor-rdeps-batch-${CSID:-$PPID}.json"
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/build_codemap_batch.py" "$_BATCH_REQ" --modules "$(echo $AFFECTED_MODULES)" --queries rdeps
+    codemap-py query batch "$_BATCH_REQ" 2>/dev/null
     codemap-py query coupled --top 10
 fi
 ```
@@ -236,9 +237,11 @@ cat "$_DEV_SHARED/premise-grounding.md"
 
 §Premise Grounding Gate. Apply using **refactor** context from Skill contexts table.
 
-**Goal classification gate**: after sw-engineer analysis completes, scan goal text for mixed signals — if goal contains both refactor keywords (rename, extract, restructure, decouple, consolidate) AND feature keywords (add, implement, new, support), invoke `AskUserQuestion`: "Goal mixes refactoring and feature work — split into two runs." · (a) Abort — run refactor first, then feature · (b) Continue as refactor-only — treat feature additions as out of scope.
+**Goal classification gate**: after sw-engineer analysis completes, scan goal text for mixed signals — if goal contains both refactor keywords (rename, extract, restructure, decouple, consolidate) AND feature keywords (add, implement, new, support), ask: "Goal mixes refactoring and feature work — split into two runs." · (a) Abort — run refactor first, then feature · (b) Continue as refactor-only — treat feature additions as out of scope.
 
-**Scope gate**: if target spans 3+ modules OR 5+ files OR goal mentions any public-API rename — flag complexity smell. Use `AskUserQuestion`: "Narrow scope (Recommended)" / "Proceed anyway".
+**Scope gate**: if target spans 3+ modules OR 5+ files OR goal mentions any public-API rename — flag complexity smell. Ask: "Narrow scope (Recommended)" / "Proceed anyway".
+
+Both gates evaluate after the same sw-engineer analysis — when BOTH fire, invoke `AskUserQuestion` ONCE with both questions in the same call (menus stay distinct verbatim; a second sequential window costs another human-idle round trip). Only one fires → single-question call as usual.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -279,15 +282,16 @@ Use Glob tool (pattern `**/test_*.py` or `**/*_test.py`), then Grep tool (patter
 
 ```bash
 # timeout: 600000
-$PYTEST_CMD --co -q 2>&1 | head -5
-
+# ONE collection pass feeds head-5 sanity print, cov-plugin probe, and module grep — three separate --co runs re-collect the whole suite each time
+_CO_OUT=$($PYTEST_CMD --co -q --cov=. 2>&1)
 SKIP_COV=0
-if $PYTEST_CMD --co -q --cov=. 2>&1 | grep -q "ModuleNotFoundError\|No module named.*cov"; then
+if echo "$_CO_OUT" | grep -q "ModuleNotFoundError\|No module named.*cov\|unrecognized arguments.*--cov"; then
     echo "⚠ coverage tool not found — coverage gate skipped"
     SKIP_COV=1
+    _CO_OUT=$($PYTEST_CMD --co -q 2>&1)   # cov-less re-collect — the probe run errored before listing tests
 fi
-
-$PYTEST_CMD --co -q 2>&1 | grep -i "<module_name>" || echo "No tests found for <module_name>"
+echo "$_CO_OUT" | head -5
+echo "$_CO_OUT" | grep -i "<module_name>" || echo "No tests found for <module_name>"
 
 [ "${SKIP_COV}" -eq 0 ] && { $PYTEST_CMD --cov=<target_module> -q --cov-report=term-missing || true; }
 ```
@@ -497,15 +501,15 @@ Full review of refactored code. **Loop** — review -> targeted refactoring (ret
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""   # re-derive — bash state lost between Bash() calls
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
-[ -f "$_DEV_SHARED/quality-stack.md" ] || echo "⚠ quality-stack.md missing from this plugin's _shared — broken install; quality stack skipped"
+[ -f "$_DEV_SHARED/foundry--quality-stack.md" ] || echo "⚠ foundry--quality-stack.md missing from this plugin's _shared — broken install; quality stack skipped"
 ```
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
-_SHARED="$_DEV_SHARED"  # quality-stack.md loads its siblings from $_SHARED — this plugin's own _shared
-cat "$_DEV_SHARED/quality-stack.md"
+_SHARED="$_DEV_SHARED"  # foundry--quality-stack.md loads its siblings from $_SHARED — this plugin's own _shared
+cat "$_DEV_SHARED/foundry--quality-stack.md"
 ```
 
 If not found → skip quality stack entirely, note the message above in Final Report. Otherwise execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.

@@ -1,6 +1,6 @@
 # Shared Quality Stack
 
-Used by develop mode skills (feature, fix, refactor). Loaded via `cat "$_SHARED/quality-stack.md"` (not the Read tool — `Bash(cat:*)` grant is version-proof).
+Used by develop mode skills (feature, fix, refactor). Canonical home: cc_foundry `_shared/quality-stack.md`; consumer plugins ship the propagated copy as `foundry--quality-stack.md` (source-plugin prefix — a plugin-local file can never collide with a propagated copy) and load it via `cat "$_SHARED/foundry--quality-stack.md"` (not the Read tool — `Bash(cat:*)` grant is version-proof).
 
 > `$_SHARED` = **the loading plugin's own** `skills/_shared`, set by the consumer before `cat`-ing this file. This doc is a byte-identical `propagate_shared.py` copy present in every plugin that uses it, so it must never name a specific plugin's variable — the sibling files it loads below resolve out of whichever `_shared` the consumer set.
 
@@ -136,7 +136,7 @@ Max 3 cycles. Applied after quality stack. **`oss:*` skills are NEVER auto-invok
 
 **Cycle 1: Confidence-gated review escalation**
 
-- Compute concern signal after the quality stack: any unresolved critical/high finding, OR any agent envelope `confidence` < 0.9, OR `CODEX_FINDINGS` non-empty and not yet verified
+- Compute concern signal after the quality stack: any unresolved critical/high finding, OR `CODEX_FINDINGS` non-empty and not yet verified. Envelope confidence alone is NOT a trigger — template envelopes print 0.88, so a `< 0.9` arm fired on nearly every run, nesting a full multi-agent `/develop:review` (~5-6 spawns) without a concrete finding to chase; low confidence without findings goes to the report as a stated gap instead
 - No concern → skip directly to report; in the final report list optional follow-ups the user may explicitly request (`/develop:review` for a deeper local pass; `/oss:review` once a PR exists)
 - Concern present → invoke `/develop:review` scoped to the modified files. `CODEX_FINDINGS` non-empty → prepend to review brief: "Codex pre-pass found the following — verify these, do not rediscover: $CODEX_FINDINGS". Also seed the quality-stack's own findings as "already checked — verify, do not rediscover"
 - Capture review state: `{agents_with_findings, unresolved_findings, files_reviewed}`

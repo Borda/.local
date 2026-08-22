@@ -201,7 +201,7 @@ Rank by impact (highest first). Separate statically-confirmed from profiling-req
 Codemap pre-flight for structural perf analysis — run alongside step 1a+1b (see workflow):
 
 ```bash
-# index dir anchors at git root, not cwd — subdir invocation otherwise reports no_index while index exists. PROJ = raw basename; scanner writes it unsanitized (space/+/non-ASCII survive).
+# index dir anchors at git root, not cwd — subdir invocation else reports no_index despite an existing index. PROJ = raw basename, unsanitized (space/+/non-ASCII survive).
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null); [ -n "$_ROOT" ] || _ROOT="$PWD"
 PROJ=$(basename "$_ROOT")
 _IDX="${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}"
@@ -212,7 +212,7 @@ if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
         [ -n "$TARGET_FN" ] && codemap-py query fn-blast "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
     else
         _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
-        # module names from index `name` field, never sed: `pkg/__init__.py` is `pkg`, not `pkg.__init__`. Files index doesn't know resolve to nothing, not a guessed name.
+        # module names from index `name` field, never sed: `pkg/__init__.py` → `pkg`, not `pkg.__init__`. Unindexed files resolve to nothing, never a guessed name.
         _CHANGED_PY=$(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | paste -sd, -)
         for _MOD in $(codemap-py query --timeout 10 central --top 100000 2>/dev/null | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_centrality.py" --files "$_CHANGED_PY" --modules-only 2>/dev/null | head -10); do
             codemap-py query subprocess-deps "$_MOD" 2>/dev/null
@@ -223,9 +223,9 @@ if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
 fi
 ```
 
-> `fixture-graph` output shows `scope` per fixture. Fixtures with `scope: "function"` that hold expensive objects (model weights, DB connections) and appear in many test files → scope upgrade candidates; add as "Additional best practice (not a defect)". Always run `fixture-rdeps` first — high usage + function scope + mutable state = isolation risk; flag mutation risk explicitly when rdep count > 20. `fn-blast` gives caller count before recommending signature changes; high blast radius = higher-severity change.
+> `fixture-graph` shows `scope` per fixture. `scope: "function"` fixtures holding expensive objects (model weights, DB connections) across many test files → scope-upgrade candidates, reported as "Additional best practice (not a defect)". Run `fixture-rdeps` first — high usage + function scope + mutable state = isolation risk; flag mutation risk explicitly above 20 rdeps. `fn-blast` gives caller count before recommending signature changes; high blast radius = higher severity.
 
-**Bounded call budget**: module/fixture not covered above → up to 3 additional `codemap-py query` calls this task. **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`): that result is final for its direction — no follow-up Grep/Read/query to re-confirm it.
+**Bounded call budget**: module/fixture not covered above → ≤3 more `codemap-py query` calls this task. **Hard stop on `query_complete: true`** (legacy `exhaustive: true`) — that direction is settled; no follow-up Grep/Read/query to re-confirm it.
 
 </codemap-context>
 

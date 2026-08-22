@@ -46,19 +46,20 @@ fi
 
 If `$OSS_AVAILABLE` is `skip`: proceed to Step 1 normally (path / diff / dir mode).
 
-If `$OSS_AVAILABLE` is `true`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` (requires oss plugin) to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" → call `Skill(skill="oss:review", args="$ARGUMENTS")`; (b) "No — review local code" → call `AskUserQuestion` immediately: "Provide the file path or directory to review:" — use user's response as `$REVIEW_ARGS` and proceed to Step 1.
+If `$OSS_AVAILABLE` is `true`: call `AskUserQuestion` ONCE with BOTH questions in the same call (a second sequential window costs another human-idle round trip) — Q1: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` (requires oss plugin) to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" · (b) "No — review local code". Q2: "If reviewing local code: provide the file path or directory (free text; skip if Q1 = Yes)". On (a): call `Skill(skill="oss:review", args="$ARGUMENTS")`, ignore Q2. On (b): use the Q2 response as `$REVIEW_ARGS` and proceed to Step 1 (Q2 empty → ask once more for the path).
 
-If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number, but oss plugin not installed — `/oss:review` unavailable. Did you mean to review local code instead?" Options: (a) "Yes — review local code" → call `AskUserQuestion` again immediately: "Provide the file path or directory to review:" — use user's response as `$REVIEW_ARGS` and proceed to Step 1; (b) "I need oss plugin" → inform user: install with `claude plugin install oss@borda-ai-rig`.
+If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` ONCE with BOTH questions — Q1: "Looks like you passed a PR/issue number, but oss plugin not installed — `/oss:review` unavailable. Review local code instead?" Options: (a) "Yes — review local code" · (b) "I need oss plugin". Q2: "If reviewing local code: provide the file path or directory (free text; skip if Q1 = b)". On (a): use the Q2 response as `$REVIEW_ARGS` and proceed to Step 1 (Q2 empty → ask once more). On (b): inform user: install with `claude plugin install oss@borda-ai-rig`.
 
 </inputs>
 
 <constants>
 
 ```text
-FANOUT_MAX=3            # default: top-N most relevant of the classification-preselected dimensions
-                        # 3 not 4 — bridge review runs outside this cap, so 3 keeps the
-                        # observed agent count at 4, not 5
-                        # --full runs ALL preselected dimensions instead — no numeric cap
+FANOUT_MAX=3            # default: top-N spawn UNITS among classification-preselected dimensions
+                        # cap counts dimension spawn units only; real default lineup = up to 3
+                        # dimension units + challenger + bridge co-review + consolidator
+                        # (+ up to 3 cross-validation verifiers when criticals exist)
+                        # --full runs ALL preselected units instead — no numeric cap
 AGENT_CALL_BUDGET=55    # target tool-calls per agent; past ~60 they stall without returning an envelope
 CHALLENGE_ENABLED=true  # set to false via --no-challenge
 CHALLENGE_FORCED=false  # set to true via --challenge — forces Agent 7 even on small diffs (overrides small-diff auto-skip)
@@ -202,57 +203,40 @@ Use `$REVIEW_ARGS` (not `$ARGUMENTS`) as path for rest of workflow.
 
 ## Step 1: Identify scope
 
+Scope + non-Python impact check + Python filter in ONE pass — a single `git diff` capture feeds TARGET, the report-header warnings, and the early exit (previously eight diff invocations across three blocks):
+
 ```bash
+# timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r REVIEW_ARGS < "${TMPDIR:-/tmp}/dev-review-clean-args-${CSID}" 2>/dev/null || REVIEW_ARGS="$ARGUMENTS"   # re-derive — bash state lost between Bash() calls
+_DIFF_FILES=$(git diff --name-only HEAD 2>/dev/null)
 if [ -n "$REVIEW_ARGS" ]; then
     TARGET="$REVIEW_ARGS"
     echo "Reviewing: $TARGET"
-else
-    git diff HEAD --name-only  # timeout: 3000
-    TARGET="working-tree diff ($(git diff HEAD --name-only 2>/dev/null | grep '\.py$' | wc -l | tr -d ' ') Python files)"  # timeout: 3000
-fi
-```
-
-**Non-Python impact check** (runs BEFORE early exit — ensures warning always emits when relevant): scan diff for high-impact non-Python changes; collect warnings for report header:
-
-```bash
-# timeout: 5000
-export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r REVIEW_ARGS < "${TMPDIR:-/tmp}/dev-review-clean-args-${CSID}" 2>/dev/null || REVIEW_ARGS="$ARGUMENTS"   # re-derive — bash state lost between Bash() calls
-NON_PY_WARNINGS=""
-git diff --name-only HEAD 2>/dev/null | grep -qE '(pyproject\.toml|setup\.cfg|requirements.*\.txt)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ dependency changes detected — not reviewed; verify Python imports still resolve\n"
-git diff --name-only HEAD 2>/dev/null | grep -qE '(Dockerfile|docker-compose.*\.yml)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ container config changes detected — not reviewed\n"
-if [ -z "$REVIEW_ARGS" ]; then
-    # diff-mode only — explicit tests/ path in REVIEW_ARGS is deliberate, never warned
-    _PY_DIFF=$(git diff --name-only HEAD 2>/dev/null | grep '\.py$')
-    [ -n "$_PY_DIFF" ] && ! echo "$_PY_DIFF" | grep -qv '^tests/' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ diff contains only test files (tests/) — no src/ changes; review may be uninformative\n"
-fi
-```
-
-If `$NON_PY_WARNINGS` non-empty: include in report header regardless of whether Python files exist.
-
-Filter to Python files only. No Python files → exit early (DMI skill — prose "stop" not executable; bash exit is the only enforceable mechanism):
-
-```bash
-# timeout: 5000
-export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r REVIEW_ARGS < "${TMPDIR:-/tmp}/dev-review-clean-args-${CSID}" 2>/dev/null || REVIEW_ARGS="$ARGUMENTS"   # re-derive — bash state lost between Bash() calls
-# re-derive NON_PY_WARNINGS — lost between Bash() calls
-NON_PY_WARNINGS=""
-git diff --name-only HEAD 2>/dev/null | grep -qE '(pyproject\.toml|setup\.cfg|requirements.*\.txt)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ dependency changes detected — not reviewed; verify Python imports still resolve\n"
-git diff --name-only HEAD 2>/dev/null | grep -qE '(Dockerfile|docker-compose.*\.yml)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ container config changes detected — not reviewed\n"
-if [ -n "$REVIEW_ARGS" ]; then
     PYTHON_FILES=$(find "$REVIEW_ARGS" -name '*.py' -type f 2>/dev/null | head -1)
 else
-    PYTHON_FILES=$(git diff --name-only HEAD 2>/dev/null | grep '\.py$' | head -1)
+    echo "$_DIFF_FILES"
+    TARGET="working-tree diff ($(echo "$_DIFF_FILES" | grep -c '\.py$' | tr -d ' ') Python files)"
+    PYTHON_FILES=$(echo "$_DIFF_FILES" | grep '\.py$' | head -1)
 fi
+NON_PY_WARNINGS=""
+echo "$_DIFF_FILES" | grep -qE '(pyproject\.toml|setup\.cfg|requirements.*\.txt)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ dependency changes detected — not reviewed; verify Python imports still resolve\n"
+echo "$_DIFF_FILES" | grep -qE '(Dockerfile|docker-compose.*\.yml)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ container config changes detected — not reviewed\n"
+if [ -z "$REVIEW_ARGS" ]; then
+    # diff-mode only — explicit tests/ path in REVIEW_ARGS is deliberate, never warned
+    _PY_DIFF=$(echo "$_DIFF_FILES" | grep '\.py$')
+    [ -n "$_PY_DIFF" ] && ! echo "$_PY_DIFF" | grep -qv '^tests/' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ diff contains only test files (tests/) — no src/ changes; review may be uninformative\n"
+fi
+# warnings print BEFORE the early exit — they must emit even when no Python file exists
 if [ -z "$PYTHON_FILES" ]; then
     echo "! Diff contains non-Python files only. This skill is scoped to Python. For other languages, use a general-purpose code reviewer."
     [ -n "$NON_PY_WARNINGS" ] && printf "$NON_PY_WARNINGS"
     exit 0
 fi
+[ -n "$NON_PY_WARNINGS" ] && printf "$NON_PY_WARNINGS"
 ```
+
+If `$NON_PY_WARNINGS` non-empty: include in report header regardless of whether Python files exist. No Python files → the bash `exit 0` above is the enforceable stop (DMI skill — prose "stop" not executable).
 
 ### Scope pre-check
 
@@ -303,10 +287,10 @@ echo "$codemap_available" > "${TMPDIR:-/tmp}/dev-review-codemap-available-${CSID
 
 Codemap context propagation in Step 3:
 
-- `codemap_available=true` → copy `$CODEMAP_CONTEXT_STAGE` to `$RUN_DIR/codemap-context.md` once `$RUN_DIR` exists (Step 2). Every dimension-agent spawn prompt (Agents 1–6) must include a literal block:
+- `codemap_available=true` → copy `$CODEMAP_CONTEXT_STAGE` to `$RUN_DIR/codemap-context.md` once `$RUN_DIR` exists (Step 2). Each dimension spawn prompt gets a literal block holding only ITS slice of the batch results (the whole block in every prompt re-bills every query result to consumers that never read it, and results for skipped agents are injected nowhere): qa unit → `uncovered` + `mock-rdeps` entries; doc unit → `undocumented` + `xrefs --broken` entries; sw-engineer → `rdeps` + `central` + `diff-impact`. Entries whose only consumer was skipped by classification are not injected anywhere:
   ```text
   ## Structural Context (codemap-py, codemap_available=true)
-  <content of $RUN_DIR/codemap-context.md>
+  <this agent's slice of $RUN_DIR/codemap-context.md>
 
   Read this section first. The results are a single `batch` JSON array: each entry has `cmd` (the query) and `result` (its payload), keyed by `index`; one shared `index` coverage block covers the whole batch. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken` entries, trust the codemap output; skip redundant Grep/Read on the same data. Fall back to file reads only when a query's `result` is empty for a symbol you need or when verifying a specific finding.
 
@@ -373,9 +357,9 @@ CODEX_OUT="$RUN_DIR/codex.md"
 echo "$CODEX_OUT" > ${TMPDIR:-/tmp}/dev-review-codex-out-${CSID}  # Step 6 re-reads — bash state lost
 ```
 
-Read `$_DEV_SHARED/codex-prepass.md` for Codex pass instructions and use them as the spawn prompt — it ships in this plugin's own `_shared`. The inline prompt below is a fallback for a broken install only.
+Read `$_DEV_SHARED/codex-prepass.md` for the **skip/run criteria only** (small-diff skip, availability check) — do NOT use its dispatch line as the spawn prompt: its args name no output path, so Step 2's watch on `$RUN_DIR/codex.md` would idle ~2 min on a file that never appears and Step 6 would silently skip.
 
-Call `Skill(skill="bridge:review", args="Read-only adversarial review of $TARGET. Look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Write findings to $RUN_DIR/codex.md; do not apply fixes.")` (requires `bridge@borda-ai-rig`).
+Dispatch — substitute `<TARGET>` and `<RUN_DIR>` with resolved literal values before the call (a `Skill()` dispatch gets no run-dir preamble, so an unexpanded `$RUN_DIR` reaches Codex as literal dollar-sign text): `Skill(skill="bridge:review", args="Read-only adversarial review of <TARGET>. Look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Write findings to <RUN_DIR>/codex.md; do not apply fixes.")` (requires `bridge@borda-ai-rig`).
 
 Note: Agent spawns are synchronous and cannot be timeout-wrapped via Bash `timeout:`. If hang risk unacceptable, spawn with `run_in_background=true` — when doing so, implement health-monitoring per CLAUDE.md §6: create sentinel file, poll every 5 min for file activity in `$RUN_DIR`, hard cutoff 15 min. Without background spawning, move on after reasonable wait (observe if Codex output file grows; no growth after ~2 min → treat as timed out).
 
@@ -396,13 +380,22 @@ Pass notice through to consolidator (Step 5) so it appears in final report heade
 Two stages, in order — never collapse them:
 
 1. **Classification preselection** (always): the FIX / CHORE / small-diff-challenger skips above decide which dimensions are *relevant at all*. A dimension with no changed file in its territory is out here and never comes back, at any flag.
-2. **Relevance ranking** (default only): rank the survivors by evidence — changed files and lines in that dimension's territory, what the classification implies, what the structural context flagged — and spawn the top `FANOUT_MAX` (3). With `--full` (`FANOUT_CAP=0`) skip this stage and spawn every survivor of stage 1.
+2. **Unit grouping** (always): fold the survivors into spawn units per §Merged spawn units below — Agents 3+6 share one spawn, Agents 4+5 share one spawn, Agents 1 and 2 stay standalone. A unit exists when at least one of its dimensions survived stage 1; its prompt carries only the surviving dimensions' instructions.
+3. **Relevance ranking** (default only): rank the units by evidence — changed files and lines in their dimensions' territory, what the classification implies, what the structural context flagged (a merged unit ranks by its strongest surviving dimension) — and spawn the top `FANOUT_MAX` (3) units. With `--full` (`FANOUT_CAP=0`) skip this stage and spawn every unit of stage 2.
 
 - More work → give each agent more, never add agents.
 - **Spawn the fewest that keep each near `AGENT_CALL_BUDGET`** — not the most the cap allows. Total work under ~73 calls → do it inline and spawn nothing.
-- **Merge before you split**: two dimensions whose files overlap go to one agent, not two.
+- **Merge before you split**: two dimensions whose files overlap go to one agent, not two — the fixed pairs below are the floor, not the ceiling.
 - Every spawn prompt states the budget and requires an envelope even on exhaustion — `partial: true` plus what was finished.
 - Dimensions dropped by the cap are listed in the report; never silently skipped.
+
+### Merged spawn units (shared pattern with oss:review — each spawn costs ~120,851 tok fixed overhead, so paired dimensions share one spawn)
+
+- **Agents 3+6 = ONE `foundry:perf-optimizer` spawn** covering Performance + Architecture/API design — spawn when either dimension survives classification preselection; the prompt includes only the surviving dimensions' instructions (e.g. FIX with a public-signature change spawns this unit with only the Agent-6 dimension active).
+- **Agents 4+5 = ONE `foundry:doc-scribe` spawn** covering Documentation + Linting — same rule.
+- Agents 1 (sw-engineer, incl. security augmentation), 2 (qa-specialist), and 7 (challenger) stay standalone spawns.
+- A merged spawn writes **one file per covered dimension**, each with its OWN full sections + Confidence block — never blended: `perf-optimizer.md` + `solution-architect.md`, or `doc-scribe.md` + `linting-expert.md`. Downstream contracts (consolidator filename list, Step-4 cross-validation "same type as origin", report sections) key on those files and stay unchanged.
+- Merged-spawn envelope = JSON array, one element per dimension file, same per-element schema as the standard envelope. An element absent from the array ⇒ that dimension gets the ⏱ marker — never silently omitted.
 
 **File-based handoff**:
 
@@ -471,11 +464,11 @@ Replace `$REVIEW_CHECKLIST` in Agent 1 and consolidator spawn prompts with resol
 - Citation tracing mandatory: for each Tier 2 source, follow its citations one level; if tracing reveals a Tier 1 source (official doc, CVE, spec) confirming the claim, treat as Tier 1 verified; if multiple Tier 2 sources share one origin, merge into one; count distinct origins only
 - When only Tier 2 available, distinct-origin count < 3, and no experiment run: downgrade finding to LOW or drop it; never raise MEDIUM/HIGH/CRITICAL on Tier 2 alone
 
-Launch agents simultaneously with Agent tool (security augmentation folded into Agent 1 — not separate spawn; Agent 6 optional). Every agent prompt must begin with the [run-dir preamble (canonical)](#run-dir-preamble-canonical) and end with:
+Launch spawn units simultaneously with Agent tool (security augmentation folded into Agent 1 — not separate spawn; Agent 6 optional; Agents 3+6 and 4+5 launch as merged units per §Merged spawn units). Every agent prompt must begin with the [run-dir preamble (canonical)](#run-dir-preamble-canonical) and end with:
 
 > "Write your FULL findings (all sections, Confidence block) to `$RUN_DIR/<agent-name>.md` using the Write tool — where `<agent-name>` is e.g. `sw-engineer`, `qa-specialist`, `perf-optimizer`, `doc-scribe`, `linting-expert`, `solution-architect`. Then return to the caller ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":0,\"high\":1,\"medium\":2,\"low\":0},\"file\":\"$RUN_DIR/<agent-name>.md\",\"confidence\":0.88}`"
 
-**Codemap-py context preamble (substituted by orchestrator)**: rehydrate `IFS= read -r codemap_available < "${TMPDIR:-/tmp}/dev-review-codemap-available-${CSID}" 2>/dev/null || codemap_available=false`. When `codemap_available=true`, every dimension-agent prompt (Agents 1–6) is prefixed with `## Structural Context (codemap-py, codemap_available=true)` block from `$RUN_DIR/codemap-context.md` per propagation rules in Step 1. Agents must read that block first and skip redundant Grep/Read on symbols already covered by codemap output. Block absent → fall back to current file-read behaviour. Challenger (Agent 7) unchanged.
+**Codemap-py context preamble (substituted by orchestrator)**: rehydrate `IFS= read -r codemap_available < "${TMPDIR:-/tmp}/dev-review-codemap-available-${CSID}" 2>/dev/null || codemap_available=false`. When `codemap_available=true`, each dimension spawn prompt is prefixed with its `## Structural Context (codemap-py, codemap_available=true)` slice from `$RUN_DIR/codemap-context.md` per the per-agent slicing rules in Step 1. Agents must read that block first and skip redundant Grep/Read on symbols already covered by codemap output. Block absent → fall back to current file-read behaviour. Challenger (Agent 7) unchanged.
 
 **Agent 1 — foundry:sw-engineer**: Review architecture, SOLID adherence, type safety, error handling, code structure. Check Python anti-patterns (bare `except:`, `import *`, mutable defaults). Flag blocking issues vs suggestions. `codemap_available=true`: read `rdeps` first (importer list per changed module) — skip importer-walk Reads on listed modules; verify only when needed for a specific finding.
 
@@ -510,17 +503,17 @@ Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIG
 
 **Consolidation rule**: Each test gap = one finding with concise list of test scenarios, not separate findings per scenario. Format: "Missing tests for `parse_numeric()`: empty string, None, very large integers, float-string for int parser." Keeps test coverage section actionable, prevents exceeding 5 items.
 
-**Agent 3 — foundry:perf-optimizer**: Analyze performance issues. Algorithmic complexity, Python loops that should be NumPy/torch ops, repeated computation, unnecessary I/O. ML code: check DataLoader config, mixed precision. Prioritize by impact.
+**Agent 3 — foundry:perf-optimizer** (merged spawn with Agent 6 — see §Merged spawn units): Analyze performance issues. Algorithmic complexity, Python loops that should be NumPy/torch ops, repeated computation, unnecessary I/O. ML code: check DataLoader config, mixed precision. Prioritize by impact. Findings to `$RUN_DIR/perf-optimizer.md`.
 
-**Agent 4 — foundry:doc-scribe**: Check documentation completeness. Public APIs without docstrings, missing Google style sections, outdated README, CHANGELOG gaps. Verify examples run. `codemap_available=true`: read `undocumented` + `xrefs --broken` sections from codemap context block first — `undocumented` enumerates symbols missing docstrings; `xrefs --broken` enumerates stale Sphinx refs. Skip docstring-scan Reads on listed symbols; fall back to file reads only when codemap output empty for a symbol needed or when verifying a specific finding.
+**Agent 4 — foundry:doc-scribe** (merged spawn with Agent 5 — see §Merged spawn units): Check documentation completeness. Public APIs without docstrings, missing Google style sections, outdated README, CHANGELOG gaps. Verify examples run. `codemap_available=true`: read `undocumented` + `xrefs --broken` sections from codemap context block first — `undocumented` enumerates symbols missing docstrings; `xrefs --broken` enumerates stale Sphinx refs. Skip docstring-scan Reads on listed symbols; fall back to file reads only when codemap output empty for a symbol needed or when verifying a specific finding. Findings to `$RUN_DIR/doc-scribe.md`.
 
 - **Algorithmic accuracy check**: Functions computing mathematical results (moving averages, statistics, transforms, distances) — verify docstring behavioral claims match implementation. Deviation from conventional definition → MEDIUM; docstring must document deviation, not state standard definition. **Deprecation check**: Check deprecated stdlib usage in public API surface only — skip private functions, classes, constants, and modules starting with `_`. E.g., `datetime.utcnow()` deprecated in 3.12, `os.path` vs `pathlib`. Flag deprecated stdlib as MEDIUM with replacement.
 
-**Agent 5 — foundry:linting-expert**: Static analysis audit. Check ruff and mypy pass. Type annotation gaps on public APIs, suppressed violations without explanation, missing pre-commit hooks. Flag mismatched target Python version.
+**Agent 5 — foundry:linting-expert** (dimension covered by the Agent 4 merged spawn — see §Merged spawn units): Static analysis audit. Check ruff and mypy pass. Type annotation gaps on public APIs, suppressed violations without explanation, missing pre-commit hooks. Flag mismatched target Python version. Findings to `$RUN_DIR/linting-expert.md`.
 
 **Security augmentation (conditional — fold into Agent 1 prompt, not separate spawn)**: Target touches authentication, user input handling, dependency updates, or serialization → add to foundry:sw-engineer prompt (Agent 1): check SQL injection, XSS, insecure deserialization, hardcoded secrets, missing input validation. If dependency files changed: check pip-audit availability first — `if ! command -v pip-audit >/dev/null 2>&1; then echo "⚠ pip-audit not found — dependency vulnerability check skipped"; else <run pip-audit>; fi`. Skip for purely internal refactoring.
 
-**Agent 6 — foundry:solution-architect (optional, for changes touching public API boundaries)**: Target touches `__init__.py` exports, adds/modifies Protocols or ABCs, changes module structure, introduces new public classes, **or changes the signature of any already-exported public function — added/removed/renamed params, new flags** → evaluate API design quality, coupling impact, backward compatibility, and consistency of any added symbol (name, placement, signature, param/flag, return shape) with the existing API surface — naming conventions, module organization, sibling patterns (e.g. a new bool that duplicates an existing `kind=`/`mode=` discriminator, or a helper added where an equivalent already lives → flag, reuse/extend the existing home instead). Skip for purely internal (non-exported) implementation changes.
+**Agent 6 — foundry:solution-architect (optional, for changes touching public API boundaries; dimension covered by the Agent 3 merged spawn — see §Merged spawn units, findings to `$RUN_DIR/solution-architect.md`)**: Target touches `__init__.py` exports, adds/modifies Protocols or ABCs, changes module structure, introduces new public classes, **or changes the signature of any already-exported public function — added/removed/renamed params, new flags** → evaluate API design quality, coupling impact, backward compatibility, and consistency of any added symbol (name, placement, signature, param/flag, return shape) with the existing API surface — naming conventions, module organization, sibling patterns (e.g. a new bool that duplicates an existing `kind=`/`mode=` discriminator, or a helper added where an equivalent already lives → flag, reuse/extend the existing home instead). Skip for purely internal (non-exported) implementation changes.
 
 **Agent 7 — foundry:challenger (skip if `CHALLENGE_ENABLED=false`, or per Small-diff challenger skip in Scope pre-check when `CHALLENGE_FORCED=false`)**: Adversarial review of design decisions in diff. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: write full findings to `$RUN_DIR/challenger.md`. Return JSON: `{"status":"done","findings":N,"severity":{"critical":0,"high":0,"medium":0,"low":0},"file":"$RUN_DIR/challenger.md","confidence":0.88}`. Severity mapping: blockers → `high`; concerns → `medium`.
 
@@ -555,18 +548,18 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""   # re-derive — bash state lost between Bash() calls
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/dev-review-run-dir-${CSID}" 2>/dev/null || RUN_DIR="$RUN_DIR"
-if [ ! -f "$_DEV_SHARED/cross-validation-protocol.md" ]; then
-    echo "⚠ cross-validation-protocol.md not found at $_DEV_SHARED — Step 4 skipped; critical findings are unverified. It ships in this plugin — reinstall develop@borda-ai-rig."
+if [ ! -f "$_DEV_SHARED/foundry--cross-validation-protocol.md" ]; then
+    echo "⚠ foundry--cross-validation-protocol.md not found at $_DEV_SHARED — Step 4 skipped; critical findings are unverified. It ships in this plugin — reinstall develop@borda-ai-rig."
     echo "## Cross-Validation: SKIPPED" >> "$RUN_DIR/cross-validation.md"
     echo "**Reason**: _DEV_SHARED unavailable — cross-validation protocol not executed." >> "$RUN_DIR/cross-validation.md"
 else
-    cat "$_DEV_SHARED/cross-validation-protocol.md"
+    cat "$_DEV_SHARED/foundry--cross-validation-protocol.md"
 fi
 ```
 
 If file present: follow cross-validation protocol printed above. File absent → skip Step 4 (warning printed above).
 
-**Skill-specific**: use **same agent type** that raised finding as verifier (e.g., foundry:sw-engineer verifies foundry:sw-engineer's critical finding).
+**Skill-specific**: use **same agent type** that raised finding as verifier (e.g., foundry:sw-engineer verifies foundry:sw-engineer's critical finding). **Spawn cap: max 3 verifier agents** — critical/blocking findings > 3 → group into batches of ≤2 findings per verifier (same origin type per batch); note grouped IDs in rationale; each finding still gets its own verdict. Same cap as the shared protocol and oss:review — unbounded verifier fanout costs ~120,851 tok per critical finding.
 
 ## Step 5: Consolidate findings
 
@@ -591,10 +584,10 @@ Report format — resolve template path first:
 ```bash
 _REVIEW_TEMPLATE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/review/templates 2>/dev/null | head -1); [ -z "$_REVIEW_TEMPLATE" ] && _REVIEW_TEMPLATE="${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/skills/review/templates"
 _REVIEW_TEMPLATE="$_REVIEW_TEMPLATE/review-report.md"
-cat "$_REVIEW_TEMPLATE"
+echo "$_REVIEW_TEMPLATE"
 ```
 
-Embed the cat'd content (not the path) into consolidator spawn prompt as output structure.
+Substitute the resolved literal path into the consolidator spawn prompt ("Read the report template at `<path>` with the Read tool — it defines the output structure"); do NOT cat the template into orchestrator context — that bills the same ~579 tok twice (once here, once inside the prompt).
 
 After parsing confidence scores: any agent scored < 0.7 → prepend **⚠ LOW CONFIDENCE** to that agent's findings section, state gap explicitly. Never silently drop uncertain findings.
 
@@ -677,6 +670,6 @@ rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compac
   - Security findings in auth/input/deps → run `pip-audit` for dependency CVEs; address OWASP issues inline via `/develop:fix`
   - Mechanical issues beyond Step 5 findings → when `bridge@borda-ai-rig` is available, call its `implement` skill with a brief that states the exact finding, target paths, current evidence, permitted edits, required result, stop condition, and verification command.
   - Contributor-facing review of GitHub PR → use `/oss:review <PR#>` (requires oss plugin) instead
-- **Parallel agent cleanup**: after all 7 agents complete, review `TaskList` — delete any tasks created by sub-agents (not by lead orchestrator). Sub-agent task creation unintended, can leave zombie tasks.
+- **Parallel agent cleanup**: after all spawn units complete, review `TaskList` — delete any tasks created by sub-agents (not by lead orchestrator). Sub-agent task creation unintended, can leave zombie tasks.
 
 </notes>

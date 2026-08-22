@@ -271,26 +271,24 @@ echo "$PLAN_FILE" > "$PLAN_NS/plan-file"
 
 ## Step 3: Agent feasibility review
 
-Spawn execution agents by classification in parallel. Each reads `<PLAN_FILE>`, returns **only** compact JSON — no prose, no analysis:
+Spawn ONE `foundry:sw-engineer` feasibility agent covering both role perspectives in a single pass (merged spawn unit — two role-labelled verdicts, one file read, ~300 bytes of JSON; two spawns would pay ~120,851 tok of fixed overhead each for the same read):
 
-- **feature**: foundry:sw-engineer, foundry:qa-specialist
-- **fix**: foundry:sw-engineer, foundry:qa-specialist
-- **refactor**: foundry:sw-engineer, foundry:qa-specialist
+- **feature / fix / refactor**: one spawn, roles `sw-engineer` (implementation feasibility) + `qa-specialist` (testability, coverage feasibility)
 - **debug**: skip feasibility review — no implementation plan to review; proceed directly to Final output with debug recommendation
 
-> `foundry:linting-expert` intentionally excluded — its role post-implementation static analysis (ruff/mypy), not pre-plan architectural feasibility. Including it produces noise (trivial `ok: true`) or false blockers on linting-config concerns. Surface lint-specific notes (e.g. "target module has no type annotations — mypy will flag everything") in Final output advisory notes section instead.
+> `foundry:linting-expert` intentionally excluded — its role post-implementation static analysis (ruff/mypy), not pre-plan architectural feasibility. Including it produces noise (trivial `ok: true`) or false blockers on linting-config concerns. Surface lint-specific notes (e.g. "target module has no type annotations — mypy will flag everything") in Final output advisory notes section instead. The two surviving roles are dimensions of one review, not cross-checks — merging them into one spawn preserves both checklists.
 
-Each agent receives only plan file path and role — no conversation history, no unrelated context. Prompt (substitute `<ROLE>` and `<PLAN_FILE>`):
+The agent receives only plan file path and both role checklists — no conversation history, no unrelated context. Prompt (substitute `<PLAN_FILE>`):
 
-> "Read `<PLAN_FILE>`. Review plan from your perspective as `<ROLE>`. Flag domain-specific concerns, risks, or blockers you see. Can you execute your part autonomously without further user input? Return only: `{\"a\":\"<ROLE>\",\"ok\":true|false,\"blockers\":[\"...\"],\"q\":[\"...\"],\"concerns\":[\"...\"]}`"
+> "Read `<PLAN_FILE>`. Review the plan twice, once from each perspective: (1) as `sw-engineer` — implementation feasibility, architectural risks, blockers; (2) as `qa-specialist` — testability, coverage feasibility, verification blockers. For each role: flag domain-specific concerns, risks, or blockers you see; can that role execute its part autonomously without further user input? Return only a JSON array with exactly two elements, one per role, nothing else: `[{\"a\":\"sw-engineer\",\"ok\":true|false,\"blockers\":[\"...\"],\"q\":[\"...\"],\"concerns\":[\"...\"]},{\"a\":\"qa-specialist\",\"ok\":true|false,\"blockers\":[\"...\"],\"q\":[\"...\"],\"concerns\":[\"...\"]}]`"
 
 **Parse-failure handling**: agent responses may not be valid JSON (especially fallback `general-purpose` agents that wrap JSON in prose). Before processing:
 
-1. Attempt to extract JSON object: prefer `echo "$RESPONSE" | jq -c '.' 2>/dev/null` for parseable input. For mixed prose+JSON: use `echo "$RESPONSE" | grep -oE '\{[^{}]*(\{[^{}]*\}[^{}]*)?\}' | tail -1 | jq -c '.' 2>/dev/null` — extracts last balanced JSON object (one nesting level; breaks on strings containing `{` or `}`). If `jq` not available or both jq attempts fail, fallback: `echo "$RESPONSE" | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/extract_json_field.py" .` — recovers outermost balanced JSON object from arbitrary prose+JSON text; pass specific field name (e.g. `ok`, `a`) instead of `.` to extract just that field. **Caveat**: prefer matching `"a":"<ROLE>"` pattern as anchor when multiple candidates.
-2. If extraction succeeds: use extracted object
-3. If extraction fails entirely: log `⚠ non-JSON plan response — falling back to prose extraction`; treat as `{"a":"<ROLE>","ok":false,"blockers":["agent returned non-JSON response"],"q":[],"concerns":[]}` and enter resolution loop with re-query
+1. Attempt to extract the JSON array: prefer `echo "$RESPONSE" | jq -c '.' 2>/dev/null` for parseable input. For mixed prose+JSON, per-role recovery: `echo "$RESPONSE" | grep -oE '\{[^{}]*(\{[^{}]*\}[^{}]*)?\}' | jq -c '.' 2>/dev/null` — extracts each balanced JSON object (one nesting level; breaks on strings containing `{` or `}`); match each to its role via the `"a":"<ROLE>"` anchor. If `jq` not available or both jq attempts fail, fallback: `echo "$RESPONSE" | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/extract_json_field.py" .` — recovers outermost balanced JSON from arbitrary prose+JSON text; pass specific field name (e.g. `ok`, `a`) instead of `.` to extract just that field.
+2. If extraction succeeds: use extracted objects (one per role)
+3. If extraction fails entirely for a role: log `⚠ non-JSON plan response — falling back to prose extraction`; treat that role as `{"a":"<ROLE>","ok":false,"blockers":["agent returned non-JSON response"],"q":[],"concerns":[]}` and enter resolution loop with re-query
 
-Agents return inline (verdicts ~150 bytes — no file handoff). Collect all results:
+Verdicts return inline (~300 bytes total — no file handoff). Collect both role results:
 
 - All `ok: true`, empty `blockers`, `q`, `concerns` -> note `✓ agents ready` in final output and proceed
 - Any `ok: false`, non-empty `blockers` or `q` -> enter **internal resolution loop** below before surfacing to user
@@ -332,7 +330,7 @@ For each blocker or open question:
    - **Unknown-URL path**: if URL needed to resolve blocker unknown (e.g. "what does library X's new API look like?"), do NOT guess or invent URL. Mark blocker `requires-user-input` and skip WebFetch — escalate to user with note that documentation lookup required.
    - **Known URL — mandatory verification gate**: after each WebFetch call, before incorporating content into `<PLAN_FILE>`, perform three-step verification per quality-gates.md link verification: (a) Fetch returned non-error (HTTP 200), (b) Read returned content, (c) Match content against specific blocker — confirm topic alignment. If any step fails: mark URL non-resolving, do not write content to `<PLAN_FILE>`, escalate to user. Each URL requires its own Fetch+Read+Match pass — no exemption for same-domain or "similar" URLs.
    - If answer determinable from verified source, update `<PLAN_FILE>` and mark resolved.
-2. **Re-query raising agent** — send only resolved item: `{"a":"<ROLE>","resolved":"<item>","answer":"<resolution>"}`. If agent returns `ok: true` -> resolved; remove from blockers list.
+2. **Re-query raising role** — batch ALL items resolved this iteration for that role into ONE re-query (a spawn per item pays ~120,851 tok each): `{"a":"<ROLE>","resolved":[{"item":"<item>","answer":"<resolution>"}, ...]}`. Agent returns updated `ok`/`blockers` for the role; items it accepts drop from the blockers list.
 3. After all resolvable items cleared, re-check: if all agents `ok: true` -> `✓ agents ready`.
 
 **Plan file coherence**: after resolution loop exits (regardless of outcome), annotate `<PLAN_FILE>`:

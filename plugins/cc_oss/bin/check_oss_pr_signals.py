@@ -17,12 +17,19 @@ document summarising findings:
 
 Usage:
     check_oss_pr_signals.py --clean-args <PR#> [--latest-tag <tag>] \\
-                            [--output-file <path>] [--timeout <seconds>]
+                            [--diff-file <path>] [--output-file <path>] \\
+                            [--timeout <seconds>]
 
 Default ``--timeout`` is 30 s — matches the longest subprocess inside the
 loop (``git show`` per removed export). When ``--latest-tag`` is omitted the
 script resolves it via ``git describe --tags --abbrev=0``; empty result is
 treated as "no release tag".
+
+When ``--diff-file`` points at a readable full ``gh pr diff`` snapshot, the
+three per-pathspec ``gh pr diff`` subprocesses are skipped and the deps/py/
+init/changelog slices are derived by filtering that snapshot locally — one
+consistent view of the PR, zero extra network calls. An unreadable or empty
+path falls back to the ``gh`` subprocess path unchanged.
 
 Exit codes:
     0 — JSON written (empty/missing data is non-fatal)
@@ -38,6 +45,7 @@ import re
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
+from fnmatch import fnmatch
 from pathlib import Path
 from shutil import which
 
@@ -125,6 +133,64 @@ def _run(cmd: list[str], timeout: int) -> str:
     except subprocess.TimeoutExpired:
         return ""
     return proc.stdout
+
+
+def _split_diff_sections(diff_text: str) -> list[tuple[str, str]]:
+    """Split a unified ``gh pr diff`` document into per-file sections.
+
+    Args:
+        diff_text: Full diff text (``diff --git a/<old> b/<new>`` separators).
+
+    Returns:
+        List of ``(new_side_path, section_text)`` tuples in file order. The
+        section text includes its ``diff --git`` header line.
+
+    Examples:
+        >>> d = "diff --git a/x.py b/x.py\\n+1\\ndiff --git a/y.md b/y.md\\n-2\\n"
+        >>> [(p, t.splitlines()[1]) for p, t in _split_diff_sections(d)]
+        [('x.py', '+1'), ('y.md', '-2')]
+        >>> _split_diff_sections("")
+        []
+    """
+    sections: list[tuple[str, str]] = []
+    path = ""
+    lines: list[str] = []
+    for line in diff_text.splitlines():
+        m = re.match(r"^diff --git a/.* b/(.+)$", line)
+        if m:
+            if path:
+                sections.append((path, "\n".join(lines) + "\n"))
+            path = m.group(1)
+            lines = [line]
+        elif path:
+            lines.append(line)
+    if path:
+        sections.append((path, "\n".join(lines) + "\n"))
+    return sections
+
+
+def _filter_diff(sections: list[tuple[str, str]], patterns: list[str]) -> str:
+    """Concatenate diff sections whose path matches any fnmatch pattern.
+
+    Mirrors the ``gh pr diff -- <pathspec>`` slices the ``gh`` code path
+    produces: Python's :func:`fnmatch.fnmatch` lets ``*`` cross ``/`` exactly
+    like git's non-pathname glob, so ``*.py`` matches at any depth.
+
+    Args:
+        sections: Output of :func:`_split_diff_sections`.
+        patterns: fnmatch-style path patterns.
+
+    Returns:
+        Concatenated matching sections (may be ``""``).
+
+    Examples:
+        >>> s = _split_diff_sections("diff --git a/a/b.py b/a/b.py\\n+1\\n")
+        >>> "b.py" in _filter_diff(s, ["*.py"])
+        True
+        >>> _filter_diff(s, ["*.md"])
+        ''
+    """
+    return "".join(text for path, text in sections if any(fnmatch(path, pat) for pat in patterns))
 
 
 def _resolve_latest_tag(git: str, timeout: int) -> str:
@@ -242,6 +308,7 @@ def collect_signals(
     timeout: int,
     gh: str,
     git: str,
+    diff_text: str = "",
 ) -> OssSignals:
     """Run all four checks against the PR and return aggregated signals.
 
@@ -251,6 +318,9 @@ def collect_signals(
         timeout: Per-subprocess timeout in seconds.
         gh: Absolute path to ``gh``.
         git: Absolute path to ``git``.
+        diff_text: Optional full ``gh pr diff`` snapshot. Non-empty → the
+            deps/py/init/changelog slices are filtered from it locally and no
+            per-pathspec ``gh pr diff`` subprocess runs.
 
     Returns:
         Populated :class:`OssSignals` dataclass.
@@ -258,23 +328,30 @@ def collect_signals(
     Examples:
         No doctest — subprocess-dependent; covered by pytest with monkeypatch.
     """
-    deps_diff = _run(
-        [gh, "pr", "diff", clean_args, "--", "pyproject.toml", "requirements*.txt"],
-        timeout=timeout,
-    )
-    py_diff = _run([gh, "pr", "diff", clean_args, "--", "*.py"], timeout=timeout)
+    sections = _split_diff_sections(diff_text) if diff_text else []
+    if sections:
+        deps_diff = _filter_diff(sections, ["pyproject.toml", "requirements*.txt"])
+        py_diff = _filter_diff(sections, ["*.py"])
+        init_diff = _filter_diff(sections, ["src/**/__init__.py", "src/__init__.py"])
+        changelog_diff = _filter_diff(sections, ["CHANGELOG.md", "CHANGES.md"])
+    else:
+        deps_diff = _run(
+            [gh, "pr", "diff", clean_args, "--", "pyproject.toml", "requirements*.txt"],
+            timeout=timeout,
+        )
+        py_diff = _run([gh, "pr", "diff", clean_args, "--", "*.py"], timeout=timeout)
+        init_diff = _run(
+            [gh, "pr", "diff", clean_args, "--", ":(glob)src/**/__init__.py"],
+            timeout=timeout,
+        )
+        changelog_diff = _run(
+            [gh, "pr", "diff", clean_args, "--", "CHANGELOG.md", "CHANGES.md"],
+            timeout=timeout,
+        )
     secrets = _grep_secrets(py_diff)
-    init_diff = _run(
-        [gh, "pr", "diff", clean_args, "--", ":(glob)src/**/__init__.py"],
-        timeout=timeout,
-    )
     removed = _extract_removed_exports(init_diff)
     effective_tag = latest_tag or _resolve_latest_tag(git, timeout=timeout)
     deprecations = _check_deprecations(git, effective_tag, removed, timeout=timeout)
-    changelog_diff = _run(
-        [gh, "pr", "diff", clean_args, "--", "CHANGELOG.md", "CHANGES.md"],
-        timeout=timeout,
-    )
     return OssSignals(
         deps_diff=deps_diff,
         secret_matches=secrets,
@@ -309,6 +386,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Latest release tag; if empty, resolved via 'git describe --tags --abbrev=0'.",
     )
     parser.add_argument(
+        "--diff-file",
+        type=str,
+        default="",
+        help="Path to a full 'gh pr diff' snapshot; when readable, skips the per-pathspec gh diff calls.",
+    )
+    parser.add_argument(
         "--output-file",
         type=str,
         default="",
@@ -336,12 +419,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"check_oss_pr_signals: {exc}", file=sys.stderr)
         return 2
 
+    diff_text = ""
+    if args.diff_file:
+        try:
+            diff_text = Path(args.diff_file).read_text(encoding="utf-8")
+        except OSError as exc:
+            # Unreadable snapshot is non-fatal — fall back to the gh subprocess path.
+            print(f"check_oss_pr_signals: --diff-file unreadable ({exc}); falling back to gh", file=sys.stderr)
+
     signals = collect_signals(
         clean_args=args.clean_args,
         latest_tag=args.latest_tag,
         timeout=args.timeout,
         gh=gh,
         git=git,
+        diff_text=diff_text,
     )
     payload = json.dumps(asdict(signals), indent=2, sort_keys=True)
     if args.output_file:

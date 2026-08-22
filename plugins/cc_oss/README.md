@@ -249,15 +249,20 @@ Optional Codex co-review
         Runs when `bridge@borda-ai-rig` is installed and enabled; otherwise skipped
 
 Tier 2  Parallel review dimensions
-        Scope selects relevant dimensions; default runs at most four
-        `--full` runs every dimension selected by scope
+        PR metadata/diff/checks fetched once at Step 0 (per-run snapshot) and reused by every stage
+        Scope selects spawn units — paired dimensions share one agent
+        (perf+architecture in one opus spawn, docs+lint in one sonnet spawn),
+        each writing its own per-dimension finding file + confidence block
+        Default ranks units under a cap of three; qa-specialist is pinned
+        outside the cap (security scan runs on every code PR)
+        `--full` runs every unit selected by scope
         Without foundry, requested agents use general-purpose fallbacks
 
         Scope examples:
           docs-only PR → foundry:doc-scribe (+ challenge/Codex when enabled/available)
           docs + CI PR → oss:cicd-steward + foundry:doc-scribe (+ challenge/Codex)
           tests + CI   → foundry:qa-specialist + foundry:linting-expert
-          code PR      → dimensions selected from architecture, tests, performance, docs, lint, and security
+          code PR      → pinned qa-specialist + top-ranked units from code, perf+architecture, docs+lint, challenge
 
         CI status: failing CI noted in report header — review always proceeds
         codemap integration: rdep_count > 20 flags as high-risk change
@@ -314,7 +319,7 @@ Default `[blocking]` tag per finding category — judgment still required, not a
 | Docs + CI/CD           | oss:cicd-steward, doc-scribe, plus challenge/Codex when enabled/available | Code, test, performance, architecture dimensions |
 | Tests + CI             | qa-specialist, linting-expert                                             | Other dimensions                                 |
 | Annotation-only Python | linting-expert                                                            | Other dimensions                                 |
-| Code PR                | Scope-selected dimensions (default top four; `--full` removes the cap)    | Dimensions ruled out by scope or the default cap |
+| Code PR                | Pinned qa-specialist + top three ranked units (`--full` removes the cap)  | Units ruled out by scope or the default cap      |
 
 Without `foundry`, selected dimensions fall back to `general-purpose` agents with role descriptions — functional, but less specialized.
 
@@ -372,7 +377,7 @@ Three phases:
 
 1. **Intelligence gathering** — dedicated subagent fetches full PR thread (comments, reviews, inline code comments) — orchestrator context stays small; subagent classifies each finding, writes structured output to files; orchestrator reads compact classified table
 2. **Conflict resolution** — merge conflicts: read intent from both sides; apply semantically correct resolution (never mechanical "take ours"/"take theirs")
-3. **Action item implementation** — three-phase parallel dispatch: medium-effort items go to Codex individually first (fast, no batching needed); everything else splits into Phase 1 challenge (grouped by domain, all groups fire concurrently — read-only, safe to overlap), Phase 2 implementation (grouped by one of six specialists — `sw-engineer`, `qa-specialist`, `doc-scribe`, `linting-expert`, `perf-optimizer`, `solution-architect` — max 5 items/group, each group runs in its own isolated `git worktree` so concurrent specialists never race on the same working tree), Phase 3 merge-back (orchestrator cherry-picks every item's commit onto the PR branch, sequentially — whole worktree groups ordered most-central-first, so a foundational contract change lands before the commits that depend on it). Before Phase 2 dispatch, two grouping tiebreaks reduce Phase 3 conflicts at the root: a **file-ownership** tiebreak (rank: `linting-expert < doc-scribe < qa-specialist < perf-optimizer < sw-engineer < solution-architect`) reassigns every item touching a contested file to its single highest-ranked owner, so two specialists never edit the same file concurrently; then a soft **import-coupling** merge co-locates items in different files when one imports the other (caught via codemap forward `deps` — a module's own imports, so recall isn't truncated by the caller-list cap), so a rename and its callers land in one worktree instead of silently diverging. The codemap maps are built once, concurrently with the read-only challenge phase, so grouping adds ~0 wall-clock. Any conflict that still slips through Phase 3 routes through the same semantic conflict-resolution as Step 5. A branch mutex blocks a second concurrent resolve run from racing the same tree, and a HEAD fingerprint taken before Phase 2 flags any external write that lands mid-flight so cherry-picks never stack silently on a moved base. Per-item verdicts and `[resolve No.N]` attribution unchanged throughout; soft cap 10 items per dispatch (AskUserQuestion beyond, hard cap 20); soft codemap blast-radius check flags callers of changed modules before Phase 2 dispatch
+3. **Action item implementation** — three-phase parallel dispatch: medium-effort items go to Codex first, batched up to three disjoint-file items per call (same-file items stay sequential; per-item verdicts and commits preserved); everything else splits into Phase 1 challenge (grouped by domain, all groups fire concurrently — read-only, safe to overlap), Phase 2 implementation (grouped by one of six specialists — `sw-engineer`, `qa-specialist`, `doc-scribe`, `linting-expert`, `perf-optimizer`, `solution-architect` — max 5 items/group, each group runs in its own isolated `git worktree` so concurrent specialists never race on the same working tree), Phase 3 merge-back (orchestrator cherry-picks every item's commit onto the PR branch, sequentially — whole worktree groups ordered most-central-first, so a foundational contract change lands before the commits that depend on it). Before Phase 2 dispatch, two grouping tiebreaks reduce Phase 3 conflicts at the root: a **file-ownership** tiebreak (rank: `linting-expert < doc-scribe < qa-specialist < perf-optimizer < sw-engineer < solution-architect`) reassigns every item touching a contested file to its single highest-ranked owner, so two specialists never edit the same file concurrently; then a soft **import-coupling** merge co-locates items in different files when one imports the other (caught via codemap forward `deps` — a module's own imports, so recall isn't truncated by the caller-list cap), so a rename and its callers land in one worktree instead of silently diverging. The codemap maps are built once, concurrently with the read-only challenge phase, so grouping adds ~0 wall-clock. Any conflict that still slips through Phase 3 routes through the same semantic conflict-resolution as Step 5. A branch mutex blocks a second concurrent resolve run from racing the same tree, and a HEAD fingerprint taken before Phase 2 flags any external write that lands mid-flight so cherry-picks never stack silently on a moved base. Per-item verdicts and `[resolve No.N]` attribution unchanged throughout; soft cap 10 items per dispatch (AskUserQuestion beyond, hard cap 20); soft codemap blast-radius check flags callers of changed modules before Phase 2 dispatch
 
 Resolve after `/review` on same PR: blast-radius check reuses per-module codemap answers review already computed, no re-query — review's persisted pre-flight batch split into freshness-stamped per-module artifacts. Freshness is fail-closed on three conditions, all of which must hold: `prefix.git_sha` matches the current index `git_sha`; `prefix.scanned_at` is not older than the index's (a rebuilt index invalidates every artifact); and `prefix.index_stamp` still equals the index file's `<size>:<mtime_ns>`. That stamp is what makes the rule hold without trusting index-declared metadata — an `--incremental` re-scan, a restored backup, or a manual edit can leave `git_sha` and `scanned_at` untouched, and the first two checks alone would not see it. An artifact written before the stamp field existed carries none and is re-queried rather than trusted. Verdict reasons from `codemap_cache.py read`: `fresh` · `git_sha_mismatch` · `index_rebuilt` · `index_stamp_mismatch` · `content_hash_mismatch`. Reuse measured as `reuse_ratio` (fraction of persisted answers actually reused). No review artifact or codemap plugin absent → every module cache miss, scan queries live — no behaviour change.
 
@@ -671,14 +676,14 @@ ______________________________________________________________________
 
 **Artifact directories** created by `oss` skills:
 
-| Directory             | Created by                    | Contents                                         |
-| --------------------- | ----------------------------- | ------------------------------------------------ |
-| `.reports/analyse/`   | `/oss:analyse`                | Thread, vitality, ecosystem reports              |
-| `.temp/review/`       | `/oss:review`                 | Per-agent handover files (intermediate, per-run) |
-| `.reports/resolve/`   | `/oss:resolve`                | Resolve run outputs                              |
-| `.temp/`              | All skills                    | Long-form output files                           |
-| `.cache/gh/`          | `/oss:analyse`, `/oss:review` | GitHub API response cache                        |
-| `releases/<version>/` | `/oss:release prepare`        | Release artefacts                                |
+| Directory             | Created by             | Contents                                         |
+| --------------------- | ---------------------- | ------------------------------------------------ |
+| `.reports/analyse/`   | `/oss:analyse`         | Thread, vitality, ecosystem reports              |
+| `.temp/review/`       | `/oss:review`          | Per-agent handover files (intermediate, per-run) |
+| `.reports/resolve/`   | `/oss:resolve`         | Resolve run outputs                              |
+| `.temp/`              | All skills             | Long-form output files                           |
+| `.cache/gh/`          | `/oss:analyse`         | GitHub API response cache                        |
+| `releases/<version>/` | `/oss:release prepare` | Release artefacts                                |
 
 Artifact directories are gitignored; GitHub API cache entries use the 30-day TTL described above.
 

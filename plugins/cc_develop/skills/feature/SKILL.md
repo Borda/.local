@@ -495,6 +495,15 @@ GATE_EXIT=$?
 
 (Use Glob tool — `pattern: **/test_*.py` — to discover test directories if `<target_test_dir>` unknown; check `pyproject.toml` `[tool.pytest.ini_options] testpaths` first)
 
+**Safety break** (mirrors refactor's guard — the only other bounded loop in this plugin): initialize cycle counter + wall clock via temp files (bash state lost between Bash() calls):
+
+```bash
+# timeout: 3000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+echo "0"           > ${TMPDIR:-/tmp}/dev-feature-tdd-cycle-${CSID}
+echo "$(date +%s)" > ${TMPDIR:-/tmp}/dev-feature-tdd-start-${CSID}
+```
+
 Start from Step 2 demo — already failing, becomes first target. For each piece of functionality:
 
 1. **Target demo or write next focused test** — first iteration uses Step 2 demo directly; subsequent iterations add one new test per piece of new behaviour
@@ -567,7 +576,21 @@ mkdir -p .temp/state  # timeout: 5000
 } > .temp/state/skill-contract.md
 ```
 
-Repeat until all feature tests pass and Step 2 demo passes.
+At each cycle start, read back, increment, check — stop at `MAX_INNER_CYCLES=5` or 30-min wall cap; on trip: stop the loop, report what passed/failed/remains, invoke `AskUserQuestion` — (a) continue N more cycles · (b) re-scope · (c) stop here:
+
+```bash
+# timeout: 3000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r TDD_CYCLE < "${TMPDIR:-/tmp}/dev-feature-tdd-cycle-${CSID}" 2>/dev/null || TDD_CYCLE="0"
+IFS= read -r TDD_START < "${TMPDIR:-/tmp}/dev-feature-tdd-start-${CSID}" 2>/dev/null || TDD_START=$(date +%s)
+TDD_CYCLE=$((TDD_CYCLE+1))
+echo "$TDD_CYCLE" > ${TMPDIR:-/tmp}/dev-feature-tdd-cycle-${CSID}
+MAX_INNER_CYCLES=5  # returns from Step 4 to Step 3 count as a cycle too
+[ "$TDD_CYCLE" -gt $MAX_INNER_CYCLES ] && echo "⚠ MAX_INNER_CYCLES ($MAX_INNER_CYCLES) reached — stop TDD loop; surface state to user"
+[ $(( $(date +%s) - TDD_START )) -ge 1800 ] && echo "⚠ wall-time cap reached (30 min) — stop TDD loop; surface state to user"
+```
+
+Repeat until all feature tests pass and Step 2 demo passes (or the safety break trips — a Step 4 return to Step 3 also increments the counter).
 
 If Step 2 produced example script: promote into formal pytest test now that API is stable. Delete script once test in place.
 
@@ -648,7 +671,7 @@ Spawn doc-scribe with context:
 
 Agent must Read each affected source file before writing docstrings — do not write placeholder content.
 
-**CHANGELOG update** (separate from doc-scribe): after doc-scribe completes, spawn **foundry:sw-engineer** to append one-line entry to `CHANGELOG.md` under `Unreleased` section. Context: feature name and one-line description of new capability.
+**CHANGELOG update** (separate from doc-scribe): after doc-scribe completes, lead appends the one-line entry to `CHANGELOG.md` under `Unreleased` directly via the Edit tool — feature name plus one-line description of the new capability. Never spawn an agent for this: a spawn costs ~120,851 tok of fixed overhead to write one line.
 
 ```bash
 # timeout: 600000
@@ -660,11 +683,11 @@ GATE_EXIT=${PIPESTATUS[0]}
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
-_SHARED="$_DEV_SHARED"  # quality-stack.md loads its siblings from $_SHARED — this plugin's own _shared
-cat "$_DEV_SHARED/quality-stack.md"
+_SHARED="$_DEV_SHARED"  # foundry--quality-stack.md loads its siblings from $_SHARED — this plugin's own _shared
+cat "$_DEV_SHARED/foundry--quality-stack.md"
 ```
 
-Execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps. `quality-stack.md` ships in this plugin's own `_shared`, so it is always present — absence means a broken install, not a missing optional dependency.
+Execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps. `foundry--quality-stack.md` ships in this plugin's own `_shared` (propagated foundry canonical, source-plugin prefix), so it is always present — absence means a broken install, not a missing optional dependency.
 
 **Branch Safety Guard — no test suite**: if no test suite found (pytest collects 0 tests or `$TEST_CMD` not set), log `⚠ No test suite detected — Branch Safety Guard weakened` and require explicit user confirmation before proceeding past guard.
 

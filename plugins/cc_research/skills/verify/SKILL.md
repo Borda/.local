@@ -40,10 +40,12 @@ Triggered by `verify <paper>` where `<paper>` is PDF path, arXiv URL, or multi-l
 **Input resolution** (priority order):
 
 1. Path ending `.pdf` — read via Read tool (use `pages: "1-20"` for large PDFs; iterate with subsequent page ranges if needed — max 20 pages per Read call)
-2. URL matching `arxiv.org` — convert `abs/<id>` to `https://arxiv.org/pdf/<id>` for actual content fetching (e.g., `ARXIV_URL="${ARXIV_URL//arxiv.org\/abs\//arxiv.org\/pdf\/}"`); also fetch abstract page for metadata. Use WebFetch (`timeout: 30000`).
+2. URL matching `arxiv.org` — convert `abs/<id>` to `https://arxiv.org/pdf/<id>` for actual content fetching (e.g., `ARXIV_URL="${ARXIV_URL//arxiv.org\/abs\//arxiv.org\/pdf\/}"`). Use WebFetch (`timeout: 30000`). No separate abstract-page fetch — title/authors/year come from the PDF's first page.
 3. URL matching `*.pdf` or `doi.org` — WebFetch (`timeout: 30000`)
 4. Multi-line quoted text block — treat as literal paper content
 5. No paper argument — stop: `"No paper provided. Usage: /research:verify <paper.pdf|arxiv-url|'pasted text'> [--scope <glob>]"`
+
+**Pay for the paper once**: whatever the source above, write the resolved paper content to `$RUN_DIR/paper.md` (Write tool, right after the run-dir block below creates `$RUN_DIR`) — the V3 spawn prompt passes that path, never re-inlines the text and never re-fetches (a 20-page paper re-inlined is 15-25K tok billed twice).
 
 From paper content, extract:
 
@@ -175,20 +177,20 @@ Codemap output non-empty: prepend this **codemap-first protocol** to the same he
 
 <!-- Agent call is synchronous — no Bash file-activity poll available during Agent(...) execution. HARD_CUTOFF (900s) is declared as a reference constant but is NOT enforceable within the skill — Agent() has no timeout parameter. After Agent() returns, apply the single timeout policy declared in `<constants>`: check `$RUN_DIR/audit-raw.md`; if absent or empty, set `fidelity = null`, `status = TIMED_OUT`, mark ⏱ in report; if present, parse normally. Same limitation as research:topic. -->
 
-**Scientist prompt**:
+**Scientist prompt** — before constructing the Agent() call, substitute the actual computed value of `$RUN_DIR` (e.g. `.experiments/verify-2026-05-13T10-00-00Z`) into every path in the prompt below; an unexpanded `$RUN_DIR` reaches the agent as literal dollar-sign text, the audit lands in a directory literally named `$RUN_DIR`, and the post-call check reports a false `TIMED_OUT`:
 
 ```markdown
 Act as an ML reproducibility auditor verifying implementation fidelity against a published paper.
 
 Paper: <title> (<year>) by <authors>
-Paper content: <inline content or path to read>
+Paper content: read $RUN_DIR/paper.md with the Read tool (never re-fetch the paper from the web)
 Claims to verify (from V1 extraction):
 <JSON claims table>
 
 Codebase scope files:
 <list of files from V2>
 
-Read each file listed in `Codebase scope files` using the Read tool before beginning your audit.
+Read the scope files mapped to each claim first (claim `section`/`type` names the relevant modules); do a full scope-file read-through only when the list has ≤40 files — your turn budget stalls near ~60 tool calls, and a wide scope read-all burns it before any auditing happens.
 
 Active dimensions: <F,H,E,N,C or subset from --dim>
 

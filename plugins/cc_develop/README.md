@@ -60,7 +60,7 @@ These workflows address common maintenance failures with concrete gates:
 - **refactor**: audit test coverage, lock characterization tests before moving one line
 - **debug**: gather all evidence, state one confirmed hypothesis before any fix
 - **plan**: scope complexity, identify blast radius, agent feasibility review before committing
-- **review**: local Python review across architecture, tests, performance, docs, lint, security, and API design. It ranks the relevant dimensions and runs up to four by default, or all selected dimensions with `--full`; no GitHub PR is required.
+- **review**: local Python review across architecture, tests, performance, docs, lint, security, and API design. It groups the relevant dimensions into spawn units (performance+architecture and docs+lint each share one agent) and runs the top three units by default, or all selected units with `--full`; no GitHub PR is required.
 
 When Codemap is enabled, `fix` selects a route before retrieval: a fully localized file-and-symbol edit can use the explicit zero-query path, while unresolved callers, dependencies, blast radius, imports, or source scope receive only the matching compact query.
 
@@ -419,7 +419,7 @@ ______________________________________________________________________
 
 ### `/develop:review`
 
-**Purpose**: Review local Python files or the current git diff across architecture, tests, performance, docs, static analysis, security, and API design. The classifier selects relevant dimensions; the default fan-out is capped at four, and `--full` runs every selected dimension. No GitHub PR is required.
+**Purpose**: Review local Python files or the current git diff across architecture, tests, performance, docs, static analysis, security, and API design. The classifier selects relevant dimensions, which fold into spawn units (performance+architecture share one agent, docs+lint share another; each merged unit still writes one findings file per dimension); the default fan-out is capped at three units, and `--full` runs every selected unit. No GitHub PR is required.
 
 **When to use**: reviewing own changes before committing; structured feedback on local files; closing quality gaps before PR.
 
@@ -445,14 +445,14 @@ ______________________________________________________________________
 | `--no-codemap`     | Disable codemap even if available                                                                                                                                                              |
 | `--semble`         | Enable semble semantic search context                                                                                                                                                          |
 | `--worktree`       | Run the review in an isolated git worktree (base: HEAD) so no agent can mutate main sources. Report is written to the **main tree**; reviews committed HEAD (uncommitted changes not visible). |
-| `--full`           | Run every dimension selected by classification instead of the default top-four cap                                                                                                             |
+| `--full`           | Run every spawn unit selected by classification instead of the default top-three-unit cap                                                                                                      |
 | `--keep "<items>"` | Append items to compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                                                      |
 
 **Workflow**:
 
 1. **Identify scope**: collects Python files from path or `git diff HEAD`. Classifies diff FIX / REFACTOR / FEATURE / CHORE / MIXED — skips optional agents for smaller diffs (FIX skips `foundry:perf-optimizer` + `foundry:solution-architect`; CHORE skips `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:solution-architect`). Small diff (single file, \<50 lines, no new public API) also auto-skips `foundry:challenger` gate unless `--challenge` passed.
 2. **Codex co-review** (if `bridge@borda-ai-rig` is installed and enabled): adversarial diff review seeds pre-flagged issues list for specialist agents.
-3. **Selected parallel agents** (file-based handoff — each writes handover files to `.temp/review/<timestamp>/`; the default cap is four, `--full` removes that cap):
+3. **Selected parallel agents** (file-based handoff — each writes handover files to `.temp/review/<timestamp>/`; the default cap is three spawn units, `--full` removes that cap; merged units write one findings file per dimension):
    - `foundry:sw-engineer`: architecture, SOLID, type safety, error handling, Python anti-patterns, security for touched auth/input/data paths
    - `foundry:qa-specialist`: test coverage gaps, missing edge cases, ML non-determinism, seed pinning, boundary conditions
    - `foundry:perf-optimizer`: algorithmic complexity, loops that should be NumPy/torch ops, unnecessary I/O, ML DataLoader config (skipped for FIX diffs)

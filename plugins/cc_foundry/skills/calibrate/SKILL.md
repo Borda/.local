@@ -69,7 +69,7 @@ NOT for: static routing overlap analysis (use /foundry:audit); manually reviewin
 - AB_ADVANTAGE_THRESHOLD: 0.10 (delta recall or F1 above this → meaningful advantage; below → marginal or none)
 - PHASE_TIMEOUT_MIN: 5 (per-phase budget — if spawned subagents haven't all returned, collect partial results and continue)
 - PIPELINE_TIMEOUT_MIN: 10 (hard cutoff — pipeline not notified within 10 min of launch is timed out; extendable if agent explains delay) # tighter than global 15-min cutoff from CLAUDE.md §6 — intentional for calibrate
-- PIPELINE_BATCH_SIZE: 5 (max agent/skill pipeline subagents spawned concurrently within one mode — prevents agent count explosion on `all`; batch: spawn ≤5, wait for all results, then spawn next batch)
+- PIPELINE_BATCH_SIZE: 5 when one mode category runs alone, 2 while two categories are in flight (max agent/skill pipeline subagents spawned concurrently within one mode — prevents agent count explosion on `all`; batch: spawn ≤ that many, wait for all results, then spawn next batch; halving keeps peak concurrency at 4 ≤ 5 when paired)
 - ROUTING_ACCURACY_THRESHOLD: 0.90 (below → agent descriptions need improvement) # keep in sync with modes/routing.md
 - ROUTING_HARD_THRESHOLD: 0.80 (below → high-overlap pair descriptions need disambiguation)
 - SPAWN_GATE_THRESHOLD: 50 (spawn estimate = target-count × N; above this, large-fan-out gate fires before Step 2 even when `--apply` is set — only `--skip-gate` bypasses)
@@ -223,16 +223,16 @@ Create tasks before proceeding:
 >
 > **Gate**: if the bash block above failed (non-zero exit or `$CALIB_MODES_DIR` empty) — stop immediately; do not proceed to pipeline spawns. Print: `! calibrate/modes/ directory not found — re-install foundry plugin then retry.`
 
-For each target mode in resolved target list, read corresponding mode file and execute spawn instructions. Spawn pipelines **sequentially** — execute one mode category at a time; wait for it to fully complete and collect its compact JSON results before starting the next. Do **not** issue multiple mode category spawns in a single response — each mode runs N×agents pipelines and concurrent mode execution spikes agent count and context.
+For each target mode in resolved target list, read corresponding mode file and execute spawn instructions. **At most 2 mode categories in flight at once**, and only with `$PIPELINE_BATCH_SIZE` halved to **2** (floor of 5÷2) for as long as two run concurrently. Rationale: the constraint being protected is peak agent count and context, not ordering — two categories at batch 2 peak at 4 concurrent pipelines, below the 5 a single category reaches on its own, so the resource ceiling is unchanged while wall-clock on `all` drops. Everything else stays serial: never issue a third category's spawns while two are running, and never restore batch size 5 until one of the two has fully returned its results.
 
-**Sequential execution order for `all`**: agents → skills → routing → communication → rules. For each mode in this sequence:
+**Execution order for `all`**: agents → skills → routing → communication → rules, run as pairs in that order — (agents + skills), (routing + communication), then rules alone at batch 5. For each pair:
 
-1. **Guard** — call `TaskList`; if any category task (agents/skills/routing/communication/rules) is already `in_progress`, call `TaskUpdate(that_task_id, completed)` before proceeding — corrects missed completed call from prior iteration.
-2. Mark this mode's task `in_progress` (only this task; others stay `pending`)
-3. Spawn pipelines for this mode (batched — see `$PIPELINE_BATCH_SIZE` in constants)
-4. Wait for all batch results before proceeding
-5. Mark this mode's task `completed`
-6. Only then start the next mode
+1. **Guard** — call `TaskList`; if a category task (agents/skills/routing/communication/rules) is `in_progress` but its mode is **not** one of the categories currently in flight, call `TaskUpdate(that_task_id, completed)` before proceeding — corrects a missed completed call from a prior iteration. Never complete the task of a category still running: with two in flight, two category tasks are legitimately `in_progress`.
+2. Mark both in-flight modes' tasks `in_progress` (all others stay `pending`)
+3. Spawn pipelines for both modes with `$PIPELINE_BATCH_SIZE` = 2 (= 5 when a category runs alone — see constants)
+4. Wait for all batch results from both modes before proceeding
+5. Mark each mode's task `completed` as its own results arrive
+6. Only then start the next pair
 
 | Target mode | Mode file | Task to mark in_progress |
 | -- | -- | -- |

@@ -32,10 +32,12 @@ NOT for local file review or current git diff — use `/develop:review` (require
 <constants>
 
 ```text
-FANOUT_MAX=3            # default: top-N most relevant of the scope-preselected dimensions
-                        # 3 not 4 — bridge review runs outside this cap, so 3 keeps the
-                        # observed agent count at 4, not 5
-                        # --full runs ALL scope-preselected dimensions instead — no numeric cap
+FANOUT_MAX=3            # default: top-N most relevant of the scope-preselected SPAWN UNITS
+                        # units: sw-engineer · perf+arch (one merged spawn) · docs+lint (one
+                        # merged spawn) · challenger · cicd-steward
+                        # OUTSIDE the cap, never ranked out: bridge review, the issue agent,
+                        # and qa-specialist (security-scan-every-PR contract pin)
+                        # --full runs ALL scope-preselected units instead — no numeric cap
 AGENT_CALL_BUDGET=55    # target tool-calls per agent; past ~60 they stall without returning an envelope
 CHALLENGE_ENABLED=true  # set to false via --no-challenge
 CODEMAP_ENABLED=auto    # on by default if codemap installed + index found; --no-codemap = off; --codemap = strict (stop if not installed)
@@ -178,14 +180,35 @@ fi
 
 Classify PR from changed file patterns. Default `PR_TYPE=CODE`; override only when unambiguous.
 
+**PR snapshot — fetch once, reuse everywhere.** All later steps (pre-classification, Step 1 scope/CI, acceptance gate, codemap battery, Step 3 checks, signals script) read these files instead of re-calling `gh` — one consistent snapshot of the PR per run, ~10+ fewer network round-trips:
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 [ -f "${TMPDIR:-/tmp}/oss-review-flags-${CSID}" ] && . "${TMPDIR:-/tmp}/oss-review-flags-${CSID}"
+if [ "$DIRECT_PATH_MODE" = "false" ] && [[ "$CLEAN_ARGS" =~ ^[0-9]+$ ]]; then
+    SNAP_DIR="${TMPDIR:-/tmp}/oss-review-snap-${CLEAN_ARGS}-${CSID}"
+    mkdir -p "$SNAP_DIR"
+    gh pr view $CLEAN_ARGS --json number,title,body,url,labels,milestone,reviews,headRefOid > "$SNAP_DIR/pr-meta.json" 2>/dev/null  # timeout: 6000
+    gh pr diff $CLEAN_ARGS > "$SNAP_DIR/pr.diff" 2>/dev/null  # timeout: 15000
+    gh pr diff $CLEAN_ARGS --name-only > "$SNAP_DIR/files.txt" 2>/dev/null  # timeout: 6000
+    # two checks snapshots: --required = merge-blocking gate set (exits 1 when repo defines none — empty file is the correct signal), bare = full count base
+    gh pr checks $CLEAN_ARGS --json name,bucket > "$SNAP_DIR/checks.json" 2>/dev/null || : > "$SNAP_DIR/checks.json"  # timeout: 15000
+    gh pr checks $CLEAN_ARGS --required --json name,bucket > "$SNAP_DIR/checks-required.json" 2>/dev/null || : > "$SNAP_DIR/checks-required.json"  # timeout: 15000
+    [ -s "$SNAP_DIR/pr-meta.json" ] || { echo "! BLOCKED — gh pr view failed for PR #$CLEAN_ARGS (network, auth, or wrong number)"; exit 1; }
+    echo "$SNAP_DIR" > "${TMPDIR:-/tmp}/oss-review-snap-dir-${CSID}"
+fi
+```
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+[ -f "${TMPDIR:-/tmp}/oss-review-flags-${CSID}" ] && . "${TMPDIR:-/tmp}/oss-review-flags-${CSID}"
+IFS= read -r SNAP_DIR < "${TMPDIR:-/tmp}/oss-review-snap-dir-${CSID}" 2>/dev/null || SNAP_DIR=""
 PR_TYPE="CODE"
 DOCS_TYPING_MODE=false; TESTS_CI_MODE=false
 if [ "$DIRECT_PATH_MODE" = "false" ] && [[ "$CLEAN_ARGS" =~ ^[0-9]+$ ]]; then
-    _CHANGED=$(gh pr diff $CLEAN_ARGS --name-only 2>/dev/null)  # timeout: 6000
+    _CHANGED=$(cat "$SNAP_DIR/files.txt" 2>/dev/null)
     # no `|| echo 0`: grep -c already prints 0 & exits 1 — fallback would double it to "0\n0", breaking `-eq 0` tests below
     _PY_LOGIC_COUNT=$(echo "$_CHANGED" | grep -E '\.py$' | grep -cvE '(test_|_test\.py|conftest\.py|\.pyi$)' 2>/dev/null)
     _ALL_COUNT=$(echo "$_CHANGED" | grep -c . 2>/dev/null)
@@ -273,7 +296,7 @@ IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/review-oss-shared-${CSID}" 2>/dev/nu
 
 `WT_ENABLED=true` → follow §Enter (base off HEAD, `EnterWorktree(path=…)`) before Step 1; the report is routed to the main tree (§review). Else skip — run in main tree.
 
-> `file-handoff-protocol.md`, `cross-validation-protocol.md` and `codex-delegation.md` (Steps 5/7/consolidator) ship in **this** plugin's `_shared`, kept identical to foundry's canonical by `propagate_shared.py`. No separate resolution needed — `$_OSS_SHARED` from Step 0 covers them, and none of those steps degrade when foundry is absent.
+> `file-handoff-protocol.md`, `foundry--cross-validation-protocol.md` and `codex-delegation.md` (Steps 5/7/consolidator) ship in **this** plugin's `_shared`, kept identical to foundry's canonical by `propagate_shared.py` (the `foundry--` prefix marks a propagated copy — a plugin-local file can never collide with it). No separate resolution needed — `$_OSS_SHARED` from Step 0 covers them, and none of those steps degrade when foundry is absent.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -284,28 +307,29 @@ if [ "$DIRECT_PATH_MODE" = "false" ]; then
         echo "Error: PR number required. Usage: /oss:review <PR number> [--reply] [--no-challenge]"
         exit 1
     fi
-    # four in parallel:
-    CHANGED_FILES=$(gh pr diff $CLEAN_ARGS --name-only 2>/dev/null)  # reused by codemap block # timeout: 6000
-    gh pr view $CLEAN_ARGS                                            # timeout: 6000
-    gh pr checks $CLEAN_ARGS                                          # timeout: 15000
-    gh pr view $CLEAN_ARGS --json reviews,labels,milestone            # timeout: 6000
+    # all from the Step-0 snapshot — no network
+    IFS= read -r SNAP_DIR < "${TMPDIR:-/tmp}/oss-review-snap-dir-${CSID}" 2>/dev/null || SNAP_DIR=""
+    [ -s "$SNAP_DIR/pr-meta.json" ] || { echo "! BLOCKED — PR snapshot missing; rerun the Step-0 snapshot block"; exit 1; }
+    CHANGED_FILES=$(cat "$SNAP_DIR/files.txt" 2>/dev/null)  # reused by codemap block
+    jq '{title,body,url,labels:[.labels[].name],milestone,reviews:(.reviews|length)}' "$SNAP_DIR/pr-meta.json"  # timeout: 5000
+    cat "$SNAP_DIR/checks.json"  # timeout: 3000
     # scope-detection.md/SCOPE block run in fresh shells — w/o these sentinels: empty inputs, file-scope guard aborts, FIX→REFACTOR override never fires
-    PR_LABELS=$(gh pr view $CLEAN_ARGS --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null)  # timeout: 6000
-    PR_TITLE=$(gh pr view $CLEAN_ARGS --json title --jq .title 2>/dev/null)                            # timeout: 6000
+    PR_LABELS=$(jq -r '[.labels[].name] | join(",")' "$SNAP_DIR/pr-meta.json" 2>/dev/null)  # timeout: 5000
+    PR_TITLE=$(jq -r .title "$SNAP_DIR/pr-meta.json" 2>/dev/null)  # timeout: 5000
     printf '%s\n' "$CHANGED_FILES" > "${TMPDIR:-/tmp}/oss-review-changed-files-${CSID}"
     printf '%s\n' "$PR_LABELS" > "${TMPDIR:-/tmp}/oss-review-pr-labels-${CSID}"
     printf '%s\n' "$PR_TITLE" > "${TMPDIR:-/tmp}/oss-review-pr-title-${CSID}"
 fi
 ```
 
-**CI STATUS** (PR mode only): run this block verbatim — never hand-compose a `gh pr checks` parse. `--json`/`--jq` beats grepping the table: no tab-literal quoting, no `grep -P` (absent on BSD/macOS), and the `bucket` field is gh's own pass/fail/pending classification.
+**CI STATUS** (PR mode only): run this block verbatim — never hand-compose a checks parse. `jq` over the snapshot beats grepping the table: no tab-literal quoting, no `grep -P` (absent on BSD/macOS), and the `bucket` field is gh's own pass/fail/pending classification.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
-# --required scopes the gate to merge-blocking checks; exits 1 when repo has none
-CI_FAILING_CHECKS=$(gh pr checks $CLEAN_ARGS --required --json name,bucket --jq '[.[]|select(.bucket=="fail")|.name]|join(", ")' 2>/dev/null) || CI_FAILING_CHECKS=""  # timeout: 15000
-CI_COUNTS=$(gh pr checks $CLEAN_ARGS --json bucket --jq '"\([.[]|select(.bucket=="pass")]|length)/\(length)"' 2>/dev/null) || CI_COUNTS=""  # timeout: 15000
+IFS= read -r SNAP_DIR < "${TMPDIR:-/tmp}/oss-review-snap-dir-${CSID}" 2>/dev/null || SNAP_DIR=""
+# checks-required.json = merge-blocking set only (empty file when repo defines none)
+CI_FAILING_CHECKS=$(jq -r '[.[]|select(.bucket=="fail")|.name]|join(", ")' "$SNAP_DIR/checks-required.json" 2>/dev/null) || CI_FAILING_CHECKS=""  # timeout: 5000
+CI_COUNTS=$(jq -r '"\([.[]|select(.bucket=="pass")]|length)/\(length)"' "$SNAP_DIR/checks.json" 2>/dev/null) || CI_COUNTS=""  # timeout: 5000
 if [ -n "$CI_FAILING_CHECKS" ]; then CI_RED=true; else CI_RED=false; fi
 # Stage-2 gate + consolidator run in fresh shells — w/o sentinels CI_RED reads unset, red CI never blocks
 printf '%s\n' "$CI_RED" > "${TMPDIR:-/tmp}/oss-review-ci-red-${CSID}"
@@ -359,11 +383,11 @@ PY_FILES=$(echo "$CHANGED_FILES" | grep '\.py$' || true)
 IFS= read -r PR_LABELS < "${TMPDIR:-/tmp}/oss-review-pr-labels-${CSID}" 2>/dev/null || PR_LABELS=""
 IFS= read -r PR_TITLE < "${TMPDIR:-/tmp}/oss-review-pr-title-${CSID}" 2>/dev/null || PR_TITLE=""
 PY_FILE_COUNT=$(echo "$PY_FILES" | grep -c . 2>/dev/null)
+IFS= read -r SNAP_DIR < "${TMPDIR:-/tmp}/oss-review-snap-dir-${CSID}" 2>/dev/null || SNAP_DIR=""
 # PY_LOC_DELTA = total churn, not net — renames give >0 at net 0; label/keyword override handles it
-PY_LOC_DELTA=$(gh pr diff $CLEAN_ARGS 2>/dev/null | grep -E '^[+-][^+-]' | grep -vE '^[+-]{3}' | wc -l | tr -d ' ')  # timeout: 6000
-
-# new API surface: added lines in __init__.py
-NEW_API_LINES=$(gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/null | grep -c '^+[^+]')  # no `|| echo 0` — see PR_TYPE block # timeout: 6000
+PY_LOC_DELTA=$(grep -E '^[+-][^+-]' "$SNAP_DIR/pr.diff" 2>/dev/null | grep -vE '^[+-]{3}' | wc -l | tr -d ' ')  # timeout: 5000
+# new API surface: added lines inside src/**/__init__.py sections of the snapshot diff
+NEW_API_LINES=$(awk '/^diff --git /{f=($0 ~ /^diff --git a\/src\/.*__init__\.py /)} f && /^\+[^+]/{c++} END{print c+0}' "$SNAP_DIR/pr.diff" 2>/dev/null)  # timeout: 5000
 
 # pure config/deps changes (no .py logic changes)
 NON_CONFIG_PY=$(echo "$PY_FILES" | grep -vE '(pyproject\.toml|setup\.cfg|setup\.py|requirements.*\.txt|conftest\.py)' || true)
@@ -371,7 +395,7 @@ NON_CONFIG_PY=$(echo "$PY_FILES" | grep -vE '(pyproject\.toml|setup\.cfg|setup\.
 SCOPE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/classify_pr_scope.py" --py-files "$PY_FILE_COUNT" --loc-delta "$PY_LOC_DELTA" --new-api-lines "$NEW_API_LINES" --labels "$PR_LABELS" --title "$PR_TITLE" 2>/dev/null)  # timeout: 10000
 echo "→ SCOPE=$SCOPE (py_files=$PY_FILE_COUNT, py_loc=$PY_LOC_DELTA, new_api=$NEW_API_LINES)"
 
-# persist — Step2 EXPECTED_FILE runs in separate block
+# persist — Step2 ranking + consolidator <SCOPE> substitution run in separate blocks
 echo "$CHANGED_FILES" | grep -qE '(^|/)(requirements.*\.txt|pyproject\.toml|package.*\.json|Pipfile|poetry\.lock|setup\.cfg|.*\.lock)$' && CHORE_DEPS=true || CHORE_DEPS=false
 _REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope-${CLEAN_ARGS}-${CSID}"
 {
@@ -411,7 +435,7 @@ Follow above and execute its contents — stages `codemap_available` and `$CODEM
 
 Parse PR body (`gh pr view $CLEAN_ARGS`) for issue refs (`Closes #N`, `Fixes #N`, `Resolves #N`, `refs #N` — case-insensitive). Extract to `ISSUE_NUMS`. Cap 3.
 
-`ISSUE_NUMS` non-empty AND `DOCS_CICD_MODE != true`: spawn one **foundry:doc-scribe** per issue in Step 2 alongside Codex — all launch simultaneously. Each issue agent: fetch `gh issue view <N> --json title,body,comments,state,labels` + `gh issue view <N> --comments`; produce `/oss:analyse`-style output (Summary, Root Cause Hypotheses top 3, Code Evidence); write full analysis to `$RUN_DIR/issue-<N>.md`; return only `{"status":"done","issue":N,"root_cause":"<one-line>","file":"$RUN_DIR/issue-<N>.md","confidence":0.N}`.
+`ISSUE_NUMS` non-empty AND `DOCS_CICD_MODE != true`: spawn ONE **foundry:doc-scribe** covering ALL linked issues in Step 2 alongside Codex (one spawn, not one per issue — each extra spawn costs ~120,851 tok fixed overhead). The issue agent, per issue N: fetch `gh issue view <N> --json title,body,comments,state,labels` + `gh issue view <N> --comments`; produce `/oss:analyse`-style output (Summary, Root Cause Hypotheses top 3, Code Evidence); write each analysis to its own `$RUN_DIR/issue-<N>.md` (per-issue files are load-bearing — consumed by Agent 1, the consolidator, and the monitor list); return only a JSON array, one element per issue: `[{"status":"done","issue":N,"root_cause":"<one-line>","file":"$RUN_DIR/issue-<N>.md","confidence":0.N}, …]`.
 
 `ISSUE_NUMS` empty → skip issue checks downstream.
 
@@ -419,15 +443,16 @@ Parse PR body (`gh pr view $CLEAN_ARGS`) for issue refs (`Closes #N`, `Fixes #N`
 
 Skip if `DIRECT_PATH_MODE=true`. Two ordered stages, cheap, before Step 2's expensive fanout. **Reject is terminal** — no code change fixes the premise, pipeline stops. **Block is not** — the premise is sound, current diff state has a fixable gap (red CI, a typo, a flaky test) — full fanout still runs, the report just surfaces the fixable gap up front instead of burying it in consolidator output. Test to pick the stage: *"could revising the code, not the goal, resolve this?"* Yes → block. No → reject.
 
-> **Why this gate exists**: Step 2's fanout costs ~120,851 tok/agent, up to ~11 agents — never spend that on a PR whose premise is already fatal. This gate must stay cheap (a `gh pr view` + at most one `foundry:challenger` call) — never grow it into anything resembling the full fanout it exists to avoid paying for.
+> **Why this gate exists**: Step 2's fanout costs ~120,851 tok/agent, up to ~7 spawns under `--full` (4 units + pinned qa + bridge + issue agent) — never spend that on a PR whose premise is already fatal. This gate must stay cheap (a `gh pr view` + at most one `foundry:challenger` call) — never grow it into anything resembling the full fanout it exists to avoid paying for.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 IFS= read -r PR_LABELS < "${TMPDIR:-/tmp}/oss-review-pr-labels-${CSID}" 2>/dev/null || PR_LABELS=""
 IFS= read -r CHANGED_FILES < "${TMPDIR:-/tmp}/oss-review-changed-files-${CSID}" 2>/dev/null || CHANGED_FILES=""
-PR_BODY=$(gh pr view $CLEAN_ARGS --json body --jq .body 2>/dev/null)  # timeout: 6000
-PR_HEAD_SHA=$(gh pr view $CLEAN_ARGS --json headRefOid --jq .headRefOid 2>/dev/null)  # timeout: 6000
+IFS= read -r SNAP_DIR < "${TMPDIR:-/tmp}/oss-review-snap-dir-${CSID}" 2>/dev/null || SNAP_DIR=""
+PR_BODY=$(jq -r '.body // ""' "$SNAP_DIR/pr-meta.json" 2>/dev/null)  # timeout: 5000
+PR_HEAD_SHA=$(jq -r '.headRefOid // ""' "$SNAP_DIR/pr-meta.json" 2>/dev/null)  # timeout: 5000
 echo "$PR_BODY" > "${TMPDIR:-/tmp}/oss-review-pr-body-${CSID}"
 echo "$PR_HEAD_SHA" > "${TMPDIR:-/tmp}/oss-review-pr-head-sha-${CSID}"
 
@@ -582,8 +607,8 @@ echo "$REVIEW_CHECKPOINT" > "${TMPDIR:-/tmp}/oss-review-checkpoint-${CSID}"
 
 Two stages, in order — never collapse them:
 
-1. **Scope preselection** (always): the scope/mode rules above decide which dimensions are *relevant at all*. A dimension with no changed file in its territory is out here and never comes back, at any flag.
-2. **Relevance ranking** (default only): rank the survivors by evidence — changed files and lines in that dimension's territory, what Step 1 pre-classification found, what the structural context flagged — and spawn the top `FANOUT_MAX` (3). With `--full` (`FANOUT_CAP=0`) skip this stage and spawn every survivor of stage 1.
+1. **Scope preselection** (always): the scope/mode rules above decide which dimensions are *relevant at all*. A dimension with no changed file in its territory is out here and never comes back, at any flag. Paired dimensions (perf+arch, docs+lint — see agent-prompts.md §Merged spawn units) form one spawn unit: the unit survives when either member does, and its prompt carries only the surviving members' instructions.
+2. **Relevance ranking** (default only): rank the surviving units by evidence — changed files and lines in each unit's territory, what Step 1 pre-classification found, what the structural context flagged — and spawn the top `FANOUT_MAX` (3). **qa-specialist is pinned outside the cap** — it spawns on every CODE PR its scope rules allow (security-scan-every-PR contract) and never occupies a ranked slot. With `--full` (`FANOUT_CAP=0`) skip this stage and spawn every survivor of stage 1.
 
 - More work → give each agent more, never add agents.
 - **Spawn the fewest that keep each near `AGENT_CALL_BUDGET`** — not the most the cap allows. Total work under ~73 calls → do it inline and spawn nothing.
@@ -591,51 +616,29 @@ Two stages, in order — never collapse them:
 - Every spawn prompt states the budget and requires an envelope even on exhaustion — `partial: true` plus what was finished. An agent that stalls past ~60 calls without an envelope forces full disk reconstruction.
 - Dimensions dropped by the cap are listed in the report; never silently skipped.
 
-Launch the bridge review, issue agents, and all review agents in one message batch. Call `Skill(skill="bridge:review", args="Read-only adversarial review of <REVIEW_TARGET>, using changed files and <RUN_DIR>/codemap-context.md when present. Identify bugs, missed edge cases, and inconsistencies with exact file:line evidence; write findings to <RUN_DIR>/bridge-codex.md and do not apply fixes.")` when `CODEX_AVAILABLE=1` and DOCS_TYPING_MODE/TESTS_CI_MODE are false. Then launch the selected Foundry agents and rank survivors under `FANOUT_MAX` as before.
+**Dimension-gated codemap supplement** — after the ranked lineup is decided and when `codemap_available=true`: run the qa block (qa-specialist in lineup) and/or docs block (doc-scribe in lineup) from codemap-context.md §Dimension-gated supplement, then re-run the copy block above so `$RUN_DIR/codemap-context.md` carries the supplement. Neither agent in lineup → skip (that is the point: those queries were 57% of battery volume feeding agents the cap usually drops).
+
+Launch the bridge review, the issue agent (one spawn for all linked issues), and all review agents in one message batch. Call `Skill(skill="bridge:review", args="Read-only adversarial review of <REVIEW_TARGET>, using changed files and <RUN_DIR>/codemap-context.md when present. Identify bugs, missed edge cases, and inconsistencies with exact file:line evidence; write findings to <RUN_DIR>/foundry--codex.md and do not apply fixes.")` when `CODEX_AVAILABLE=1` and DOCS_TYPING_MODE/TESTS_CI_MODE are false. Then launch the selected Foundry agents and rank survivors under `FANOUT_MAX` as before.
 
 Poll for expected output files per `$MONITOR_INTERVAL` / `$HARD_CUTOFF` until all present or each hits hard cutoff.
 
-Write expected paths to file (Bash arrays don't persist across tool invocations):
+Persist the monitor list from the **actual launch batch** — never re-derive it from scope/mode flags (flag-derived lists include ranking-dropped dimensions; the monitor then waits ~15 min HARD_CUTOFF per never-spawned agent). In the same turn as the launch message, use the **Write tool** (the lineup is a ranking decision the shell cannot see) to create `$RUN_DIR/.expected-files`: one absolute path per line, exactly one line per output file of every agent actually spawned:
+
+- `$RUN_DIR/foundry--codex.md` — only when the bridge review launched
+- `$RUN_DIR/issue-<N>.md` — one per linked issue the issue agent covers
+- one `$RUN_DIR/<agent>.md` per spawned review agent — basenames: `foundry--sw-engineer.md`, `foundry--qa-specialist.md`, `foundry--perf-optimizer.md`, `foundry--doc-scribe.md`, `foundry--linting-expert.md`, `foundry--solution-architect.md`, `foundry--challenger.md`, `oss--cicd-steward.md`
+
+Then arm the guard (fresh shell):
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# restore — each SKILL.md bash block runs in fresh shell
 IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}" 2>/dev/null || RUN_DIR=""
-# unbound RUN_DIR → EXPECTED_FILE="/.expected-files" (unwritable) — §6 monitor polls empty list, misses stalls
 [ -n "$RUN_DIR" ] || { echo "! BLOCKED — run-dir sentinel empty; agent health monitoring cannot be armed"; exit 1; }
-IFS= read -r _PR_TAG < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || _PR_TAG="unknown"
-_REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${_PR_TAG}-${CSID}"
-_REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope-${_PR_TAG}-${CSID}"
-[ -f "$_REVIEW_MODE_FILE" ] && . "$_REVIEW_MODE_FILE"
-[ -f "$_REVIEW_SCOPE_FILE" ] && . "$_REVIEW_SCOPE_FILE"
-IFS= read -r CHALLENGE_ENABLED < "${TMPDIR:-/tmp}/oss-review-challenge-enabled-${CSID}" 2>/dev/null; [ "$CHALLENGE_ENABLED" = "false" ] || CHALLENGE_ENABLED=true
-IFS= read -r CODEX_AVAILABLE < "${TMPDIR:-/tmp}/oss-review-codex-available-${CSID}" 2>/dev/null || CODEX_AVAILABLE=0
-
+[ -s "$RUN_DIR/.expected-files" ] || { echo "! BLOCKED — $RUN_DIR/.expected-files missing or empty; write it (one path per spawned agent) before polling"; exit 1; }
 POLL_START=$(date +%s)
-EXPECTED_FILE="$RUN_DIR/.expected-files"
-: >"$EXPECTED_FILE"
-
-# Step 0 simplified modes — short-circuit full agent lineup
-if [ "${DOCS_TYPING_MODE:-false}" = "true" ]; then
-    echo "$RUN_DIR/foundry--linting-expert.md" >>"$EXPECTED_FILE"
-elif [ "${TESTS_CI_MODE:-false}" = "true" ]; then
-    echo "$RUN_DIR/foundry--qa-specialist.md" >>"$EXPECTED_FILE"
-    echo "$RUN_DIR/foundry--linting-expert.md" >>"$EXPECTED_FILE"
-else
-    [ "$CODEX_AVAILABLE" = "1" ] && echo "$RUN_DIR/foundry--codex.md" >>"$EXPECTED_FILE"
-    [ "$DOCS_CICD_MODE" != "true" ] && for N in $ISSUE_NUMS; do echo "$RUN_DIR/issue-$N.md" >>"$EXPECTED_FILE"; done
-    { [ "$CICD_ONLY_MODE" = "true" ] || [ "$DOCS_CICD_MODE" = "true" ]; } && echo "$RUN_DIR/oss--cicd-steward.md" >>"$EXPECTED_FILE"
-    [ "$DOCS_CICD_MODE" != "true" ] && [ "$DOCS_ONLY_MODE" != "true" ] && echo "$RUN_DIR/foundry--sw-engineer.md" >>"$EXPECTED_FILE"
-    { [ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && { [ "$SCOPE" != "CHORE" ] || [ "$CHORE_DEPS" = "true" ]; }; } && echo "$RUN_DIR/foundry--qa-specialist.md" >>"$EXPECTED_FILE"
-    [ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "CHORE" ] && [ "$SCOPE" != "FIX" ] && echo "$RUN_DIR/foundry--perf-optimizer.md" >>"$EXPECTED_FILE"
-    [ "$CICD_ONLY_MODE" != "true" ] && echo "$RUN_DIR/foundry--doc-scribe.md" >>"$EXPECTED_FILE"
-    [ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && echo "$RUN_DIR/foundry--linting-expert.md" >>"$EXPECTED_FILE"
-    [ "$CHALLENGE_ENABLED" = "true" ] && echo "$RUN_DIR/foundry--challenger.md" >>"$EXPECTED_FILE"
-    [ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "FIX" ] && [ "$SCOPE" != "CHORE" ] && echo "$RUN_DIR/foundry--solution-architect.md" >>"$EXPECTED_FILE"
-fi
 ```
 
-Later poll blocks read paths back via `while read -r path; do [ -f "$path" ] || PENDING=1; done <"$EXPECTED_FILE"` — no in-memory array required.
+Later poll blocks read paths back via `while read -r path; do [ -f "$path" ] || PENDING=1; done <"$RUN_DIR/.expected-files"` — no in-memory array required.
 
 Every `$MONITOR_INTERVAL` seconds, in the poll bash block, rehydrate both the run dir and the checkpoint path first (fresh shell — an unbound `$RUN_DIR` makes the `find` scan `/`): `IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}" 2>/dev/null || RUN_DIR=""` and `IFS= read -r REVIEW_CHECKPOINT < "${TMPDIR:-/tmp}/oss-review-checkpoint-${CSID}" 2>/dev/null || REVIEW_CHECKPOINT=""` then `find "$RUN_DIR" -newer "$REVIEW_CHECKPOINT" -type f | wc -l` — non-zero = agents alive (refresh checkpoint: `touch "$REVIEW_CHECKPOINT"`); zero since last refresh for `$HARD_CUTOFF` seconds = stalled. One `$EXTENSION` if `tail -20` output file explains delay; second stall = cutoff. On timeout: read partial results from stalled agent's file; surface with ⏱ in report. Never omit timed-out agents.
 
@@ -685,15 +688,16 @@ PR_BASE=$(git merge-base HEAD "origin/${TRUNK:-main}" 2>/dev/null || echo "origi
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+IFS= read -r SNAP_DIR < "${TMPDIR:-/tmp}/oss-review-snap-dir-${CSID}" 2>/dev/null || SNAP_DIR=""
 # rate-limit guard: on 429, retry once after 10s, else log+continue
-CHANGED_EXPORTS=$(gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/null | grep "^[-+]" | grep -v "^[-+][-+]" | grep -oP '\w+' | sort -u) # timeout: 6000
+# exported symbols only (import/assignment targets on changed __init__.py lines), portable ERE — grep -oP absent on BSD/macOS; cap 5 to bound the 30s-per-search loop
+CHANGED_EXPORTS=$(awk '/^diff --git /{f=($0 ~ /^diff --git a\/src\/.*__init__\.py /)} f && /^[-+][^-+]/{print substr($0,2)}' "$SNAP_DIR/pr.diff" 2>/dev/null | grep -oE '(^|[[:space:],])[A-Za-z_][A-Za-z0-9_]*' | tr -d ' ,' | grep -vE '^(from|import|as|all|__all__)$' | sort -u | head -5)
 for export in $CHANGED_EXPORTS; do
     echo "=== $export ==="
     gh api "search/code" --method GET --field "q=$export language:python" --jq '.items[:5] | .[].repository.full_name' 2>/dev/null # timeout: 30000
 done
 
-gh pr diff $CLEAN_ARGS 2>/dev/null | grep -A2 "deprecated" # timeout: 6000
+grep -A2 "deprecated" "$SNAP_DIR/pr.diff" 2>/dev/null # timeout: 5000
 ```
 
 ### 3b: OSS checks
@@ -701,9 +705,10 @@ gh pr diff $CLEAN_ARGS 2>/dev/null | grep -A2 "deprecated" # timeout: 6000
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+IFS= read -r SNAP_DIR < "${TMPDIR:-/tmp}/oss-review-snap-dir-${CSID}" 2>/dev/null || SNAP_DIR=""
 OSS_SIGNALS="${TMPDIR:-/tmp}/oss-review-signals-${CLEAN_ARGS}-${CSID}.json"
 LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")  # timeout: 6000
-python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/check_oss_pr_signals.py" --clean-args "$CLEAN_ARGS" --latest-tag "$LATEST_TAG" --output-file "$OSS_SIGNALS"  # timeout: 30000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/check_oss_pr_signals.py" --clean-args "$CLEAN_ARGS" --latest-tag "$LATEST_TAG" --diff-file "$SNAP_DIR/pr.diff" --output-file "$OSS_SIGNALS"  # timeout: 30000
 cat "$OSS_SIGNALS" 2>/dev/null
 ```
 
@@ -713,7 +718,7 @@ cat "$OSS_SIGNALS" 2>/dev/null
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload _OSS_SHARED (Check 41: fresh shell)
 IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/review-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
-cat "$_OSS_SHARED/cross-validation-protocol.md"  # timeout: 5000
+cat "$_OSS_SHARED/foundry--cross-validation-protocol.md"  # timeout: 5000
 ```
 
 Follow above. File absent → warn: "cross-validation protocol not found — verify foundry plugin installed (`claude plugin list`); skipping Step 4." Then skip Step 4.
@@ -756,7 +761,7 @@ _REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}-${CSID}"
 case "${PR_TYPE:-CODE}" in
     DOCS_TYPING) CONSOLIDATOR_AGENT="foundry:linting-expert" ;;
     TESTS_CI)    CONSOLIDATOR_AGENT="foundry:qa-specialist" ;;
-    *)           CONSOLIDATOR_AGENT="claude" ;;
+    *)           CONSOLIDATOR_AGENT="foundry:sw-engineer" ;;  # domain-match rule: file-handoff-protocol.md §Consolidator
 esac
 ```
 
@@ -898,8 +903,8 @@ rm -f .temp/state/skill-contract.md  # skill complete (compaction-contract.md §
 
 Scenarios:
 
-1. FIX scope: single bug-fix PR with 1 changed file → scope=FIX, 2 agents skipped: perf-optimizer (scope), solution-architect (scope). Remaining: sw-engineer, qa-specialist, doc-scribe, linting-expert, challenger (unless `--no-challenge`) = 5 agents run (+ Codex if installed).
-2. FEATURE scope: new feature PR with API changes → scope=FEATURE, all 7 agents run
+1. FIX scope: single bug-fix PR with 1 changed file → scope=FIX drops the perf+arch unit entirely (both members out of scope). Surviving units: sw-engineer, docs+lint (merged), challenger (unless `--no-challenge`) = 3 units ≤ FANOUT_MAX, all spawn; + pinned qa-specialist = 4 spawns (+ Codex bridge if installed).
+2. FEATURE scope: new feature PR with API changes → units sw-engineer, perf+arch, docs+lint, challenger = 4 survive preselection; default cap spawns top 3 ranked (dropped unit listed in report) + pinned qa-specialist = 4 spawns; `--full` spawns all 4 units + qa-specialist = 5 spawns.
 3. --reply mode: existing review report + --reply flag → skip to Step 8, no agents spawned
 4. DOCS_TYPING scope: PR with only annotation-type .py changes (no logic) → Step 0 sets PR_TYPE=DOCS_TYPING, CHALLENGE_ENABLED=false, CONSOLIDATOR_AGENT=foundry:linting-expert; only linting-expert spawned; Step 5 uses linting-expert consolidator.
 5. TESTS_CI scope: PR with only test files + CI config → Step 0 sets PR_TYPE=TESTS_CI, CHALLENGE_ENABLED=false, CONSOLIDATOR_AGENT=foundry:qa-specialist; qa-specialist + linting-expert spawned; Step 5 uses qa-specialist consolidator.

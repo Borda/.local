@@ -39,6 +39,10 @@
 
 4. Spawn 2–3 hypothesis agents in parallel (reasoning agents at `opus` per CLAUDE.md §Agent Teams). **No worktrees** — read-only analysis only. Each agent gets one axis + matching specialist type (same `agent_strategy` mapping from SKILL.md constants).
 
+   **Axis-slug rule — the lead owns it, the agent never derives it.** For each axis the lead computes `<axis-slug>` from the axis name by: lowercasing, replacing every run of characters outside `[a-z0-9]` with a single `-`, then trimming leading and trailing `-`. Example: axis `Data Loading & Aug` → `data-loading-aug`.
+
+   The lead then **substitutes the resulting literal paths into that agent's prompt before constructing the `Agent()` call**: the template below must reach the agent with `<RUN_DIR>` and `<axis-slug>` already replaced by concrete text (e.g. `.experiments/run-team-2026-05-13T10-00-00Z/hypotheses-data-loading-aug.jsonl`). An unsubstituted placeholder reaches the agent as literal text, the agent writes to a wrongly-named path, and the liveness check below reports a false ⏱ on an agent that in fact succeeded. The lead **records the exact filename pair it put in each prompt** (jsonl path, md path) and checks those recorded paths — never a slug re-derived after the fact.
+
    Each hypothesis agent's spawn prompt:
 
    ```markdown
@@ -73,13 +77,13 @@
    - medium: 3–5 files, cross-cutting but bounded (module refactor, data path change)
    - large: 6+ files or architectural restructuring
 
-   Write all hypotheses as JSONL (one JSON object per line) to `<RUN_DIR>/hypotheses-<axis-slug>.jsonl`.
+   Write all hypotheses as JSONL (one JSON object per line) to `<RUN_DIR>/hypotheses-<axis-slug>.jsonl` — use the path exactly as given, do not rename it.
    Write your full analysis, reasoning, and Confidence block to `<RUN_DIR>/hypothesis-analyst-<axis-slug>.md` using the Write tool.
    Return ONLY: {"status":"done","axis":"<axis>","count":N,"file":"<jsonl path>","confidence":0.N}
    Call TaskUpdate(in_progress) when starting; TaskUpdate(completed) when done.
    ```
 
-**Synchronous spawn note**: hypothesis agents spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling unreachable mid-call. After Agent() calls return, check each `<RUN_DIR>/hypotheses-<axis-slug>.jsonl`; if missing or empty, that agent timed out — read any partial output, surface with ⏱ in Phase D report, never silently omit.
+**Synchronous spawn note**: hypothesis agents spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling unreachable mid-call. After Agent() calls return, check the jsonl path **recorded for that agent at spawn time** (step 4's axis-slug rule) — not a freshly re-derived slug. Missing or empty → glob `<RUN_DIR>/hypotheses-*.jsonl` for a near-match first, since a mismatched name is a naming bug rather than a dead agent; still nothing → that agent timed out: read any partial output, surface with ⏱ in the Phase D report, never silently omit.
 
 5. Collect compact JSON envelopes from all hypothesis agents. Do not read `.md` analysis files into lead context — inputs to Phase B queue assembly only.
 
