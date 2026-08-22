@@ -26,10 +26,20 @@
       "remaining_limits": [],
       "status": "not-acceptable-failed"
     },
+    "final_handoff": {
+      "branch": "standard",
+      "handoff_path": ".reports/codex/kaggle/<timestamp>/final-handoff.json",
+      "handoff_sha256": "sha256",
+      "rendered_path": ".reports/codex/kaggle/<timestamp>/final.md",
+      "rendered_sha256": "sha256",
+      "schema_version": 1,
+      "validation_path": ".reports/codex/kaggle/<timestamp>/final-handoff.validation.json"
+    },
     "grounded_sources": [],
     "mode": "full|eda-only|inference-only",
     "output_path": ".experiments/kaggle/<competition>.py",
     "unresolved_placeholders": []
   },
+  "schema_version": 2,
   "status": "pass|fail|timeout"
 }

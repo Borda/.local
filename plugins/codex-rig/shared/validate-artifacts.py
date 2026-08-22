@@ -32,6 +32,8 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -42,6 +44,21 @@ COMMON_RESULT_FIELDS = {
     "findings",
     "confidence",
     "artifact_path",
+}
+RESULT_SCHEMA_VERSION = 2
+FINAL_HANDOFF_METADATA_FIELDS = {
+    "schema_version",
+    "handoff_path",
+    "handoff_sha256",
+    "rendered_path",
+    "rendered_sha256",
+    "validation_path",
+    "branch",
+}
+FINAL_HANDOFF_FILENAMES = {
+    "handoff_path": "final-handoff.json",
+    "rendered_path": "final.md",
+    "validation_path": "final-handoff.validation.json",
 }
 EXPECTED_GATE_IDS = {"lint", "format", "types", "tests", "review"}
 FAILING_GATE_STATUSES = {"fail", "missing-command", "timeout"}
@@ -108,6 +125,7 @@ CODE_REMEDIATE_FINAL_ITEM_STRING_FIELDS = {
     "input_item_id",
     "item_name",
     "item_type",
+    "severity",
     "triage_status",
     "resolution_status",
     "owner_status",
@@ -268,6 +286,230 @@ def _require_result_shape(result: dict[str, Any]) -> None:
         raise SystemExit("pass-with-failed-checks")
     if result["status"] == "pass" and findings["critical"] > 0:
         raise SystemExit("pass-with-critical-findings")
+
+
+def _resolve_final_handoff_path(out_dir: Path, raw_path: object, key: str) -> Path:
+    """Resolve one declared final-handoff path inside the workflow directory."""
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise SystemExit(f"final-handoff-invalid-path:{key}")
+    declared = Path(raw_path)
+    candidates = [declared] if declared.is_absolute() else [out_dir / declared, declared]
+    expected_parent = out_dir.resolve()
+    expected_name = FINAL_HANDOFF_FILENAMES[key]
+    matched_location = False
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved.parent != expected_parent or resolved.name != expected_name:
+            continue
+        matched_location = True
+        if not candidate.is_symlink() and resolved.is_file():
+            return resolved
+    if matched_location:
+        raise SystemExit(f"final-handoff-missing-file:{key}")
+    raise SystemExit(f"final-handoff-path-mismatch:{key}")
+
+
+def _validate_final_handoff_confidence(result: dict[str, Any], handoff: dict[str, Any], skill: str) -> None:
+    """Reconcile rendered confidence gaps and limits with canonical result metadata."""
+    confidence = handoff.get("confidence")
+    metadata = result.get("metadata")
+    if not isinstance(confidence, dict) or not isinstance(metadata, dict):
+        raise SystemExit(f"{skill}-final-handoff-confidence-invalid")
+    score = confidence.get("score")
+    if not isinstance(score, int | float) or abs(float(score) - float(result["confidence"])) > 0.001:
+        raise SystemExit(f"{skill}-final-handoff-confidence-mismatch")
+    gap_entries = confidence.get("gaps")
+    declared_gaps = metadata.get("confidence_gaps")
+    closures = metadata.get("confidence_gap_closures")
+    if not isinstance(gap_entries, list) or not isinstance(declared_gaps, list) or not isinstance(closures, list):
+        raise SystemExit(f"{skill}-final-handoff-confidence-gaps-invalid")
+    handoff_gaps = {entry.get("gap") for entry in gap_entries if isinstance(entry, dict)}
+    if handoff_gaps != set(declared_gaps):
+        raise SystemExit(f"{skill}-final-handoff-confidence-gaps-mismatch")
+    closure_by_gap = {entry.get("gap"): entry for entry in closures if isinstance(entry, dict)}
+    for entry in gap_entries:
+        gap = entry.get("gap")
+        closure = closure_by_gap.get(gap)
+        if not isinstance(closure, dict) or entry.get("status") != closure.get("status"):
+            raise SystemExit(f"{skill}-final-handoff-confidence-closure-mismatch")
+        detail_key = "evidence" if entry.get("status") == "closed" else "rationale"
+        expected_detail = closure.get(detail_key) or closure.get("evidence_path")
+        if entry.get(detail_key) != expected_detail:
+            raise SystemExit(f"{skill}-final-handoff-confidence-closure-mismatch")
+    recovery = metadata.get("confidence_recovery")
+    if not isinstance(recovery, dict) or confidence.get("limits") != recovery.get("remaining_limits"):
+        raise SystemExit(f"{skill}-final-handoff-confidence-limits-mismatch")
+
+
+def _validate_final_handoff_gates(handoff: dict[str, Any], gates: dict[str, Any], skill: str) -> None:
+    """Require rendered verification to preserve every canonical gate record."""
+    verification = handoff.get("verification")
+    checks = gates.get("checks")
+    if not isinstance(verification, list) or not isinstance(checks, list):
+        raise SystemExit(f"{skill}-final-handoff-verification-invalid")
+    expected = [
+        {"check": check.get("id"), "status": check.get("status"), "evidence": check.get("stdout")} for check in checks
+    ]
+    if verification != expected:
+        raise SystemExit(f"{skill}-final-handoff-verification-mismatch")
+
+
+def _validate_code_remediate_final_handoff(result: dict[str, Any], handoff: dict[str, Any]) -> None:
+    """Bind remediation presentation rows and sources to the canonical resolution table."""
+    if handoff.get("branch") == "caller-contract":
+        return
+    metadata = result.get("metadata")
+    if not isinstance(metadata, dict):
+        raise SystemExit("code-remediate-final-handoff-metadata-invalid")
+    resolution_table = metadata.get("final_resolution_table")
+    if not isinstance(resolution_table, dict) or not isinstance(resolution_table.get("items"), list):
+        raise SystemExit("code-remediate-final-handoff-resolution-table-missing")
+    tables = handoff.get("tables")
+    if not isinstance(tables, list) or len(tables) != 1:
+        raise SystemExit("code-remediate-final-handoff-table-invalid")
+    rows = tables[0].get("rows")
+    if not isinstance(rows, list):
+        raise SystemExit("code-remediate-final-handoff-table-invalid")
+    expected_items = resolution_table["items"]
+    expected_rows = []
+    expected_source_records = []
+    for item in expected_items:
+        if not isinstance(item, dict):
+            raise SystemExit("code-remediate-final-handoff-resolution-item-invalid")
+        sources = item.get("sources")
+        if not isinstance(sources, list):
+            raise SystemExit("code-remediate-final-handoff-resolution-sources-invalid")
+        source_ids = []
+        rendered_sources = []
+        for source in sources:
+            if not isinstance(source, dict):
+                raise SystemExit("code-remediate-final-handoff-resolution-source-invalid")
+            source_id = f"{source.get('kind')}:{source.get('source_id')}"
+            source_ids.append(source_id)
+            rendered_sources.append(
+                f"{source.get('kind')} [{source.get('source_id')}] @ {source.get('location')} — "
+                f"{source.get('body')} — {source.get('evidence')}"
+            )
+            expected_source_records.append({"id": source_id, "evidence": source.get("evidence")})
+        expected_rows.append(
+            {
+                "id": item.get("input_item_id"),
+                "cells": [
+                    item.get("input_item_id"),
+                    item.get("severity"),
+                    item.get("item_name"),
+                    "\n".join(rendered_sources),
+                    f"{item.get('resolution_status')} — {item.get('resolved_how')}",
+                    f"{item.get('evidence')} — owner/status: {item.get('owner_status')}",
+                ],
+                "source_ids": source_ids,
+            }
+        )
+    if rows != expected_rows:
+        raise SystemExit("code-remediate-final-handoff-row-coverage-mismatch")
+    expected_sources = {
+        f"{source.get('kind')}:{source.get('source_id')}"
+        for item in expected_items
+        if isinstance(item, dict)
+        for source in item.get("sources", [])
+        if isinstance(source, dict)
+    }
+    observed_sources = {
+        source_id
+        for row in rows
+        if isinstance(row, dict)
+        for source_id in row.get("source_ids", [])
+        if isinstance(source_id, str)
+    }
+    declared_source_records = handoff.get("source_records")
+    declared_sources = {source.get("id") for source in declared_source_records or [] if isinstance(source, dict)}
+    if (
+        observed_sources != expected_sources
+        or declared_sources != expected_sources
+        or declared_source_records != expected_source_records
+    ):
+        raise SystemExit("code-remediate-final-handoff-source-coverage-mismatch")
+
+
+def _validate_code_review_final_handoff(result: dict[str, Any], handoff: dict[str, Any]) -> None:
+    """Require the final review branch and tables to match its terminal or assessed result."""
+    if handoff.get("branch") == "caller-contract":
+        return
+    metadata = result.get("metadata")
+    if not isinstance(metadata, dict):
+        raise SystemExit("code-review-final-handoff-metadata-invalid")
+    review_status = metadata.get("review_status")
+    expected_branch = review_status if review_status in {"unavailable", "closed"} else "assessed"
+    if handoff.get("branch") != expected_branch:
+        raise SystemExit("code-review-final-handoff-branch-mismatch")
+    tables = handoff.get("tables")
+    if not isinstance(tables, list):
+        raise SystemExit("code-review-final-handoff-tables-invalid")
+    headings = {table.get("heading") for table in tables if isinstance(table, dict)}
+    if expected_branch in {"unavailable", "closed"} and tables:
+        raise SystemExit("code-review-terminal-final-handoff-table-forbidden")
+    if expected_branch == "assessed" and metadata.get("scope") == "pr" and "PR Snapshot" not in headings:
+        raise SystemExit("code-review-final-handoff-pr-snapshot-missing")
+    finding_total = sum(result["findings"].values())
+    if expected_branch == "assessed" and finding_total and "Review Findings and Merge Blocks" not in headings:
+        raise SystemExit("code-review-final-handoff-findings-table-missing")
+
+
+def _validate_final_handoff(result: dict[str, Any], skill: str, out_dir: Path, gates: dict[str, Any]) -> None:
+    """Validate schema-v2 final-response artifacts while retaining schema-v1 readability."""
+    schema_version = result.get("schema_version", 1)
+    if schema_version == 1:
+        return
+    if schema_version != RESULT_SCHEMA_VERSION:
+        raise SystemExit("unsupported-result-schema-version")
+    metadata = result.get("metadata")
+    if not isinstance(metadata, dict):
+        raise SystemExit(f"{skill}-missing-metadata")
+    binding = metadata.get("final_handoff")
+    if not isinstance(binding, dict):
+        raise SystemExit("missing-final-handoff-metadata")
+    if set(binding) != FINAL_HANDOFF_METADATA_FIELDS or binding.get("schema_version") != 1:
+        raise SystemExit("invalid-final-handoff-metadata")
+    paths = {key: _resolve_final_handoff_path(out_dir, binding.get(key), key) for key in FINAL_HANDOFF_FILENAMES}
+    helper = Path(__file__).with_name("final_handoff.py")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(helper),
+            "check",
+            "--handoff",
+            str(paths["handoff_path"]),
+            "--final",
+            str(paths["rendered_path"]),
+            "--validation",
+            str(paths["validation_path"]),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip().splitlines()[-1] if completed.stderr.strip() else "unknown"
+        raise SystemExit(f"final-handoff-validation-failed:{detail}")
+    handoff = _load_json(paths["handoff_path"])
+    validation = _load_json(paths["validation_path"])
+    if handoff.get("skill") != skill or handoff.get("branch") != binding.get("branch"):
+        raise SystemExit("final-handoff-skill-or-branch-mismatch")
+    if validation.get("handoff_sha256") != binding.get("handoff_sha256"):
+        raise SystemExit("final-handoff-digest-mismatch")
+    if validation.get("rendered_sha256") != binding.get("rendered_sha256"):
+        raise SystemExit("final-handoff-rendered-digest-mismatch")
+    _validate_final_handoff_gates(handoff, gates, skill)
+    _validate_final_handoff_confidence(result, handoff, skill)
+    artifacts = handoff.get("artifacts")
+    if not isinstance(artifacts, list) or result["artifact_path"] not in {
+        artifact.get("path") for artifact in artifacts if isinstance(artifact, dict)
+    }:
+        raise SystemExit(f"{skill}-final-handoff-result-artifact-missing")
+    if skill == "code-remediate":
+        _validate_code_remediate_final_handoff(result, handoff)
+    elif skill == "code-review":
+        _validate_code_review_final_handoff(result, handoff)
 
 
 def _require_file_sections(path: Path, sections: list[str]) -> None:
@@ -1391,6 +1633,7 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
     _validate_confidence_gaps(result, skill)
     gates = _validate_gates(out_dir)
     _reconcile_result_with_gates(result, gates)
+    _validate_final_handoff(result, skill, out_dir, gates)
 
     requirement = SKILL_REQUIREMENTS.get(skill)
     if requirement is None:

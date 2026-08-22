@@ -15,6 +15,7 @@ Helper option schemas live in `--help`, not skills. In a plugin, derive `PLUGIN_
 - `python PLUGIN_ROOT/shared/find-review-report.py --help`
 - `python PLUGIN_ROOT/shared/select-git-remote.py --help`
 - `python PLUGIN_ROOT/shared/write-result.py --help`
+- `python PLUGIN_ROOT/shared/final_handoff.py --help`
 - `python PLUGIN_ROOT/shared/validate-artifacts.py --help`
 - `python PLUGIN_ROOT/skills/code-review/validate_artifacts.py --help`
 
@@ -31,9 +32,10 @@ Also run each skill-specific local CLI's `--help`. Do not copy full flags/templa
 Result lifecycle:
 
 1. `run_gates.py` writes `gates.json` and per-gate evidence.
-2. `write-result.py` writes `result.candidate.json` and reconciles status with gate evidence.
-3. Run configured skill-specific validation.
-4. `validate-artifacts.py` validates the shared and skill-specific artifact contract.
-5. Rename only validated candidate to `result.json`.
+2. Write `final-handoff.json`; `final_handoff.py render` validates it and writes digest-bound `final.md` plus `final-handoff.validation.json`.
+3. `write-result.py` writes schema-v2 `result.candidate.json`, reconciles status with gate evidence, and requires the final-handoff binding in metadata.
+4. Run configured skill-specific validation.
+5. `validate-artifacts.py` validates the shared and skill-specific artifact contract, reruns `final_handoff.py check`, and reconciles the handoff with gates, confidence, and workflow evidence.
+6. Rename only the validated candidate to `result.json`, then emit the validated `final.md` bytes verbatim.
 
-Never hand-write `result.json`, promote unvalidated candidate, or infer flags from stale examples.
+Never hand-write `result.json`, promote an unvalidated candidate, manually reconstruct validated final text, or infer flags from stale examples. See `final-handoff-contract.md`.

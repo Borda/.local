@@ -218,6 +218,7 @@ class Paths:
     run_gates: Path
     run_py: Path
     write_result_py: Path
+    final_handoff_py: Path
     create_run: Path
     codemap_adapter: Path
     collect_diff: Path
@@ -284,6 +285,7 @@ class Paths:
             run_gates=shared_dir / ("run_gates.py" if layout == "plugin" else "run-gates.sh"),
             run_py=calibration_dir / "run.py",
             write_result_py=shared_dir / "write-result.py",
+            final_handoff_py=shared_dir / "final_handoff.py",
             create_run=shared_dir / "create_run.py",
             codemap_adapter=shared_dir / "codemap_adapter.py",
             collect_diff=shared_dir / ("collect_diff.py" if layout == "plugin" else "collect-diff.sh"),
@@ -825,6 +827,7 @@ def check_core_configs(run: CalibrationRun) -> None:
         "find-review-report.py",
         "select-git-remote.py",
         "write-result.py",
+        "final_handoff.py",
         "validate-artifacts.py",
     )
     helper_names += (
@@ -1155,6 +1158,7 @@ def check_shared_scripts(run: CalibrationRun) -> None:
         "select-git-remote": run.paths.select_git_remote,
         "validate-artifacts": run.paths.validate_artifacts,
         "write-result": run.paths.write_result_py,
+        "final-handoff": run.paths.final_handoff_py,
     }
     if run.paths.layout == "plugin":
         cli_paths["create-run"] = run.paths.create_run
@@ -1201,6 +1205,7 @@ def check_shared_scripts(run: CalibrationRun) -> None:
         run.fail_and_leak("shared-script-selftests", f"shared-script-embedded-python:{run.paths.write_result_py}")
     check_python_syntax(run, run.paths.run_py, "run.py")
     check_python_syntax(run, run.paths.write_result_py, "write-result.py")
+    check_python_syntax(run, run.paths.final_handoff_py, "final_handoff.py")
     check_python_syntax(run, run.paths.select_git_remote, "select-git-remote.py")
     check_python_syntax(run, run.paths.behavioral_scorer, "score_behavioral.py")
     check_python_syntax(run, run.paths.live_ab_runner, "run_live_ab.py")
@@ -2066,8 +2071,90 @@ def selftest_code_remediate_pr_identity(run: CalibrationRun) -> None:
             payload[key] = original
 
 
+def bind_selftest_final_handoff(
+    run: CalibrationRun, out_path: Path, metadata: dict[str, Any]
+) -> subprocess.CompletedProcess[str] | None:
+    """Render and attach one valid implementation handoff for writer selftests."""
+    gates_path = out_path.parent / "gates.json"
+    gates = json.loads(gates_path.read_text(encoding="utf-8"))
+    gap_closures = metadata.get("confidence_gap_closures")
+    recovery = metadata.get("confidence_recovery")
+    if not isinstance(gap_closures, list) or not isinstance(recovery, dict):
+        raise ValueError("selftest final handoff requires confidence metadata")
+    handoff = {
+        "schema_version": 1,
+        "skill": "implement",
+        "branch": "standard",
+        "outcome": {"title": "Selftest", "summary": "The synthetic implementation artifact is valid."},
+        "tables": [
+            {
+                "heading": "Implementation Result",
+                "columns": ["Surface", "Outcome", "Verification", "Remaining limit"],
+                "rows": [
+                    {
+                        "id": "SELFTEST-1",
+                        "cells": ["artifact lifecycle", "pass", "shared selftest", "synthetic only"],
+                        "source_ids": ["selftest:artifact"],
+                    }
+                ],
+            }
+        ],
+        "source_records": [{"id": "selftest:artifact", "evidence": "development-notes.md"}],
+        "source_coverage": {
+            "source_records_total": 1,
+            "represented_source_records_total": 1,
+            "omitted_source_records_total": 0,
+        },
+        "verification": [
+            {"check": check["id"], "status": check["status"], "evidence": check["stdout"]} for check in gates["checks"]
+        ],
+        "remaining": [],
+        "next_steps": [],
+        "confidence": {
+            "score": 0.95,
+            "band": "fair",
+            "limits": recovery.get("remaining_limits", []),
+            "gaps": gap_closures,
+        },
+        "artifacts": [{"label": "Result", "path": str(out_path)}],
+        "caller_contract": None,
+    }
+    handoff_path = out_path.parent / "final-handoff.json"
+    final_path = out_path.parent / "final.md"
+    validation_path = out_path.parent / "final-handoff.validation.json"
+    handoff_path.write_text(json.dumps(handoff, indent=2) + "\n", encoding="utf-8", newline="\n")
+    rendered = run_command(
+        cli_argv(
+            run.paths.final_handoff_py,
+            "render",
+            "--handoff",
+            handoff_path,
+            "--out-final",
+            final_path,
+            "--out-validation",
+            validation_path,
+        )
+    )
+    if rendered.returncode != 0:
+        return rendered
+    validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    metadata["final_handoff"] = {
+        "schema_version": 1,
+        "handoff_path": str(handoff_path),
+        "handoff_sha256": validation["handoff_sha256"],
+        "rendered_path": str(final_path),
+        "rendered_sha256": validation["rendered_sha256"],
+        "validation_path": str(validation_path),
+        "branch": "standard",
+    }
+    return None
+
+
 def run_write_result(run: CalibrationRun, out_path: Path, metadata: dict[str, Any]) -> subprocess.CompletedProcess[str]:
-    """Run the shared write-result helper with a valid selftest payload."""
+    """Render the final handoff and run the shared writer with a valid selftest payload."""
+    handoff_failure = bind_selftest_final_handoff(run, out_path, metadata)
+    if handoff_failure is not None:
+        return handoff_failure
     return run_command(
         cli_argv(
             run.paths.write_result_py,

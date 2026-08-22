@@ -16,6 +16,7 @@ CODE_REVIEW_SKILL = PLUGIN_ROOT / "skills" / "code-review" / "SKILL.md"
 REVIEW_VALIDATOR = PLUGIN_ROOT / "skills" / "code-review" / "validate_artifacts.py"
 SHARED_VALIDATOR = PLUGIN_ROOT / "shared" / "validate-artifacts.py"
 WRITE_RESULT = PLUGIN_ROOT / "shared" / "write-result.py"
+FINALIZER = PLUGIN_ROOT / "shared" / "final_handoff.py"
 GATE_IDS = ("lint", "format", "types", "tests", "review")
 HEAD_OID = "b" * 40
 BASE_OID = "a" * 40
@@ -48,6 +49,72 @@ def _load_shared_validator() -> object:
     validator = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(validator)
     return validator
+
+
+def _write_closed_final_handoff(out_dir: Path, result_path: Path, metadata: dict[str, object]) -> dict[str, object]:
+    """Render the terminal close response and return its result metadata binding."""
+    gates = json.loads((out_dir / "gates.json").read_text(encoding="utf-8"))
+    recovery = metadata["confidence_recovery"]
+    assert isinstance(recovery, dict)
+    closures = metadata["confidence_gap_closures"]
+    assert isinstance(closures, list)
+    handoff = {
+        "schema_version": 1,
+        "skill": "code-review",
+        "branch": "closed",
+        "outcome": {"title": "Review Decision", "summary": "Close is advised; source findings were not assessed."},
+        "tables": [],
+        "source_records": [],
+        "source_coverage": {
+            "source_records_total": 0,
+            "represented_source_records_total": 0,
+            "omitted_source_records_total": 0,
+        },
+        "verification": [
+            {"check": check["id"], "status": check["status"], "evidence": check["stdout"]} for check in gates["checks"]
+        ],
+        "remaining": [],
+        "next_steps": [],
+        "confidence": {
+            "score": 0.95,
+            "band": "fair",
+            "limits": recovery["remaining_limits"],
+            "gaps": closures,
+        },
+        "artifacts": [{"label": "Result", "path": str(result_path)}],
+        "caller_contract": None,
+    }
+    handoff_path = out_dir / "final-handoff.json"
+    final_path = out_dir / "final.md"
+    validation_path = out_dir / "final-handoff.validation.json"
+    handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(FINALIZER),
+            "render",
+            "--handoff",
+            str(handoff_path),
+            "--out-final",
+            str(final_path),
+            "--out-validation",
+            str(validation_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    return {
+        "schema_version": 1,
+        "handoff_path": str(handoff_path),
+        "handoff_sha256": validation["handoff_sha256"],
+        "rendered_path": str(final_path),
+        "rendered_sha256": validation["rendered_sha256"],
+        "validation_path": str(validation_path),
+        "branch": "closed",
+    }
 
 
 def _write_closed_artifact(out_dir: Path, code: str = "DUPLICATE") -> Path:
@@ -283,6 +350,7 @@ def test_write_result_closed_review_omits_remediation_fields(tmp_path: Path) -> 
     result_path = _write_closed_artifact(tmp_path)
     result = json.loads(result_path.read_text(encoding="utf-8"))
     candidate_path = tmp_path / "result.candidate.json"
+    result["metadata"]["final_handoff"] = _write_closed_final_handoff(tmp_path, candidate_path, result["metadata"])
 
     completed = subprocess.run(
         [

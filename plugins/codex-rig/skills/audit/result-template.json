@@ -17,6 +17,31 @@
   },
   "follow_up": [],
   "metadata": {
+    "confidence_gap_closures": [],
+    "confidence_gaps": [],
+    "confidence_recovery": {
+      "evidence": [
+        "objective audit evidence"
+      ],
+      "final_confidence": 0.0,
+      "initial_confidence": 0.0,
+      "recovery_actions": [
+        "recovery action"
+      ],
+      "remaining_limits": [
+        "residual limit"
+      ],
+      "status": "shared-confidence-band-status"
+    },
+    "final_handoff": {
+      "branch": "standard",
+      "handoff_path": ".reports/codex/audit/<timestamp>/final-handoff.json",
+      "handoff_sha256": "sha256",
+      "rendered_path": ".reports/codex/audit/<timestamp>/final.md",
+      "rendered_sha256": "sha256",
+      "schema_version": 1,
+      "validation_path": ".reports/codex/audit/<timestamp>/final-handoff.validation.json"
+    },
     "value_per_token": {
       "baseline_sha256": "",
       "behavioral_comparison": {},
@@ -34,5 +59,6 @@
     }
   },
   "recommendations": [],
+  "schema_version": 2,
   "status": "pass|fail|timeout"
 }

@@ -66,6 +66,15 @@ def _write_unavailable_pr_evidence(run_dir: Path) -> dict[str, object]:
             "recovery_actions": ["Stopped before source review."],
             "remaining_limits": ["PR correctness was not assessed."],
         },
+        "final_handoff": {
+            "schema_version": 1,
+            "handoff_path": str(run_dir / "final-handoff.json"),
+            "handoff_sha256": "a" * 64,
+            "rendered_path": str(run_dir / "final.md"),
+            "rendered_sha256": "b" * 64,
+            "validation_path": str(run_dir / "final-handoff.validation.json"),
+            "branch": "unavailable",
+        },
     }
 
 
@@ -100,6 +109,7 @@ def test_write_result_unavailable_review_emits_validator_accepted_candidate(tmp_
 
     assert completed.returncode == 0, completed.stderr
     candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
+    assert candidate["schema_version"] == 2
     assert candidate["status"] == "fail"
     assert candidate["findings"] == {"critical": 0, "high": 0, "medium": 0, "low": 0}
     assert candidate["metadata"]["review_status"] == "unavailable"

@@ -464,6 +464,22 @@ def test_commit_contract_requires_detailed_changes_and_impacts() -> None:
         assert required in contract
 
 
+def test_commit_contract_keeps_verification_change_specific_and_compact() -> None:
+    """Prevent verification chronology and unrelated gates from bloating commits."""
+    contract = normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
+    for required in (
+        "only final checks that materially validate the committed surfaces",
+        "consolidate closely related checks",
+        "report a required broad gate once using its final outcome",
+        "exploratory probes",
+        "failure-first reproductions",
+        "repeated reruns",
+        "unrelated repository-wide gates",
+        "material change-specific acceptance gate",
+    ):
+        assert required in contract
+
+
 def test_approval_contract_keeps_runtime_reason_short_and_prefix_safe() -> None:
     """Prevent approval UI prompts from duplicating commands or detailed pre-briefs."""
     native_contract = normalized_text(PLUGIN_ROOT / "shared" / "native-skill-contract.md").lower()

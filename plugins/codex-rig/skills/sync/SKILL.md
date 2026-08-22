@@ -97,4 +97,6 @@ Networked CLI owning-command approval is required calibration coverage for Git m
 
 ## Output Contract
 
+Before writing the result candidate, follow `../../shared/final-handoff-contract.md`: render and bind `final-handoff.json`, `final.md`, and `final-handoff.validation.json`; after both validators and promotion pass, emit `final.md` verbatim.
+
 Use `../../shared/quality-gates.md` and `result-template.json`. Final chat follows the shared ordered frame. `Outcome` is `pass`, `fail`, `partial`, or `blocked` and states whether the requested check or approved refresh completed. `Results` has one inspected or refreshed surface per row and exactly `Surface | Outcome | Verification | Remaining limit`. Apply the shared `Verification`, `Remaining`, `Next steps`, `Confidence`, and supplemental `Artifact` rules; include state/version/package hashes, commands, package validation, verified changes, lifecycle limits, and external-agent residue.

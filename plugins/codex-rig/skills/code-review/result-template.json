@@ -66,6 +66,15 @@
       "status": "shared-confidence-band-status"
     },
     "fanout_substituted": false,
+    "final_handoff": {
+      "branch": "assessed|unavailable|closed|caller-contract",
+      "handoff_path": ".reports/codex/code-review/<timestamp>/final-handoff.json",
+      "handoff_sha256": "sha256",
+      "rendered_path": ".reports/codex/code-review/<timestamp>/final.md",
+      "rendered_sha256": "sha256",
+      "schema_version": 1,
+      "validation_path": ".reports/codex/code-review/<timestamp>/final-handoff.validation.json"
+    },
     "independence_required": true,
     "independence_satisfied": true,
     "review_decision": {
@@ -108,5 +117,6 @@
       }
     ]
   },
+  "schema_version": 2,
   "status": "pass|fail|timeout"
 }

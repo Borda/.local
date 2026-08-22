@@ -22,7 +22,11 @@
   },
   "checks_failed": [],
   "checks_run": [
-    "calibration"
+    "lint",
+    "format",
+    "types",
+    "tests",
+    "review"
   ],
   "confidence": 0.0,
   "findings": {
@@ -34,6 +38,33 @@
   "follow_up": [
     "non-blocking next check"
   ],
+  "metadata": {
+    "confidence_gap_closures": [],
+    "confidence_gaps": [],
+    "confidence_recovery": {
+      "evidence": [
+        "objective calibration evidence"
+      ],
+      "final_confidence": 0.0,
+      "initial_confidence": 0.0,
+      "recovery_actions": [
+        "recovery action"
+      ],
+      "remaining_limits": [
+        "residual limit"
+      ],
+      "status": "shared-confidence-band-status"
+    },
+    "final_handoff": {
+      "branch": "standard",
+      "handoff_path": ".reports/codex/calibrate/<timestamp>/final-handoff.json",
+      "handoff_sha256": "sha256",
+      "rendered_path": ".reports/codex/calibrate/<timestamp>/final.md",
+      "rendered_sha256": "sha256",
+      "schema_version": 1,
+      "validation_path": ".reports/codex/calibrate/<timestamp>/final-handoff.validation.json"
+    }
+  },
   "observation_freshness": {
     "fixture_observations": 0,
     "latest_observed_at": "2026-06-02T00:00:00Z",
@@ -43,5 +74,6 @@
   "recommendations": [
     "measured fix or improvement recommendation"
   ],
+  "schema_version": 2,
   "status": "pass|fail"
 }

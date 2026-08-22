@@ -145,6 +145,8 @@ Update calibration when root-cause routing or workaround rejection changes:
 
 ## Output Contract
 
+Before writing the result candidate, follow `../../shared/final-handoff-contract.md`: render and bind `final-handoff.json`, `final.md`, and `final-handoff.validation.json`; after both validators and promotion pass, emit `final.md` verbatim.
+
 Use `../../shared/quality-gates.md`.
 
 ### Final chat

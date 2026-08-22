@@ -31,6 +31,8 @@ After successful install, update, or removal, tell the user to start a fresh Cod
 
 ## Output Contract
 
+This manager has no canonical `.reports` result lifecycle and therefore remains the explicit exception in `../../shared/final-handoff-contract.md`: its final-response structure is advisory, not executable. Do not claim digest-bound final-response validation until the manager gains a canonical run/result artifact.
+
 Final chat follows the ordered frame from `../../shared/quality-gates.md`:
 
 - `Outcome` includes the action, `Healthy|Degraded|Blocked|Removed|Rejected`, exit code, and whether files changed.

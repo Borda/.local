@@ -41,6 +41,15 @@
       ],
       "status": "shared-confidence-band-status"
     },
+    "final_handoff": {
+      "branch": "standard",
+      "handoff_path": ".reports/codex/code-remediate/<timestamp>/final-handoff.json",
+      "handoff_sha256": "sha256",
+      "rendered_path": ".reports/codex/code-remediate/<timestamp>/final.md",
+      "rendered_sha256": "sha256",
+      "schema_version": 1,
+      "validation_path": ".reports/codex/code-remediate/<timestamp>/final-handoff.validation.json"
+    },
     "final_resolution_table": {
       "grouped_items_total": 0,
       "ingested_entries_total": 0,
@@ -156,5 +165,6 @@
       "user_deferred_items": 0
     }
   },
+  "schema_version": 2,
   "status": "pass|fail"
 }

@@ -60,6 +60,7 @@ def _metadata() -> dict[str, object]:
             "input_item_id": "R1",
             "item_name": "Boundary guard",
             "item_type": "code",
+            "severity": "high",
             "sources": [
                 {
                     "kind": "report",
@@ -80,6 +81,7 @@ def _metadata() -> dict[str, object]:
             "input_item_id": "R2",
             "item_name": "Repeated comment",
             "item_type": "process",
+            "severity": "medium",
             "sources": [
                 {
                     "kind": "report",
@@ -254,6 +256,61 @@ def test_grouped_item_requires_every_source_body_in_durable_table(tmp_path: Path
 
     with pytest.raises(SystemExit, match="code-remediate-final-table-markdown-source-body-missing"):
         VALIDATOR._validate_code_remediate_final_resolution_table(metadata, tmp_path)
+
+
+def test_final_handoff_cells_are_value_bound_to_resolution_items() -> None:
+    """Reject a complete-looking final table that changes what or how an item resolved."""
+    metadata = _metadata()
+    table = metadata["final_resolution_table"]
+    assert isinstance(table, dict)
+    items = table["items"]
+    assert isinstance(items, list)
+    rows = []
+    source_records = []
+    for item in items:
+        source_ids = [f"{source['kind']}:{source['source_id']}" for source in item["sources"]]
+        rendered_sources = [
+            f"{source['kind']} [{source['source_id']}] @ {source['location']} — {source['body']} — {source['evidence']}"
+            for source in item["sources"]
+        ]
+        rows.append(
+            {
+                "id": item["input_item_id"],
+                "cells": [
+                    item["input_item_id"],
+                    item["severity"],
+                    item["item_name"],
+                    "\n".join(rendered_sources),
+                    f"{item['resolution_status']} — {item['resolved_how']}",
+                    f"{item['evidence']} — owner/status: {item['owner_status']}",
+                ],
+                "source_ids": source_ids,
+            }
+        )
+        source_records.extend(
+            {"id": source_id, "evidence": source["evidence"]}
+            for source_id, source in zip(source_ids, item["sources"], strict=True)
+        )
+    handoff = {"tables": [{"rows": rows}], "source_records": source_records}
+    result = {"metadata": metadata}
+
+    VALIDATOR._validate_code_remediate_final_handoff(result, handoff)
+
+    rows[0]["cells"][4] = "implemented — details omitted"
+    with pytest.raises(SystemExit, match="code-remediate-final-handoff-row-coverage-mismatch"):
+        VALIDATOR._validate_code_remediate_final_handoff(result, handoff)
+
+
+@pytest.mark.parametrize(
+    "validator",
+    [
+        VALIDATOR._validate_code_remediate_final_handoff,
+        VALIDATOR._validate_code_review_final_handoff,
+    ],
+)
+def test_caller_contract_bypasses_workflow_owned_table_layout(validator: object) -> None:
+    """Let an explicit caller output contract replace workflow-owned final tables."""
+    validator({"metadata": {}}, {"branch": "caller-contract"})
 
 
 def test_source_category_is_report_or_online(tmp_path: Path) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,21 @@ import pytest
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = PLUGIN_ROOT / "skills"
 QUALITY_GATES = PLUGIN_ROOT / "shared" / "quality-gates.md"
+ARTIFACT_SKILLS = (
+    "audit",
+    "calibrate",
+    "change-analysis",
+    "code-remediate",
+    "code-review",
+    "implement",
+    "investigate",
+    "kaggle",
+    "manage",
+    "optimize",
+    "release",
+    "research",
+    "sync",
+)
 
 
 def _output_contract(text: str) -> str:
@@ -59,6 +75,26 @@ def test_shared_final_chat_frame_keeps_artifacts_supplemental() -> None:
         )
     )
     assert "never a substitute for the outcome" in contract
+
+
+@pytest.mark.parametrize("skill", ARTIFACT_SKILLS)
+def test_artifact_skill_final_chat_is_an_executable_schema_v2_handoff(skill: str) -> None:
+    """Require every artifact workflow to bind and emit the validated final render."""
+    skill_text = (SKILLS_ROOT / skill / "SKILL.md").read_text(encoding="utf-8")
+    output_contract = _output_contract(skill_text)
+    template = json.loads((SKILLS_ROOT / skill / "result-template.json").read_text(encoding="utf-8"))
+
+    assert "../../shared/final-handoff-contract.md" in output_contract
+    assert "emit `final.md` verbatim" in output_contract
+    assert template["schema_version"] == 2
+    assert template["metadata"]["final_handoff"]["schema_version"] == 1
+
+
+def test_agent_shims_declares_the_non_artifact_handoff_exception() -> None:
+    """Prevent the manager-only skill from claiming validation it cannot execute."""
+    output_contract = _output_contract((SKILLS_ROOT / "agent-shims" / "SKILL.md").read_text(encoding="utf-8"))
+    assert "explicit exception" in output_contract
+    assert "not executable" in output_contract
 
 
 @pytest.mark.parametrize(

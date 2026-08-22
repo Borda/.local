@@ -19,11 +19,11 @@ Artifact-producing workflow skills and result-schema acceptance tests use this w
 
 ## Outputs
 
-It writes a deterministic candidate JSON with enum-validated status, check lists, findings, and metadata supplied by the completed workflow. The payload includes ``status``, ``checks_run``, ``checks_failed``, finding counts, final confidence, recommendations/follow-up lists, ``artifact_path``, and the supplied metadata.
+It writes a deterministic schema-v2 candidate JSON with enum-validated status, check lists, findings, and metadata supplied by the completed workflow. The payload includes ``status``, ``checks_run``, ``checks_failed``, finding counts, final confidence, recommendations/follow-up lists, ``artifact_path``, and digest-bound final-handoff metadata.
 
 ## Failure
 
-Invalid enum value, malformed metadata, missing confidence closure, or contradictory gate evidence exits non-zero before a candidate exists. In particular, a pass with failed gates or critical findings, a timeout without a failed check, and a confidence status inconsistent with its numeric band are rejected at write time.
+Invalid enum value, malformed metadata, missing confidence closure or final-handoff binding, or contradictory gate evidence exits non-zero before a candidate exists. In particular, a pass with failed gates or critical findings, a timeout without a failed check, and a confidence status inconsistent with its numeric band are rejected at write time.
 """
 
 from __future__ import annotations
@@ -33,6 +33,20 @@ import json
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+
+RESULT_SCHEMA_VERSION = 2
+FINAL_HANDOFF_SCHEMA_VERSION = 1
+FINAL_HANDOFF_METADATA_FIELDS = {
+    "schema_version",
+    "handoff_path",
+    "handoff_sha256",
+    "rendered_path",
+    "rendered_sha256",
+    "validation_path",
+    "branch",
+}
+FINAL_HANDOFF_BRANCHES = {"standard", "assessed", "unavailable", "closed", "caller-contract"}
 
 
 class ResultStatus(str, Enum):
@@ -209,6 +223,34 @@ def validate_confidence_metadata(
     validate_confidence_recovery(metadata, confidence, status, checks_failed)
 
 
+def validate_final_handoff_metadata(metadata: dict[str, Any]) -> None:
+    """Require the exact digest binding created by the final-handoff renderer."""
+    final_handoff = metadata.get("final_handoff")
+    if not isinstance(final_handoff, dict):
+        raise SystemExit("missing-final-handoff-metadata")
+    missing = sorted(FINAL_HANDOFF_METADATA_FIELDS - set(final_handoff))
+    unexpected = sorted(set(final_handoff) - FINAL_HANDOFF_METADATA_FIELDS)
+    if missing:
+        raise SystemExit("final-handoff-metadata-missing:" + ",".join(missing))
+    if unexpected:
+        raise SystemExit("final-handoff-metadata-unexpected:" + ",".join(unexpected))
+    if final_handoff["schema_version"] != FINAL_HANDOFF_SCHEMA_VERSION:
+        raise SystemExit("invalid-final-handoff-schema-version")
+    for key in ("handoff_path", "rendered_path", "validation_path"):
+        if not isinstance(final_handoff[key], str) or not final_handoff[key].strip():
+            raise SystemExit(f"invalid-final-handoff-metadata:{key}")
+    for key in ("handoff_sha256", "rendered_sha256"):
+        value = final_handoff[key]
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+        ):
+            raise SystemExit(f"invalid-final-handoff-metadata:{key}")
+    if final_handoff["branch"] not in FINAL_HANDOFF_BRANCHES:
+        raise SystemExit("invalid-final-handoff-metadata:branch")
+
+
 def split_csv(raw: str) -> list[str]:
     """Split a comma-separated argument into non-empty trimmed values."""
     return [item.strip() for item in raw.split(",") if item.strip()]
@@ -263,8 +305,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
     metadata = parse_metadata(args.metadata)
     status = ResultStatus(args.status)
     validate_confidence_metadata(metadata, args.confidence, status, checks_failed)
+    validate_final_handoff_metadata(metadata)
 
     payload = {
+        "schema_version": RESULT_SCHEMA_VERSION,
         "status": status.value,
         "checks_run": checks_run,
         "checks_failed": checks_failed,

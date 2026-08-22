@@ -126,7 +126,11 @@ Residual limits:
 Co-authored-by: Codex <codex@openai.com>
 ```
 
+Keep `Verification:` change-specific and compact: include only final checks that materially validate the committed surfaces, consolidate related gates, and omit exploratory probes, failure-first reproductions, repeated reruns, setup diagnostics, and unrelated broad checks. The canonical contract is authoritative for the full exclusion and not-run rules.
+
 ## Output Contract
+
+Before writing the result candidate, follow `../../shared/final-handoff-contract.md`: render and bind `final-handoff.json`, `final.md`, and `final-handoff.validation.json`; after both validators and promotion pass, emit `final.md` verbatim.
 
 Use `../../shared/quality-gates.md`.
 

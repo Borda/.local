@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.0
+
+- Add a deterministic post-gate final-handoff renderer and validator for all 13 artifact workflows, with exact per-skill table schemas, complete source coverage, gate/confidence reconciliation, remaining-owner actions, caller-controlled exact output, and digest-bound final bytes.
+- Render final-handoff section and table labels as compact portable Markdown bold text; omit heading syntax and ANSI color so terminal, saved-Markdown, and log output remain consistent.
+- Keep commit verification sections concise and change-specific; omit exploratory, repeated, superseded, diagnostic, and unrelated gate history while retaining final acceptance evidence.
+- Make new result candidates schema v2 and block promotion when final-handoff files, digests, branches, workflow rows, remediation provenance, review terminal rules, or rendered bytes disagree; retain read compatibility for historical schema-v1 results.
+- Migrate every workflow result template, skill output contract, shared lifecycle document, calibration helper roster/selftest, package metadata, and acceptance test to the executable handoff lifecycle; retain `agent-shims` as the explicit non-artifact manager exception and disclose that chat transport itself has no host transcript hook.
+
 ## 0.11.0
 
 - Centralize generic final-chat and network-approval mechanics in their existing shared contracts while every skill retains its outcome vocabulary, exact result schema, terminal branches, five operation-specific approval values, and recovery exceptions.

@@ -15,5 +15,33 @@
     "low": 0,
     "medium": 0
   },
+  "metadata": {
+    "confidence_gap_closures": [],
+    "confidence_gaps": [],
+    "confidence_recovery": {
+      "evidence": [
+        "objective release evidence"
+      ],
+      "final_confidence": 0.0,
+      "initial_confidence": 0.0,
+      "recovery_actions": [
+        "recovery action"
+      ],
+      "remaining_limits": [
+        "residual limit"
+      ],
+      "status": "shared-confidence-band-status"
+    },
+    "final_handoff": {
+      "branch": "standard",
+      "handoff_path": ".reports/codex/release/<timestamp>/final-handoff.json",
+      "handoff_sha256": "sha256",
+      "rendered_path": ".reports/codex/release/<timestamp>/final.md",
+      "rendered_sha256": "sha256",
+      "schema_version": 1,
+      "validation_path": ".reports/codex/release/<timestamp>/final-handoff.validation.json"
+    }
+  },
+  "schema_version": 2,
   "status": "pass|fail"
 }

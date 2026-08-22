@@ -170,6 +170,8 @@ Review calibration when this workflow changes grounding, mode routing, model sel
 
 ## Output Contract
 
+Before writing the result candidate, follow `../../shared/final-handoff-contract.md`: render and bind `final-handoff.json`, `final.md`, and `final-handoff.validation.json`; after both validators and promotion pass, emit `final.md` verbatim.
+
 Write the notebook under `.experiments/kaggle/` and the canonical run result under `.reports/codex/kaggle/<timestamp>/result.json`. Use the common fields and confidence metadata from `../../shared/quality-gates.md`; `result-template.json` is the minimum payload shape.
 
 Final chat follows the shared ordered frame. `Outcome` is `pass`, `fail`, `partial`, or `blocked` and states whether the notebook was produced and grounded. `Results` has one produced or resumed notebook per row and exactly `Artifact | Mode | Verification | Runtime limit`. Apply the shared `Verification`, `Remaining`, `Next steps`, `Confidence`, and supplemental `Artifact` rules; include grounding, structural, conversion, smoke, and review checks plus every placeholder, grounding gap, and runtime limit.

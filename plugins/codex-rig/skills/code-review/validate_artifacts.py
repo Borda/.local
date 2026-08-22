@@ -100,6 +100,7 @@ UNAVAILABLE_NOTE_LINES = (
     "Merge decision: not made",
 )
 UNAVAILABLE_RESULT_KEYS = {
+    "schema_version",
     "status",
     "checks_run",
     "checks_failed",
@@ -116,6 +117,7 @@ UNAVAILABLE_METADATA_KEYS = {
     "confidence_gaps",
     "confidence_gap_closures",
     "confidence_recovery",
+    "final_handoff",
 }
 UNAVAILABLE_FORBIDDEN_ARTIFACTS = {"specialist-manifest.json"}
 UNAVAILABLE_CONFIDENCE_GAP = (
@@ -131,6 +133,7 @@ CLOSED_METADATA_KEYS = {
     "confidence_gaps",
     "confidence_gap_closures",
     "confidence_recovery",
+    "final_handoff",
 }
 CLOSED_REQUIRED_PR_ARTIFACTS = {
     "pr.json",

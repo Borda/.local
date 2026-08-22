@@ -6,7 +6,7 @@ Calibration measures instruction quality against synthetic cases. It is not evid
 
 The package covers the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected when that route is available; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
 
-> Current release: `0.11.0`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
+> Current release: `0.12.0`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
 
 <details open>
 <summary><strong>Navigation</strong></summary>
@@ -30,7 +30,7 @@ The package covers the capabilities Codex can currently install and verify. It c
 - **A complete development loop:** investigate, change-analysis, implement, review, remediate, optimize, release, and audit with measurable gates.
 - **Specialist depth without a permanent agent install:** exact packaged role cards can guide independent blank agents or inline passes.
 - **Bounded context:** each specialist receives a narrow context pack instead of the whole parent thread.
-- **Evidence-backed completion:** workflows write comparable artifacts under `.reports/codex/<skill>/<timestamp>/` and disclose failed gates and confidence limits.
+- **Evidence-backed completion:** workflows write comparable artifacts under `.reports/codex/<skill>/<timestamp>/`, validate a digest-bound final response after gates, and disclose failed gates and confidence limits.
 - **Auditable commit handoffs:** every proposed or created commit records all meaningful changes, concrete impacts, executed verification, and residual limits in the commit body.
 - **Cold PR review and remediation:** `$code-review #123` and `$code-remediate #123 +review` preserve current PR evidence and local merge context.
 - **Scoped network access:** shell networking stays blocked by default; workflows request one runtime approval for the complete command owning each intentional GitHub, Kaggle, marketplace-refresh, or paid live-calibration operation.
@@ -183,7 +183,7 @@ Codex Rig installs 14 skills: 13 workflows plus the legacy shim manager.
 | `sync`            | Inspect active plugin-cache drift or refresh the public-GitHub Codex Rig installation without cache edits.          |
 | `agent-shims`     | Diagnose and remove authenticated thin shims from pre-release development; new installation stays blocked.          |
 
-Every workflow defines an input contract, fail-fast rules, required gates, artifact shape, and confidence output. `shared/quality-gates.md` owns the compact outcome-coupled final-chat frame—Outcome, Results, Verification, Remaining, Recommendations / next steps, Confidence, Artifact—while each skill keeps its exact outcome vocabulary, result table, and terminal exceptions; next steps reference result rows instead of repeating them, and artifacts supplement rather than replace the readable result. `shared/native-skill-contract.md` likewise owns generic shell-network approval and denial behavior while each networked skill retains its five concrete operation values and recovery exceptions. Workflow instructions live in `skills/<name>/SKILL.md`; shared executable contracts live in `shared/`.
+Every workflow defines an input contract, fail-fast rules, required gates, artifact shape, and confidence output. `shared/quality-gates.md` owns the compact outcome-coupled final-chat frame—Outcome, Results, Verification, Remaining, Recommendations / next steps, Confidence, Artifact—while `shared/final-handoff-contract.md` makes that structure executable after gates: schema-v2 results bind the validated `final-handoff.json`, rendered `final.md`, and digest record before promotion, and the workflow emits `final.md` verbatim. Rendered section and table labels use portable Markdown bold text instead of headings or terminal color escapes. Each skill keeps its exact outcome vocabulary, result table, and terminal exceptions; next steps reference result rows instead of repeating them, and artifacts supplement rather than replace the readable result. Historical schema-v1 artifacts remain readable. `agent-shims` stays the explicit exception because it has no canonical run/result artifact, and the current host still has no post-send transcript hook to prove chat transport bytes. `shared/native-skill-contract.md` likewise owns generic shell-network approval and denial behavior while each networked skill retains its five concrete operation values and recovery exceptions. Workflow instructions live in `skills/<name>/SKILL.md`; shared executable contracts live in `shared/`.
 
 ## 🔗 Optional codemap-py structural context
 

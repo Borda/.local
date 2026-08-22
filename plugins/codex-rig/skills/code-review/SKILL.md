@@ -389,6 +389,8 @@ Update calibration when review routing, severity discipline, decision vocabulary
 
 ## Output Contract
 
+Before writing the result candidate, follow `../../shared/final-handoff-contract.md`: use branch `assessed`, `unavailable`, or `closed` exactly as the review result requires; render and bind `final-handoff.json`, `final.md`, and `final-handoff.validation.json`; after both validators and promotion pass, emit `final.md` verbatim. Terminal `unavailable` and `closed` branches forbid tables; an explicitly requested exact caller format uses `caller-contract`.
+
 Use `../../shared/quality-gates.md`.
 
 Final chat follows the shared ordered frame with these review-specific branches.
