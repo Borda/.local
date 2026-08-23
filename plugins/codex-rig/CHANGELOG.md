@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.1
+
+- Allow bare pull-request remediation targets to collect current online PR items and a verified local checkout without requiring a prior assessed review artifact; explicit `+review`, report aliases, and report paths retain report-plus-online intake.
+- Recover newer same-session `code-review` candidates for `+review` only after review-specific and shared validation, preserving exact validator failures and preventing stale-report fallback; preflight specialist manifest attempt cardinality before candidate creation.
+- Make Claude/Codex selection affect only host scope: Codex sync now removes managed plugins before reinstalling by default, always refreshes the marketplace by upgrading Git registrations or replacing non-Git registrations with the canonical Git source, and treats `--no-clean` only as the uninstall opt-out.
+
 ## 0.12.0
 
 - Add a deterministic post-gate final-handoff renderer and validator for all 13 artifact workflows, with exact per-skill table schemas, complete source coverage, gate/confidence reconciliation, remaining-owner actions, caller-controlled exact output, and digest-bound final bytes.

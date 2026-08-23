@@ -11,7 +11,7 @@ It scans local report directories and JSON identity files; it does not query Git
 
 ## Usage
 
-Run ``python find-review-report.py --target <pr-url-or-number>`` to select an assessed report, or ``python find-review-report.py --result <path>`` to reject a supplied unavailable or closed result. The target search covers the requested reports root and, for the default current root, the legacy ``.reports/codex/review`` root as well.
+Run ``python find-review-report.py --target <pr-url-or-number>`` to select an assessed report, or ``python find-review-report.py --result <path>`` to reject a supplied unavailable, closed, or unpromoted candidate result. The target search covers the requested reports root and, for the default current root, the legacy ``.reports/codex/review`` root as well.
 
 ## Used by
 
@@ -23,7 +23,7 @@ It prints one matching assessed local review-artifact path, choosing the newest 
 
 ## Failure
 
-Absent PR identity, malformed report JSON, a current terminal close, only unavailable diagnostics, or no matching artifact returns a non-zero status so remediation cannot consume unassessed findings. Terminal messages distinguish unavailable, closed, missing, and invalid candidates.
+Absent PR identity, malformed report JSON, a current terminal close, a newer unpromoted candidate, only unavailable diagnostics, or no matching artifact returns a non-zero status so remediation cannot consume unassessed findings. Terminal messages distinguish unavailable, closed, unpromoted, missing, and invalid candidates.
 """
 
 from __future__ import annotations
@@ -78,6 +78,8 @@ def review_result_kind(result_path: Path) -> str:
 
 def require_assessed_review_result(result_path: Path) -> Path:
     """Return a supplied result path unless it is a terminal unavailable-review diagnostic."""
+    if result_path.name == CANDIDATE_RESULT_NAME:
+        raise LookupError(f"matching-review-candidate-unpromoted:{result_path}")
     kind = review_result_kind(result_path)
     if kind == "unavailable":
         raise LookupError("matching-review-unavailable-rerun-code-review")
@@ -90,12 +92,25 @@ def require_assessed_review_result(result_path: Path) -> Path:
 
 CURRENT_REPORTS_DIR = Path(".reports/codex/code-review")
 LEGACY_REPORTS_DIR = Path(".reports/codex/review")
+CANDIDATE_RESULT_NAME = "result.candidate.json"
+
+
+def _candidate_matches_target(candidate_path: Path, target: str) -> bool:
+    """Return whether an unpromoted candidate belongs to the requested PR target."""
+    identity = _read_pr_identity(candidate_path.parent / "pr.json")
+    if identity is not None:
+        return _matches_target(target, *identity)
+    target_path = candidate_path.parent / "pr-target.txt"
+    candidate_target = target_path.read_text(encoding="utf-8").strip() if target_path.is_file() else ""
+    return _matches_target(target, candidate_target, candidate_target)
 
 
 def find_latest_review_report(target: str, reports_dirs: list[Path]) -> Path:
     """Return the newest code-review result across current and legacy roots."""
     normalized_target = target.strip().rstrip("/")
     matches: list[Path] = []
+    candidate_matches: list[Path] = []
+    promoted_matches: list[Path] = []
     unavailable_matches = False
     invalid_matches = False
     closed_matches: list[Path] = []
@@ -108,12 +123,14 @@ def find_latest_review_report(target: str, reports_dirs: list[Path]) -> Path:
                 unavailable_target = target_path.read_text(encoding="utf-8").strip() if target_path.is_file() else ""
                 if _matches_target(normalized_target, unavailable_target, unavailable_target):
                     unavailable_matches = True
+                    promoted_matches.append(result_path)
                 continue
             identity = _read_pr_identity(result_path.parent / "pr.json")
             if identity is None:
                 continue
             number, url = identity
             if _matches_target(normalized_target, number, url):
+                promoted_matches.append(result_path)
                 if kind == "closed":
                     closed_matches.append(result_path)
                     continue
@@ -121,9 +138,20 @@ def find_latest_review_report(target: str, reports_dirs: list[Path]) -> Path:
                     invalid_matches = True
                     continue
                 matches.append(result_path)
+        candidate_matches.extend(
+            candidate_path
+            for candidate_path in reports_dir.glob(f"*/{CANDIDATE_RESULT_NAME}")
+            if _candidate_matches_target(candidate_path, normalized_target)
+        )
 
     matches.sort(key=lambda path: path.parent.name, reverse=True)
     closed_matches.sort(key=lambda path: path.parent.name, reverse=True)
+    candidate_matches.sort(key=lambda path: path.parent.name, reverse=True)
+    promoted_matches.sort(key=lambda path: path.parent.name, reverse=True)
+    if candidate_matches and (
+        not promoted_matches or candidate_matches[0].parent.name > promoted_matches[0].parent.name
+    ):
+        raise LookupError(f"matching-review-candidate-unpromoted:{candidate_matches[0]}")
     if closed_matches and (not matches or closed_matches[0].parent.name > matches[0].parent.name):
         raise LookupError("matching-review-closed-not-remediable")
     if not matches:

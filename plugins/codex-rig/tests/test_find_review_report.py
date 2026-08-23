@@ -55,6 +55,22 @@ def _write_closed_report(root: Path, timestamp: str) -> Path:
     return result_path
 
 
+def _write_candidate_report(root: Path, timestamp: str, *, pull_number: int = 123) -> Path:
+    """Create an assessed PR candidate that has not passed artifact validation."""
+    report_dir = root / timestamp
+    report_dir.mkdir()
+    (report_dir / "pr.json").write_text(
+        json.dumps({"number": pull_number, "url": f"https://github.com/acme/widgets/pull/{pull_number}"}),
+        encoding="utf-8",
+    )
+    candidate_path = report_dir / "result.candidate.json"
+    candidate_path.write_text(
+        json.dumps({"metadata": {"scope": "pr", "review_decision": {"recommendation": "needs-more-work"}}}),
+        encoding="utf-8",
+    )
+    return candidate_path
+
+
 def test_newer_unavailable_report_does_not_shadow_older_assessed_review(tmp_path: Path) -> None:
     """Keep automatic remediation bound to findings that were actually assessed."""
     finder = _load_finder()
@@ -111,3 +127,46 @@ def test_newer_closed_report_blocks_older_assessed_review(tmp_path: Path) -> Non
 
     with pytest.raises(LookupError, match="matching-review-closed-not-remediable"):
         finder.find_latest_review_report("123", [tmp_path])
+
+
+def test_candidate_only_report_requires_validation_and_promotion(tmp_path: Path) -> None:
+    """Expose recoverable candidate state instead of reporting no prior review."""
+    finder = _load_finder()
+    candidate = _write_candidate_report(tmp_path, "2026-08-10T11-00-00Z")
+
+    with pytest.raises(LookupError, match="matching-review-candidate-unpromoted") as error:
+        finder.find_latest_review_report("123", [tmp_path])
+
+    assert str(candidate) in str(error.value)
+
+
+def test_newer_candidate_blocks_fallback_to_stale_assessed_review(tmp_path: Path) -> None:
+    """Require recovery of the newest same-PR review before reusing stale findings."""
+    finder = _load_finder()
+    _write_report(tmp_path, "2026-08-10T10-00-00Z", unavailable=False)
+    candidate = _write_candidate_report(tmp_path, "2026-08-10T11-00-00Z")
+
+    with pytest.raises(LookupError, match="matching-review-candidate-unpromoted") as error:
+        finder.find_latest_review_report("123", [tmp_path])
+
+    assert str(candidate) in str(error.value)
+
+
+def test_candidate_for_other_pull_request_does_not_block_assessed_review(tmp_path: Path) -> None:
+    """Scope candidate recovery to the requested pull request rather than the report root."""
+    finder = _load_finder()
+    assessed = _write_report(tmp_path, "2026-08-10T10-00-00Z", unavailable=False)
+    _write_candidate_report(tmp_path, "2026-08-10T11-00-00Z", pull_number=456)
+
+    selected = finder.find_latest_review_report("123", [tmp_path])
+
+    assert selected == assessed
+
+
+def test_explicit_candidate_is_not_accepted_as_validated_review(tmp_path: Path) -> None:
+    """Never let an explicit candidate path bypass full artifact validation."""
+    finder = _load_finder()
+    candidate = _write_candidate_report(tmp_path, "2026-08-10T11-00-00Z")
+
+    with pytest.raises(LookupError, match="matching-review-candidate-unpromoted"):
+        finder.require_assessed_review_result(candidate)

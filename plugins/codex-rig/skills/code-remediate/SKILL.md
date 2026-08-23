@@ -1,6 +1,6 @@
 ---
 name: code-remediate
-description: Apply selected code-review fixes; rerun gates/report gaps; PR +review uses latest matching artifact.
+description: Apply selected review fixes; bare PR targets use current online items, while PR +review adds the latest matching artifact.
 ---
 
 # Code Remediate
@@ -13,7 +13,7 @@ Run linear code remediation to close findings.
 
 ```json
 {
-  "findings_source": "optional path, explicit list, review for the current-session assessed review, or +review/+report/report/latest to auto-select the newest matching PR review report",
+  "findings_source": "optional path, explicit list, review for the current-session assessed review, or +review/+report/report/latest to auto-select the newest matching PR review report; omit with a bare PR target to use current online review items",
   "mode": "optional report|pr|auto; infer pr for bare number, #number, or PR URL",
   "target": "optional shorthand target number, issue/PR URL, path, or current branch",
   "pr_target": "optional PR number, PR URL, or current branch PR when mode=pr",
@@ -29,22 +29,28 @@ Run linear code remediation to close findings.
 
 Run `create_run.py --skill code-remediate` per `../../shared/helper-cli-contract.md`.
 
-### 02: Normalize input and copy findings
+### 02: Normalize input and optional report findings
 
 Shorthand rules:
 
-- Canonical in-session report: `$code-remediate review` => `mode=report`, `FINDINGS_SOURCE=latest-assessed-current-session-review`. It resolves to the latest assessed `code-review` result created in the current session. Reuse the exact prior artifact path recorded in this session; do not scan reports or infer a PR target. Do not collect PR evidence or fetch online review comments. If no assessed current-session review result is available, fail with `current-session-review-report-required` and instruct the user to run `$code-review <target>` first or supply a report path.
-- Canonical in-session: `$code-remediate #123 +review` => `mode=pr`, `PR_TARGET=123`, `FINDINGS_SOURCE=latest-matching-review-report`.
-- Compatibility alias: `$code-remediate #123 +report` => `mode=pr`, `PR_TARGET=123`, `FINDINGS_SOURCE=latest-matching-review-report`; `$code-remediate #123 +report compatibility alias` has same report lookup.
-- Natural-language aliases: `remediate 123 report`, `remediate #123 report`, and `remediate PR 123 report` => `mode=pr`, `PR_TARGET=123`, `FINDINGS_SOURCE=latest-matching-review-report`.
-- `remediate <github-pr-url> report` => `mode=pr`, `PR_TARGET=<github-pr-url>`, `FINDINGS_SOURCE=latest-matching-review-report`.
+- Canonical in-session report: `$code-remediate review` => `mode=report`, `REQUESTED_REPORT=true`, `FINDINGS_SOURCE=latest-assessed-current-session-review`. It resolves to the latest assessed `code-review` result created in the current session. Reuse the exact prior artifact path recorded in this session; do not scan reports or infer a PR target. Do not collect PR evidence or fetch online review comments. If no assessed current-session review result is available, fail with `current-session-review-report-required` and instruct the user to run `$code-review <target>` first or supply a report path.
+- Canonical online-only PR: `$code-remediate #123` => `mode=pr`, `PR_TARGET=123`, `REQUESTED_REPORT=false`, `FINDINGS_SOURCE=none`. Accepted bare PR forms are: bare number, `#number`, PR URL, and natural-language bare PR targets; they collect current online items and verified local checkout without a prior review report.
+- Natural-language online-only aliases: `remediate 123`, `remediate #123`, `remediate PR 123`, and `remediate <github-pr-url>` use the same bare-PR route.
+- Canonical report-backed PR: `$code-remediate #123 +review` => `mode=pr`, `PR_TARGET=123`, `REQUESTED_REPORT=true`, `FINDINGS_SOURCE=latest-matching-review-report`.
+- Compatibility alias: `$code-remediate #123 +report` => `mode=pr`, `PR_TARGET=123`, `REQUESTED_REPORT=true`, `FINDINGS_SOURCE=latest-matching-review-report`; `$code-remediate #123 +report compatibility alias` has same report lookup.
+- Natural-language aliases: `remediate 123 report`, `remediate #123 report`, and `remediate PR 123 report` => `mode=pr`, `PR_TARGET=123`, `REQUESTED_REPORT=true`, `FINDINGS_SOURCE=latest-matching-review-report`.
+- `remediate <github-pr-url> report` => `mode=pr`, `PR_TARGET=<github-pr-url>`, `REQUESTED_REPORT=true`, `FINDINGS_SOURCE=latest-matching-review-report`.
+- An explicit review result path combined with a PR target sets `REQUESTED_REPORT=true`; a bare PR target has no implicit report path.
+- Bare PR and report-backed PR routing are distinct: explicit `+review`, `+report`, report aliases, and report paths retain report-plus-online behavior; absence of a report source selects online-only intake and never falls back to report lookup.
 - If `+review`, `+report`, `report`, `latest`, `latest-report`, or `review-report` replaces a path, find newest `.reports/codex/code-review/*/result.json` whose sibling `pr.json` has same PR number/URL as `PR_TARGET`.
-- No matching code-review report => fail with direct instruction to run `$code-review <target>` first or supply report path. A `matching-review-unavailable-rerun-code-review` result means PR collection failed before any assessed review; do not use it as findings input, and rerun `$code-review <target>` after resolving the collection failure. A `matching-review-closed-not-remediable` result is a terminal close disposition with no source findings; do not remediate it or fall back to an older assessed report.
-- Multiple matches => use newest timestamped directory; record selected path in `<run-directory>/findings-input.txt`.
+- When `REQUESTED_REPORT=true`, no matching code-review report => fail with direct instruction to run `$code-review <target>` first or supply report path. A `matching-review-unavailable-rerun-code-review` result means PR collection failed before any assessed review; do not use it as findings input, and rerun `$code-review <target>` after resolving the collection failure. A `matching-review-closed-not-remediable` result is a terminal close disposition with no source findings; do not remediate it or fall back to an older assessed report. A `matching-review-candidate-unpromoted:<path>` result requires the bounded same-session recovery below; do not fall back to an older assessed report.
+- When multiple matching reports exist, use the newest timestamped directory; record the selected path in `<run-directory>/findings-input.txt`.
 
-For `latest-matching-review-report`, inspect `python PLUGIN_ROOT/shared/find-review-report.py --help`, resolve `PR_TARGET` against `.reports/codex/code-review`, assign printed path to `FINDINGS_SOURCE`. The helper filters explicit `review_status=unavailable` diagnostics, so an older assessed review remains eligible when a newer collection failure exists. A newer `review_status=closed` result instead blocks older findings because the close disposition is current and non-remediable. Before accepting an explicit result path as findings input, invoke the same helper with `--result <path>`; it rejects unavailable results with the rerun instruction and closed results with `matching-review-closed-not-remediable`.
+When `FINDINGS_SOURCE=latest-matching-review-report`, inspect `python PLUGIN_ROOT/shared/find-review-report.py --help`, resolve `PR_TARGET` against `.reports/codex/code-review`, and assign the printed path to `FINDINGS_SOURCE`. The helper filters explicit `review_status=unavailable` diagnostics, so an older assessed review remains eligible when a newer collection failure exists. A newer `review_status=closed` result instead blocks older findings because the close disposition is current and non-remediable. Before accepting an explicit review result path as findings input, invoke the same helper with `--result <path>`; it rejects unavailable results with the rerun instruction, closed results with `matching-review-closed-not-remediable`, and candidate paths with `matching-review-candidate-unpromoted:<path>`. A bare PR target must not run this helper, scan prior review reports, or require a `code-review` artifact.
 
-Copy the exact bytes from the retained findings-source path to `<run-directory>/findings-input.txt` with the filesystem tool. Do not depend on a shell variable retaining that source path.
+For `matching-review-candidate-unpromoted:<path>`, recover only when the candidate's `specialist-manifest.json` names the same parent thread as the current remediation session. Run the review-specific validator, then the shared validator, against that exact candidate and its review run directory; promote it to `result.json` only after both validators pass, then rerun the finder and use the promoted result. Never consume `result.candidate.json` directly. If either validator fails, persist its exact stderr code in `<run-directory>/review-candidate-validation.txt`, including `manifest-invalid-attempt-count:<role>` when applicable, and return to the code-review manifest preflight checkpoint for one evidence-preserving repair from retained specialist and rollout records. Never invent missing attempt provenance or retry a specialist for artifact bookkeeping. After a repaired manifest passes `--manifest-only`, rerender/rewrite the candidate as required and retry both validators once. If exact evidence cannot repair the run or either validator still fails, do not promote the candidate, rerun the full review, or fall back to an older assessed report; stop with the exact error and candidate path. This recovery has no waiting loop and makes no remote mutation.
+
+When `FINDINGS_SOURCE` exists, copy its exact bytes to `<run-directory>/findings-input.txt` with the filesystem tool. Do not depend on a shell variable retaining that source path. For bare PR online-only intake, do not create `<run-directory>/findings-input.txt`; set `CODE_REMEDIATE_METADATA.review_report_intake.requested_report=false` and every report-item counter to `0`.
 
 For `mode=pr`, inspect `python PLUGIN_ROOT/shared/collect_pr.py --help`; collect `PR_TARGET` into `<run-directory>/pr` with checkout enabled for current online evidence, target/head refresh, local checkout.
 
@@ -87,9 +93,9 @@ Fallback behavior:
 Findings intake:
 
 - For `mode=report`, normalize only the review report after confirming it is assessed. Reject `review_status=unavailable` and `review_status=closed`; the latter is a close disposition without source findings. Do not read, collect, or infer any `<run-directory>/pr/` evidence.
-- For `mode=pr`:
-  - Normalize the review report plus `<run-directory>/pr/comments.json`, `<run-directory>/pr/reviews.json`, `<run-directory>/pr/review-threads.json`, and `<run-directory>/pr/unresolved-review-threads.json`.
-  - Treat the review report as a closure contract, not only code findings: before editing normalize report findings, failed `checks_failed`, `follow_up`, `review_decision.required_next_work`, confidence gaps, confidence-recovery remaining limits, and no-finding residual risks into report-origin action items.
+- For `mode=pr`, always normalize `<run-directory>/pr/comments.json`, `<run-directory>/pr/reviews.json`, `<run-directory>/pr/review-threads.json`, and `<run-directory>/pr/unresolved-review-threads.json`.
+  - When `REQUESTED_REPORT=false`, those current online records are the complete findings source. Do not read or infer a review report, and do not require a prior assessed artifact. If no online item is actionable after triage, continue through the documented `none-selectable` path instead of requesting `code-review`.
+  - When `REQUESTED_REPORT=true`, additionally normalize `<run-directory>/findings-input.txt`. Treat the review report as a closure contract, not only code findings: before editing normalize report findings, failed `checks_failed`, `follow_up`, `review_decision.required_next_work`, confidence gaps, confidence-recovery remaining limits, and no-finding residual risks into report-origin action items.
   - Use local checkout in `<run-directory>/pr/local-checkout.json` as authoritative source for code triage/edits and require its `verified-local-checkout` diff provenance.
   - Require `<run-directory>/pr/target-branch.json` to prove base/target fetch before conflict/review-item resolution; `<run-directory>/pr/pr-head-fetch.json` records same-repo PR refresh or cross-repository skip rationale.
   - Checkout artifacts include `force_policy`; if checkout fails or does not match PR head, record `forced-checkout-not-attempted` and stop before forced retry.
@@ -135,9 +141,9 @@ If checkout starts dirty, conflicted, or partially merged, fail or ask cleanup b
 
 ### 04: Normalize Findings Before Editing
 
-**Structural context (optional)**: when `target_scope` names a Python module, also probe codemap-py once for changed-symbol/caller impact: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category review [--target <qname>] --out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue normalizing findings from `findings-input.txt` alone. Persist the result once here; specialist owners assigned in step 06 receive `<run-directory>/codemap-context.json` in their context pack, never a fresh query.
+**Structural context (optional)**: when `target_scope` names a Python module, also probe codemap-py once for changed-symbol/caller impact: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category review [--target <qname>] --out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue normalizing the available report and/or online findings evidence. Persist the result once here; specialist owners assigned in step 06 receive `<run-directory>/codemap-context.json` in their context pack, never a fresh query.
 
-Write `<run-directory>/action-items.md` starting with `## Review Item Resolution Table`, before prose. Ingest every report finding, normalized report-origin review obligation, fetched online PR comment, PR review, review thread, and unresolved review thread as a source record. Default to one item row per source record. Exact duplicates may share one item row only when they express the same obligation and receive one disposition; grouping never removes provenance. Every grouped row must visibly enumerate every contributing source record with category `report|online`, stable source ID, source location or `general`, complete body without truncation, and fetched evidence path or `report-only`. If user supplied/requested report, preserve both the report and fresh-online records even when they repeat each other. Table is selectable-findings source; every `resolved` row needs resolution evidence. Never substitute source counts, thread IDs, representative comments, ellipses, or artifact links for the full source records, and never reduce the ledger to changed/selected/unresolved/high-impact rows.
+Write `<run-directory>/action-items.md` starting with `## Review Item Resolution Table`, before prose. Ingest every available report finding, normalized report-origin review obligation, fetched online PR comment, PR review, review thread, and unresolved review thread as a source record. For bare PR online-only intake, every source record is `online`; never synthesize a missing report item. Default to one item row per source record. Exact duplicates may share one item row only when they express the same obligation and receive one disposition; grouping never removes provenance. Every grouped row must visibly enumerate every contributing source record with category `report|online`, stable source ID, source location or `general`, complete body without truncation, and fetched evidence path or `report-only`. If user supplied/requested report, preserve both the report and fresh-online records even when they repeat each other. Table is selectable-findings source; every `resolved` row needs resolution evidence. Never substitute source counts, thread IDs, representative comments, ellipses, or artifact links for the full source records, and never reduce the ledger to changed/selected/unresolved/high-impact rows.
 
 When `online-review-summary.json` reports `pr_metadata_transport=public-https-fallback`, list the sorted `unavailable_evidence` IDs `github_provided_file_list`, `mergeability`, `review_decision`, `reviews`, and `top_level_comments` in `action-items.md` and the online action evidence, and add the exact confidence gap `Public HTTPS PR metadata fallback omitted evidence: <sorted IDs>.` Substitute that sorted list into `<sorted IDs>`. The final remediation confidence is capped at `0.89`; carry the gap and its closure state through `action-items.md`, result metadata, and unresolved/deferred evidence.
 
@@ -151,7 +157,7 @@ For `mode=pr`, check every report/PR-review item against PR intent and changed d
 
 Write relation in action table and every expanded item. `direct-diff`, `pr-intent`, `adjacent`, `unknown` are never `out-of-scope`; keep `valid`/`needs-clarification` and selectable unless `resolved`, `already-fixed`, or `already-applied` evidence closes them. If current PR cannot close one, record `unresolved`, `deferred`, or required follow-up; never downgrade to `out-of-scope`. User can select, defer, or explicitly rule it into PR.
 
-For review report, include non-code report-origin review obligations:
+When `REQUESTED_REPORT=true`, include non-code report-origin review obligations:
 
 - failed `checks_failed`, including missing independence, full gates, lint, type, test, confidence gates
 - `follow_up`, especially `needs-independent-review`
@@ -160,7 +166,7 @@ For review report, include non-code report-origin review obligations:
 
 Report-origin obligations default in scope for `+review`, `+report`, `report`, or review-report path. Never mark `out-of-scope` merely because closure needs independent reviewer, installed tool, CI/full-gate run, or unavailable local environment. Mark `valid`/`needs-clarification`, keep selectable, leave `unresolved`/user-deferred until closure evidence. `out-of-scope` only for item proven unrelated to requested report/PR/target after citing evidence; never use it to silence failed gates/follow-up.
 
-After resolution table, add `## Review Report Intake`: total report-origin items, report-origin review-gate/follow-up items, selectable review-gate/follow-up items, report-origin `out-of-scope` count. Last count must be `0` unless item proven unrelated to requested report/PR/target.
+After the resolution table, add `## Review Report Intake`: whether a report was requested, total report-origin items, report-origin review-gate/follow-up items, selectable review-gate/follow-up items, and report-origin `out-of-scope` count. When `REQUESTED_REPORT=false`, record `requested report: false` and `0` for every report count. The `out-of-scope` count must be `0` unless an item is proven unrelated to the requested report/PR/target.
 
 Required table columns:
 
@@ -450,7 +456,7 @@ Do not commit for a remediation summary alone or without the user's explicit aut
 
 ## Fail-fast Rules
 
-01. Missing findings source => fail. 01a. `+review`, `+report`, or `report` shorthand without matching target code-review report => fail: "run `$code-review <target>` first or provide a report path".
+01. Missing findings source in report mode, an explicit report path, or a report alias => fail. A bare PR has current online PR evidence as its findings source and must not fail or request `code-review` merely because no assessed review artifact exists. 01a. `+review`, `+report`, or `report` shorthand without matching target code-review report => fail: "run `$code-review <target>` first or provide a report path".
 02. Shared gate script missing => fail.
 03. Selected critical unresolved => fail. Unselected critical/high allowed only when user selection explicitly records deferred.
 04. Finding marked fixed without closure evidence => fail.
@@ -532,7 +538,7 @@ Conditional checks:
 Update calibration when resolution policy/output shape changes:
 
 - benchmark patterns: `code-remediate`
-- behavioral cases: ambiguous findings, false closure, unresolved critical/high handling, missing user-selected resolution scope, missing resolution workplan for selected items, selected item omitted or duplicated across buckets, bucket over five items, low-volume fan-out, one-specialist-per-finding overhead, parallel execution without user approval, overlapping parallel ownership, specialist-owned bucket missing context pack, unconfirmed out-of-scope triage, connected PR item marked out-of-scope, missing connected follow-up, code-review-to-remediation gate symmetry, unresolved selected-item closure summary, complete final resolution table, per-item machine ledger reconciled with durable Markdown, grouped report/online source preservation with full bodies, final chat outcome table for every ingested item and source, gate failure disclosure, artifact validator bypass, PR online review triage, supplemental-thread degradation, sandboxed collector network approval, PR target-branch refresh, PR intent-first merge/conflict completion, fork-aware numbered checkout, verified local diff before edits
+- behavioral cases: bare PR online-only intake without a prior review artifact, explicit report-alias boundary, ambiguous findings, false closure, unresolved critical/high handling, missing user-selected resolution scope, missing resolution workplan for selected items, selected item omitted or duplicated across buckets, bucket over five items, low-volume fan-out, one-specialist-per-finding overhead, parallel execution without user approval, overlapping parallel ownership, specialist-owned bucket missing context pack, unconfirmed out-of-scope triage, connected PR item marked out-of-scope, missing connected follow-up, code-review-to-remediation gate symmetry, unresolved selected-item closure summary, complete final resolution table, per-item machine ledger reconciled with durable Markdown, grouped report/online source preservation with full bodies, final chat outcome table for every ingested item and source, gate failure disclosure, artifact validator bypass, PR online review triage, supplemental-thread degradation, sandboxed collector network approval, PR target-branch refresh, PR intent-first merge/conflict completion, fork-aware numbered checkout, verified local diff before edits
 
 ## Output Contract
 

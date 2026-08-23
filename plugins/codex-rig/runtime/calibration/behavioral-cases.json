@@ -322,6 +322,34 @@
     },
     {
       "expected_findings": [
+        "bare-pr-review-artifact-prerequisite",
+        "online-only-pr-intake-missing",
+        "report-alias-boundary-missing"
+      ],
+      "id": "code-remediate-bare-pr-online-only",
+      "prompt": "Assess a remediation invoked with a bare pull-request number when no assessed review artifact exists. It should collect current online PR items and a verified local checkout directly, while keeping explicit report aliases such as +review report-backed.",
+      "target": "code-remediate"
+    },
+    {
+      "expected_findings": [
+        "candidate-only-state-misclassified",
+        "direct-candidate-consumption",
+        "exact-validator-failure-not-persisted"
+      ],
+      "id": "code-remediate-review-candidate-recovery",
+      "prompt": "Assess a +review remediation where the newest matching run has only result.candidate.json. It classifies that candidate-only state as no matching review and falls back to an older result.json, or consumes the candidate after only lightweight metadata checks; it hides the exact review validator failure instead of writing review-candidate-validation.txt.",
+      "target": "code-remediate"
+    },
+    {
+      "expected_findings": [
+        "manifest-preflight-missing"
+      ],
+      "id": "code-review-manifest-preflight",
+      "prompt": "Assess a code-review workflow that writes result.candidate.json before checking the specialist manifest. A spawned pass has zero or more than two attempts, so final validation strands the review as an unpromoted candidate instead of catching and repairing evidence-backed bookkeeping at the manifest preflight checkpoint.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
         "supplemental-thread-failure-blocks-source-review",
         "fork-checkout-fallback-missing",
         "verified-local-diff-missing",
@@ -1371,6 +1399,16 @@
       "id": "delegation-lead-bounded-dispatch-wave",
       "prompt": "Assess a parent that starts overlapping and dependent specialist work before routes and immutable context packs exist, adds extra agents without approval, accepts before every handoff joins, then starts a second equal-sized independent wave after the first join; when parallel dispatch is unavailable it uses a serial fallback that skips the verifier and gates.",
       "target": "delegation-lead"
+    },
+    {
+      "expected_findings": [
+        "host-selector-lifecycle-divergence",
+        "local-marketplace-refresh-skipped",
+        "no-clean-refresh-suppression"
+      ],
+      "id": "sync-host-scope-lifecycle",
+      "prompt": "Assess a repository sync where selecting Codex avoids the default uninstall-before-install lifecycle used by Claude, an existing local marketplace causes refresh to be skipped, and --no-clean suppresses both uninstall and source refresh instead of only opting out of uninstall.",
+      "target": "sync"
     }
   ],
   "thresholds": {
@@ -1380,5 +1418,5 @@
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.21"
+  "version": "1.22"
 }

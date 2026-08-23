@@ -990,6 +990,30 @@ def _validate_manifest_entries(
     return by_role
 
 
+def _validate_manifest_preflight(
+    out_dir: Path,
+    codex_home: Path,
+    parent_thread_id: str,
+    project_root: Path,
+) -> None:
+    """Validate specialist routing and provenance before writing a result candidate."""
+    routing = _load_json(out_dir / "review-routing.json")
+    risk_tier = routing.get("risk_tier")
+    if risk_tier not in {"TRIVIAL", "LOCAL", "BROAD", "HIGH_RISK"}:
+        raise SystemExit(f"invalid-risk-tier:{risk_tier!r}")
+    triggered_roles = _validate_routing(out_dir, risk_tier)
+    manifest = _load_json(out_dir / "specialist-manifest.json")
+    _validate_manifest_entries(
+        out_dir,
+        manifest,
+        _manifest_passes(manifest),
+        triggered_roles,
+        codex_home,
+        parent_thread_id,
+        project_root,
+    )
+
+
 def _validate_result(
     out_dir: Path,
     result_path: Path,
@@ -1225,7 +1249,13 @@ def _validate_result(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, type=Path, help="Review output directory.")
-    parser.add_argument("--result", required=True, type=Path, help="Candidate result.json path.")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--result", type=Path, help="Candidate result.json path.")
+    source.add_argument(
+        "--manifest-only",
+        action="store_true",
+        help="Validate specialist routing and manifest provenance before candidate creation.",
+    )
     # Resolve the fallback lazily: an argparse default is built even when CODEX_HOME is set, and
     # Path.home() raises on any host that exposes no home variable the platform recognizes.
     codex_home = os.environ.get("CODEX_HOME")
@@ -1245,6 +1275,9 @@ def main() -> int:
 
     if not args.parent_thread_id:
         raise SystemExit("missing-parent-thread-id")
+    if args.manifest_only:
+        _validate_manifest_preflight(args.out, args.codex_home, args.parent_thread_id, args.project_root)
+        return 0
     _validate_result(args.out, args.result, args.codex_home, args.parent_thread_id, args.project_root)
     return 0
 

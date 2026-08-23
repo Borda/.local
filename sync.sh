@@ -376,6 +376,9 @@ CODEX_SYNC_ARGS=(install)
 if [[ -n "$CODEX_REF" ]]; then
     CODEX_SYNC_ARGS+=(--codex-ref "$CODEX_REF")
 fi
+if ! $CLEAN; then
+    CODEX_SYNC_ARGS+=(--no-clean)
+fi
 if ! $INSTALL_CODEX_GLOBAL_AGENTS; then
     CODEX_SYNC_ARGS+=(--no-codex-global-agents)
 fi

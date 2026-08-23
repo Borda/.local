@@ -102,6 +102,7 @@ From an AI-Rig checkout:
 ```bash
 bash sync.sh                                      # full Claude + Codex restore
 bash sync.sh codex                                # Codex scope only
+bash sync.sh codex --no-clean                     # refresh source and reinstall without removing plugins first
 bash sync.sh codex --no-codex-global-agents       # leave AGENTS.md unchanged; project model defaults
 bash sync.sh clear                                # teardown: uninstall plugins + strip block; keep model/policy
 bash sync.sh clear codex                          # teardown Codex scope only
@@ -111,11 +112,12 @@ Native Codex-only restore and teardown need no Bash or `jq`:
 
 ```text
 python plugins/codex-rig/scripts/sync_codex.py
+python plugins/codex-rig/scripts/sync_codex.py --no-clean
 python plugins/codex-rig/scripts/sync_codex.py --codex-ref codex-rig-v0.4.0
 python plugins/codex-rig/scripts/sync_codex.py clear
 ```
 
-`bash sync.sh claude` changes only Claude scope. Claude sync manages foundry, oss, develop, research, codemap-py, and `bridge`; it refreshes only the retained external caveman plugin. After the bridge installs successfully, sync removes any installed copy of the retired external Codex rescue plugin; a failed bridge install preserves it for recovery. The retired plugin and its marketplace are never installed or refreshed. Codex sync runs the installed Bridge static doctor after installation: it requires the `python` launcher used by MCP to report Python 3.10 or newer and checks the Claude CLI help contract without model inference, authentication changes, or provider cost. MCP inventory and workspace binding remain per fresh Codex project session. `--codex-ref REF` selects a Codex source revision; it does not change product scope. A configured local marketplace is retained and its snapshot is used directly; only configured Git marketplaces are refreshed.
+`bash sync.sh claude` changes only Claude scope, and `bash sync.sh codex` changes only Codex scope; host selection does not otherwise alter refresh or clean-install semantics. Claude sync manages foundry, oss, develop, research, codemap-py, and `bridge`; it refreshes only the retained external caveman plugin. After the bridge installs successfully, sync removes any installed copy of the retired external Codex rescue plugin; a failed bridge install preserves it for recovery. The retired plugin and its marketplace are never installed or refreshed. Codex sync removes its managed plugins by default, refreshes an existing Git marketplace or replaces a non-Git registration with the canonical `Borda/AI-Rig` Git source, and then reinstalls all managed plugins. `--no-clean` skips only the pre-install plugin removal; marketplace refresh still runs. Codex sync then runs the installed Bridge static doctor: it requires the `python` launcher used by MCP to report Python 3.10 or newer and checks the Claude CLI help contract without model inference, authentication changes, or provider cost. MCP inventory and workspace binding remain per fresh Codex project session. `--codex-ref REF` selects a Codex source revision; it does not change product scope.
 
 The direct `sync_codex.py clear` action removes the managed Codex plugins and strips only the authenticated Codex Rig block from `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`; it leaves repository-projected model defaults and personal policy untouched. Root `bash sync.sh clear` reverses the selected Claude/Codex installation: it also uninstalls this marketplace's Claude plugins when Claude scope is active, strips the Codex Rig block, and leaves repository model defaults and personal-policy state in place. Both commands keep a timestamped backup and preserve user-owned content byte-for-byte, honor `claude`/`codex` scoping where applicable, and leave marketplace registrations plus external plugins in place. A tampered managed block makes the strip fail without writing, exactly like install.
 
@@ -143,8 +145,11 @@ For PR work:
 
 ```text
 $codex-rig:code-review #123
+$codex-rig:code-remediate #123
 $codex-rig:code-remediate #123 +review
 ```
+
+A bare PR number, `#number`, PR URL, or natural-language PR target refreshes current online PR items and the verified local checkout directly, so it does not require an assessed review artifact. Add `+review` (or another report alias or an explicit report path) when remediation should combine a matching assessed review report with refreshed online PR evidence.
 
 To remediate the latest assessed review created in the current session without refreshing PR evidence or online comments:
 
@@ -156,6 +161,7 @@ When the same invocations are passed from a shell, quote them so `$` is not expa
 
 ```bash
 codex '$codex-rig:code-review #123'
+codex '$codex-rig:code-remediate #123'
 codex '$codex-rig:code-remediate #123 +review'
 codex '$codex-rig:code-remediate review'
 ```
@@ -307,8 +313,9 @@ Confidence is evidence-backed:
 - **Fallback eligibility:** Public PR metadata fallback is limited to `github-network`, `github-auth`, `github-rate-limit`, or `command-timeout` failures and requires a canonical URL matching a configured GitHub remote, or a numeric target bound to one distinct configured GitHub repository identity. Ambiguous or unsafe targets, permission, not-found, and unclassified failures fail closed. GitHub GraphQL object-resolution failures remain not-found errors instead of activating the network fallback.
 - **Fallback evidence:** The HTTPS client uses Python's default CA store and recovers an available system CA bundle only when that store is empty. The fallback normalizes limited metadata, verifies a `refs/pull/<number>/head` detached checkout, derives the local diff, and records unavailable evidence in `online-review-summary.json`; it cannot establish private PR evidence.
 - **Fallback gaps and diagnostics:** Review and remediation list the sorted IDs `github_provided_file_list`, `mergeability`, `review_decision`, `reviews`, and `top_level_comments` in their online triage/action evidence, add the exact gap `Public HTTPS PR metadata fallback omitted evidence: <sorted IDs>.`, and cap final confidence at `0.89`. Raw CLI stderr is never persisted; terminal diagnostics may include a safe `failure_reason` enum.
-- **PR refresh:** `$codex-rig:code-remediate #123 +review` finds the newest matching assessed review artifact, refreshes the same core PR/body/checkout/local-diff evidence, records supplemental review-thread coverage gaps, evaluates merge-conflict risk, and presents a resolution table before editing.
+- **PR refresh:** `$codex-rig:code-remediate #123` collects current online PR items and the verified local checkout directly; `$codex-rig:code-remediate #123 +review` additionally finds the newest matching assessed review artifact, refreshes the same core PR/body/checkout/local-diff evidence, records supplemental review-thread coverage gaps, evaluates merge-conflict risk, and presents a resolution table before editing.
 - **Current-session reuse:** `$codex-rig:code-remediate review` instead reuses the latest assessed `code-review` result created in the current session in report mode; it does not refresh PR evidence or online comments, and fails if that artifact is unavailable or closed at the proposal gate. A newer close result blocks fallback to stale assessed findings because it contains no source-remediation contract.
+- **Candidate recovery:** `$codex-rig:code-remediate #123 +review` first uses the newest promoted matching `result.json`. A newer same-session `result.candidate.json` is never consumed directly: remediation reports `matching-review-candidate-unpromoted:<path>`, reruns the review-specific validator and then the shared validator, and promotes the candidate only when both pass. A manifest-bookkeeping failure gets one evidence-preserving repair from retained specialist/rollout records before both validators rerun; an unresolved failure persists the exact code in `review-candidate-validation.txt` and never falls back to stale findings. `code-review` preflights manifest shape and spawned attempt cardinality before creating a candidate.
 - **Prompt ownership:** Selection and parallel-plan context appears in user-visible messages without repeating the interactive question or choices; each control exclusively owns its prompt, and a runtime without controls uses one plain-text prompt instead.
 - **Work buckets:** Selected findings form non-overlapping specialist/domain work buckets of at most five items. Five or fewer items stay in one agent scope; larger work uses the fewest coherent buckets, and parallel fan-out occurs only after the user approves the exact displayed plan digest.
 - **Plan revision:** A revise response regenerates the plan and requires a fresh `approve` or `parent-only` decision.

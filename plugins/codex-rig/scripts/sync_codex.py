@@ -3,7 +3,7 @@
 
 ## Purpose
 
-Provide portable local Codex plugin synchronization while preserving explicit action selection and bounded command output. It reconciles the configured marketplace and managed plugin set so local Codex state can be restored predictably.
+Provide portable local Codex plugin synchronization while preserving explicit action selection and bounded command output. It refreshes the canonical Git marketplace registration and clean-installs the managed plugin set so local Codex state can be restored predictably.
 
 ## Scope
 
@@ -11,7 +11,7 @@ Manages the configured local plugin set only; it neither edits GitHub state nor 
 
 ## Usage
 
-Invoke from the ``sync`` skill with one selected action, or call ``sync_codex`` in its focused tests. The default action installs or refreshes the managed set, while the clear action removes that local configuration according to the command contract.
+Invoke from the ``sync`` skill with one selected action, or call ``sync_codex`` in its focused tests. The default action removes and reinstalls the managed set after marketplace refresh; ``--no-clean`` retains installed plugins but never suppresses marketplace refresh. The clear action removes local managed state according to the command contract.
 
 ## Used by
 
@@ -19,7 +19,7 @@ Codex Rig's sync workflow and cross-platform synchronization tests call this syn
 
 ## Outputs
 
-Writes a structured status describing the resolved marketplace/package state and any local Codex command results. Status fields retain command outcomes and configured references so callers can explain what changed without parsing unbounded subprocess output.
+Writes bounded human-readable status describing the resolved marketplace/package state and local Codex command results. The output retains command outcomes and configured references so callers can explain what changed without exposing unbounded subprocess output.
 
 ## Failure
 
@@ -101,6 +101,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", nargs="?", choices=[a.value for a in SyncAction], default=SyncAction.INSTALL.value)
     parser.add_argument("--codex-ref", help="Git ref to pin; default follows the marketplace default branch")
+    parser.add_argument(
+        "--no-clean",
+        action="store_true",
+        help="skip managed-plugin removal before reinstalling",
+    )
     parser.add_argument(
         "--no-codex-global-agents",
         action="store_true",
@@ -240,12 +245,17 @@ def _run_bridge_static_diagnosis(root: Path, run: RunCommand, stdout: TextIO) ->
     print("  [ok] Bridge static diagnosis passed; no provider call made", file=stdout)
 
 
-def _clear(run: RunCommand, environ: Mapping[str, str], stdout: TextIO) -> int:
-    """Remove managed plugins and the authenticated global-instruction block."""
+def _remove_managed_plugins(run: RunCommand, stdout: TextIO) -> None:
+    """Remove managed plugins while tolerating entries that are already absent."""
     for _display_name, plugin_id in MANAGED_PLUGINS:
         removed = _run(run, ["codex", "plugin", "remove", plugin_id], required=False)
         state = "removed" if removed.returncode == 0 else "not installed"
         print(f"  [ok] {plugin_id}: {state}", file=stdout)
+
+
+def _clear(run: RunCommand, environ: Mapping[str, str], stdout: TextIO) -> int:
+    """Remove managed plugins and the authenticated global-instruction block."""
+    _remove_managed_plugins(run, stdout)
     installer = Path(__file__).resolve().with_name("install_global_agents.py")
     result = _run(
         run,
@@ -269,6 +279,10 @@ def sync_codex(
 
     requested_ref = args.codex_ref or ""
     root, source_type = _marketplace_state(run)
+    marketplace_add = ["codex", "plugin", "marketplace", "add", MARKETPLACE_SOURCE]
+    if requested_ref:
+        marketplace_add.extend(("--ref", requested_ref))
+
     if root is not None:
         configured_ref = _configured_ref(root)
         if configured_ref is None and requested_ref:
@@ -277,16 +291,20 @@ def sync_codex(
             raise SyncError(
                 f"marketplace tracks {configured_ref or 'default branch'}, requested {requested_ref or 'default branch'}"
             )
+
+    if not args.no_clean:
+        _remove_managed_plugins(run, stdout)
+
+    if root is not None:
         if source_type == "git":
             _run(run, ["codex", "plugin", "marketplace", "upgrade", MARKETPLACE])
             print("  [ok] marketplace refreshed", file=stdout)
         else:
-            print(f"  [skip] marketplace refresh: configured {source_type or 'non-Git'} source", file=stdout)
+            _run(run, ["codex", "plugin", "marketplace", "remove", MARKETPLACE])
+            _run(run, marketplace_add)
+            print("  [ok] marketplace re-registered from Git source", file=stdout)
     else:
-        command = ["codex", "plugin", "marketplace", "add", MARKETPLACE_SOURCE]
-        if requested_ref:
-            command.extend(("--ref", requested_ref))
-        _run(run, command)
+        _run(run, marketplace_add)
         print("  [ok] marketplace registered", file=stdout)
 
     root, _source_type = _marketplace_state(run)

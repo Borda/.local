@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
+
+import pytest
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
@@ -121,6 +124,59 @@ def test_skill_requires_list_valued_routing_evidence_and_reasons() -> None:
     assert "non-empty JSON `list[str]` value for each true/false decision" in skill
     assert "non-empty JSON `list[str]` value" in skill
     assert "Bare strings are invalid." in skill
+
+
+def test_manifest_preflight_rejects_spawned_pass_without_attempts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Catch malformed specialist cardinality before a result candidate exists."""
+    validator = load_validator()
+    review_input = b"diff --git a/widget.py b/widget.py\n"
+    (tmp_path / "diff.patch").write_bytes(review_input)
+    specialists = tmp_path / "specialists"
+    specialists.mkdir()
+    (specialists / "qa-specialist.md").write_text("QA evidence.\n", encoding="utf-8")
+    (tmp_path / "review-routing.json").write_text(json.dumps({"risk_tier": "LOCAL"}), encoding="utf-8")
+    (tmp_path / "specialist-manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "review_run_id": "review-run",
+                "parent_thread_id": "parent-thread",
+                "review_input_sha256": hashlib.sha256(review_input).hexdigest(),
+                "passes": [
+                    {
+                        "role": "qa-specialist",
+                        "axis": "tests",
+                        "mode": "spawned",
+                        "trigger": "bug fix",
+                        "confidence": 0.9,
+                        "blocking_findings": 1,
+                        "output_path": "specialists/qa-specialist.md",
+                        "attempts": [],
+                        "selected_attempt": 1,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(validator, "_validate_routing", lambda _out, _tier: {"qa-specialist"})
+    monkeypatch.setattr(validator, "_find_rollout", lambda _home, _thread: tmp_path / "rollout.jsonl")
+    monkeypatch.setattr(validator, "_read_jsonl", lambda _path: [])
+
+    with pytest.raises(SystemExit, match="manifest-invalid-attempt-count:qa-specialist"):
+        validator._validate_manifest_preflight(tmp_path, tmp_path, "parent-thread", tmp_path)
+
+
+def test_review_validator_exposes_manifest_only_preflight() -> None:
+    """Keep the executable preflight available to the code-review workflow."""
+    completed = subprocess.run(
+        [sys.executable, str(REVIEW_VALIDATOR), "--help"], capture_output=True, text=True, check=False
+    )
+
+    assert completed.returncode == 0
+    assert "--manifest-only" in completed.stdout
 
 
 def test_skill_rebuilds_a_compact_pr_snapshot_before_reporting_findings() -> None:

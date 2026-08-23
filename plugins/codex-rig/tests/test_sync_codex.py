@@ -98,7 +98,7 @@ def fake_runner(
 
 
 def test_native_sync_refreshes_latest_and_installs_global_instructions(tmp_path: Path) -> None:
-    """Restore the latest plugin without Bash, jq, or shell interpolation."""
+    """Refresh and clean-install the latest plugins without shell interpolation."""
     module = load_sync()
     root = marketplace_fixture(tmp_path)
     calls: list[tuple[str, ...]] = []
@@ -112,7 +112,18 @@ def test_native_sync_refreshes_latest_and_installs_global_instructions(tmp_path:
     )
 
     assert result == 0
-    assert ("codex", "plugin", "marketplace", "upgrade", "borda-ai-rig") in calls
+    for _display_name, plugin_id in module.MANAGED_PLUGINS:
+        remove_call = ("codex", "plugin", "remove", plugin_id)
+        add_call = ("codex", "plugin", "add", plugin_id)
+        assert remove_call in calls
+        assert add_call in calls
+        assert calls.index(remove_call) < calls.index(add_call)
+    upgrade_call = ("codex", "plugin", "marketplace", "upgrade", "borda-ai-rig")
+    assert upgrade_call in calls
+    assert all(
+        calls.index(("codex", "plugin", "remove", plugin_id)) < calls.index(upgrade_call)
+        for _display_name, plugin_id in module.MANAGED_PLUGINS
+    )
     assert ("codex", "plugin", "add", "codex-rig@borda-ai-rig") in calls
     assert ("codex", "plugin", "add", "codemap-py@borda-ai-rig") in calls
     assert ("codex", "plugin", "add", "bridge@borda-ai-rig") in calls
@@ -208,8 +219,8 @@ def test_native_sync_rejects_failed_bridge_static_diagnosis(tmp_path: Path) -> N
         )
 
 
-def test_native_sync_preserves_local_marketplace_without_upgrade(tmp_path: Path) -> None:
-    """Install managed plugins from a configured local marketplace snapshot."""
+def test_native_sync_replaces_local_marketplace_with_git_source(tmp_path: Path) -> None:
+    """Restore canonical refresh semantics when a local marketplace is configured."""
     module = load_sync()
     root = marketplace_fixture(tmp_path)
     calls: list[tuple[str, ...]] = []
@@ -224,10 +235,38 @@ def test_native_sync_preserves_local_marketplace_without_upgrade(tmp_path: Path)
 
     assert result == 0
     assert ("codex", "plugin", "marketplace", "upgrade", "borda-ai-rig") not in calls
+    assert ("codex", "plugin", "marketplace", "remove", "borda-ai-rig") in calls
+    assert ("codex", "plugin", "marketplace", "add", "Borda/AI-Rig") in calls
+    marketplace_remove_index = calls.index(("codex", "plugin", "marketplace", "remove", "borda-ai-rig"))
+    assert all(
+        calls.index(("codex", "plugin", "remove", plugin_id)) < marketplace_remove_index
+        for _display_name, plugin_id in module.MANAGED_PLUGINS
+    )
     assert ("codex", "plugin", "add", "codex-rig@borda-ai-rig") in calls
     assert ("codex", "plugin", "add", "codemap-py@borda-ai-rig") in calls
     assert ("codex", "plugin", "add", "bridge@borda-ai-rig") in calls
-    assert "marketplace refresh: configured local source" in output.getvalue()
+    assert "marketplace re-registered from Git source" in output.getvalue()
+    assert "[skip] marketplace refresh" not in output.getvalue()
+
+
+def test_native_sync_no_clean_refreshes_without_removing_plugins(tmp_path: Path) -> None:
+    """Keep no-clean limited to plugin removal rather than marketplace freshness."""
+    module = load_sync()
+    root = marketplace_fixture(tmp_path)
+    calls: list[tuple[str, ...]] = []
+
+    result = module.sync_codex(
+        module.parse_args(["--no-clean", "--no-codex-global-agents"]),
+        run=fake_runner(root, calls, source_type="local"),
+        environ={},
+        stdout=io.StringIO(),
+    )
+
+    assert result == 0
+    assert not any(call[1:3] == ("plugin", "remove") for call in calls)
+    assert ("codex", "plugin", "marketplace", "remove", "borda-ai-rig") in calls
+    assert ("codex", "plugin", "marketplace", "add", "Borda/AI-Rig") in calls
+    assert ("codex", "plugin", "add", "codex-rig@borda-ai-rig") in calls
 
 
 def test_native_sync_adds_pinned_marketplace_when_absent(tmp_path: Path) -> None:
