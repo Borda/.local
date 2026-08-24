@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from _platform import POSIX_BASH, SYMLINKS_AVAILABLE
+from _platform import SYMLINKS_AVAILABLE
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
@@ -330,61 +330,3 @@ def test_remove_requires_no_source_argument(tmp_path: Path) -> None:
 
     assert missing_source.returncode == 2
     assert "--source is required unless --remove" in missing_source.stderr
-
-
-def test_sync_clear_teardown_wiring() -> None:
-    """Bind the clear teardown path (plugin uninstall + AGENTS.md strip) to installed sync bytes."""
-    sync_path = PLUGIN_ROOT.parents[1] / "sync.sh"
-    script = sync_path.read_text(encoding="utf-8")
-    assert "clear)      CLEAR=true ;;" in script
-    assert "if $CLEAR; then" in script
-    assert 'claude plugin uninstall "${p}@${MARKETPLACE}"' in script
-    assert 'python3 "$CODEX_SYNC_SCRIPT" clear' in script
-
-
-def test_sync_global_agents_defaults_on_with_negative_opt_out() -> None:
-    """Bind full-restore defaults and opt-out wiring to installed-plugin bytes."""
-    sync_path = PLUGIN_ROOT.parents[1] / "sync.sh"
-    script = sync_path.read_text(encoding="utf-8")
-    assert "--no-codex-global-agents" in script
-    assert "        --codex-global-agents)" not in script
-    assert "INSTALL_CODEX_GLOBAL_AGENTS=true" in script
-    assert "--no-codex-global-agents) INSTALL_CODEX_GLOBAL_AGENTS=false" in script
-    assert "SYNC_CLAUDE=true" in script
-    assert "SYNC_CODEX=true" in script
-    assert 'CODEX_SYNC_SCRIPT="$PROJECT_DIR/plugins/codex-rig/scripts/sync_codex.py"' in script
-    assert 'python3 "$CODEX_SYNC_SCRIPT" "${CODEX_SYNC_ARGS[@]}"' in script
-
-
-def test_sync_runs_setup_from_each_managed_plugin_install() -> None:
-    """Keep setup discovery bound to installed managed plugins, not source or third parties."""
-    sync_path = PLUGIN_ROOT.parents[1] / "sync.sh"
-    script = sync_path.read_text(encoding="utf-8")
-    setup_section = script.split('echo "Initializing installed plugin setup skills..."', maxsplit=1)[1]
-    setup_section = setup_section.rsplit("\ndone", maxsplit=1)[0]
-
-    assert 'for p in "${PLUGINS[@]}"; do' in setup_section
-    assert "(.plugins[$plugin] // [])" in setup_section
-    assert '| sort_by(.installedAt // "")' in setup_section
-    assert "$install_path/skills/setup/SKILL.md" in setup_section
-    assert "$install_path/claude-skills/setup/SKILL.md" in setup_section
-    assert 'setup_skill="$candidate"' in setup_section
-    assert 'claude --print "/${p}:setup --approve"' in setup_section
-    assert "EXTERNAL_PLUGINS" not in setup_section
-    assert 'claude --print "/foundry:setup --approve"' not in script
-
-
-@pytest.mark.skipif(POSIX_BASH is None, reason="working POSIX Bash is unavailable")
-def test_sync_rejects_codex_ref_for_claude_only_scope(posix_bash: str) -> None:
-    """Prevent a Codex-only selector from being silently ignored by Claude-only restore."""
-    sync_path = PLUGIN_ROOT.parents[1] / "sync.sh"
-    result = subprocess.run(
-        [posix_bash, str(sync_path), "claude", "--codex-ref", "codex-rig-v0.2.2"],
-        cwd=sync_path.parent,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 2
-    assert "--codex-ref requires Codex sync" in result.stdout

@@ -158,7 +158,7 @@ Plugin-prefixed refs always (`foundry:sw-engineer`, `oss:review` — never bare 
 - Correct placement: every plugin dispatching agents from others ships its own fallback hook.
 - Source of truth is one plugin; **byte-identical copies propagate via `plugins/cc_foundry/bin/propagate_shared.py`** (`MANIFEST` maps canonical → copies, e.g. `agent-router.js`: foundry → oss/develop/research).
 - For a manifested file, edit canonical then run `propagate_shared.py --apply`; default `--check` mode is enforced in pre-commit and audit Check 14e.
-- `sync.sh` installs plugins/Codex Rig from the public remote only; it does not propagate cross-plugin files.
+- `make sync-*` installs plugins/Codex Rig from the public remote only; it does not propagate cross-plugin files.
 
 No plugin dependency system in Claude Code — never propose "install `foo` as prerequisite" as a resilience fix; circular, requires the thing that might be absent. Examples + per-plugin-variance exceptions: `AUTHORING.md` §Fallback / Resilience Infrastructure.
 

@@ -161,7 +161,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/propagate_shared.py"  # ti
 
 - **Drifted copy**: **Auto-fix: YES** — run `propagate_shared.py --apply` to overwrite copies with the canonical.
 
-> Root cause: `sync.sh` does not propagate cross-plugin shared files; a canonical edit was not mirrored into the consuming plugins. Also enforced pre-commit.
+> Root cause: the root `Makefile` does not propagate cross-plugin shared files; a canonical edit was not mirrored into the consuming plugins. Also enforced pre-commit.
 
 ## Check 14f — Unmanaged codemap index-guard copy
 

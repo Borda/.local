@@ -33,7 +33,7 @@ Treat the compact envelope, `files_touched`, transcript paths, cost, timing, and
 
 The setup result is a separate lifecycle contract in `schemas/setup-result.schema.json`. It does not reuse model-run fields or imply that static checks, authentication process exit, session activation, or workspace binding proves successful inference. The deterministic CLI never promotes a point-in-time live result to ready without the loaded-session/workspace evidence it cannot itself observe. `ready` requires every applicable gate for the selected direction; `partial` names the exact remaining gate.
 
-Ordinary synchronization is deliberately outside this approval flow: `sync.sh` invokes only a direct static doctor with bounded read-only probes and structured output. It never invokes a model or setup skill, passes an approval token, authenticates, changes host state, repairs, restarts a session, or makes a provider call. Static sync output cannot claim session-ready or workspace-ready evidence.
+Ordinary synchronization is deliberately outside this approval flow: `make sync-*` invokes only a direct static doctor with bounded read-only probes and structured output. It never invokes a model or setup skill, passes an approval token, authenticates, changes host state, repairs, restarts a session, or makes a provider call. Static sync output cannot claim session-ready or workspace-ready evidence.
 
 ## Recovery and cancellation
 

@@ -10,7 +10,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "sync_codex_session_policy.py"
-ROOT_SYNC = ROOT / "sync.sh"
 SOURCE_CONFIG = ROOT / ".codex" / "config.toml"
 SOURCE_POLICY = ROOT / ".codex" / "global-session-policy.md"
 

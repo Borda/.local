@@ -14,7 +14,7 @@
 
 - All edits stay inside this project directory. Never edit `$CODEX_HOME` or `~/.claude/` directly — both are install targets populated from this checkout, and a hand-edit there is overwritten on the next sync.
 - Permitted roots: `.codex/` (Codex config, skills, session policy), `.claude/settings.json` and `.claude/settings.local.json`, `plugins/*/{agents,skills,rules,hooks,bin}/`.
-- `sync.sh` installs from the pushed GitHub remote, not the local working tree: commit and push first, then `bash sync.sh [claude|codex]`. Running it against uncommitted work silently installs the previous state.
+- The Makefile installs from the pushed GitHub remote, not the local working tree: commit and push first, then `make sync-claude` or `make sync-codex`. Running it against uncommitted work silently installs the previous state.
 - Never initiate propagation mid-task; it is a deliberate human-triggered step.
 
 ## Core Principles

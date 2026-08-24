@@ -53,7 +53,7 @@ def test_installed_package_runs_the_explicit_package_safe_selection(tmp_path: Pa
 
     assert selected_files <= payload_paths
     assert all((installed_root / path).is_file() for path in selected_files)
-    for path in (installed_root / "sync.sh", installed_root / ".github", installed_root / ".git"):
+    for path in (installed_root / "Makefile", installed_root / ".github", installed_root / ".git"):
         assert not path.exists(), f"installed payload must not include checkout context: {path.name}"
     assert not (tmp_path / ".git").exists()
 
@@ -71,5 +71,5 @@ def test_installed_package_runs_the_explicit_package_safe_selection(tmp_path: Pa
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    for path in (installed_root / "sync.sh", installed_root / ".github", installed_root / ".git"):
+    for path in (installed_root / "Makefile", installed_root / ".github", installed_root / ".git"):
         assert not path.exists(), f"test execution created checkout context: {path.name}"

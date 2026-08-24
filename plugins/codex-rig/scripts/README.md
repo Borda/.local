@@ -162,7 +162,7 @@ python3 plugins/codex-rig/scripts/sync_codex.py install --no-clean
 python3 plugins/codex-rig/scripts/sync_codex.py clear
 ```
 
-**When-to-use:** The top-level entry point for getting Codex Rig, Codemap, and Bridge onto a machine or off it — this is what the repo's `sync.sh` calls for the Codex side of installation. Install removes the managed plugins by default, refreshes an existing Git marketplace or replaces a non-Git registration with the canonical Git source, and reinstalls the managed set. Use `--no-clean` to retain installed plugins before reinstalling without suppressing marketplace refresh, `--codex-ref` to pin a specific marketplace ref instead of tracking the default branch, and `--no-codex-global-agents` when you manage `CODEX_HOME/AGENTS.md` yourself and don't want `sync_codex.py` touching it.
+**When-to-use:** The top-level entry point for getting Codex Rig, Codemap, and Bridge onto a machine or off it — this is what the repo's `Makefile` calls for the Codex side of installation. Install removes the managed plugins by default, refreshes an existing Git marketplace or replaces a non-Git registration with the canonical Git source, and reinstalls the managed set. Use `--no-clean` to retain installed plugins before reinstalling without suppressing marketplace refresh, `--codex-ref` to pin a specific marketplace ref instead of tracking the default branch, and `--no-codex-global-agents` when you manage `CODEX_HOME/AGENTS.md` yourself and don't want `sync_codex.py` touching it. These remain `sync_codex.py`'s own CLI flags — the Makefile's `install-codex-plugins` target simply calls it without passing any of them.
 
 </details>
 

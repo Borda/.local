@@ -5,22 +5,17 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
-import os
 import re
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from _platform import POSIX_BASH
-
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = PLUGIN_ROOT.parents[1]
-SYNC_SCRIPT = PLUGIN_ROOT.parents[1] / "sync.sh"
 EXPECTED_SKILLS = (
     "agent-shims",
     "change-analysis",
@@ -772,132 +767,6 @@ def test_code_remediate_rejects_conflicts_without_merge_authorization(tmp_path: 
 
     with pytest.raises(SystemExit, match="target-merge-authorization-required"):
         validator._validate_code_remediate_merge_resolution(metadata, pr_dir, {"local_head": "base-oid"})
-
-
-@pytest.mark.skipif(not SYNC_SCRIPT.is_file(), reason="requires source-checkout sync.sh")
-@pytest.mark.skipif(POSIX_BASH is None, reason="working POSIX Bash is unavailable")
-def test_repository_sync_defaults_to_latest_and_accepts_explicit_ref(tmp_path: Path, posix_bash: str) -> None:
-    """Prove isolated Codex sync uses no ref by default and forwards an explicit pin."""
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    fake_codex_source = """#!/usr/bin/env python3
-import json
-import os
-import sys
-from pathlib import Path
-
-args = sys.argv[1:]
-state = Path(os.environ["FAKE_CODEX_STATE"])
-root = Path(os.environ["FAKE_CODEX_ROOT"])
-with Path(os.environ["FAKE_CODEX_LOG"]).open("a", encoding="utf-8") as stream:
-    stream.write(" ".join(args) + "\\n")
-
-if args[:3] == ["plugin", "marketplace", "list"]:
-    marketplaces = [{"name": "borda-ai-rig", "root": str(root)}] if state.exists() else []
-    print(json.dumps({"marketplaces": marketplaces}))
-elif args[:3] == ["plugin", "marketplace", "add"]:
-    ref = args[args.index("--ref") + 1] if "--ref" in args else None
-    root.mkdir(parents=True, exist_ok=True)
-    (root / ".codex-marketplace-install.json").write_text(
-        json.dumps({"source_type": "git", "source": "Borda/AI-Rig", "ref_name": ref}),
-        encoding="utf-8",
-    )
-    state.touch()
-elif args[:2] == ["plugin", "add"]:
-    pass
-elif args[:2] == ["plugin", "list"]:
-    print(json.dumps({"installed": [
-        {"pluginId": "codex-rig@borda-ai-rig", "enabled": True, "version": "0.3.0"},
-        {"pluginId": "codemap-py@borda-ai-rig", "enabled": True, "version": "0.28.8"},
-        {"pluginId": "bridge@borda-ai-rig", "enabled": True, "version": "0.1.0"},
-    ]}))
-else:
-    raise SystemExit(f"unexpected fake Codex call: {args}")
-"""
-    if sys.platform == "win32":
-        fake_program = fake_bin / "fake_codex.py"
-        fake_program.write_text(fake_codex_source, encoding="utf-8")
-        fake_codex = fake_bin / "codex.cmd"
-        fake_codex.write_bytes(f'@echo off\r\n"{sys.executable}" "%~dp0fake_codex.py" %*\r\n'.encode("utf-8"))
-    else:
-        fake_codex = fake_bin / "codex"
-        fake_codex.write_text(fake_codex_source, encoding="utf-8")
-        fake_codex.chmod(0o755)
-    fake_claude = fake_bin / "claude"
-    fake_claude.write_text("#!/usr/bin/env bash\nexit 99\n", encoding="utf-8")
-    fake_claude.chmod(0o755)
-
-    for case_name, cli_args, expected_add, expected_source, expect_global_agents in (
-        (
-            "latest",
-            ("codex",),
-            "plugin marketplace add Borda/AI-Rig",
-            "marketplace source: default branch",
-            True,
-        ),
-        (
-            "pinned",
-            ("codex", "--codex-ref", "codex-rig-v0.3.0"),
-            "plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.3.0",
-            "marketplace source: codex-rig-v0.3.0",
-            True,
-        ),
-        (
-            "no-global-agents",
-            ("codex", "--no-codex-global-agents"),
-            "plugin marketplace add Borda/AI-Rig",
-            "marketplace source: default branch",
-            False,
-        ),
-    ):
-        case = tmp_path / case_name
-        case.mkdir()
-        log = case / "calls.log"
-        installed_plugin = case / "marketplace" / "plugins" / "codex-rig"
-        bridge_doctor = case / "marketplace" / "plugins" / "bridge_cc-codex" / "bin" / "bridge_diagnose.py"
-        (installed_plugin / "assets").mkdir(parents=True)
-        (installed_plugin / "scripts").mkdir()
-        bridge_doctor.parent.mkdir(parents=True)
-        shutil.copy2(PLUGIN_ROOT / "assets" / "AGENTS.md", installed_plugin / "assets" / "AGENTS.md")
-        shutil.copy2(
-            PLUGIN_ROOT / "scripts" / "install_global_agents.py",
-            installed_plugin / "scripts" / "install_global_agents.py",
-        )
-        bridge_doctor.write_text('import json\nprint(json.dumps({"ok": True, "live": False}))\n', encoding="utf-8")
-        codex_home = case / "codex-home"
-        env = os.environ.copy()
-        env.update(
-            {
-                "CODEX_HOME": str(codex_home),
-                "FAKE_CODEX_LOG": str(log),
-                "FAKE_CODEX_ROOT": str(case / "marketplace"),
-                "FAKE_CODEX_STATE": str(case / "configured"),
-                "HOME": str(case / "home"),
-                "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
-            }
-        )
-        result = subprocess.run(
-            [posix_bash, str(SYNC_SCRIPT), *cli_args],
-            cwd=SYNC_SCRIPT.parent,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        assert result.returncode == 0, result.stderr
-        calls = log.read_text(encoding="utf-8").splitlines()
-        assert expected_add in calls
-        assert expected_source in result.stdout
-        assert "Codex Rig 0.3.0 installed" in result.stdout
-        assert "Codemap 0.28.8 installed" in result.stdout
-        assert "Claude Code and Codex Bridge 0.1.0 installed" in result.stdout
-        assert "Bridge static diagnosis passed; no provider call made" in result.stdout
-        assert (codex_home / "AGENTS.md").exists() is expect_global_agents
-        if expect_global_agents:
-            global_agents = (codex_home / "AGENTS.md").read_text(encoding="utf-8")
-            assert "<!-- codex-rig:global-agents begin sha256=" in global_agents
-            assert "# Global Agent Instructions" in global_agents
 
 
 def test_specialist_fallback_ladder_and_evidence_are_complete() -> None:

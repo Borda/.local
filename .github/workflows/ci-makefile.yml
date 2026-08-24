@@ -1,0 +1,44 @@
+name: CI Makefile
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "Makefile"
+      - "scripts/run_with_timeout.py"
+      - "scripts/sync_*.py"
+      - "plugins/codex-rig/scripts/sync_*.py"
+      - "tests/test_*sync*.py"
+      - ".codex/config.toml"
+      - ".codex/global-session-policy.md"
+
+jobs:
+  makefile-behavior:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest", "macos-latest"]
+    timeout-minutes: 10
+    env:
+      UV_PYTHON: "3.12"
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 📦 Install uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ env.UV_PYTHON }}
+
+      - name: 🔍 Confirm GNU make and jq are on PATH
+        run: |
+          make --version | head -1
+          jq --version
+
+      # Stubs claude/codex-adjacent scripts and scratch registries — never the real
+      # $HOME, marketplace, or plugin state. See tests/test_makefile_sync.py's module
+      # docstring for the isolation contract.
+      - name: 🧪 Run Makefile sync behavioral tests
+        run: uv run --only-group test pytest tests/test_makefile_sync.py -v -W error::DeprecationWarning

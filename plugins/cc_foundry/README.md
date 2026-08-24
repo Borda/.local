@@ -680,7 +680,7 @@ ______________________________________________________________________
 
 > **Stub + on-demand split (token diet):** `git-commit.md`, `debugging.md`, `external-data.md`, `artifact-lifecycle.md`, `quality-gates.md`, `communication.md`, `claude-config.md`, `public-github.md`, `task-lifecycle.md` = thin always-loaded stubs with hard constraints only; full procedural bodies live in `rules/_full/` (resolved from plugin cache, NOT symlinked or injected), Read on demand at the trigger point named in each stub — drafting a commit, multi-file fix, multi-page fetch, defining new output dirs, writing a report, building an `AskUserQuestion` call, setting a Bash timeout, a GitHub write, a subagent spawn. Zero constraint loss: every named rule survives in the stub or its `_full/` body, verified by heading-set diff.
 >
-> **Measured (2026-08-07)**: the always-injected preamble is ~20.5K tokens per agent and is re-sent every turn — a 56-turn agent re-sends ~1.15M tokens of it. The nine splits above cut ~2.5K of that, plus ~1.3K from `plugins/CLAUDE.md` → `plugins/AUTHORING.md`. **Rule savings are realized only after `bash sync.sh claude` propagates to the plugin cache** — `~/.claude/rules/*.md` are symlinks into a version-pinned cache directory, so edits to this repo's `rules/` do not affect running agents until installed.
+> **Measured (2026-08-07)**: the always-injected preamble is ~20.5K tokens per agent and is re-sent every turn — a 56-turn agent re-sends ~1.15M tokens of it. The nine splits above cut ~2.5K of that, plus ~1.3K from `plugins/CLAUDE.md` → `plugins/AUTHORING.md`. **Rule savings are realized only after `make sync-claude` propagates to the plugin cache** — `~/.claude/rules/*.md` are symlinks into a version-pinned cache directory, so edits to this repo's `rules/` do not affect running agents until installed.
 
 | Rule file               | Applies to                      | Governs                                                                                                                    |
 | ----------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -913,7 +913,7 @@ ______________________________________________________________________
 claude plugin uninstall foundry
 ```
 
-Claude Code runs no cleanup hook on uninstall, so nothing `/foundry:setup` created is removed by `claude plugin uninstall` or by `bash sync.sh clear`. Settings keys merged into `~/.claude/settings.json` (`statusLine`, `permissions.allow`, `permissions.deny`, `enabledPlugins`, `advisorModel`) remain — remove manually if desired. The `~/.claude/rules/foundry-*.md` symlinks and `~/.claude/TEAM_PROTOCOL.md` also persist and dangle once the plugin cache version is gone; delete them by hand.
+Claude Code runs no cleanup hook on uninstall, so nothing `/foundry:setup` created is removed by `claude plugin uninstall` or by `make clear-all`. Settings keys merged into `~/.claude/settings.json` (`statusLine`, `permissions.allow`, `permissions.deny`, `enabledPlugins`, `advisorModel`) remain — remove manually if desired. The `~/.claude/rules/foundry-*.md` symlinks and `~/.claude/TEAM_PROTOCOL.md` also persist and dangle once the plugin cache version is gone; delete them by hand.
 
 </details>
 

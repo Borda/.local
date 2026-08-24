@@ -118,7 +118,7 @@ claude plugin install codemap-py@borda-ai-rig
 
 Rules share the flat ~/.claude/rules/ namespace, so setup prefixes source names (foundry-\*.md, oss-quality-gates.md, develop-quality-gates.md, research-quality-gates.md). Setup replaces an existing destination only when ownership is provable; conflicts are reported and can be explicitly approved. Agents, skills, hooks, and plugin CLAUDE.md content are exposed by Claude Code's plugin loader rather than copied into ~/.claude/skills/ or ~/.claude/agents/.
 
-A plugin upgrade can invalidate versioned rule links. Rerun the corresponding setup skill after upgrading; bash sync.sh claude is the repository maintainer path that installs from the pushed remote and dispatches managed setup skills, not a preview of uncommitted local edits.
+A plugin upgrade can invalidate versioned rule links. Rerun the corresponding setup skill after upgrading; make sync-claude is the repository maintainer path that installs from the pushed remote and dispatches managed setup skills, not a preview of uncommitted local edits.
 
 **Uninstall leaves setup state behind.** Claude Code provides no plugin cleanup hook. After uninstall, review or remove that plugin's namespaced rule links; Foundry also leaves ~/.claude/TEAM_PROTOCOL.md and the settings keys it merged. Preserve unrelated user settings and delete only entries you can attribute to the plugin.
 
@@ -964,7 +964,7 @@ claude plugin update codemap-py@borda-ai-rig
 
 Run `/foundry:setup`, `/oss:setup`, `/develop:setup`, or `/research:setup` again after updating the corresponding plugin. Remove a plugin with `claude plugin uninstall <plugin>` (for example, `claude plugin uninstall foundry`), then follow its README if you also want to remove setup-created links or settings.
 
-Marketplace installation is the public path. A repository checkout also provides `bash sync.sh claude`, but that command installs from the pushed GitHub remote rather than the dirty local worktree. It is a deliberate maintainer restore path, not a local preview command.
+Marketplace installation is the public path. A repository checkout also provides `make sync-claude`, but that command installs from the pushed GitHub remote rather than the dirty local worktree. It is a deliberate maintainer restore path, not a local preview command.
 
 ## 🏗️ Source of truth
 

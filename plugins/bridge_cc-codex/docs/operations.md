@@ -24,7 +24,7 @@ $bridge:setup action=check target=peer scope=auto live=skip
 
 Use `action=check` for inspection only. The setup result is defined by `schemas/setup-result.schema.json` and reports the strongest evidence reached: `static`, `host-authenticated`, `session-ready`, `workspace-ready`, or `live-verified`. Static readiness, authentication, session/workspace binding, and inference are separate claims. `live=skip` remains `inference-unverified`; `live=required` is non-ready when approval or verification fails. A successful setup-CLI live probe is point-in-time evidence and remains partial until the host skill has applicable loaded-session/workspace evidence. The deterministic planner records only credential-free state and operation fingerprints; it never stores provider tokens, API keys, browser/device codes, account secrets, or raw login output. It does create one random per-user HMAC key solely to authenticate approval payloads.
 
-Ordinary `sync.sh` does not invoke setup. It calls only the direct static doctor with explicit read-only semantics, bounded timeout, and structured output. Sync does not invoke a model, pass an approval token, authenticate, configure, repair, restart a host, claim an active session/workspace, or make a provider call. A direct doctor result proves only the named machine/static probes.
+Ordinary `make sync-*` does not invoke setup. It calls only the direct static doctor with explicit read-only semantics, bounded timeout, and structured output. Sync does not invoke a model, pass an approval token, authenticate, configure, repair, restart a host, claim an active session/workspace, or make a provider call. A direct doctor result proves only the named machine/static probes.
 
 ## Foreground calls
 

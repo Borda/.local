@@ -32,7 +32,7 @@ NOT for: `~/.claude/settings.json`, statusLine, `TEAM_PROTOCOL.md`, or plugin-ca
 <inputs>
 
 - **No arguments** — interactive; prompts before replacing a conflicting destination.
-- **`--approve`** — non-interactive; replaces conflicting destinations without asking. Used by `bash sync.sh`.
+- **`--approve`** — non-interactive; replaces conflicting destinations without asking. Used by `make sync-claude`.
 
 </inputs>
 
@@ -104,9 +104,9 @@ On **(b)**, re-run Step 3's command with `--approve` appended and report the res
 
 <notes>
 
-**Upgrade path**: `claude plugin install oss@borda-ai-rig` then `/oss:setup`. Links from the previous version share the install-cache lineage, so they refresh without prompting; a rule dropped in the new version has its link removed. `bash sync.sh claude` runs `/oss:setup --approve` headlessly for every installed managed plugin that ships a setup skill, so a normal sync needs no manual step.
+**Upgrade path**: `claude plugin install oss@borda-ai-rig` then `/oss:setup`. Links from the previous version share the install-cache lineage, so they refresh without prompting; a rule dropped in the new version has its link removed. `make sync-claude` runs `/oss:setup --approve` headlessly for every installed managed plugin that ships a setup skill, so a normal sync needs no manual step.
 
-**Uninstall leaves state behind**: Claude Code runs no cleanup hook on uninstall, and neither `claude plugin uninstall` nor `bash sync.sh clear` removes what setup created. After removing the plugin, delete `~/.claude/rules/oss-*.md` by hand — they become dangling symlinks once the plugin cache version is gone.
+**Uninstall leaves state behind**: Claude Code runs no cleanup hook on uninstall, and neither `claude plugin uninstall` nor `make clear-all` removes what setup created. After removing the plugin, delete `~/.claude/rules/oss-*.md` by hand — they become dangling symlinks once the plugin cache version is gone.
 
 **Testing**: setup is reachable only as `/oss:setup` after the plugin is installed. To exercise it locally, bump `version` in `plugins/cc_oss/.claude-plugin/plugin.json`, run `claude plugin install oss@borda-ai-rig` from the repo root to refresh the cache, then invoke the skill. `bin/sync_rules.py` is a byte-identical propagated copy of the canonical helper; its regression suite lives beside that canonical copy in the AI-Rig repository.
 

@@ -67,7 +67,7 @@ claude plugin marketplace add Borda/AI-Rig
 claude plugin install oss@borda-ai-rig
 ```
 
-After installation, run `/oss:setup` once to link this plugin's rules into `~/.claude/rules/`; use `/oss:setup --approve` for the non-interactive path. Re-run it after an upgrade. In this repository, `bash sync.sh claude` invokes that setup path for managed installs.
+After installation, run `/oss:setup` once to link this plugin's rules into `~/.claude/rules/`; use `/oss:setup --approve` for the non-interactive path. Re-run it after an upgrade. In this repository, `make sync-claude` invokes that setup path for managed installs.
 
 Recommended setup:
 
@@ -504,20 +504,20 @@ ______________________________________________________________________
 
 **Purpose**: Deliver this plugin's `rules/*.md` into Claude's user-level rule namespace. Maintenance command, not part of any OSS workflow.
 
-**When to use**: after installing oss on a new machine, or after upgrading it. `bash sync.sh claude` runs it automatically for every installed managed plugin that ships a setup skill, so a normal sync needs no manual step.
+**When to use**: after installing oss on a new machine, or after upgrading it. `make sync-claude` runs it automatically for every installed managed plugin that ships a setup skill, so a normal sync needs no manual step.
 
 **Invocation**:
 
 ```text
 /oss:setup            # interactive — asks before replacing anything it does not own
-/oss:setup --approve  # non-interactive — used by sync.sh
+/oss:setup --approve  # non-interactive — used by make sync-claude
 ```
 
 Each rule installs as a symlink at `~/.claude/rules/oss-<source-name>.md`. The `oss-` prefix keeps the flat rule namespace collision-free — four plugins ship a `rules/quality-gates.md`. A filename prefix does not change how Claude loads a rule or how its `paths:` frontmatter matches.
 
 Only links this plugin provably owns are replaced or removed: the existing target must resolve under the current plugin root or under the same install-cache lineage. A real file, a link into another marketplace, a source checkout, or a dotfiles tree is reported as a conflict and left alone unless you approve replacing it.
 
-**Uninstall leaves rule links behind**: Claude Code runs no cleanup hook on uninstall, so `~/.claude/rules/oss-*.md` survives both `claude plugin uninstall` and `bash sync.sh clear`. Delete those symlinks by hand — once the plugin cache version is gone they dangle.
+**Uninstall leaves rule links behind**: Claude Code runs no cleanup hook on uninstall, so `~/.claude/rules/oss-*.md` survives both `claude plugin uninstall` and `make clear-all`. Delete those symlinks by hand — once the plugin cache version is gone they dangle.
 
 ______________________________________________________________________
 

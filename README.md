@@ -116,7 +116,7 @@ Sixteen Claude agents, fifteen Codex role cards. `delegation-lead` and `security
 | --------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Claude Code     | Six peer plugins: Foundry, OSS, Develop, Research, Codemap-py, and bridge_CC-Codex.        | Marketplace packages expose plugin-loader agents, skills, hooks, and `CLAUDE.md`; setup projects only documented rules/settings and does not install credentials or remote authority. |
 | Codex           | Codex Rig plus optional Codemap-py and bridge_CC-Codex.                                    | Marketplace packages expose namespaced skills and role cards; blank-agent injection or inline fallback is disclosed, while persistent named-agent selection remains unverified.       |
-| Source checkout | `plugins/` is the source of truth; `.claude/` and `.codex/` are host guides/configuration. | Direct marketplace install uses published bytes; `sync.sh` is a deliberate restore path that consumes the pushed remote and may project selected local policy.                        |
+| Source checkout | `plugins/` is the source of truth; `.claude/` and `.codex/` are host guides/configuration. | Direct marketplace install uses published bytes; `Makefile` is a deliberate restore path that consumes the pushed remote and may project selected local policy.                       |
 
 The design principle is simple: make uncertainty, ownership, evidence, and recovery visible while keeping packages independently installable. A workflow may route to a specialist, but a role card, task name, artifact, or green gate is not proof that a model followed it or that the resulting change is correct. Human review remains the acceptance boundary for consequential work.
 
@@ -353,17 +353,17 @@ Artifacts are reviewable evidence, not authority. Read the commands, source, tes
 
 ## 🏗️ Repository checkout and synchronization
 
-Direct marketplace installation is the normal public path. A source checkout adds maintainer tooling and the broader, deliberate `sync.sh` restore flow:
+Direct marketplace installation is the normal public path. A source checkout adds maintainer tooling and the broader, deliberate `Makefile` restore flow:
 
 ```bash
-bash sync.sh          # Claude + Codex scopes
-bash sync.sh claude   # Claude scope only
-bash sync.sh codex    # Codex scope only
+make sync-all         # Claude + Codex scopes (default target)
+make sync-claude      # Claude scope only
+make sync-codex       # Codex scope only
 ```
 
-`sync.sh` installs from the pushed GitHub remote, not uncommitted local files. Commit and push first if you intentionally want a checkout change to become installable; never use sync as a preview of a dirty worktree.
+The `Makefile` installs from the pushed GitHub remote, not uncommitted local files. Commit and push first if you intentionally want a checkout change to become installable; never use sync as a preview of a dirty worktree.
 
-Each external Claude marketplace and plugin add, update, uninstall, or install command has a 120-second timeout. Use `--external-plugin-timeout-seconds SECONDS` or the `EXTERNAL_PLUGIN_TIMEOUT_SECONDS` environment variable to select another positive-integer deadline; managed AI-Rig plugin and setup commands retain their existing behavior.
+Each external Claude marketplace and plugin add, update, uninstall, or install command has a 120-second timeout. Use the `EXTERNAL_PLUGIN_TIMEOUT_SECONDS` environment variable to select another positive-integer deadline; managed AI-Rig plugin and setup commands retain their existing behavior.
 
 <details>
 <summary><strong>Show repository layout, distribution paths, and session-only development</strong></summary>
@@ -382,10 +382,10 @@ AI-Rig/
 ├── .claude/README.md          # Claude host blueprint
 ├── .codex/README.md           # Codex host blueprint
 ├── .codex/config.toml         # project-local Codex defaults
-└── sync.sh                    # deliberate pushed-remote restore entry point
+└── Makefile                   # deliberate pushed-remote restore entry point
 ```
 
-For local development without installation, use the host's supported plugin-directory loading against a checkout and treat it as a session-only test path. It does not publish bytes, update the marketplace, or make `sync.sh` consume uncommitted files. Package build/manifest checks and the owning plugin README define the release-grade verification path.
+For local development without installation, use the host's supported plugin-directory loading against a checkout and treat it as a session-only test path. It does not publish bytes, update the marketplace, or make `make sync-all` consume uncommitted files. Package build/manifest checks and the owning plugin README define the release-grade verification path.
 
 For Claude Code, a checked-out plugin can be loaded for one session with `claude --plugin-dir ./plugins/cc_foundry` (repeat with the target plugin when testing another package). Use the Codex plugin manager for Codex package tests; do not treat a source checkout as a marketplace release.
 
@@ -436,7 +436,7 @@ If a cleanup check blocks, do not force-delete files. Reinstall the relevant plu
 - Skill names are missing: start a fresh Claude/Codex session or reload plugins, then run the host's install/doctor check.
 - Codemap queries report stale or absent: run the explicit scan from the project root, then inspect the returned freshness and coverage block.
 - GitHub or Kaggle work stops: authenticate the user-owned CLI and approve the complete owning network command when the runtime requests it.
-- `sync.sh` installs an older state: remember that it reads the pushed GitHub remote, so commit and push intentionally before syncing.
+- `Makefile` installs an older state: remember that it reads the pushed GitHub remote, so commit and push intentionally before syncing.
 - Codex Rig shim cleanup is blocked: preserve the diagnostic evidence, reinstall the plugin if needed, and rerun `agent-shims doctor` before an approved `remove`.
 
 </details>

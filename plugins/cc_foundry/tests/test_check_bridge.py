@@ -44,7 +44,7 @@ class TestBridgeStatus:
     def test_registry_entry_without_install_path_is_absent(self, tmp_path: Path) -> None:
         """A selector key with no installed entry must not read as installed.
 
-        ``sync.sh`` only treats a plugin as installed when an entry carries ``installPath``.
+        The root ``Makefile`` only treats a plugin as installed when an entry carries ``installPath``.
         A checker that accepted the bare key would tell a skill the bridge is available
         while the installer that placed it there disagrees.
         """

@@ -309,7 +309,7 @@ Safety boundaries:
 
 Update the marketplace snapshot through the host's normal plugin manager, then restart the host session. Uninstalling one half does not remove the other half or alter host credentials. Remote publication, marketplace refresh, provider login, MCP trust approval, and any permission escalation remain human-owned operations.
 
-The bridge's checked-in manifests and host baseline describe the CLI surface it was verified against. If setup reports missing or changed flags, upgrade the host or use a bridge release that supports the installed host; do not patch the baseline at runtime. Ordinary `sync.sh` runs invoke only the direct static doctor with explicit read-only semantics; they never invoke a setup skill, model, approval token, authentication, repair, restart, or provider call. Run the local verification commands below after source changes. On Linux or macOS:
+The bridge's checked-in manifests and host baseline describe the CLI surface it was verified against. If setup reports missing or changed flags, upgrade the host or use a bridge release that supports the installed host; do not patch the baseline at runtime. Ordinary `make sync-*` runs invoke only the direct static doctor with explicit read-only semantics; they never invoke a setup skill, model, approval token, authentication, repair, restart, or provider call. Run the local verification commands below after source changes. On Linux or macOS:
 
 ```bash
 python -m pytest -q plugins/bridge_cc-codex

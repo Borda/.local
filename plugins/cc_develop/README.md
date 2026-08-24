@@ -77,7 +77,7 @@ claude plugin marketplace add Borda/AI-Rig
 claude plugin install develop@borda-ai-rig
 ```
 
-Then run `/develop:setup` once to link this plugin's rules into `~/.claude/rules/`. Re-run it after every upgrade. A repository checkout may also run `bash sync.sh claude`, but that is not required for a marketplace install.
+Then run `/develop:setup` once to link this plugin's rules into `~/.claude/rules/`. Re-run it after every upgrade. A repository checkout may also run `make sync-claude`, but that is not required for a marketplace install.
 
 <details>
 
@@ -499,13 +499,13 @@ ______________________________________________________________________
 
 **Purpose**: Deliver this plugin's `rules/*.md` into Claude's user-level rule namespace. Maintenance command, not part of any development workflow.
 
-**When to use**: after installing develop on a new machine, or after upgrading it. `bash sync.sh claude` runs it automatically for every installed managed plugin that ships a setup skill, so a normal sync needs no manual step.
+**When to use**: after installing develop on a new machine, or after upgrading it. `make sync-claude` runs it automatically for every installed managed plugin that ships a setup skill, so a normal sync needs no manual step.
 
 **Invocation**:
 
 ```text
 /develop:setup            # interactive — asks before replacing anything it does not own
-/develop:setup --approve  # non-interactive — used by sync.sh
+/develop:setup --approve  # non-interactive — used by make sync-claude
 ```
 
 Each rule installs as a symlink at `~/.claude/rules/develop-<source-name>.md`. The `develop-` prefix keeps the flat rule namespace collision-free — four plugins ship a `rules/quality-gates.md`. A filename prefix does not change how Claude loads a rule or how its `paths:` frontmatter matches.
@@ -777,6 +777,6 @@ These helpers are installed workflow support and maintainer surfaces, not additi
 
 </details>
 
-**Uninstall leaves rule links behind**: Claude Code runs no cleanup hook on uninstall, so `~/.claude/rules/develop-*.md` survives both `claude plugin uninstall` and `bash sync.sh clear`. Delete those symlinks by hand — once the plugin cache version is gone they dangle.
+**Uninstall leaves rule links behind**: Claude Code runs no cleanup hook on uninstall, so `~/.claude/rules/develop-*.md` survives both `claude plugin uninstall` and `make clear-all`. Delete those symlinks by hand — once the plugin cache version is gone they dangle.
 
 Modify any skill → update this README before finishing — unsynced change = incomplete change.

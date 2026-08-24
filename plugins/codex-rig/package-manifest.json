@@ -43,7 +43,7 @@
     {
       "mode": "0644",
       "path": "README.md",
-      "sha256": "601079a3becd0704c32f0ec6916e423f504b43798673218c7448d77bf0392f52"
+      "sha256": "a45713a548f16fe456be24973686b71b823d7eda9e586a8ad8c863425ab50b1e"
     },
     {
       "mode": "0644",
@@ -238,7 +238,7 @@
     {
       "mode": "0644",
       "path": "scripts/README.md",
-      "sha256": "90cb23b9f3f047ba15118637b2a67c09adec8d364e1e332b84595a786fe115b1"
+      "sha256": "9a9a3ffb91f77de1c87fa7c7bdaf4c1e499034e53dce3a0227573a2d067f19b9"
     },
     {
       "mode": "0644",
@@ -788,7 +788,7 @@
     {
       "mode": "0644",
       "path": "tests/test_global_agents_installer.py",
-      "sha256": "ce179405a081d2aef2a5d47795ccd6b8636c961010104e8e3e80b4e2aec24c04"
+      "sha256": "225e572380aba00375e38eae52da5840d7fd0b45afe2ca73b07d1cd999212074"
     },
     {
       "mode": "0644",
@@ -798,7 +798,7 @@
     {
       "mode": "0644",
       "path": "tests/test_installed_package_gate.py",
-      "sha256": "78063b5e8eba809385413f8d9ca7f7e029dd8dad35536ec3bfc0905d40596014"
+      "sha256": "11f1c522bedef7709fa82008c827e2a8343e15200523c5a81f96cc479d0630dc"
     },
     {
       "mode": "0644",
@@ -823,7 +823,7 @@
     {
       "mode": "0644",
       "path": "tests/test_plugin_only_release.py",
-      "sha256": "960416f4b2f77c5c4e0a96c1492cfee38eeeea6890c3122f504e04d6c1b64719"
+      "sha256": "7819b4f4d6b112ac4d9ad68b7256f70afc5e9014c653c092a4c174991e61728b"
     },
     {
       "mode": "0644",
@@ -849,11 +849,6 @@
       "mode": "0644",
       "path": "tests/test_sync_codex.py",
       "sha256": "cebf3e7b6068d51194ad762262e6c4a9bbf1bc61d42261199ba2e84e7455fbcd"
-    },
-    {
-      "mode": "0644",
-      "path": "tests/test_sync_setup_dispatch.py",
-      "sha256": "4352ec426f47c69971834703028d5673e2ba9c1c479249beab528efdaa21281c"
     }
   ],
   "generator": {

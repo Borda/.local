@@ -93,19 +93,17 @@ The sync paths differ as follows:
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Direct marketplace/plugin installation           | Leaves `${CODEX_HOME:-$HOME/.codex}/AGENTS.md` unchanged and does not project repository `.codex/` settings.                                                            |
 | Direct `plugins/codex-rig/scripts/sync_codex.py` | Installs or updates the managed Codex plugins and authenticated Codex Rig block only; it does not project repository model defaults or personal policy.                 |
-| Root `bash sync.sh` with Codex scope             | Additionally projects the root `model` and `review_model` from `.codex/config.toml` and the authenticated personal-policy block from `.codex/global-session-policy.md`. |
+| Root `make sync-codex`                           | Additionally projects the root `model` and `review_model` from `.codex/config.toml` and the authenticated personal-policy block from `.codex/global-session-policy.md`. |
 
 The current repository policy keeps the parent session on Terra and permits Sol only for an explicitly requested advisory pass or explicitly selected Sol agent.
 
 From an AI-Rig checkout:
 
 ```bash
-bash sync.sh                                      # full Claude + Codex restore
-bash sync.sh codex                                # Codex scope only
-bash sync.sh codex --no-clean                     # refresh source and reinstall without removing plugins first
-bash sync.sh codex --no-codex-global-agents       # leave AGENTS.md unchanged; project model defaults
-bash sync.sh clear                                # teardown: uninstall plugins + strip block; keep model/policy
-bash sync.sh clear codex                          # teardown Codex scope only
+make sync-all                                     # full Claude + Codex restore
+make sync-codex                                   # Codex scope only
+make clear-all                                    # teardown: uninstall plugins + strip block; keep model/policy
+make clear-codex                                  # teardown Codex scope only
 ```
 
 Native Codex-only restore and teardown need no Bash or `jq`:
@@ -117,9 +115,9 @@ python plugins/codex-rig/scripts/sync_codex.py --codex-ref codex-rig-v0.4.0
 python plugins/codex-rig/scripts/sync_codex.py clear
 ```
 
-`bash sync.sh claude` changes only Claude scope, and `bash sync.sh codex` changes only Codex scope; host selection does not otherwise alter refresh or clean-install semantics. Claude sync manages foundry, oss, develop, research, codemap-py, and `bridge`; it refreshes only the retained external caveman plugin. After the bridge installs successfully, sync removes any installed copy of the retired external Codex rescue plugin; a failed bridge install preserves it for recovery. The retired plugin and its marketplace are never installed or refreshed. Codex sync removes its managed plugins by default, refreshes an existing Git marketplace or replaces a non-Git registration with the canonical `Borda/AI-Rig` Git source, and then reinstalls all managed plugins. `--no-clean` skips only the pre-install plugin removal; marketplace refresh still runs. Codex sync then runs the installed Bridge static doctor: it requires the `python` launcher used by MCP to report Python 3.10 or newer and checks the Claude CLI help contract without model inference, authentication changes, or provider cost. MCP inventory and workspace binding remain per fresh Codex project session. `--codex-ref REF` selects a Codex source revision; it does not change product scope.
+`make sync-claude` changes only Claude scope, and `make sync-codex` changes only Codex scope; host selection does not otherwise alter refresh or clean-install semantics. Claude sync manages foundry, oss, develop, research, codemap-py, and `bridge`; it refreshes only the retained external caveman plugin. After the bridge installs successfully, sync removes any installed copy of the retired external Codex rescue plugin; a failed bridge install preserves it for recovery. The retired plugin and its marketplace are never installed or refreshed. Codex sync removes its managed plugins by default, refreshes an existing Git marketplace or replaces a non-Git registration with the canonical `Borda/AI-Rig` Git source, and then reinstalls all managed plugins. Codex sync then runs the installed Bridge static doctor: it requires the `python` launcher used by MCP to report Python 3.10 or newer and checks the Claude CLI help contract without model inference, authentication changes, or provider cost. MCP inventory and workspace binding remain per fresh Codex project session. Codex sync always removes managed plugins before reinstalling and always tracks the marketplace default branch; the earlier `--no-clean` and `--codex-ref` flags that varied this are gone — there is no flag-level override for either behavior anymore.
 
-The direct `sync_codex.py clear` action removes the managed Codex plugins and strips only the authenticated Codex Rig block from `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`; it leaves repository-projected model defaults and personal policy untouched. Root `bash sync.sh clear` reverses the selected Claude/Codex installation: it also uninstalls this marketplace's Claude plugins when Claude scope is active, strips the Codex Rig block, and leaves repository model defaults and personal-policy state in place. Both commands keep a timestamped backup and preserve user-owned content byte-for-byte, honor `claude`/`codex` scoping where applicable, and leave marketplace registrations plus external plugins in place. A tampered managed block makes the strip fail without writing, exactly like install.
+The direct `sync_codex.py clear` action removes the managed Codex plugins and strips only the authenticated Codex Rig block from `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`; it leaves repository-projected model defaults and personal policy untouched. Root `make clear-all` reverses the selected Claude/Codex installation: it also uninstalls this marketplace's Claude plugins when Claude scope is active, strips the Codex Rig block, and leaves repository model defaults and personal-policy state in place; `make clear-codex` and `make clear-claude` scope the same teardown to one side only. Both commands keep a timestamped backup and preserve user-owned content byte-for-byte, honor `claude`/`codex` scoping where applicable, and leave marketplace registrations plus external plugins in place. A tampered managed block makes the strip fail without writing, exactly like install.
 
 Codex sync uses the template from the installed marketplace revision. A missing global file is created as one SHA-256-authenticated managed block. Existing user instructions are backed up and preserved byte-for-byte outside that block. An exact unmarked copy from an older sync is adopted without duplication. Later runs update only an unmodified managed block and otherwise fail without writing when markers are missing, duplicated, malformed, or manually changed.
 
@@ -376,14 +374,14 @@ codex plugin add bridge@borda-ai-rig
 
 Then start a fresh Codex session. Plugin reinstall does not update external user-agent files automatically. Use the manager's authenticated `remove` action to clean prior development shims; new installation remains platform-blocked.
 
-Repository sync never restores the legacy `.codex/` tree. When Codex scope is active, root `sync.sh` installs or updates the public Codex plugins and authenticated Codex Rig block, then projects repository model defaults and personal policy as described above. `--no-codex-global-agents` leaves `${CODEX_HOME:-$HOME/.codex}/AGENTS.md` unchanged and skips personal-policy projection while still projecting `model` and `review_model`.
+Repository sync never restores the legacy `.codex/` tree. When Codex scope is active, root `make sync-codex` installs or updates the public Codex plugins and authenticated Codex Rig block, then projects repository model defaults and personal policy as described above. There is no flag to skip that global-instructions projection anymore — the earlier `--no-codex-global-agents` opt-out is gone, and `make sync-codex` always projects `model`, `review_model`, and the personal-policy block together.
 
 ### Legacy project-to-home copies
 
 <details>
 <summary><strong>Legacy copy cleanup warning</strong></summary>
 
-Older `sync.sh` versions copied AI-Rig files into `~/.codex/`. The copied files had no durable per-file ownership marker, so Codex Rig does not delete them automatically. Before manual cleanup, back up the home, distinguish AI-Rig copies from user-owned modifications, and remove only files whose ownership you can establish. An old home copy can otherwise expose duplicate unnamespaced skills or stale named-agent registrations beside the plugin.
+Older `sync.sh` versions — the script has since been retired and its logic folded into the root `Makefile` — copied AI-Rig files into `~/.codex/`. The copied files had no durable per-file ownership marker, so Codex Rig does not delete them automatically. Before manual cleanup, back up the home, distinguish AI-Rig copies from user-owned modifications, and remove only files whose ownership you can establish. An old home copy can otherwise expose duplicate unnamespaced skills or stale named-agent registrations beside the plugin.
 
 </details>
 
@@ -522,7 +520,7 @@ python3 -m pytest -q plugins/codex-rig/tests/test_app_server_denial_protocol.py
 python3 plugins/codex-rig/tests/app_server_denial_probe.py --help
 ```
 
-The installed-package-safe gate copies only manifest-declared payload into a disposable cache and runs the explicit package-safe test selection without checkout context (`sync.sh`, `.github`, and `.git`). Run it with:
+The installed-package-safe gate copies only manifest-declared payload into a disposable cache and runs the explicit package-safe test selection without checkout context (`Makefile`, `.github`, and `.git`). Run it with:
 
 ```bash
 python3 -m pytest -q plugins/codex-rig/tests/test_installed_package_gate.py

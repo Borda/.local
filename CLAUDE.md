@@ -18,13 +18,13 @@ When a top-level policy changes, review lower layers for conflicts or obsolete d
 **Permitted edit roots** (project-local):
 
 - `.claude/settings.json`, `.claude/settings.local.json` — project Claude config
-- `.codex/` — project Codex config, skills, session policy (mirrored to `$CODEX_HOME` by `sync.sh`, never edited there)
+- `.codex/` — project Codex config, skills, session policy (mirrored to `$CODEX_HOME` by `Makefile`, never edited there)
 - `plugins/*/{agents,skills,rules,hooks,bin}/` — plugin source
 
 **Propagation to live cache** at `~/.claude/plugins/cache/`:
 
-- `sync.sh` installs from the pushed GitHub remote, not local working tree — commit and push first, then `bash sync.sh claude`
-- Never run `sync.sh` against uncommitted/unpushed changes — cache will not reflect them
+- `Makefile` installs from the pushed GitHub remote, not local working tree — commit and push first, then `make sync-claude`
+- Never run `make sync-*`/`make clear-*` against uncommitted/unpushed changes — cache will not reflect them
 - Never suggest or initiate propagation mid-workflow
 - Applies to all skills — no skill auto-syncs
 

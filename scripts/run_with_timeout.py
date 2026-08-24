@@ -12,7 +12,7 @@ Outputs:
 Failure:
     A missing command or non-finite/non-positive timeout is rejected before launch with exit ``2``. Cleanup attempts are bounded and fall back to killing the direct child when process-tree facilities are unavailable.
 Used by:
-    Root ``sync.sh`` wraps every external-plugin marketplace and installation command with this helper. Tests invoke it directly to prove successful transparency, failure propagation, timeout behavior, and descendant cleanup without contacting a marketplace.
+    The root ``Makefile`` wraps every external-plugin marketplace and installation command with this helper. Tests invoke it directly to prove successful transparency, failure propagation, timeout behavior, and descendant cleanup without contacting a marketplace.
 """
 
 from __future__ import annotations

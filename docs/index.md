@@ -120,7 +120,7 @@ Codemap-py accelerates import, symbol, call, test-impact, and rename questions f
 
 ### 🤖 Codex Rig
 
-Codex Rig gives native Codex workflows a shared input, gate, artifact, and confidence contract. Role cards can guide runtime blank agents when that route exists; otherwise the parent performs a disclosed inline pass. Direct plugin installation does not claim persistent named-agent registration, silently enable network access, mutate remote GitHub state, or copy repository instructions into a user's Codex home; the separate source-checkout `sync.sh` flow can deliberately project managed instructions when its Codex scope is selected. [Read the full Codex Rig reference.](codex-rig.md)
+Codex Rig gives native Codex workflows a shared input, gate, artifact, and confidence contract. Role cards can guide runtime blank agents when that route exists; otherwise the parent performs a disclosed inline pass. Direct plugin installation does not claim persistent named-agent registration, silently enable network access, mutate remote GitHub state, or copy repository instructions into a user's Codex home; the separate source-checkout `make sync-*` flow can deliberately project managed instructions when its Codex scope is selected. [Read the full Codex Rig reference.](codex-rig.md)
 
 ### 🌉 bridge_CC-Codex
 

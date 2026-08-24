@@ -326,16 +326,16 @@ Codex Rig's `implement`, `investigate`, and `optimize` routes may probe the publ
 
 Direct marketplace installation is the public path and leaves global/project instructions alone.
 
-From this source checkout, `bash sync.sh codex` performs a broader managed restore: it installs or updates Codex Rig, Codemap-py, and bridge_CC-Codex, projects selected repository model defaults and personal policy, and manages one authenticated Codex Rig block in `CODEX_HOME/AGENTS.md` unless `--no-codex-global-agents` is supplied. Read the [Codex Rig managed-instructions section](../plugins/codex-rig/README.md#managed-global-instructions) before using it.
+From this source checkout, `make sync-codex` performs a broader managed restore: it installs or updates Codex Rig, Codemap-py, and bridge_CC-Codex, projects selected repository model defaults and personal policy, and always manages one authenticated Codex Rig block in `CODEX_HOME/AGENTS.md` — there is no opt-out flag. Read the [Codex Rig managed-instructions section](../plugins/codex-rig/README.md#managed-global-instructions) before using it.
 
-`sync.sh` installs from the pushed GitHub remote, not a dirty local tree. Commit and push first when you intentionally want a checkout change to become installable.
+`make sync-codex` installs from the pushed GitHub remote, not a dirty local tree. Commit and push first when you intentionally want a checkout change to become installable.
 
 <details>
 <summary><strong>Show sync scope and cleanup boundaries</strong></summary>
 
-Direct installation changes only the Codex plugin configuration/cache. Repository sync additionally installs or updates all three managed plugins, projects the root `model` and `review_model` defaults plus the authenticated personal policy, and manages one marked Codex Rig global-instructions block unless opted out. It does not overwrite project-owned `AGENTS.md` files or unrelated user configuration.
+Direct installation changes only the Codex plugin configuration/cache. Repository sync additionally installs or updates all three managed plugins, projects the root `model` and `review_model` defaults plus the authenticated personal policy, and always manages one marked Codex Rig global-instructions block. It does not overwrite project-owned `AGENTS.md` files or unrelated user configuration.
 
-`bash sync.sh codex --no-codex-global-agents` leaves the global file unchanged while still projecting model defaults. `bash sync.sh clear codex` removes Codex Rig, Codemap-py, bridge_CC-Codex, and the managed block while preserving user-owned bytes; marketplace registrations remain. The native `plugins/codex-rig/scripts/sync_codex.py` path manages the Codex plugins and block but does not project repository model defaults or personal policy.
+`make clear-codex` removes Codex Rig, Codemap-py, bridge_CC-Codex, and the managed block while preserving user-owned bytes; marketplace registrations remain. The native `plugins/codex-rig/scripts/sync_codex.py` path manages the Codex plugins and block but does not project repository model defaults or personal policy.
 
 </details>
 
