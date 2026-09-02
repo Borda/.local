@@ -4,29 +4,33 @@
 Convert sanitized rollout event rows into compact attempt and wave telemetry that can compare parallel execution with a matched serial baseline.
 
 ## Scope
-Own schema validation, token-counter handling, HMAC identifier projection, task timing extraction, derived comparison metrics, and compact retained-proof policy. The module does not schedule agents, read prompts, persist raw rollout data, delete diagnostics, estimate provider prices, or decide whether a rollout phase passes.
+Own schema validation, token-counter handling, HMAC identifier projection, task timing extraction, derived comparison metrics, compact retained-proof policy, and audited expiry deletion of one fixed sanitized diagnostic artifact. The module does not schedule agents, read prompts, persist raw rollout data, recursively delete files, estimate provider prices, or decide whether a rollout phase passes.
 
 ## Usage
-Callers pass already-parsed JSON objects to :func:`collect_attempt_telemetry`, combine attempts with :func:`aggregate_wave_telemetry`, compare matched waves with :func:`compare_parallel_to_serial`, and project an exact wave through :func:`build_retained_wave_evidence`. Runtime producers remain responsible for trustworthy timestamps and provider counters; persistence owners enforce the returned diagnostic expiry.
+Callers pass already-parsed JSON objects to :func:`collect_attempt_telemetry`, combine attempts with :func:`aggregate_wave_telemetry`, compare matched waves with :func:`compare_parallel_to_serial`, and project an exact wave through :func:`build_retained_wave_evidence`. Storage consumers call :func:`enforce_diagnostic_expiry` with that exact record, an explicit time, and a dedicated diagnostics directory.
 
 ## Outputs
-Returned dictionaries contain numeric counters, bounded enums, timing fields, HMAC identifiers, aggregate comparisons, and explicit unavailable-field reasons only. No file is written and no network request is made.
+Returned dictionaries contain numeric counters, bounded enums, timing fields, HMAC identifiers, aggregate comparisons, expiry audit evidence, and explicit unavailable-field reasons only. Expiry enforcement appends compact JSON Lines evidence to ``expiry-audit.jsonl`` before an eligible deletion and after every outcome; it may unlink only ``<wave_id_hmac>.diagnostic.json`` directly inside the supplied dedicated directory and makes no network request.
 
 ## Failure
-Malformed counters, raw identifiers in output fields, negative timing, invalid modes, inconsistent token totals, or unmatched comparison keys raise ``TelemetryError``. Missing optional timing is represented as ``None`` instead of being fabricated, so incomplete observability cannot appear measured.
+Malformed counters, raw identifiers in output fields, negative timing, invalid modes, inconsistent token totals, record-policy drift, ambiguous timestamps, or unsafe diagnostic paths raise ``TelemetryError``. Missing optional timing is represented as ``None`` instead of being fabricated, so incomplete observability cannot appear measured.
 
 ## Used by
-Read-only runtime pilots, calibration, and skill consumers that need wall-time and token evidence without retaining prompts, reasoning, tool arguments, paths, credentials, or child messages. Acceptance logic consumes these returned records separately; this module is not an execution controller.
+Read-only runtime pilots, storage consumers, calibration, and skill consumers that need wall-time and token evidence without retaining prompts, reasoning, tool arguments, paths, credentials, or child messages. Acceptance logic consumes these returned records separately; this module is not an execution controller.
 """
 
 from __future__ import annotations
 
 import hashlib
 import hmac
+import json
+import os
 import re
+import stat
 import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 
@@ -60,6 +64,31 @@ _WAVE_FIELDS = frozenset(
         *TOKEN_FIELDS,
     }
 )
+_RETAINED_WAVE_EVIDENCE_FIELDS = frozenset(
+    {
+        "schema_version",
+        "wave_id_hmac",
+        "proof_sha256",
+        "status",
+        "observed_at",
+        "resolved_at",
+        "mode",
+        "attempt_count",
+        "workload_key_sha256",
+        "wall_time_ms",
+        "wall_time_source",
+        "unavailable_fields",
+        *TOKEN_FIELDS,
+        "budget_ceiling_tokens",
+        "budget_reserved_tokens",
+        "actual_over_budget_tokens",
+        "proof_retention",
+        "diagnostic_retention",
+        "diagnostic_expires_at",
+    }
+)
+_SANITIZED_DIAGNOSTIC_SUFFIX = ".diagnostic.json"
+_DIAGNOSTIC_EXPIRY_AUDIT = "expiry-audit.jsonl"
 
 
 def hmac_identifier(secret: bytes, identifier: str) -> str:
@@ -445,3 +474,211 @@ def build_retained_wave_evidence(
         "diagnostic_retention": diagnostic_retention,
         "diagnostic_expires_at": diagnostic_expires_at,
     }
+
+
+def _validated_retained_expiry(record: Mapping[str, Any]) -> tuple[str, str, datetime | None]:
+    """Validate a complete retained record and return its immutable expiry state."""
+    if set(record) != _RETAINED_WAVE_EVIDENCE_FIELDS:
+        raise TelemetryError("retained-record-fields-invalid")
+    wave_id_hmac = record.get("wave_id_hmac")
+    proof_sha256 = record.get("proof_sha256")
+    status = record.get("status")
+    if (
+        record.get("schema_version") != 1
+        or not isinstance(wave_id_hmac, str)
+        or _HEX64.fullmatch(wave_id_hmac) is None
+        or not isinstance(proof_sha256, str)
+        or _HEX64.fullmatch(proof_sha256) is None
+        or not isinstance(status, str)
+        or status not in RETENTION_STATUSES
+    ):
+        raise TelemetryError("retained-record-contract-invalid")
+    observed_at = record.get("observed_at")
+    resolved_at = record.get("resolved_at")
+    observed = _retention_timestamp(observed_at, "observed-at")
+    resolved = _retention_timestamp(resolved_at, "resolved-at") if resolved_at is not None else None
+    if observed_at != observed.isoformat() or (resolved is not None and resolved_at != resolved.isoformat()):
+        raise TelemetryError("retained-record-policy-drift")
+    if (status == "passed" and resolved is not None) or (resolved is not None and resolved < observed):
+        raise TelemetryError("retained-record-policy-drift")
+    mode = record.get("mode")
+    attempt_count = record.get("attempt_count")
+    wall_time_ms = record.get("wall_time_ms")
+    workload_digest = record.get("workload_key_sha256")
+    unavailable_fields = record.get("unavailable_fields")
+    if (
+        not isinstance(mode, str)
+        or mode not in EXECUTION_MODES
+        or not isinstance(attempt_count, int)
+        or isinstance(attempt_count, bool)
+        or attempt_count <= 0
+        or not isinstance(wall_time_ms, int)
+        or isinstance(wall_time_ms, bool)
+        or wall_time_ms < 0
+        or record.get("wall_time_source") != "dispatch_to_final_join"
+        or not isinstance(workload_digest, str)
+        or _HEX64.fullmatch(workload_digest) is None
+        or not isinstance(unavailable_fields, list)
+        or any(not isinstance(field, str) or not field for field in unavailable_fields)
+        or len(set(unavailable_fields)) != len(unavailable_fields)
+        or not set(unavailable_fields).issubset(RETAINED_UNAVAILABLE_FIELDS)
+    ):
+        raise TelemetryError("retained-record-contract-invalid")
+    usage = _validated_usage(record, field_name="retained-record-usage")
+    ceiling = record.get("budget_ceiling_tokens")
+    reserved = record.get("budget_reserved_tokens")
+    if (
+        not isinstance(ceiling, int)
+        or isinstance(ceiling, bool)
+        or ceiling <= 0
+        or not isinstance(reserved, int)
+        or isinstance(reserved, bool)
+        or reserved <= 0
+        or reserved > ceiling
+        or record.get("actual_over_budget_tokens") != max(0, usage["total_tokens"] - ceiling)
+        or record.get("proof_retention") != "durable"
+    ):
+        raise TelemetryError("retained-record-contract-invalid")
+    expiry_base = observed if status == "passed" else resolved
+    expiry = expiry_base + timedelta(days=30) if expiry_base is not None else None
+    expected_retention = "expire-30d-after-success-or-resolution" if expiry is not None else "retain-until-resolution"
+    expected_expiry = expiry.isoformat() if expiry is not None else None
+    if (
+        record.get("diagnostic_retention") != expected_retention
+        or record.get("diagnostic_expires_at") != expected_expiry
+    ):
+        raise TelemetryError("retained-record-policy-drift")
+    return wave_id_hmac, status, expiry
+
+
+def _diagnostic_directory_root(diagnostics_directory: Path) -> Path:
+    """Return a resolved dedicated diagnostics directory without following a symlink."""
+    if not isinstance(diagnostics_directory, Path):
+        raise TelemetryError("diagnostic-directory-required")
+    try:
+        metadata = diagnostics_directory.lstat()
+    except FileNotFoundError as error:
+        raise TelemetryError("diagnostic-directory-missing") from error
+    if stat.S_ISLNK(metadata.st_mode):
+        raise TelemetryError("diagnostic-directory-symlink-invalid")
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise TelemetryError("diagnostic-directory-not-directory")
+    root = diagnostics_directory.resolve(strict=True)
+    if diagnostics_directory.absolute() != root:
+        raise TelemetryError("diagnostic-directory-path-escape")
+    return root
+
+
+def _diagnostic_audit_evidence(
+    wave_id_hmac: str,
+    status: str,
+    checked_at: datetime,
+    expiry: datetime | None,
+    action: str,
+    deleted: bool,
+) -> dict[str, Any]:
+    """Build compact audit evidence without retaining the diagnostic path."""
+    return {
+        "schema_version": 1,
+        "wave_id_hmac": wave_id_hmac,
+        "status": status,
+        "checked_at": checked_at.isoformat(),
+        "diagnostic_expires_at": expiry.isoformat() if expiry is not None else None,
+        "action": action,
+        "deleted": deleted,
+    }
+
+
+def _write_diagnostic_audit(directory: Path, evidence: Mapping[str, Any]) -> None:
+    """Append one compact expiry event durably to the fixed audit file."""
+    audit_path = directory / _DIAGNOSTIC_EXPIRY_AUDIT
+    try:
+        metadata = audit_path.lstat()
+    except FileNotFoundError:
+        pass
+    else:
+        if stat.S_ISLNK(metadata.st_mode):
+            raise TelemetryError("diagnostic-audit-target-symlink-invalid")
+        if not stat.S_ISREG(metadata.st_mode):
+            raise TelemetryError("diagnostic-audit-target-not-regular-file")
+
+    payload = json.dumps(dict(evidence), sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
+    flags |= getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(audit_path, flags, 0o600)
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise TelemetryError("diagnostic-audit-target-not-regular-file")
+        with os.fdopen(descriptor, "ab") as stream:
+            descriptor = None
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except TelemetryError:
+        if descriptor is not None:
+            os.close(descriptor)
+        raise
+    except OSError as error:
+        if descriptor is not None:
+            os.close(descriptor)
+        raise TelemetryError("diagnostic-audit-write-failed") from error
+
+
+def _record_diagnostic_audit(
+    directory: Path,
+    wave_id_hmac: str,
+    status: str,
+    checked_at: datetime,
+    expiry: datetime | None,
+    action: str,
+    *,
+    deleted: bool,
+) -> dict[str, Any]:
+    """Build, durably append, and return one compact expiry audit event."""
+    evidence = _diagnostic_audit_evidence(wave_id_hmac, status, checked_at, expiry, action, deleted)
+    _write_diagnostic_audit(directory, evidence)
+    return evidence
+
+
+def enforce_diagnostic_expiry(record: Mapping[str, Any], *, diagnostics_directory: Path, now: str) -> dict[str, Any]:
+    """Audit expiry policy and delete at most one expired sanitized diagnostic.
+
+    Only exact records returned by :func:`build_retained_wave_evidence` are accepted. Every outcome is appended to the fixed durable audit before return. Eligible deletion records an intent before unlinking and a completion afterward, so an interrupted completion retains evidence for a later idempotent check. The sole allowed deletion target is the direct child named ``<wave_id_hmac>.diagnostic.json`` of a non-symlinked diagnostics directory; symlinks and non-regular targets fail closed.
+    """
+    wave_id_hmac, status, expiry = _validated_retained_expiry(record)
+    checked_at = _retention_timestamp(now, "now")
+    directory = _diagnostic_directory_root(diagnostics_directory)
+    if expiry is None:
+        return _record_diagnostic_audit(
+            directory, wave_id_hmac, status, checked_at, expiry, "retained-unresolved", deleted=False
+        )
+    if checked_at < expiry:
+        return _record_diagnostic_audit(
+            directory, wave_id_hmac, status, checked_at, expiry, "not-expired", deleted=False
+        )
+
+    target = directory / f"{wave_id_hmac}{_SANITIZED_DIAGNOSTIC_SUFFIX}"
+    try:
+        metadata = target.lstat()
+    except FileNotFoundError:
+        return _record_diagnostic_audit(
+            directory, wave_id_hmac, status, checked_at, expiry, "already-missing", deleted=False
+        )
+    if stat.S_ISLNK(metadata.st_mode):
+        raise TelemetryError("diagnostic-target-symlink-invalid")
+    if not stat.S_ISREG(metadata.st_mode):
+        raise TelemetryError("diagnostic-target-not-regular-file")
+
+    _record_diagnostic_audit(directory, wave_id_hmac, status, checked_at, expiry, "delete-intent", deleted=False)
+    try:
+        target.unlink()
+    except FileNotFoundError:
+        return _record_diagnostic_audit(
+            directory, wave_id_hmac, status, checked_at, expiry, "already-missing", deleted=False
+        )
+    except OSError as error:
+        _record_diagnostic_audit(directory, wave_id_hmac, status, checked_at, expiry, "delete-failed", deleted=False)
+        raise TelemetryError("diagnostic-delete-failed") from error
+    return _record_diagnostic_audit(directory, wave_id_hmac, status, checked_at, expiry, "deleted", deleted=True)

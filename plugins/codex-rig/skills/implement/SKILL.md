@@ -18,21 +18,30 @@ Run linear implementation with strict gates.
   "constraints": [
     "optional constraints"
   ],
+  "execution": "optional auto|serial|parallel-read|parallel-write; default auto",
   "done_when": "required acceptance statement"
 }
 ```
 
-## Parallel Adoption (Disabled During P4)
+## Parallel Adoption (Portable read-only)
 
-This is a consumer declaration, not an enabled execution route. The shipped default remains `serial`; `--execution`, `CODEX_RIG_EXECUTION`, natural-language requests, or `auto` cannot opt this skill into parallel execution during this stage.
+This skill permits only its promoted portable read-only route. Resolve execution precedence from per-invocation `--execution=<mode>`, then `CODEX_RIG_EXECUTION`, then the `auto` default. The default execution mode is `auto`. `auto` selects this route only after this consumer's runtime matrix and promotion; otherwise it resolves safely to `serial`. Every write still requires a frozen plan and exact-digest approval. This route never bypasses consumer promotion, serial parent authority, or write approval.
+
+Follow the [canonical G0–G8 execution flow](../../ARCHITECTURE.md#canonical-g0g8-execution-flow) for the shared gate order and fork outcomes. This consumer's read-only evidence passes are bounded by G0–G5; the parent owns deterministic G6 integration, G7 verification, and G8 verdict/promotion.
 
 ### Safe parallel work
 
-The future candidate is read-only evidence, acceptance, and documentation-impact passes with immutable disjoint context packs and separate outputs. Source, test, documentation, configuration, calibration, cache, generated-output, artifact, and result writes are outside this portable candidate.
+The promoted route permits read-only evidence, acceptance, and documentation-impact passes with immutable disjoint context packs and separate outputs. Source, test, documentation, configuration, calibration, cache, generated-output, artifact, and result writes are outside this portable route.
 
 ### Required barrier
 
-Before any future dispatch, freeze the goal, mode, `done_when`, baseline, ownership DAG, context packs, role-card hashes, checks, resource locks, and plan digest. Dispatch at most one fixed dependency-ready wave, then join every terminal handoff before implementation, integration, gates, or acceptance; changed scope requires a new plan.
+Before any dispatch, freeze the goal, mode, `done_when`, baseline, ownership DAG, context packs, role-card hashes, checks, resource locks, and plan digest. Dispatch at most one fixed dependency-ready wave, then join every terminal handoff before implementation, integration, gates, or acceptance; changed scope requires a new plan.
+
+The frozen `<run-directory>/execution-plan.json` must include exact `consumer_policy` values `consumer_id=implement`, `capability=portable-read-only`, `promotion_status=promoted`, `parent_mutations=serial`, and `canonical_gates=serial`. It must also include `write_policy`: use `parent_writes=planned` with `approval_requirement=exact-plan-digest` when any parent mutation is planned, otherwise `parent_writes=none` with `approval_requirement=not-required`. A planned write requires `<run-directory>/write-approval.json` containing only the exact plan SHA-256, `response=approve`, and `source=explicit-input|user-prompt`.
+
+Before dispatch, run `python PLUGIN_ROOT/shared/parallel_execution.py preflight --consumer implement --plan <run-directory>/execution-plan.json --approval <run-directory>/write-approval.json`; append `--execution=<mode>` only for an explicit invocation value. Omit `--approval` only when the frozen write policy declares no parent writes. A nonzero result stops the route.
+
+After every spawned child reaches a terminal handoff, run `python PLUGIN_ROOT/shared/parallel_execution.py validate-runtime --consumer implement --manifest <run-directory>/execution-manifest.json --plan <run-directory>/execution-plan.json --parent-rollout <authoritative-parent-rollout> --sessions-dir <authoritative-sessions-directory> --run-dir <run-directory> --roles-dir PLUGIN_ROOT/roles`. Require `runtime_promotion_eligible=true`, `consumer_id=implement`, and `write_parallel_eligible=false`. Run the same preflight again after the terminal join and before the first parent mutation. Any plan, approval, consumer, runtime, or join drift stops mutation and requires a new frozen plan plus exact approval.
 
 ### Serial parent decisions
 
@@ -48,11 +57,11 @@ Unavailable or unsafe fan-out uses equal-gate `serial-fallback` from the same fr
 
 ### Acceptance
 
-P3b exact-candidate native Linux/Windows evidence, separate user promotion, and this skill's shared runtime matrix must pass before any runtime opt-in. Acceptance must prove freeze, complete join, truthful execution label, resource compatibility, equal gates, and unchanged serial parent authority.
+This skill's shared runtime matrix and consumer promotion must remain complete before `auto` selects this route. Acceptance must prove freeze, complete join, truthful execution label, resource compatibility, equal gates, and unchanged serial parent authority.
 
 ### Stop rule
 
-During P4, generic parallel writes remain disabled. Stop without dispatch on missing promotion, mutable packs, ownership or resource overlap, sensitive or unproven controls, missing terminal evidence, or an incomplete join; no declaration authorizes writes or changes the phase default.
+Generic parallel writes remain disabled. Stop without dispatch on missing promotion, mutable packs, ownership or resource overlap, sensitive or unproven controls, missing terminal evidence, or an incomplete join; implementation, test, documentation, and all other mutations remain parent-serial.
 
 ## Workflow (Exact Commands)
 
@@ -211,7 +220,7 @@ Conditional checks:
 Update calibration when implementation routing or output expectations change:
 
 - benchmark patterns: `implement`
-- behavioral cases: symptom-first routing, specialist substitution, config behavior changes, premature P4 parallel adoption, missing acceptance probe, feature demo gate bypass, missing project docstring-style detection, missing function docstrings, overlong docstrings masking complex code, long code blocks not factored, deep branching without guard clauses, low-value argument-remapping wrappers, pre-definition comments that should be docstrings, missing explanatory inline comments, low-confidence recovery loop, objective confidence evidence, artifact validator bypass
+- behavioral cases: symptom-first routing, specialist substitution, config behavior changes, premature portable read-only adoption, missing acceptance probe, feature demo gate bypass, missing project docstring-style detection, missing function docstrings, overlong docstrings masking complex code, long code blocks not factored, deep branching without guard clauses, low-value argument-remapping wrappers, pre-definition comments that should be docstrings, missing explanatory inline comments, low-confidence recovery loop, objective confidence evidence, artifact validator bypass
 
 ## Output Contract
 

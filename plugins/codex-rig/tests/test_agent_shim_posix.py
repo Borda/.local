@@ -746,76 +746,111 @@ def test_verified_unlink_is_durable_and_absence_requires_permission(
     assert fsynced == [root_fd]
 
 
-def test_verified_unlink_rejects_hash_symlink_and_substitution(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Preserve mismatched, linked, and concurrently substituted targets."""
-    module = load_module()
-    approved = b"approved\n"
-    replacement = b"replacement\n"
-    role = tmp_path / "role.toml"
-    role.write_bytes(approved)
-    role.chmod(0o600)
-    outside = tmp_path / "outside"
-    outside.write_bytes(b"outside\n")
-    outside.chmod(0o600)
-    (tmp_path / "linked.toml").symlink_to(outside)
-    root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+class TestVerifiedUnlink:
+    """Verify unlink refuses every unapproved target identity or shape."""
 
-    with pytest.raises(module.PosixPrimitiveError, match="hash"):
-        module.unlink_verified_at(root_fd, "role.toml", expected_hash="0" * 64, expected_mode=0o600)
-    with pytest.raises(module.PosixPrimitiveError):
-        module.unlink_verified_at(
-            root_fd,
-            "linked.toml",
-            expected_hash=hashlib.sha256(outside.read_bytes()).hexdigest(),
-            expected_mode=0o600,
-        )
-    hard = tmp_path / "hard.toml"
-    hard.write_bytes(approved)
-    hard.chmod(0o600)
-    os.link(hard, tmp_path / "hard-copy.toml")
-    with pytest.raises(module.PosixPrimitiveError, match="link count"):
-        module.unlink_verified_at(
-            root_fd,
-            "hard.toml",
-            expected_hash=hashlib.sha256(approved).hexdigest(),
-            expected_mode=0o600,
-        )
-    assert module.unlink_verified_at(
-        root_fd,
-        "hard.toml",
-        expected_hash=hashlib.sha256(approved).hexdigest(),
-        expected_mode=0o600,
-        expected_links=2,
-    )
-    assert (tmp_path / "hard-copy.toml").read_bytes() == approved
+    def test_rejects_hash_mismatch(self, tmp_path: Path) -> None:
+        """Preserve a regular file whose bytes do not match the approved digest."""
+        module = load_module()
+        approved = b"approved\n"
+        role = tmp_path / "role.toml"
+        role.write_bytes(approved)
+        role.chmod(0o600)
+        root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            with pytest.raises(module.PosixPrimitiveError, match="hash"):
+                module.unlink_verified_at(root_fd, "role.toml", expected_hash="0" * 64, expected_mode=0o600)
+        finally:
+            os.close(root_fd)
 
-    original_unlink = module._unlink_same_inode
+        assert role.read_bytes() == approved
 
-    def substitute_before_unlink(parent_fd: int, name: str, identity: object) -> None:
-        os.rename(name, "approved.evidence", src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
-        fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=parent_fd)
-        os.write(fd, replacement)
-        os.close(fd)
-        original_unlink(parent_fd, name, identity)
+    def test_rejects_symlink(self, tmp_path: Path) -> None:
+        """Preserve an external target when the selected name is a symlink."""
+        module = load_module()
+        outside = tmp_path / "outside"
+        outside.write_bytes(b"outside\n")
+        outside.chmod(0o600)
+        (tmp_path / "linked.toml").symlink_to(outside)
+        root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            with pytest.raises(module.PosixPrimitiveError):
+                module.unlink_verified_at(
+                    root_fd,
+                    "linked.toml",
+                    expected_hash=hashlib.sha256(outside.read_bytes()).hexdigest(),
+                    expected_mode=0o600,
+                )
+        finally:
+            os.close(root_fd)
 
-    monkeypatch.setattr(module, "_unlink_same_inode", substitute_before_unlink)
-    try:
-        with pytest.raises(module.PosixPrimitiveError, match="identity changed"):
-            module.unlink_verified_at(
+        assert outside.read_bytes() == b"outside\n"
+
+    def test_requires_expected_hardlink_count(self, tmp_path: Path) -> None:
+        """Reject an unexpected hardlink count and accept the explicitly approved count."""
+        module = load_module()
+        approved = b"approved\n"
+        hard = tmp_path / "hard.toml"
+        hard.write_bytes(approved)
+        hard.chmod(0o600)
+        os.link(hard, tmp_path / "hard-copy.toml")
+        root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            with pytest.raises(module.PosixPrimitiveError, match="link count"):
+                module.unlink_verified_at(
+                    root_fd,
+                    "hard.toml",
+                    expected_hash=hashlib.sha256(approved).hexdigest(),
+                    expected_mode=0o600,
+                )
+            assert module.unlink_verified_at(
                 root_fd,
-                "role.toml",
+                "hard.toml",
                 expected_hash=hashlib.sha256(approved).hexdigest(),
                 expected_mode=0o600,
+                expected_links=2,
             )
-    finally:
-        os.close(root_fd)
+        finally:
+            os.close(root_fd)
 
-    assert role.read_bytes() == replacement
-    assert (tmp_path / "approved.evidence").read_bytes() == approved
-    assert outside.read_bytes() == b"outside\n"
+        assert (tmp_path / "hard-copy.toml").read_bytes() == approved
+
+    def test_rejects_concurrent_substitution(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Preserve both files when the approved inode is replaced before unlink."""
+        module = load_module()
+        approved = b"approved\n"
+        replacement = b"replacement\n"
+        role = tmp_path / "role.toml"
+        role.write_bytes(approved)
+        role.chmod(0o600)
+        original_unlink = module._unlink_same_inode
+
+        def substitute_before_unlink(parent_fd: int, name: str, identity: object) -> None:
+            os.rename(name, "approved.evidence", src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+            fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=parent_fd)
+            os.write(fd, replacement)
+            os.close(fd)
+            original_unlink(parent_fd, name, identity)
+
+        monkeypatch.setattr(module, "_unlink_same_inode", substitute_before_unlink)
+        root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            with pytest.raises(module.PosixPrimitiveError, match="identity changed"):
+                module.unlink_verified_at(
+                    root_fd,
+                    "role.toml",
+                    expected_hash=hashlib.sha256(approved).hexdigest(),
+                    expected_mode=0o600,
+                )
+        finally:
+            os.close(root_fd)
+
+        assert role.read_bytes() == replacement
+        assert (tmp_path / "approved.evidence").read_bytes() == approved
 
 
 def test_quarantine_restore_is_exact_and_never_clobbers(

@@ -11,7 +11,7 @@ It scans local report directories and JSON identity files; it does not query Git
 
 ## Usage
 
-Run ``python find-review-report.py --target <pr-url-or-number>`` to select an assessed report, or ``python find-review-report.py --result <path>`` to reject a supplied unavailable, closed, or unpromoted candidate result. The target search covers the requested reports root and, for the default current root, the legacy ``.reports/codex/review`` root as well.
+Run ``python find-review-report.py --target <pr-url-or-number>`` to select an assessed report, or ``python find-review-report.py --result <path>`` to reject a supplied unavailable, closed, or unpromoted candidate result. The target search covers canonical ``pr-<number>/run-<NNN>`` directories, timestamped flat reports, and, for the default current root, the legacy ``.reports/codex/review`` root.
 
 ## Used by
 
@@ -19,7 +19,7 @@ The ``code-remediate #<PR> +review`` workflow and review-report lookup tests use
 
 ## Outputs
 
-It prints one matching assessed local review-artifact path, choosing the newest compatible result across canonical and legacy report roots. Compatibility requires ``metadata.scope == "pr"`` and a recognized ``metadata.review_decision.recommendation`` in addition to PR identity.
+It prints one matching assessed local review-artifact path, choosing the numerically highest PR-scoped run before any compatible timestamped artifact across canonical and legacy report roots. Compatibility requires ``metadata.scope == "pr"`` and a recognized ``metadata.review_decision.recommendation`` in addition to PR identity.
 
 ## Failure
 
@@ -30,9 +30,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 
 def _read_pr_identity(pr_path: Path) -> tuple[str, str] | None:
@@ -93,66 +94,104 @@ def require_assessed_review_result(result_path: Path) -> Path:
 CURRENT_REPORTS_DIR = Path(".reports/codex/code-review")
 LEGACY_REPORTS_DIR = Path(".reports/codex/review")
 CANDIDATE_RESULT_NAME = "result.candidate.json"
+PR_DIRECTORY_PATTERN = re.compile(r"pr-([1-9][0-9]*)")
+RUN_DIRECTORY_PATTERN = re.compile(r"run-([0-9]{3,})")
 
 
-def _candidate_matches_target(candidate_path: Path, target: str) -> bool:
-    """Return whether an unpromoted candidate belongs to the requested PR target."""
-    identity = _read_pr_identity(candidate_path.parent / "pr.json")
+class ReviewArtifact(NamedTuple):
+    """Bind a review result path to its topology-aware ordering identity."""
+
+    path: Path
+    order: tuple[int, str | int]
+    pull_number: str | None
+
+
+def _review_artifacts(reports_dir: Path) -> list[ReviewArtifact]:
+    """Enumerate canonical nested and legacy flat artifacts without recursive discovery."""
+    artifacts: list[ReviewArtifact] = []
+    for report_dir in reports_dir.glob("*"):
+        if not report_dir.is_dir():
+            continue
+        pr_match = PR_DIRECTORY_PATTERN.fullmatch(report_dir.name)
+        if pr_match is not None:
+            pull_number = pr_match.group(1)
+            for run_dir in report_dir.glob("run-*"):
+                run_match = RUN_DIRECTORY_PATTERN.fullmatch(run_dir.name)
+                if run_match is None or int(run_match.group(1)) < 1 or not run_dir.is_dir():
+                    continue
+                order = (1, int(run_match.group(1)))
+                for result_name in ("result.json", CANDIDATE_RESULT_NAME):
+                    result_path = run_dir / result_name
+                    if result_path.is_file():
+                        artifacts.append(ReviewArtifact(result_path, order, pull_number))
+            continue
+        if report_dir.name.startswith("pr-"):
+            continue
+        order = (0, report_dir.name)
+        for result_name in ("result.json", CANDIDATE_RESULT_NAME):
+            result_path = report_dir / result_name
+            if result_path.is_file():
+                artifacts.append(ReviewArtifact(result_path, order, None))
+    return artifacts
+
+
+def _artifact_matches_target(artifact: ReviewArtifact, target: str, *, allow_target_file: bool = False) -> bool:
+    """Match stored PR identity, optionally accepting terminal target-only diagnostics."""
+    identity = _read_pr_identity(artifact.path.parent / "pr.json")
     if identity is not None:
-        return _matches_target(target, *identity)
-    target_path = candidate_path.parent / "pr-target.txt"
-    candidate_target = target_path.read_text(encoding="utf-8").strip() if target_path.is_file() else ""
-    return _matches_target(target, candidate_target, candidate_target)
+        number, url = identity
+        if artifact.pull_number is not None and artifact.pull_number != number:
+            return False
+        return _matches_target(target, number, url)
+    if not allow_target_file:
+        return False
+    target_path = artifact.path.parent / "pr-target.txt"
+    stored_target = target_path.read_text(encoding="utf-8").strip() if target_path.is_file() else ""
+    return _matches_target(target, stored_target, stored_target)
 
 
 def find_latest_review_report(target: str, reports_dirs: list[Path]) -> Path:
     """Return the newest code-review result across current and legacy roots."""
     normalized_target = target.strip().rstrip("/")
-    matches: list[Path] = []
-    candidate_matches: list[Path] = []
-    promoted_matches: list[Path] = []
+    matches: list[ReviewArtifact] = []
+    candidate_matches: list[ReviewArtifact] = []
+    promoted_matches: list[ReviewArtifact] = []
     unavailable_matches = False
     invalid_matches = False
-    closed_matches: list[Path] = []
+    closed_matches: list[ReviewArtifact] = []
 
     for reports_dir in reports_dirs:
-        for result_path in reports_dir.glob("*/result.json"):
+        artifacts = _review_artifacts(reports_dir)
+        for artifact in artifacts:
+            result_path = artifact.path
+            if result_path.name == CANDIDATE_RESULT_NAME:
+                if _artifact_matches_target(artifact, normalized_target, allow_target_file=True):
+                    candidate_matches.append(artifact)
+                continue
             kind = review_result_kind(result_path)
             if kind == "unavailable":
-                target_path = result_path.parent / "pr-target.txt"
-                unavailable_target = target_path.read_text(encoding="utf-8").strip() if target_path.is_file() else ""
-                if _matches_target(normalized_target, unavailable_target, unavailable_target):
+                if _artifact_matches_target(artifact, normalized_target, allow_target_file=True):
                     unavailable_matches = True
-                    promoted_matches.append(result_path)
+                    promoted_matches.append(artifact)
                 continue
-            identity = _read_pr_identity(result_path.parent / "pr.json")
-            if identity is None:
+            if not _artifact_matches_target(artifact, normalized_target):
                 continue
-            number, url = identity
-            if _matches_target(normalized_target, number, url):
-                promoted_matches.append(result_path)
-                if kind == "closed":
-                    closed_matches.append(result_path)
-                    continue
-                if kind != "assessed":
-                    invalid_matches = True
-                    continue
-                matches.append(result_path)
-        candidate_matches.extend(
-            candidate_path
-            for candidate_path in reports_dir.glob(f"*/{CANDIDATE_RESULT_NAME}")
-            if _candidate_matches_target(candidate_path, normalized_target)
-        )
+            promoted_matches.append(artifact)
+            if kind == "closed":
+                closed_matches.append(artifact)
+                continue
+            if kind != "assessed":
+                invalid_matches = True
+                continue
+            matches.append(artifact)
 
-    matches.sort(key=lambda path: path.parent.name, reverse=True)
-    closed_matches.sort(key=lambda path: path.parent.name, reverse=True)
-    candidate_matches.sort(key=lambda path: path.parent.name, reverse=True)
-    promoted_matches.sort(key=lambda path: path.parent.name, reverse=True)
-    if candidate_matches and (
-        not promoted_matches or candidate_matches[0].parent.name > promoted_matches[0].parent.name
-    ):
-        raise LookupError(f"matching-review-candidate-unpromoted:{candidate_matches[0]}")
-    if closed_matches and (not matches or closed_matches[0].parent.name > matches[0].parent.name):
+    matches.sort(key=lambda artifact: artifact.order, reverse=True)
+    closed_matches.sort(key=lambda artifact: artifact.order, reverse=True)
+    candidate_matches.sort(key=lambda artifact: artifact.order, reverse=True)
+    promoted_matches.sort(key=lambda artifact: artifact.order, reverse=True)
+    if candidate_matches and (not promoted_matches or candidate_matches[0].order > promoted_matches[0].order):
+        raise LookupError(f"matching-review-candidate-unpromoted:{candidate_matches[0].path}")
+    if closed_matches and (not matches or closed_matches[0].order > matches[0].order):
         raise LookupError("matching-review-closed-not-remediable")
     if not matches:
         if unavailable_matches:
@@ -160,7 +199,7 @@ def find_latest_review_report(target: str, reports_dirs: list[Path]) -> Path:
         if invalid_matches:
             raise LookupError("invalid-review-report-rerun-code-review")
         raise LookupError("missing-matching-review-report")
-    return matches[0]
+    return matches[0].path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -172,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
         "--reports-dir",
         default=CURRENT_REPORTS_DIR,
         type=Path,
-        help="Directory containing timestamped Codex code-review reports.",
+        help="Directory containing PR-scoped runs or legacy timestamped code-review reports.",
     )
     args = parser.parse_args(argv)
 

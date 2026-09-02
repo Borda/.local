@@ -16,21 +16,30 @@ The installed plugin tree is immutable input. Resolve requested targets against 
   "intent": "create|update|delete|rename|add-permission|remove-permission",
   "target": "required agent, skill, rule, config key, or path",
   "change": "required description or spec path",
+  "execution": "optional auto|serial|parallel-read|parallel-write; default auto",
   "done_when": "target and all references are updated or explicitly left unchanged"
 }
 ```
 
-## Parallel Adoption (Disabled During P4)
+## Parallel Adoption (Portable read-only)
 
-This is a consumer declaration, not an enabled execution route. The shipped default remains `serial`; `--execution`, `CODEX_RIG_EXECUTION`, natural-language requests, or `auto` cannot opt this skill into parallel execution during this stage.
+This skill permits only its promoted portable read-only route. Resolve execution precedence from per-invocation `--execution=<mode>`, then `CODEX_RIG_EXECUTION`, then the `auto` default. The default execution mode is `auto`. `auto` selects this route only after this consumer's runtime matrix and promotion; otherwise it resolves safely to `serial`. Every write still requires a frozen plan and exact-digest approval. This route never bypasses consumer promotion, serial parent authority, or write approval.
+
+Follow the [canonical G0–G8 execution flow](../../ARCHITECTURE.md#canonical-g0g8-execution-flow) for the shared gate order and fork outcomes. This consumer's read-only inventory passes are bounded by G0–G5; the parent owns deterministic G6 integration, G7 verification, and G8 verdict/promotion.
 
 ### Safe parallel work
 
-The future candidate is read-only inventory, reference, ownership, and policy-impact scans over immutable disjoint targets with separate outputs. Disjoint propagation is not enabled; config, policy, documentation, calibration, cache, generated-output, artifact, and result writes remain outside this portable candidate.
+The promoted route permits read-only inventory, reference, ownership, and policy-impact scans over immutable disjoint targets with separate outputs. Disjoint propagation is not enabled; config, policy, documentation, calibration, cache, generated-output, artifact, and result writes remain outside this portable route.
 
 ### Required barrier
 
-Before any future dispatch, freeze the intent, target, baseline, ownership map, exact references, calibration and routing impact, context packs, role-card hashes, checks, resource locks, and plan digest. Dispatch at most one fixed dependency-ready wave, then join every terminal scan before edits, propagation, gates, or acceptance; changed scope requires a new plan.
+Before any dispatch, freeze the intent, target, baseline, ownership map, exact references, calibration and routing impact, context packs, role-card hashes, checks, resource locks, and plan digest. Dispatch at most one fixed dependency-ready wave, then join every terminal scan before edits, propagation, gates, or acceptance; changed scope requires a new plan.
+
+The frozen `<run-directory>/execution-plan.json` must include exact `consumer_policy` values `consumer_id=manage`, `capability=portable-read-only`, `promotion_status=promoted`, `parent_mutations=serial`, and `canonical_gates=serial`. It must also include `write_policy`: use `parent_writes=planned` with `approval_requirement=exact-plan-digest` when any parent mutation is planned, otherwise `parent_writes=none` with `approval_requirement=not-required`. A planned write requires `<run-directory>/write-approval.json` containing only the exact plan SHA-256, `response=approve`, and `source=explicit-input|user-prompt`.
+
+Before dispatch, run `python PLUGIN_ROOT/shared/parallel_execution.py preflight --consumer manage --plan <run-directory>/execution-plan.json --approval <run-directory>/write-approval.json`; append `--execution=<mode>` only for an explicit invocation value. Omit `--approval` only when the frozen write policy declares no parent writes. A nonzero result stops the route.
+
+After every spawned child reaches a terminal handoff, run `python PLUGIN_ROOT/shared/parallel_execution.py validate-runtime --consumer manage --manifest <run-directory>/execution-manifest.json --plan <run-directory>/execution-plan.json --parent-rollout <authoritative-parent-rollout> --sessions-dir <authoritative-sessions-directory> --run-dir <run-directory> --roles-dir PLUGIN_ROOT/roles`. Require `runtime_promotion_eligible=true`, `consumer_id=manage`, and `write_parallel_eligible=false`. Run the same preflight again after the terminal join and before the first parent mutation. Any plan, approval, consumer, runtime, or join drift stops mutation and requires a new frozen plan plus exact approval.
 
 ### Serial parent decisions
 
@@ -46,11 +55,11 @@ Unavailable or unsafe fan-out uses equal-gate `serial-fallback` from the same fr
 
 ### Acceptance
 
-P3b exact-candidate native Linux/Windows evidence, separate user promotion, and this skill's shared runtime matrix must pass before any runtime opt-in. Acceptance must prove freeze, complete join, truthful execution label, resource compatibility, equal gates, and unchanged serial parent authority.
+This skill's shared runtime matrix and consumer promotion must remain complete before `auto` selects this route. Acceptance must prove freeze, complete join, truthful execution label, resource compatibility, equal gates, and unchanged serial parent authority.
 
 ### Stop rule
 
-During P4, generic parallel writes remain disabled. Stop without dispatch on missing promotion, mutable packs, ownership or resource overlap, sensitive or unproven controls, missing terminal evidence, or an incomplete join; no declaration authorizes writes or changes the phase default.
+Generic parallel writes remain disabled. Stop without dispatch on missing promotion, mutable packs, ownership or resource overlap, sensitive or unproven controls, missing terminal evidence, or an incomplete join; create, update, delete, rename, permission, and all other mutations remain parent-serial.
 
 ## Workflow
 
@@ -134,7 +143,7 @@ Conditional:
 
 Behavior-changing management edits update or explicitly review the owning project's configuration, tests, documentation, routing, and calibration fixtures. Codex Rig maintainers use `PLUGIN_ROOT/runtime/calibration/` and `PLUGIN_ROOT/shared/native-skill-contract.md`; an installed plugin cache remains immutable.
 
-Calibration must reject premature P4 runtime opt-in, generic write authorization, mutable or unjoined scan packs, delegated management mutations, and quality-gate parallelism without executable resource-isolation evidence.
+Calibration must reject premature portable read-only runtime opt-in, generic write authorization, mutable or unjoined scan packs, delegated management mutations, and quality-gate parallelism without executable resource-isolation evidence.
 
 For versioned calibration artifact changes, calculate version from last commit, not dirty worktree. If `HEAD` has `1.3`, all next-commit uncommitted edits stay `1.3` or `1.4`: one version step only; do not bump to `1.5`, `1.6`, etc. before a commit.
 

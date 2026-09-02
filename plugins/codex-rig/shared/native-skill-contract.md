@@ -14,13 +14,13 @@ Every native `SKILL.md` keeps these sections or clear equivalents:
 - `Calibration Hooks`: expected calibration updates when behavior changes.
 - `Output Contract`: shared JSON result fields from `quality-gates.md`.
 
-> `agent-shims` is absent from the calibration skill roster (`runtime/calibration/run.py` `SKILLS`); required-section, `result-template.json`, canonical `.reports/codex/<skill>/<timestamp>/result.json`, and executable final-handoff checks do not run against it. This remains a documented manager-lifecycle exception until it gains a canonical run/result artifact.
+> `agent-shims` is absent from the calibration skill roster (`runtime/calibration/run.py` `SKILLS`); required-section, `result-template.json`, canonical result-artifact, and executable final-handoff checks do not run against it. This remains a documented manager-lifecycle exception until it gains a canonical run/result artifact.
 
 Long workflows keep contract-level `## Workflow` with `### NN:` ordered subheaders. Do not make workflow steps `##` peers of contract sections.
 
 ## Portability Rules
 
-- Keep `.reports/codex/<skill>/<timestamp>/result.json` as the canonical artifact.
+- Use `.reports/codex/<skill>/<canonical-safe-identity>/run-<NNN>/result.json` only when a workflow defines and validates a bounded non-sensitive identity; never serialize arbitrary arguments into artifact paths. Otherwise keep `.reports/codex/<skill>/<timestamp>/result.json`. Assessed PR reviews use the safe identity `pr-<number>` after authoritative PR collection and run promotion; a PR collection failure before authoritative identity remains a timestamped unavailable diagnostic. Existing flat code-review artifacts stay discoverable without migration.
 - New human-readable report artifacts use Caveman Ultra: each fact once, no filler or repeated context. Do not compress or omit machine-readable JSON, commands, paths, code, logs, patches, required tables, evidence, failures, risks, owner/action, or confidence limits. Use clear concise prose where Ultra would make security, irreversible, or ordered instructions ambiguous.
 - Use `python PLUGIN_ROOT/shared/run_gates.py` and executable `write-result.py` when the skill changes files or runs code checks.
 - Use `PLUGIN_ROOT/shared/helper-cli-contract.md` for gate/write/validate lifecycle. Helper `--help` owns options; skills do not duplicate full local CLI invocations.

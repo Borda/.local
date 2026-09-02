@@ -4,16 +4,16 @@
     Admit a stable prefix of frozen child token reservations before dispatch, and turn recorded execution-manifest evidence into one fail-closed acceptance summary. The validator makes a claimed parallel run structurally coherent only when its manifest contains the required provenance, controls, completed outputs, parent joins, and overlap. A consuming workflow must separately bind recorded events and controls to authoritative host observations before calling them runtime-proven.
 
 ## Scope
-    Validate a positive parent-owned wave ceiling and per-node reservations, then validate schema-v1 manifests supplied by workflow owners. It checks serial stage barriers, deterministic integration order, role and context digests, selected attempts, output digests, bounded retries, node controls, write approval, and concurrent write ownership. ``validate_read_only_runtime`` requires schema-v2 capability evidence and binds a frozen parent-owned plan, redacted parent spawn evidence, child lineage, declared controls, terminal completion, actual child timing, and literal portable-read-restricted host facts. It does not dispatch or terminate agents, enforce provider token usage, create worktrees, alter repository files, infer missing host events, or decide a workflow's final user-facing result.
+    Validate a positive parent-owned wave ceiling and per-node reservations, then validate schema-v1 manifests supplied by workflow owners. It checks serial stage barriers, deterministic integration order, role and context digests, selected attempts, output digests, bounded retries, node controls, exact frozen-plan approval for every write, and concurrent write ownership. ``validate_read_only_runtime`` requires schema-v2 capability evidence and binds a frozen parent-owned plan, redacted parent spawn evidence, child lineage, declared controls, terminal completion, actual child timing, and literal portable-read-restricted host facts. Generic unbound evidence remains readable but is promotion-ineligible; a promoted result requires an exact closed consumer policy. It does not dispatch or terminate agents, enforce provider token usage, create worktrees, alter repository files, infer missing host events, or decide a workflow's final user-facing result.
 
 ## Usage
-    Call ``admit_wave_token_budget`` with the frozen ceiling, stable node order, reservations, and completed/active state before any spawn. Import ``validate_execution_manifest`` and pass the decoded manifest plus the run directory holding context/output evidence and the installed roles directory holding ``<role_id>/ROLE.md``. For a read-only pilot, call ``validate_read_only_runtime`` with the exact manifest and plan files, parent rollout, and child-session directory. Callers must treat ``ValueError`` as a failed contract, preserve the manifest for diagnosis, and never substitute a child response for required evidence.
+    Call ``admit_wave_token_budget`` with the frozen ceiling, stable node order, reservations, and completed/active state before any spawn. Import ``validate_execution_manifest`` and pass the decoded manifest plus the run directory holding context/output evidence and the installed roles directory holding ``<role_id>/ROLE.md``. Implement, Manage, and Code Review use the executable ``preflight`` or ``validate-runtime`` commands so promotion is derived from a closed consumer allowlist, the exact plan and write approval are bound before mutation, and post-join evidence carries a mandatory consumer id. Callers must treat a nonzero exit or ``ValueError`` as a failed contract, preserve the manifest for diagnosis, and never substitute a child response for required evidence.
 
 ## Outputs
     A budget return identifies admitted, completed, active, and serial-replan nodes plus reservation totals and the explicit non-enforced provider-cap boundary. A successful manifest return has ``acceptance_blocked``, ``actual_mode``, and ``integration_order``. A portable runtime return adds the manifest digest, safe spawn and parent-join projections, ``portable-read-restricted`` evidence level, literal ``network_mode=restricted`` and ``approval_policy=never``, and ``filesystem_credential_isolation=unverified``; it never returns raw prompts, raw spawn arguments, or child messages. No files are written.
 
 ## Failure
-    Invalid ceilings, reservations, state overlaps, or already-exceeded admission state raise stable ``ValueError`` messages. Unsupported schemas, malformed identifiers or paths, DAG gaps/cycles, missing serial stage barriers, mismatched digests, unenforced recorded controls, invalid write authority, overlapping write owners or locks, invalid retries, false parallel claims, and joins before a real terminal event also fail closed. Runtime validation additionally rejects rollout-shape drift, ambiguous lineage, timing mismatch, sensitive output, control disagreement, malformed capability evidence, or external-network response items. ``cancel_requested`` is not terminal.
+    Invalid ceilings, reservations, state overlaps, or already-exceeded admission state raise stable ``ValueError`` messages. Unsupported schemas, malformed identifiers or paths, DAG gaps/cycles, missing serial stage barriers, mismatched digests, unenforced recorded controls, missing or invalid write authority, overlapping write owners or locks, invalid retries, false parallel claims, and joins before a real terminal event also fail closed. Runtime validation additionally rejects rollout-shape drift, ambiguous lineage, timing mismatch, sensitive output, control disagreement, malformed consumer or capability evidence, or external-network response items. ``cancel_requested`` is not terminal.
 
 ## Used by
     Codex Rig workflow runtimes and their installed-package tests use this helper before integrating specialist outputs. Read-only pilots use the same validation path as later isolated write workflows, keeping the safety contract local to one shipped stdlib module rather than distributing policy through registries or runtime-specific wrappers.
@@ -21,9 +21,12 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
+import os
 import re
+import sys
 from copy import deepcopy
 from collections.abc import Mapping, Sequence
 from datetime import datetime
@@ -45,6 +48,7 @@ _LOCAL_RESPONSE_ITEM_TYPES = {
     "custom_tool_call_output",
 }
 _LOCAL_RESPONSE_CALL_NAMES = {"exec"}
+_PROMOTED_PORTABLE_READ_CONSUMERS = frozenset({"code-review", "implement", "manage"})
 _SECRET_PATTERNS = (
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     re.compile(r"(?i)authorization\s*:\s*bearer\s+\S+"),
@@ -59,11 +63,10 @@ def resolve_execution_mode(
     environment: Mapping[str, str],
     read_parallel_promoted: bool,
     write_parallel_promoted: bool,
-    ga_complete: bool,
 ) -> dict[str, str | bool]:
     """Resolve one execution request without granting write approval.
 
-    Explicit ``--execution=...`` input overrides ``CODEX_RIG_EXECUTION``. The shipped default stays serial until GA and becomes auto only after every promotion is complete. Unpromoted explicit modes fail closed; early auto safely resolves to serial until read-only parallelism is promoted.
+    Explicit ``--execution=...`` input overrides ``CODEX_RIG_EXECUTION``. The shipped default is ``auto``. Unpromoted explicit modes fail closed, while ``auto`` safely resolves to serial until read-only parallelism is promoted.
     """
     if explicit is not None:
         prefix = "--execution="
@@ -75,15 +78,18 @@ def resolve_execution_mode(
         requested = environment["CODEX_RIG_EXECUTION"]
         source = "environment"
     else:
-        requested = "auto" if ga_complete else "serial"
-        source = "phase-default"
+        requested = "auto"
+        source = "shipped-default"
     if requested not in {"auto", "serial", "parallel-read", "parallel-write"}:
         raise ValueError("execution-mode-invalid")
     if requested == "parallel-read" and not read_parallel_promoted:
         raise ValueError("parallel-read-not-promoted")
     if requested == "parallel-write" and not write_parallel_promoted:
         raise ValueError("parallel-write-not-promoted")
-    effective = "serial" if requested == "auto" and not read_parallel_promoted else requested
+    if requested == "auto":
+        effective = "parallel-read" if read_parallel_promoted else "serial"
+    else:
+        effective = requested
     return {
         "effective_mode": effective,
         "requested_mode": requested,
@@ -416,20 +422,28 @@ def _topological_stage_ids(stages: list[dict[str, Any]]) -> list[str]:
     return ordered
 
 
-def _validate_write_approval(manifest: dict[str, Any], has_parallel_writes: bool) -> None:
-    """Require digest-bound approval only when a write overlaps another node."""
-    approval = manifest.get("write_approval")
-    if not has_parallel_writes:
-        if approval is not None and not isinstance(approval, dict):
-            raise ValueError("write-approval-invalid")
-        return
-    evidence = _object(approval, "write-approval")
+def _validate_exact_write_approval(evidence: Mapping[str, Any], plan_sha256: object) -> None:
+    """Require one exact human approval bound to frozen plan bytes."""
     if (
-        evidence.get("plan_sha256") != manifest.get("plan_sha256")
+        set(evidence) != {"plan_sha256", "response", "source"}
+        or evidence.get("plan_sha256") != plan_sha256
         or evidence.get("response") != "approve"
         or evidence.get("source") not in {"explicit-input", "user-prompt"}
     ):
         raise ValueError("write-approval-invalid")
+
+
+def _validate_write_approval(manifest: dict[str, Any], has_writes: bool) -> None:
+    """Require exact frozen-plan approval whenever any schema-v1 node writes."""
+    approval = manifest.get("write_approval")
+    if not has_writes:
+        if approval is not None and not isinstance(approval, dict):
+            raise ValueError("write-approval-invalid")
+        return
+    if approval is None:
+        raise ValueError("write-approval-required")
+    evidence = _object(approval, "write-approval")
+    _validate_exact_write_approval(evidence, manifest.get("plan_sha256"))
 
 
 def validate_execution_manifest(manifest: dict[str, object], *, run_dir: Path, roles_dir: Path) -> dict[str, object]:
@@ -561,8 +575,7 @@ def validate_execution_manifest(manifest: dict[str, object], *, run_dir: Path, r
     actual_mode = (
         "parallel" if overlapping_pairs else ("independent-spawned" if len(substantive_intervals) > 1 else "serial")
     )
-    has_parallel_writes = any(left in write_node_ids or right in write_node_ids for left, right in overlapping_pairs)
-    _validate_write_approval(payload, has_parallel_writes)
+    _validate_write_approval(payload, bool(write_node_ids))
     if claimed_mode == "parallel" and actual_mode != "parallel":
         raise ValueError("false-parallel-claim")
     integration_order = [
@@ -700,6 +713,109 @@ def _runtime_plan_capability_policy(plan_path: Path) -> dict[str, str]:
     if "tier" in policy and policy.get("tier") != "portable":
         raise ValueError("runtime-plan-capability-policy-mismatch")
     return {"task_sensitivity": "non-sensitive"}
+
+
+def _validated_runtime_consumer_policy(plan: Mapping[str, Any], expected_consumer_id: str) -> dict[str, str]:
+    """Bind one closed promoted consumer to its exact parent policy object."""
+    if not isinstance(expected_consumer_id, str) or re.fullmatch(r"[a-z][a-z0-9-]*", expected_consumer_id) is None:
+        raise ValueError("runtime-consumer-id-invalid")
+    if expected_consumer_id not in _PROMOTED_PORTABLE_READ_CONSUMERS:
+        raise ValueError("runtime-consumer-not-promoted")
+    policy = plan.get("consumer_policy")
+    if not isinstance(policy, dict):
+        raise ValueError("runtime-consumer-policy-missing")
+    if set(policy) != {
+        "consumer_id",
+        "capability",
+        "promotion_status",
+        "parent_mutations",
+        "canonical_gates",
+    }:
+        raise ValueError("runtime-consumer-policy-invalid")
+    if policy.get("consumer_id") != expected_consumer_id:
+        raise ValueError("runtime-consumer-id-mismatch")
+    if policy.get("capability") != "portable-read-only":
+        raise ValueError("runtime-consumer-capability-invalid")
+    if policy.get("promotion_status") != "promoted":
+        raise ValueError("runtime-consumer-promotion-required")
+    if policy.get("parent_mutations") != "serial":
+        raise ValueError("runtime-consumer-parent-mutations-invalid")
+    if policy.get("canonical_gates") != "serial":
+        raise ValueError("runtime-consumer-canonical-gates-invalid")
+    return {"consumer_id": expected_consumer_id, "capability": "portable-read-only"}
+
+
+def _runtime_plan_consumer_policy(plan_path: Path, expected_consumer_id: str) -> dict[str, str]:
+    """Bind a promoted consumer runtime to its exact frozen parent policy."""
+    try:
+        plan = json.loads(plan_path.read_bytes())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("runtime-consumer-policy-missing") from error
+    if not isinstance(plan, dict):
+        raise ValueError("runtime-consumer-policy-missing")
+    return _validated_runtime_consumer_policy(plan, expected_consumer_id)
+
+
+def _runtime_write_policy(plan: Mapping[str, Any]) -> bool:
+    """Return whether the frozen consumer plan declares parent-serial writes."""
+    policy = plan.get("write_policy")
+    if not isinstance(policy, dict) or set(policy) != {"parent_writes", "approval_requirement"}:
+        raise ValueError("runtime-write-policy-invalid")
+    parent_writes = policy.get("parent_writes")
+    requirement = policy.get("approval_requirement")
+    if parent_writes == "planned" and requirement == "exact-plan-digest":
+        return True
+    if parent_writes == "none" and requirement == "not-required":
+        return False
+    raise ValueError("runtime-write-policy-invalid")
+
+
+def resolve_consumer_execution_mode(
+    consumer_id: str,
+    explicit: str | None,
+    *,
+    environment: Mapping[str, str],
+    plan_path: Path,
+    approval_path: Path | None,
+) -> dict[str, object]:
+    """Resolve a promoted consumer from one frozen plan and exact write approval."""
+    try:
+        plan_bytes = plan_path.read_bytes()
+        plan = json.loads(plan_bytes)
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("runtime-consumer-plan-invalid") from error
+    if not isinstance(plan, dict):
+        raise ValueError("runtime-consumer-plan-invalid")
+    consumer_policy = _validated_runtime_consumer_policy(plan, consumer_id)
+    writes_planned = _runtime_write_policy(plan)
+    plan_sha256 = hashlib.sha256(plan_bytes).hexdigest()
+    write_approval_validated = False
+    if writes_planned:
+        if approval_path is None:
+            raise ValueError("write-approval-required")
+        try:
+            approval = json.loads(approval_path.read_bytes())
+        except (OSError, json.JSONDecodeError) as error:
+            raise ValueError("write-approval-invalid") from error
+        if not isinstance(approval, dict):
+            raise ValueError("write-approval-invalid")
+        _validate_exact_write_approval(approval, plan_sha256)
+        write_approval_validated = True
+    elif approval_path is not None:
+        raise ValueError("write-approval-unexpected")
+    resolution = resolve_execution_mode(
+        explicit,
+        environment=environment,
+        read_parallel_promoted=True,
+        write_parallel_promoted=False,
+    )
+    return {
+        **resolution,
+        **consumer_policy,
+        "plan_sha256": plan_sha256,
+        "write_approval_required": writes_planned,
+        "write_approval_validated": write_approval_validated,
+    }
 
 
 def _runtime_plan_token_budgets(plan_path: Path, manifest: dict[str, object]) -> list[dict[str, object]]:
@@ -1157,10 +1273,11 @@ def validate_read_only_runtime(
     run_dir: Path,
     roles_dir: Path,
     historical_unbudgeted: bool = False,
+    expected_consumer_id: str | None = None,
 ) -> dict[str, object]:
     """Bind schema-v2 portable-read-restricted evidence to observed rollout records.
 
-    This validator returns literal observed host facts, never a global network, command, filesystem credential, or host-isolation guarantee. ``historical_unbudgeted=True`` reads pre-P5 evidence only; its summary is acceptance-blocked and cannot promote a runtime route.
+    This validator returns literal observed host facts, never a global network, command, filesystem credential, or host-isolation guarantee. Pass ``expected_consumer_id`` only for a promoted consumer route; the exact frozen plan must then keep that consumer's capability portable-read-only and its mutations and canonical gates serial. ``historical_unbudgeted=True`` reads earlier schema-v2 evidence without token budgets only; its summary is acceptance-blocked and cannot promote a runtime route.
     """
     if not isinstance(historical_unbudgeted, bool):
         raise ValueError("runtime-historical-reader-flag-invalid")
@@ -1181,6 +1298,9 @@ def validate_read_only_runtime(
     plan_policy = _runtime_plan_capability_policy(plan_path)
     if capability_evidence["task_sensitivity"] != plan_policy["task_sensitivity"]:
         raise ValueError("runtime-plan-task-sensitivity-mismatch")
+    consumer_policy = (
+        _runtime_plan_consumer_policy(plan_path, expected_consumer_id) if expected_consumer_id is not None else None
+    )
     legacy_unbudgeted = False
     try:
         token_budget_admissions = _runtime_plan_token_budgets(plan_path, manifest)
@@ -1322,6 +1442,70 @@ def validate_read_only_runtime(
         "parent_rollout_sha256": hashlib.sha256(parent_rollout.read_bytes()).hexdigest(),
         "token_budget_admissions": token_budget_admissions,
         "runtime_nodes": runtime_nodes,
-        "runtime_promotion_eligible": not acceptance_blocked,
+        "runtime_promotion_eligible": not acceptance_blocked and consumer_policy is not None,
         "write_parallel_eligible": False,
+        "consumer_id": consumer_policy["consumer_id"] if consumer_policy is not None else None,
     }
+
+
+def _cli_parser() -> argparse.ArgumentParser:
+    """Build the installed consumer preflight and runtime-validation CLI."""
+    parser = argparse.ArgumentParser(description="Resolve and validate promoted portable read-only consumers.")
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    preflight = commands.add_parser("preflight", help="Bind execution mode and any parent-write approval.")
+    preflight.add_argument("--consumer", required=True, choices=sorted(_PROMOTED_PORTABLE_READ_CONSUMERS))
+    preflight.add_argument("--plan", required=True, type=Path)
+    preflight.add_argument("--approval", type=Path)
+    preflight.add_argument("--execution", choices=("auto", "serial", "parallel-read", "parallel-write"))
+
+    runtime = commands.add_parser("validate-runtime", help="Bind a completed host runtime to one consumer.")
+    runtime.add_argument("--consumer", required=True, choices=sorted(_PROMOTED_PORTABLE_READ_CONSUMERS))
+    runtime.add_argument("--manifest", required=True, type=Path)
+    runtime.add_argument("--plan", required=True, type=Path)
+    runtime.add_argument("--parent-rollout", required=True, type=Path)
+    runtime.add_argument("--sessions-dir", required=True, type=Path)
+    runtime.add_argument("--run-dir", required=True, type=Path)
+    runtime.add_argument("--roles-dir", type=Path, default=Path(__file__).resolve().parents[1] / "roles")
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run one fail-closed installed consumer boundary and print compact JSON."""
+    args = _cli_parser().parse_args(argv)
+    try:
+        if args.command == "preflight":
+            explicit = f"--execution={args.execution}" if args.execution is not None else None
+            result = resolve_consumer_execution_mode(
+                args.consumer,
+                explicit,
+                environment=os.environ,
+                plan_path=args.plan,
+                approval_path=args.approval,
+            )
+        else:
+            try:
+                manifest = json.loads(args.manifest.read_bytes())
+            except (OSError, json.JSONDecodeError) as error:
+                raise ValueError("runtime-manifest-invalid") from error
+            if not isinstance(manifest, dict):
+                raise ValueError("runtime-manifest-invalid")
+            result = validate_read_only_runtime(
+                manifest,
+                manifest_path=args.manifest,
+                plan_path=args.plan,
+                parent_rollout=args.parent_rollout,
+                sessions_dir=args.sessions_dir,
+                run_dir=args.run_dir,
+                roles_dir=args.roles_dir,
+                expected_consumer_id=args.consumer,
+            )
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

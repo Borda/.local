@@ -116,11 +116,11 @@ def _fixture_repository(workspace: Path) -> Path:
 def _approved_plan(workspace: Path) -> tuple[Path, Path, Path]:
     """Write one exact approved two-node generated-fixture plan."""
     repository = _fixture_repository(workspace)
-    plan_path = workspace / "p3-plan.json"
+    plan_path = workspace / "fixture-plan.json"
     approval_path = workspace / "approval.json"
     plan = {
         "schema_version": 1,
-        "plan_id": "fixture-p3",
+        "plan_id": "generated-fixture",
         "requested_authority": {
             "serial_repository_edits": True,
             "one_local_parallel_write_pilot": True,
@@ -143,13 +143,13 @@ def _approved_plan(workspace: Path) -> tuple[Path, Path, Path]:
                 .as_posix(),
                 "nodes": [
                     {
-                        "node_id": "P3-WRITE-A",
+                        "node_id": "FIXTURE-WRITE-A",
                         "owned_paths": ["bucket-a.txt"],
                         "resource_locks": [],
                         "output": "patch-a.diff",
                     },
                     {
-                        "node_id": "P3-WRITE-B",
+                        "node_id": "FIXTURE-WRITE-B",
                         "owned_paths": ["bucket-b.txt"],
                         "resource_locks": [],
                         "output": "patch-b.diff",
@@ -212,7 +212,7 @@ def _approved_code_remediate_plan(workspace: Path, *, pin_lf: bool = False) -> t
     plan_path = evidence / "work-bucket-plan.json"
     approval_path = evidence / "parallel-approval.json"
     context_paths = []
-    for bucket_id, content in (("P3B-WRITE-A", "Context A\n"), ("P3B-WRITE-B", "Context B\n")):
+    for bucket_id, content in (("WRITE-A", "Context A\n"), ("WRITE-B", "Context B\n")):
         context_path = evidence / f"{bucket_id}-context.md"
         context_path.write_text(content, encoding="utf-8", newline="\n")
         context_paths.append(context_path)
@@ -230,7 +230,7 @@ def _approved_code_remediate_plan(workspace: Path, *, pin_lf: bool = False) -> t
         "verification_gate": "code-remediate-shared-quality-gates",
         "work_buckets": [
             {
-                "bucket_id": "P3B-WRITE-A",
+                "bucket_id": "WRITE-A",
                 "selected_indexes": [1, 2, 3],
                 "owner": "sw-engineer",
                 "verifier": "qa-specialist",
@@ -242,7 +242,7 @@ def _approved_code_remediate_plan(workspace: Path, *, pin_lf: bool = False) -> t
                 "execution_mode": "parallel",
             },
             {
-                "bucket_id": "P3B-WRITE-B",
+                "bucket_id": "WRITE-B",
                 "selected_indexes": [4, 5, 6],
                 "owner": "doc-scribe",
                 "verifier": "parent",
@@ -358,8 +358,8 @@ def test_code_remediate_prepare_accepts_clean_digest_bound_production_plan(tmp_p
         for node in state["nodes"]
     )
     assert set(_git(repository, "status", "--porcelain=v1", "--untracked-files=all").stdout.splitlines()) == {
-        "?? .reports/codex/code-remediate/fixture/P3B-WRITE-A-context.md",
-        "?? .reports/codex/code-remediate/fixture/P3B-WRITE-B-context.md",
+        "?? .reports/codex/code-remediate/fixture/WRITE-A-context.md",
+        "?? .reports/codex/code-remediate/fixture/WRITE-B-context.md",
         "?? .reports/codex/code-remediate/fixture/parallel-approval.json",
         "?? .reports/codex/code-remediate/fixture/production-lifecycle.json",
         "?? .reports/codex/code-remediate/fixture/work-bucket-plan.json",
@@ -376,10 +376,10 @@ def test_code_remediate_prepare_binds_each_source_local_context_pack(tmp_path: P
     context_path = plan_path.parent / str(bucket["context_pack_path"])
     if mutation == "missing":
         context_path.unlink()
-        expected = "context-pack-missing:P3B-WRITE-A"
+        expected = "context-pack-missing:WRITE-A"
     else:
         context_path.write_text("changed context\n", encoding="utf-8", newline="\n")
-        expected = "context-pack-digest-mismatch:P3B-WRITE-A"
+        expected = "context-pack-digest-mismatch:WRITE-A"
     _rewrite_code_remediate_plan(plan_path, approval_path, plan)
 
     with pytest.raises(lifecycle.PilotError, match=rf"^{expected}$"):
@@ -404,16 +404,16 @@ def test_code_remediate_transition_rejects_context_pack_drift(tmp_path: Path) ->
         workspace_root=tmp_path,
         state_path=state_path,
     )
-    context_path = repository / ".reports" / "codex" / "code-remediate" / "fixture" / "P3B-WRITE-A-context.md"
+    context_path = repository / ".reports" / "codex" / "code-remediate" / "fixture" / "WRITE-A-context.md"
     context_path.write_text("drifted after prepare\n", encoding="utf-8", newline="\n")
     node = state["nodes"][0]
     worktree = tmp_path / str(node["worktree_path"])
     (worktree / str(node["owned_paths"][0])).write_text("child-a\n", encoding="utf-8", newline="\n")
 
-    with pytest.raises(lifecycle.PilotError, match="^context-pack-digest-mismatch:P3B-WRITE-A$"):
+    with pytest.raises(lifecycle.PilotError, match="^context-pack-digest-mismatch:WRITE-A$"):
         lifecycle.create_completed_child_handover(
             state_path=state_path,
-            node_id="P3B-WRITE-A",
+            node_id="WRITE-A",
             summary="Context drift must block transition.",
         )
 
@@ -698,7 +698,7 @@ def test_code_remediate_cli_join_rejects_handover_outside_evidence_root(tmp_path
             summary=f"Completed {node['node_id']}.",
         )
         handover_path = state_path.parent / f"{node['node_id']}-handover.json"
-        if node["node_id"] == "P3B-WRITE-A":
+        if node["node_id"] == "WRITE-A":
             handover_path = tmp_path / handover_path.name
         handover_path.write_text(json.dumps(handover, indent=2) + "\n", encoding="utf-8", newline="\n")
         handover_paths.append(handover_path)
@@ -738,7 +738,7 @@ def test_code_remediate_cli_handover_output_rejects_intermediate_symlink(tmp_pat
         output_parent.symlink_to(contained_target, target_is_directory=True)
     else:
         output_parent.mkdir()
-    output_path = output_parent / "P3B-WRITE-A.json"
+    output_path = output_parent / "WRITE-A.json"
 
     result = lifecycle.main(
         [
@@ -746,7 +746,7 @@ def test_code_remediate_cli_handover_output_rejects_intermediate_symlink(tmp_pat
             "--state",
             str(state_path),
             "--node",
-            "P3B-WRITE-A",
+            "WRITE-A",
             "--summary",
             "One valid child handover.",
             "--output",
@@ -845,8 +845,8 @@ def test_code_remediate_cli_drives_the_supported_parent_lifecycle(
         "force": False,
         "status": "removed",
         "worktrees": [
-            ".codex-rig-worktrees/fixture/P3B-WRITE-A",
-            ".codex-rig-worktrees/fixture/P3B-WRITE-B",
+            ".codex-rig-worktrees/fixture/WRITE-A",
+            ".codex-rig-worktrees/fixture/WRITE-B",
             ".codex-rig-worktrees/fixture/integration",
         ],
     }
@@ -887,8 +887,8 @@ def test_code_remediate_source_apply_failure_restores_only_known_states(
     assert (repository / "bucket-a.txt").read_text(encoding="utf-8") == "baseline-a\n"
     assert (repository / "bucket-b.txt").read_text(encoding="utf-8") == "baseline-b\n"
     assert set(_git(repository, "status", "--porcelain=v1", "--untracked-files=all").stdout.splitlines()) == {
-        "?? .reports/codex/code-remediate/fixture/P3B-WRITE-A-context.md",
-        "?? .reports/codex/code-remediate/fixture/P3B-WRITE-B-context.md",
+        "?? .reports/codex/code-remediate/fixture/WRITE-A-context.md",
+        "?? .reports/codex/code-remediate/fixture/WRITE-B-context.md",
         "?? .reports/codex/code-remediate/fixture/parallel-approval.json",
         "?? .reports/codex/code-remediate/fixture/patch-a.diff",
         "?? .reports/codex/code-remediate/fixture/patch-b.diff",
@@ -1044,7 +1044,7 @@ def test_prepare_rejects_overlapping_resource_locks(tmp_path: Path) -> None:
     approval["plan_sha256"] = _sha256(plan_path)
     approval_path.write_text(json.dumps(approval, indent=2) + "\n", encoding="utf-8", newline="\n")
 
-    with pytest.raises(lifecycle.PilotError, match="^resource-lock-overlap:P3-WRITE-B$"):
+    with pytest.raises(lifecycle.PilotError, match="^resource-lock-overlap:FIXTURE-WRITE-B$"):
         lifecycle.prepare_write_pilot(
             plan_path=plan_path,
             approval_path=approval_path,
@@ -1121,7 +1121,7 @@ def test_create_completed_child_handover_accepts_canonical_state_path_forms(
 
     report = lifecycle.create_completed_child_handover(
         state_path=state_path_value,
-        node_id="P3-WRITE-B",
+        node_id="FIXTURE-WRITE-B",
         summary="Updated bucket B.",
     )
 
@@ -1136,7 +1136,7 @@ def test_create_completed_child_handover_rejects_invalid_state_path_type(tmp_pat
     with pytest.raises(lifecycle.PilotError, match="^lifecycle-state-path-invalid$"):
         lifecycle.create_completed_child_handover(
             state_path=object(),
-            node_id="P3-WRITE-B",
+            node_id="FIXTURE-WRITE-B",
             summary="Updated bucket B.",
         )
 
@@ -1152,7 +1152,7 @@ def test_create_completed_child_handover_rejects_relative_state_path(
     with pytest.raises(lifecycle.PilotError, match="^lifecycle-state-invalid$"):
         lifecycle.create_completed_child_handover(
             state_path=state_path.relative_to(tmp_path),
-            node_id="P3-WRITE-B",
+            node_id="FIXTURE-WRITE-B",
             summary="Updated bucket B.",
         )
 
@@ -1198,7 +1198,7 @@ def test_prior_attempt_fingerprint_blocks_retained_worktree_mutation(tmp_path: P
     plan_path, approval_path, repository = _approved_plan(tmp_path)
     prior_root = tmp_path / ".reports" / "codex" / "develop" / "prior" / "worktrees"
     prior_root.mkdir(parents=True)
-    for node_id in ("P3-WRITE-A", "P3-WRITE-B"):
+    for node_id in ("FIXTURE-WRITE-A", "FIXTURE-WRITE-B"):
         _git(repository, "worktree", "add", "--detach", str(prior_root / node_id), "HEAD")
     runtime = tmp_path / ".reports" / "codex" / "develop" / "prior" / "runtime.json"
     runtime.write_text('{"status":"failed"}\n', encoding="utf-8", newline="\n")
@@ -1220,10 +1220,10 @@ def test_prior_attempt_fingerprint_blocks_retained_worktree_mutation(tmp_path: P
         workspace_root=tmp_path,
         state_path=state_path,
     )
-    (prior_root / "P3-WRITE-B" / "bucket-b.txt").write_text("mutated\n", encoding="utf-8", newline="\n")
+    (prior_root / "FIXTURE-WRITE-B" / "bucket-b.txt").write_text("mutated\n", encoding="utf-8", newline="\n")
     current = tmp_path / str(state["nodes"][0]["worktree_path"])
     (current / "bucket-a.txt").write_text("child-a\n", encoding="utf-8", newline="\n")
-    _write_other_children(tmp_path, state, "P3-WRITE-A")
+    _write_other_children(tmp_path, state, "FIXTURE-WRITE-A")
 
     with pytest.raises(lifecycle.PilotError, match="^prior-attempt-fingerprint-mismatch$"):
         _join(lifecycle, state_path, state, tmp_path)
@@ -1245,7 +1245,7 @@ def test_state_authority_tamper_fails_before_git(tmp_path: Path, monkeypatch: py
     with pytest.raises(lifecycle.PilotError, match="^lifecycle-state-root-drift$"):
         lifecycle.collect_write_patch(
             state_path=state_path,
-            node_id="P3-WRITE-A",
+            node_id="FIXTURE-WRITE-A",
         )
 
 
@@ -1256,9 +1256,9 @@ def test_collect_rejects_child_commit_and_retains_worktree(tmp_path: Path) -> No
     (worktree / "bucket-a.txt").write_text("child-a\n", encoding="utf-8", newline="\n")
     _git(worktree, "add", "bucket-a.txt")
     _git(worktree, "commit", "-q", "-m", "forbidden child commit")
-    _write_other_children(tmp_path, state, "P3-WRITE-A")
+    _write_other_children(tmp_path, state, "FIXTURE-WRITE-A")
 
-    with pytest.raises(lifecycle.PilotError, match="^child-commit-forbidden:P3-WRITE-A$"):
+    with pytest.raises(lifecycle.PilotError, match="^child-commit-forbidden:FIXTURE-WRITE-A$"):
         _join(lifecycle, state_path, state, tmp_path)
 
     assert worktree.exists()
@@ -1272,9 +1272,9 @@ def test_collect_rejects_undeclared_or_untracked_changes(tmp_path: Path, mutatio
     target = worktree / ("bucket-b.txt" if mutation == "outside-owned" else "new.txt")
     target.write_text("forbidden\n", encoding="utf-8", newline="\n")
     expected = "child-owned-path-mismatch" if mutation == "outside-owned" else "child-untracked-path-forbidden"
-    _write_other_children(tmp_path, state, "P3-WRITE-A")
+    _write_other_children(tmp_path, state, "FIXTURE-WRITE-A")
 
-    with pytest.raises(lifecycle.PilotError, match=rf"^{expected}:P3-WRITE-A$"):
+    with pytest.raises(lifecycle.PilotError, match=rf"^{expected}:FIXTURE-WRITE-A$"):
         _join(lifecycle, state_path, state, tmp_path)
 
 
@@ -1284,9 +1284,9 @@ def test_collect_rejects_staged_owned_change(tmp_path: Path) -> None:
     worktree = tmp_path / str(state["nodes"][0]["worktree_path"])
     (worktree / "bucket-a.txt").write_text("staged\n", encoding="utf-8", newline="\n")
     _git(worktree, "add", "bucket-a.txt")
-    _write_other_children(tmp_path, state, "P3-WRITE-A")
+    _write_other_children(tmp_path, state, "FIXTURE-WRITE-A")
 
-    with pytest.raises(lifecycle.PilotError, match="^child-index-change-forbidden:P3-WRITE-A$"):
+    with pytest.raises(lifecycle.PilotError, match="^child-index-change-forbidden:FIXTURE-WRITE-A$"):
         _join(lifecycle, state_path, state, tmp_path)
 
     assert not (state_path.parent / "patch-a.diff").exists()
@@ -1298,9 +1298,9 @@ def test_collect_rejects_deletion_patch_shape(tmp_path: Path) -> None:
     worktree = tmp_path / str(state["nodes"][0]["worktree_path"])
     target = worktree / "bucket-a.txt"
     target.unlink()
-    _write_other_children(tmp_path, state, "P3-WRITE-A")
+    _write_other_children(tmp_path, state, "FIXTURE-WRITE-A")
 
-    with pytest.raises(lifecycle.PilotError, match="^child-patch-shape-forbidden:P3-WRITE-A$"):
+    with pytest.raises(lifecycle.PilotError, match="^child-patch-shape-forbidden:FIXTURE-WRITE-A$"):
         _join(lifecycle, state_path, state, tmp_path)
 
 
@@ -1320,7 +1320,7 @@ def test_raw_content_updates_rejects_mode_only_metadata_without_filemode_capabil
 
     monkeypatch.setattr(lifecycle, "_git_bytes", mode_only_raw)
 
-    with pytest.raises(lifecycle.PilotError, match="^child-patch-shape-forbidden:P3-WRITE-A$"):
+    with pytest.raises(lifecycle.PilotError, match="^child-patch-shape-forbidden:FIXTURE-WRITE-A$"):
         lifecycle._raw_content_updates(worktree, node)
 
 
@@ -1330,11 +1330,11 @@ def test_raw_content_updates_rejects_mode_only_metadata_without_filemode_capabil
         ("missing", "child-handovers-incomplete"),
         ("duplicate", "child-handover-invalid"),
         ("extra-field", "child-handover-invalid"),
-        ("failed", "child-handover-not-completed:P3-WRITE-A"),
-        ("cancelled", "child-handover-not-completed:P3-WRITE-A"),
-        ("empty-summary", "child-handover-summary-invalid:P3-WRITE-A"),
-        ("wrong-path", "child-handover-paths-mismatch:P3-WRITE-A"),
-        ("wrong-hash", "child-handover-patch-mismatch:P3-WRITE-A"),
+        ("failed", "child-handover-not-completed:FIXTURE-WRITE-A"),
+        ("cancelled", "child-handover-not-completed:FIXTURE-WRITE-A"),
+        ("empty-summary", "child-handover-summary-invalid:FIXTURE-WRITE-A"),
+        ("wrong-path", "child-handover-paths-mismatch:FIXTURE-WRITE-A"),
+        ("wrong-hash", "child-handover-patch-mismatch:FIXTURE-WRITE-A"),
     ),
 )
 def test_join_rejects_incomplete_or_mismatched_child_handover(tmp_path: Path, mutation: str, error: str) -> None:
@@ -1366,9 +1366,9 @@ def test_join_rejects_incomplete_or_mismatched_child_handover(tmp_path: Path, mu
     assert failed_state["status"] == "join-failed"
     assert failed_state["join_failure"]["reason"] == error
     if mutation in {"failed", "cancelled"}:
-        assert failed_state["join_failure"]["failed_node"] == "P3-WRITE-A"
+        assert failed_state["join_failure"]["failed_node"] == "FIXTURE-WRITE-A"
         assert failed_state["join_failure"]["received_reports"][0]["status"] == mutation
-        assert failed_state["join_failure"]["received_reports"][0]["summary"] == "Completed P3-WRITE-A."
+        assert failed_state["join_failure"]["received_reports"][0]["summary"] == "Completed FIXTURE-WRITE-A."
     assert not (state_path.parent / "patch-a.diff").exists()
     assert all((tmp_path / str(node["worktree_path"])).exists() for node in state["nodes"])
 
@@ -1383,8 +1383,8 @@ def test_collect_rejects_worktree_drift_after_parent_join(tmp_path: Path) -> Non
     worktree = tmp_path / str(state["nodes"][0]["worktree_path"])
     (worktree / "bucket-a.txt").write_text("drifted-after-join\n", encoding="utf-8", newline="\n")
 
-    with pytest.raises(lifecycle.PilotError, match="^child-handover-drift:P3-WRITE-A$"):
-        lifecycle.collect_write_patch(state_path=state_path, node_id="P3-WRITE-A")
+    with pytest.raises(lifecycle.PilotError, match="^child-handover-drift:FIXTURE-WRITE-A$"):
+        lifecycle.collect_write_patch(state_path=state_path, node_id="FIXTURE-WRITE-A")
 
     assert not (state_path.parent / "patch-a.diff").exists()
 
@@ -1397,7 +1397,7 @@ def test_collect_rejects_fabricated_operation_api(tmp_path: Path) -> None:
     with pytest.raises(TypeError, match="unexpected keyword argument 'operation'"):
         lifecycle.collect_write_patch(
             state_path=state_path,
-            node_id="P3-WRITE-A",
+            node_id="FIXTURE-WRITE-A",
             operation={},
         )
 
@@ -1428,7 +1428,7 @@ def test_integrate_applies_parent_derived_patches_in_lexical_order(tmp_path: Pat
     result = lifecycle.integrate_write_pilot(state_path=state_path)
     integration = tmp_path / str(result["integration_worktree"])
 
-    assert result["integration_order"] == ["P3-WRITE-A", "P3-WRITE-B"]
+    assert result["integration_order"] == ["FIXTURE-WRITE-A", "FIXTURE-WRITE-B"]
     assert (integration / "bucket-a.txt").read_text(encoding="utf-8") == "child-a\n"
     assert (integration / "bucket-b.txt").read_text(encoding="utf-8") == "child-b\n"
     assert (repository / "bucket-a.txt").read_text(encoding="utf-8") == "baseline-a\n"
@@ -1487,7 +1487,7 @@ def test_patch_digest_tamper_blocks_integration(tmp_path: Path) -> None:
     patch = state_path.parent / "patch-a.diff"
     patch.write_bytes(patch.read_bytes() + b"\n")
 
-    with pytest.raises(lifecycle.PilotError, match="^patch-digest-mismatch:P3-WRITE-A$"):
+    with pytest.raises(lifecycle.PilotError, match="^patch-digest-mismatch:FIXTURE-WRITE-A$"):
         lifecycle.integrate_write_pilot(state_path=state_path)
 
     assert not (tmp_path / str(state["worktree_root"]) / "integration").exists()
@@ -1509,7 +1509,7 @@ def test_conflicting_patch_retains_failed_integration(tmp_path: Path) -> None:
     persisted["nodes"][1]["patch_sha256"] = _sha256(patch_b)
     state_path.write_text(json.dumps(persisted, indent=2) + "\n", encoding="utf-8", newline="\n")
 
-    with pytest.raises(lifecycle.PilotError, match="^patch-integration-failed:P3-WRITE-B$"):
+    with pytest.raises(lifecycle.PilotError, match="^patch-integration-failed:FIXTURE-WRITE-B$"):
         lifecycle.integrate_write_pilot(state_path=state_path)
 
     retained = json.loads(state_path.read_text(encoding="utf-8"))
@@ -1559,7 +1559,7 @@ def test_cleanup_failure_is_retained_and_blocks_success(tmp_path: Path, monkeypa
         return real_git(repository, *arguments)
 
     monkeypatch.setattr(lifecycle, "_git", fail_remove)
-    with pytest.raises(lifecycle.PilotError, match="^cleanup-failed:P3-WRITE-A$"):
+    with pytest.raises(lifecycle.PilotError, match="^cleanup-failed:FIXTURE-WRITE-A$"):
         lifecycle.cleanup_write_pilot(state_path=state_path)
 
     persisted = json.loads(state_path.read_text(encoding="utf-8"))

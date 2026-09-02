@@ -31,19 +31,23 @@ Input shorthand:
 - `code-review <github-pr-url>` => `scope=pr`, `target=<github-pr-url>`.
 - Bare number = GitHub PR number; do not ask for `scope=pr`.
 
-Never write to remote. PR scope may update local checkout to PR head; otherwise read-only except `.reports/codex/code-review/<timestamp>/` artifacts. Never pass `--force` to `git` or `gh`; if forced checkout seems needed to align local branch and PR head, stop, explain overwrite risk, and ask before retrying. To fix findings, switch to `code-remediate` after creating review artifact.
+Never write to remote. PR scope may update local checkout to PR head; otherwise read-only except the run-directory artifacts defined below. Never pass `--force` to `git` or `gh`; if forced checkout seems needed to align local branch and PR head, stop, explain overwrite risk, and ask before retrying. To fix findings, switch to `code-remediate` after creating review artifact.
 
 ## Workflow (Exact Commands)
 
 ### 01: Create run directory
 
-Run `create_run.py --skill code-review` per `../../shared/helper-cli-contract.md`.
+Run `create_run.py --skill code-review` per `../../shared/helper-cli-contract.md` and retain its printed timestamped path literally. A local review keeps that path for its complete lifecycle. A PR review begins there because current-branch input may not identify a PR before collection.
 
 ### 02: T0 mechanical scope gate
 
 For local scopes, inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect normalized `scope`, optional `target`, and the literal `<run-directory>` path.
 
 For PR scope, inspect `python PLUGIN_ROOT/shared/collect_pr.py --help`; collect the exact target into the literal `<run-directory>` path with checkout enabled.
+
+After successful authoritative `pr.json` collection, run `create_run.py --skill code-review --promote-pr-run <run-directory>` and capture its single printed final path. The promotion derives the authoritative PR number from `pr.json`, allocates `.reports/codex/code-review/pr-<number>/run-<NNN>/`, and moves the complete run without overwriting another run. Use the printed promoted path literally for every later helper, artifact, specialist context, result, and final handoff. Never reconstruct the numbered path or keep writing to the temporary path.
+
+If collection fails before authoritative PR identity exists, keep the timestamped run as an unavailable diagnostic. It is not an assessed PR review and must not be promoted. Existing flat timestamped runs remain discoverable historical artifacts; do not migrate them.
 
 In runtimes with network sandboxing, execute the complete collector command with approved external network access from its first attempt under `../../shared/native-skill-contract.md`. Before requesting it, state:
 
@@ -227,7 +231,9 @@ Use runtime-provided subagents when independence materially helps and follow the
 - `selected_attempt` identifies completed output.
 - Validator checks hash-derived child name, parent spawn, child linkage, actual model/effort, final child message, hashes, and provenance header against Codex rollout logs.
 
-When any pass is spawned, freeze `<run-directory>/execution-plan.json` before dispatch and write `<run-directory>/execution-manifest.json` with shared schema version 2 after terminal evidence and joins exist. The plan must bind a non-sensitive task classification; the runtime manifest must use the portable tier with restricted network, approval policy `never`, context/output common-secret scans, unverified filesystem isolation, and no write node. Add `runtime_execution` to `specialist-manifest.json` with only `plan_path`, `manifest_path`, and exact `manifest_sha256`. The shared runtime manifest contains exactly the spawned roles; its selected context/output paths must match their specialist pass records. Run the review manifest preflight only after both artifacts are frozen. Historical schema-v1 manifests remain structurally readable but are not runtime-promotion evidence.
+When any pass is spawned, freeze `<run-directory>/execution-plan.json` before dispatch and write `<run-directory>/execution-manifest.json` with shared schema version 2 after terminal evidence and joins exist. The plan must bind a non-sensitive task classification plus exact `consumer_policy` for `consumer_id=code-review`, `capability=portable-read-only`, `promotion_status=promoted`, `parent_mutations=serial`, and `canonical_gates=serial`; the runtime manifest must use the portable tier with restricted network, approval policy `never`, context/output common-secret scans, unverified filesystem isolation, and no write node. Add `runtime_execution` to `specialist-manifest.json` with only `plan_path`, `manifest_path`, and exact `manifest_sha256`. The shared runtime manifest contains exactly the spawned roles; its selected context/output paths must match their specialist pass records. Run the review manifest preflight only after both artifacts are frozen. Historical schema-v1 manifests remain structurally readable but are not runtime-promotion evidence.
+
+Use the [canonical G0–G8 execution flow](../../ARCHITECTURE.md#canonical-g0g8-execution-flow) for intake, evidence, freeze, approval, dispatch, terminal/join/derivation, integration, verification, and promotion. Code Review may fan out only its validated read-only specialist passes; the parent retains all writes, reconciliation, final gates, verdict, and promotion.
 
 Execution labels are runtime outcomes, not planning claims:
 

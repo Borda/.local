@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -369,6 +371,7 @@ def _validate_runtime(
     roles_dir: Path,
     *,
     historical_unbudgeted: bool = False,
+    expected_consumer_id: str | None = None,
 ) -> dict[str, object]:
     """Validate one read-only run against rollout-shaped host evidence."""
     return _load_validator().validate_read_only_runtime(
@@ -380,6 +383,7 @@ def _validate_runtime(
         run_dir=manifest_path.parent,
         roles_dir=roles_dir,
         historical_unbudgeted=historical_unbudgeted,
+        expected_consumer_id=expected_consumer_id,
     )
 
 
@@ -428,8 +432,34 @@ def _schema_v2_runtime_fixture(
     return fixture
 
 
-def test_execution_mode_precedence_and_ga_default() -> None:
-    """Keep explicit intent above ambient configuration and delay the auto default until GA."""
+def _bind_portable_read_consumer_policy(
+    manifest: dict[str, object],
+    manifest_path: Path,
+    plan_path: Path,
+    *,
+    consumer_id: str,
+    parent_writes: str = "none",
+) -> None:
+    """Bind a fixture's frozen plan to one promoted portable read-only consumer."""
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan["consumer_policy"] = {
+        "consumer_id": consumer_id,
+        "capability": "portable-read-only",
+        "promotion_status": "promoted",
+        "parent_mutations": "serial",
+        "canonical_gates": "serial",
+    }
+    plan["write_policy"] = {
+        "parent_writes": parent_writes,
+        "approval_requirement": "exact-plan-digest" if parent_writes == "planned" else "not-required",
+    }
+    plan_path.write_text(json.dumps(plan) + "\n", encoding="utf-8", newline="\n")
+    manifest["plan_sha256"] = _sha256(plan_path)
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+
+def test_execution_mode_precedence_and_shipped_default() -> None:
+    """Keep explicit intent above ambient configuration and default to safe auto."""
     resolver = _load_validator().resolve_execution_mode
 
     assert resolver(
@@ -437,7 +467,6 @@ def test_execution_mode_precedence_and_ga_default() -> None:
         environment={"CODEX_RIG_EXECUTION": "parallel-read"},
         read_parallel_promoted=True,
         write_parallel_promoted=False,
-        ga_complete=True,
     ) == {
         "effective_mode": "serial",
         "requested_mode": "serial",
@@ -450,35 +479,51 @@ def test_execution_mode_precedence_and_ga_default() -> None:
             environment={"CODEX_RIG_EXECUTION": "parallel-read"},
             read_parallel_promoted=True,
             write_parallel_promoted=False,
-            ga_complete=False,
         )["effective_mode"]
         == "parallel-read"
     )
-    assert (
-        resolver(
-            None,
-            environment={},
-            read_parallel_promoted=False,
-            write_parallel_promoted=False,
-            ga_complete=False,
-        )["effective_mode"]
-        == "serial"
-    )
+    assert resolver(
+        None,
+        environment={},
+        read_parallel_promoted=False,
+        write_parallel_promoted=False,
+    ) == {
+        "effective_mode": "serial",
+        "requested_mode": "auto",
+        "source": "shipped-default",
+        "write_approval_required": False,
+    }
     assert (
         resolver(
             None,
             environment={},
             read_parallel_promoted=True,
             write_parallel_promoted=True,
-            ga_complete=True,
         )["effective_mode"]
-        == "auto"
+        == "parallel-read"
     )
+
+
+def test_auto_default_never_selects_an_unpromoted_or_write_only_capability() -> None:
+    """Keep the auto default serial unless the portable read route is promoted."""
+    resolver = _load_validator().resolve_execution_mode
+
+    for read_parallel_promoted, write_parallel_promoted in ((False, False), (False, True)):
+        resolution = resolver(
+            None,
+            environment={},
+            read_parallel_promoted=read_parallel_promoted,
+            write_parallel_promoted=write_parallel_promoted,
+        )
+
+        assert resolution["requested_mode"] == "auto"
+        assert resolution["effective_mode"] == "serial"
+        assert resolution["write_approval_required"] is False
 
 
 @pytest.mark.parametrize("mode", ["parallel-read", "parallel-write"])
 def test_execution_mode_rejects_unpromoted_parallel_requests(mode: str) -> None:
-    """Prevent a flag or environment value from bypassing phase promotion."""
+    """Prevent a flag or environment value from bypassing consumer promotion."""
     resolver = _load_validator().resolve_execution_mode
 
     with pytest.raises(ValueError, match=f"^{mode}-not-promoted$"):
@@ -487,18 +532,16 @@ def test_execution_mode_rejects_unpromoted_parallel_requests(mode: str) -> None:
             environment={},
             read_parallel_promoted=False,
             write_parallel_promoted=False,
-            ga_complete=False,
         )
 
 
 def test_auto_before_read_promotion_resolves_to_serial() -> None:
-    """Make early opt-in safe while keeping the post-GA default contract stable."""
+    """Keep auto safe before the portable read route is promoted."""
     resolution = _load_validator().resolve_execution_mode(
         "--execution=auto",
         environment={},
         read_parallel_promoted=False,
         write_parallel_promoted=False,
-        ga_complete=False,
     )
 
     assert resolution["requested_mode"] == "auto"
@@ -512,7 +555,6 @@ def test_parallel_write_request_never_carries_approval() -> None:
         environment={"CODEX_RIG_EXECUTION": "auto"},
         read_parallel_promoted=True,
         write_parallel_promoted=True,
-        ga_complete=True,
     )
 
     assert resolution == {
@@ -741,8 +783,8 @@ def test_resource_locks_use_the_validated_vocabulary(tmp_path: Path) -> None:
         _validate(manifest, run_dir, roles_dir)
 
 
-def test_serial_write_does_not_require_parallel_approval(tmp_path: Path) -> None:
-    """Keep the added approval gate scoped to parallel writes only."""
+def test_every_serial_write_requires_exact_frozen_plan_approval(tmp_path: Path) -> None:
+    """Prevent serial execution from bypassing the universal write-approval gate."""
     run_dir = tmp_path / "run"
     roles_dir = tmp_path / "roles"
     run_dir.mkdir()
@@ -760,6 +802,25 @@ def test_serial_write_does_not_require_parallel_approval(tmp_path: Path) -> None
     }
     node["requested_controls"] = controls
     node["observed_controls"] = {**controls, "enforced": True}
+
+    with pytest.raises(ValueError, match="^write-approval-required$"):
+        _validate(manifest, run_dir, roles_dir)
+
+    valid_approval = {
+        "plan_sha256": manifest["plan_sha256"],
+        "response": "approve",
+        "source": "explicit-input",
+    }
+    for field, value in (
+        ("plan_sha256", "0" * 64),
+        ("response", "deny"),
+        ("source", "environment"),
+    ):
+        manifest["write_approval"] = {**valid_approval, field: value}
+        with pytest.raises(ValueError, match="^write-approval-invalid$"):
+            _validate(manifest, run_dir, roles_dir)
+
+    manifest["write_approval"] = valid_approval
 
     assert _validate(manifest, run_dir, roles_dir)["actual_mode"] == "serial"
 
@@ -903,7 +964,8 @@ def test_read_only_runtime_binds_plan_lineage_terminal_output_and_declared_contr
     assert summary["token_budget_admissions"][0]["wave_id"] == "wave-alpha"
     assert summary["token_budget_admissions"][0]["dispatch_node_ids"] == ["N1", "N2"]
     assert summary["token_budget_admissions"][0]["provider_usage_cap_enforced"] is False
-    assert summary["runtime_promotion_eligible"] is True
+    assert summary["runtime_promotion_eligible"] is False
+    assert summary["consumer_id"] is None
     assert "private context" not in repr(summary)
     assert "Evidence from N1" not in repr(summary)
     assert summary["runtime_nodes"][0]["parent_join"] == {
@@ -1259,7 +1321,7 @@ def test_schema_v2_runtime_binds_every_spawned_node_to_the_frozen_token_budget(
 
 
 def test_schema_v2_historical_reader_preserves_unbudgeted_evidence_without_promotion(tmp_path: Path) -> None:
-    """Keep pre-P5 schema-v2 evidence readable without reopening the current admission gate."""
+    """Keep earlier unbudgeted schema-v2 evidence readable without reopening admission."""
     manifest, manifest_path, plan_path, parent_rollout, sessions_dir, roles_dir = _schema_v2_runtime_fixture(tmp_path)
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     del plan["token_budgets"]
@@ -1468,73 +1530,362 @@ def test_schema_v2_host_isolated_tier_requires_authoritative_evidence(tmp_path: 
         _validate_runtime(manifest, manifest_path, plan_path, parent_rollout, sessions_dir, roles_dir)
 
 
+class TestPortableReadConsumerRuntimeMatrix:
+    """Bind each promoted consumer to the portable read-only runtime contract."""
+
+    @pytest.mark.parametrize(
+        ("skill", "safe_surface", "serial_surface", "join_clause", "resource_clause"),
+        (
+            (
+                "implement",
+                "read-only evidence, acceptance, and documentation-impact passes",
+                "implementation, test, and documentation writes",
+                "join every terminal handoff before implementation, integration, gates, or acceptance",
+                "Shared paths, indexes, caches, generated outputs, test environments, ports, devices, or undeclared resources force serial execution or re-planning.",
+            ),
+            (
+                "manage",
+                "read-only inventory, reference, ownership, and policy-impact scans",
+                "create, update, delete, rename, and permission mutations",
+                "join every terminal scan before edits, propagation, gates, or acceptance",
+                "Shared targets, paths, indexes, caches, generated outputs, test environments, ports, devices, or undeclared resources force serial execution or re-planning.",
+            ),
+        ),
+        ids=("implement", "manage"),
+    )
+    def test_documents_portable_read_only_contract(
+        self,
+        skill: str,
+        safe_surface: str,
+        serial_surface: str,
+        join_clause: str,
+        resource_clause: str,
+    ) -> None:
+        """Keep each promoted consumer's documented boundary complete and fail closed."""
+        text = (SKILLS_ROOT / skill / "SKILL.md").read_text(encoding="utf-8")
+        assert '"execution": "optional auto|serial|parallel-read|parallel-write; default auto"' in text
+        heading = "\n## Parallel Adoption (Portable read-only)\n"
+        assert heading in text
+        section = text.split(heading, maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
+
+        for subsection in (
+            "### Safe parallel work",
+            "### Required barrier",
+            "### Serial parent decisions",
+            "### Resource conflicts",
+            "### Fallback",
+            "### Acceptance",
+            "### Stop rule",
+        ):
+            assert subsection in section
+        for contract in (
+            "This skill permits only its promoted portable read-only route.",
+            "Resolve execution precedence from per-invocation `--execution=<mode>`, then `CODEX_RIG_EXECUTION`, then the `auto` default.",
+            safe_surface,
+            serial_surface,
+            join_clause,
+            resource_clause,
+            "The default execution mode is `auto`.",
+            "`auto` selects this route only after this consumer's runtime matrix and promotion; otherwise it resolves safely to `serial`.",
+            "Every write still requires a frozen plan and exact-digest approval.",
+            "Before any dispatch, freeze",
+            "Dispatch at most one fixed dependency-ready wave",
+            "canonical quality gates; verdict; and promotion",
+            "Unavailable or unsafe fan-out uses equal-gate `serial-fallback` from the same frozen plan with the same quality gates and retained evidence.",
+            "This skill's shared runtime matrix and consumer promotion must remain complete before `auto` selects this route.",
+            "Generic parallel writes remain disabled.",
+            "This route never bypasses consumer promotion, serial parent authority, or write approval",
+            f"parallel_execution.py preflight --consumer {skill}",
+            f"parallel_execution.py validate-runtime --consumer {skill}",
+            "Run the same preflight again after the terminal join and before the first parent mutation.",
+        ):
+            assert contract in section
+        for unsafe_exception in (
+            "unless `--execution`",
+            "unless `CODEX_RIG_EXECUTION`",
+            "native evidence is normally required",
+            "except approved requests",
+            "generic parallel writes may",
+            "`parallel-write` enables",
+        ):
+            assert unsafe_exception not in section
+
+    def test_auto_falls_back_until_read_route_is_promoted(self) -> None:
+        """Keep auto serial until promotion, then select only the promoted read route."""
+        resolver = _load_validator().resolve_execution_mode
+        assert (
+            resolver(
+                "--execution=auto",
+                environment={},
+                read_parallel_promoted=False,
+                write_parallel_promoted=False,
+            )["effective_mode"]
+            == "serial"
+        )
+        assert (
+            resolver(
+                "--execution=auto",
+                environment={},
+                read_parallel_promoted=True,
+                write_parallel_promoted=False,
+            )["effective_mode"]
+            == "parallel-read"
+        )
+
+    @pytest.mark.parametrize("skill", ("implement", "manage"))
+    def test_accepts_promoted_complete_join(self, tmp_path: Path, skill: str) -> None:
+        """Accept complete read-only runtime evidence for each promoted consumer."""
+        fixture = _schema_v2_runtime_fixture(tmp_path)
+        manifest, manifest_path, plan_path, parent_rollout, sessions_dir, roles_dir = fixture
+        _bind_portable_read_consumer_policy(manifest, manifest_path, plan_path, consumer_id=skill)
+
+        summary = _validate_runtime(
+            manifest,
+            manifest_path,
+            plan_path,
+            parent_rollout,
+            sessions_dir,
+            roles_dir,
+            expected_consumer_id=skill,
+        )
+
+        assert summary["runtime_promotion_eligible"] is True
+        assert summary["write_parallel_eligible"] is False
+        assert summary["consumer_id"] == skill
+
+    @pytest.mark.parametrize(
+        ("skill", "case", "error"),
+        (
+            ("implement", "incomplete-join", "runtime-parent-join-missing:N1"),
+            ("implement", "write-authority", "runtime-write-parallel-unsupported:N1"),
+            ("manage", "incomplete-join", "runtime-parent-join-missing:N1"),
+            ("manage", "write-authority", "runtime-write-parallel-unsupported:N1"),
+        ),
+        ids=("implement-incomplete-join", "implement-write", "manage-incomplete-join", "manage-write"),
+    )
+    def test_rejects_incomplete_join_or_write_nodes(
+        self,
+        tmp_path: Path,
+        skill: str,
+        case: str,
+        error: str,
+    ) -> None:
+        """Reject missing parent joins and any write-capable child node."""
+        fixture = _schema_v2_runtime_fixture(tmp_path)
+        manifest, manifest_path, plan_path, parent_rollout, sessions_dir, roles_dir = fixture
+        _bind_portable_read_consumer_policy(manifest, manifest_path, plan_path, consumer_id=skill)
+        if case == "incomplete-join":
+            rows = [json.loads(line) for line in parent_rollout.read_text(encoding="utf-8").splitlines()]
+            for row in rows:
+                payload = row.get("payload", {})
+                if payload.get("type") == "agent_message" and payload.get("id") == "N1-join":
+                    payload["id"] = "missing-join"
+            _write_jsonl(parent_rollout, rows)
+        else:
+            first = manifest["stages"][0]["nodes"][0]  # type: ignore[index]
+            first["mutation"] = "write"
+            manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+        with pytest.raises(ValueError, match=f"^{error}$"):
+            _validate_runtime(
+                manifest,
+                manifest_path,
+                plan_path,
+                parent_rollout,
+                sessions_dir,
+                roles_dir,
+                expected_consumer_id=skill,
+            )
+
+
+def test_unbound_runtime_evidence_is_valid_but_not_promotion_eligible(tmp_path: Path) -> None:
+    """Prevent generic validation from promoting a consumer that was never identified."""
+    manifest, manifest_path, plan_path, parent_rollout, sessions_dir, roles_dir = _schema_v2_runtime_fixture(tmp_path)
+
+    summary = _validate_runtime(manifest, manifest_path, plan_path, parent_rollout, sessions_dir, roles_dir)
+
+    assert summary["actual_mode"] == "parallel"
+    assert summary["runtime_promotion_eligible"] is False
+    assert summary["consumer_id"] is None
+
+
+@pytest.mark.parametrize("consumer_id", ["implement", "manage"])
+def test_consumer_preflight_cli_binds_auto_and_exact_parent_write_approval(tmp_path: Path, consumer_id: str) -> None:
+    """Prove the shipped consumer command derives promotion and exact write authority."""
+    manifest, manifest_path, plan_path, _parent_rollout, _sessions_dir, _roles_dir = _schema_v2_runtime_fixture(
+        tmp_path
+    )
+    _bind_portable_read_consumer_policy(
+        manifest,
+        manifest_path,
+        plan_path,
+        consumer_id=consumer_id,
+        parent_writes="planned",
+    )
+    approval_path = plan_path.with_name("write-approval.json")
+    approval_path.write_text(
+        json.dumps({"plan_sha256": _sha256(plan_path), "response": "approve", "source": "user-prompt"}) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(VALIDATOR_PATH),
+            "preflight",
+            "--consumer",
+            consumer_id,
+            "--plan",
+            str(plan_path),
+            "--approval",
+            str(approval_path),
+            "--execution=auto",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert result["consumer_id"] == consumer_id
+    assert result["requested_mode"] == "auto"
+    assert result["effective_mode"] == "parallel-read"
+    assert result["write_approval_required"] is True
+    assert result["write_approval_validated"] is True
+    assert result["plan_sha256"] == _sha256(plan_path)
+
+
 @pytest.mark.parametrize(
-    ("skill", "safe_surface", "serial_surface", "join_clause", "resource_clause"),
+    ("field", "value"),
     (
-        (
-            "implement",
-            "read-only evidence, acceptance, and documentation-impact passes",
-            "implementation, test, and documentation writes",
-            "join every terminal handoff before implementation, integration, gates, or acceptance",
-            "Shared paths, indexes, caches, generated outputs, test environments, ports, devices, or undeclared resources force serial execution or re-planning.",
-        ),
-        (
-            "manage",
-            "read-only inventory, reference, ownership, and policy-impact scans",
-            "create, update, delete, rename, and permission mutations",
-            "join every terminal scan before edits, propagation, gates, or acceptance",
-            "Shared targets, paths, indexes, caches, generated outputs, test environments, ports, devices, or undeclared resources force serial execution or re-planning.",
-        ),
+        ("plan_sha256", "0" * 64),
+        ("response", "deny"),
+        ("source", "environment"),
     ),
 )
-def test_p4_skill_adoption_is_explicit_and_disabled(
-    skill: str,
-    safe_surface: str,
-    serial_surface: str,
-    join_clause: str,
-    resource_clause: str,
+def test_consumer_preflight_rejects_each_invalid_write_approval_field(
+    tmp_path: Path,
+    field: str,
+    value: str,
 ) -> None:
-    """Prevent declaration-only P4 adoption from silently enabling generic writes."""
-    text = (SKILLS_ROOT / skill / "SKILL.md").read_text(encoding="utf-8")
-    heading = "\n## Parallel Adoption (Disabled During P4)\n"
-    assert heading in text
-    section = text.split(heading, maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
+    """Reject stale, denied, or non-human parent write authority independently."""
+    manifest, manifest_path, plan_path, _parent_rollout, _sessions_dir, _roles_dir = _schema_v2_runtime_fixture(
+        tmp_path
+    )
+    _bind_portable_read_consumer_policy(
+        manifest, manifest_path, plan_path, consumer_id="implement", parent_writes="planned"
+    )
+    approval = {"plan_sha256": _sha256(plan_path), "response": "approve", "source": "explicit-input"}
+    approval[field] = value
+    approval_path = plan_path.with_name("write-approval.json")
+    approval_path.write_text(json.dumps(approval) + "\n", encoding="utf-8", newline="\n")
 
-    for subsection in (
-        "### Safe parallel work",
-        "### Required barrier",
-        "### Serial parent decisions",
-        "### Resource conflicts",
-        "### Fallback",
-        "### Acceptance",
-        "### Stop rule",
-    ):
-        assert subsection in section
-    for contract in (
-        "This is a consumer declaration, not an enabled execution route.",
-        safe_surface,
-        serial_surface,
-        join_clause,
-        resource_clause,
-        "The shipped default remains `serial`; `--execution`, `CODEX_RIG_EXECUTION`, natural-language requests, or `auto` cannot opt this skill into parallel execution during this stage.",
-        "Before any future dispatch, freeze",
-        "Dispatch at most one fixed dependency-ready wave",
-        "canonical quality gates; verdict; and promotion",
-        "Unavailable or unsafe fan-out uses equal-gate `serial-fallback` from the same frozen plan with the same quality gates and retained evidence.",
-        "P3b exact-candidate native Linux/Windows evidence, separate user promotion, and this skill's shared runtime matrix must pass before any runtime opt-in.",
-        "During P4, generic parallel writes remain disabled.",
-        "no declaration authorizes writes or changes the phase default",
-    ):
-        assert contract in section
-    for unsafe_exception in (
-        "unless `--execution`",
-        "unless `CODEX_RIG_EXECUTION`",
-        "P3b is normally required",
-        "except approved requests",
-        "generic parallel writes may",
-        "`parallel-write` enables",
-    ):
-        assert unsafe_exception not in section
+    with pytest.raises(ValueError, match="^write-approval-invalid$"):
+        _load_validator().resolve_consumer_execution_mode(
+            "implement",
+            "--execution=auto",
+            environment={},
+            plan_path=plan_path,
+            approval_path=approval_path,
+        )
+
+
+def test_consumer_preflight_requires_approval_for_planned_parent_writes(tmp_path: Path) -> None:
+    """Prevent a promoted read wave from becoming an approval-free parent write."""
+    manifest, manifest_path, plan_path, _parent_rollout, _sessions_dir, _roles_dir = _schema_v2_runtime_fixture(
+        tmp_path
+    )
+    _bind_portable_read_consumer_policy(
+        manifest, manifest_path, plan_path, consumer_id="manage", parent_writes="planned"
+    )
+
+    with pytest.raises(ValueError, match="^write-approval-required$"):
+        _load_validator().resolve_consumer_execution_mode(
+            "manage",
+            None,
+            environment={},
+            plan_path=plan_path,
+            approval_path=None,
+        )
+
+
+@pytest.mark.parametrize("consumer_id", ["implement", "manage"])
+def test_consumer_runtime_cli_requires_identity_and_returns_bound_summary(tmp_path: Path, consumer_id: str) -> None:
+    """Exercise the shipped post-join consumer call instead of a test-only helper."""
+    manifest, manifest_path, plan_path, parent_rollout, sessions_dir, roles_dir = _schema_v2_runtime_fixture(tmp_path)
+    _bind_portable_read_consumer_policy(manifest, manifest_path, plan_path, consumer_id=consumer_id)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(VALIDATOR_PATH),
+            "validate-runtime",
+            "--consumer",
+            consumer_id,
+            "--manifest",
+            str(manifest_path),
+            "--plan",
+            str(plan_path),
+            "--parent-rollout",
+            str(parent_rollout),
+            "--sessions-dir",
+            str(sessions_dir),
+            "--run-dir",
+            str(manifest_path.parent),
+            "--roles-dir",
+            str(roles_dir),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    summary = json.loads(completed.stdout)
+    assert summary["consumer_id"] == consumer_id
+    assert summary["runtime_promotion_eligible"] is True
+    assert summary["write_parallel_eligible"] is False
+
+
+@pytest.mark.parametrize("consumer_id", ["implement", "manage"])
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    (
+        ("consumer_id", "other", "runtime-consumer-id-mismatch"),
+        ("capability", "parallel-write", "runtime-consumer-capability-invalid"),
+        ("promotion_status", "pending", "runtime-consumer-promotion-required"),
+        ("parent_mutations", "parallel", "runtime-consumer-parent-mutations-invalid"),
+        ("canonical_gates", "parallel", "runtime-consumer-canonical-gates-invalid"),
+    ),
+)
+def test_portable_read_runtime_requires_exact_promoted_consumer_policy(
+    tmp_path: Path,
+    consumer_id: str,
+    field: str,
+    value: str,
+    error: str,
+) -> None:
+    """Reject a consumer plan that loosens portable-read-only parent boundaries."""
+    manifest, manifest_path, plan_path, parent_rollout, sessions_dir, roles_dir = _schema_v2_runtime_fixture(tmp_path)
+    _bind_portable_read_consumer_policy(manifest, manifest_path, plan_path, consumer_id=consumer_id)
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan["consumer_policy"][field] = value
+    plan_path.write_text(json.dumps(plan) + "\n", encoding="utf-8", newline="\n")
+    manifest["plan_sha256"] = _sha256(plan_path)
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+    with pytest.raises(ValueError, match=f"^{error}$"):
+        _validate_runtime(
+            manifest,
+            manifest_path,
+            plan_path,
+            parent_rollout,
+            sessions_dir,
+            roles_dir,
+            expected_consumer_id=consumer_id,
+        )
 
 
 def test_token_budget_admits_a_stable_prefix_and_preserves_existing_work() -> None:

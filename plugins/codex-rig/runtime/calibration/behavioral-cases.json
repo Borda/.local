@@ -1451,26 +1451,26 @@
     },
     {
       "expected_findings": [
-        "p4-runtime-opt-in-before-p3b",
+        "runtime-opt-in-before-consumer-promotion",
         "generic-parallel-write-enabled",
         "freeze-join-contract-missing",
         "parent-serial-implementation-bypassed",
         "quality-gate-parallelism-unproven"
       ],
-      "id": "implement-p4-premature-parallel-adoption",
-      "prompt": "Assess an Implement workflow that treats its P4 declaration as an enabled parallel route before P3b native evidence or separate promotion, lets children edit source, tests, and documentation, starts from mutable context packs without a complete terminal join, runs canonical quality gates concurrently through shared caches, and claims an execution flag authorizes generic parallel writes.",
+      "id": "implement-premature-parallel-adoption",
+      "prompt": "Assess an Implement workflow that treats its portable read-only declaration as an enabled parallel route without consumer promotion or runtime-matrix acceptance, lets children edit source, tests, and documentation, starts from mutable context packs without a complete terminal join, runs canonical quality gates concurrently through shared caches, and claims an execution flag authorizes generic parallel writes.",
       "target": "implement"
     },
     {
       "expected_findings": [
-        "p4-runtime-opt-in-before-p3b",
+        "runtime-opt-in-before-consumer-promotion",
         "generic-parallel-write-enabled",
         "freeze-join-contract-missing",
         "parent-serial-management-bypassed",
         "quality-gate-parallelism-unproven"
       ],
-      "id": "manage-p4-premature-parallel-adoption",
-      "prompt": "Assess a Manage workflow that treats its P4 declaration as an enabled parallel route before P3b native evidence or separate promotion, delegates create, rename, delete, permission, policy, and calibration mutations, starts from mutable inventory packs without a complete terminal join, runs canonical quality gates concurrently through shared state, and claims an environment value authorizes generic parallel writes.",
+      "id": "manage-premature-parallel-adoption",
+      "prompt": "Assess a Manage workflow that treats its portable read-only declaration as an enabled parallel route without consumer promotion or runtime-matrix acceptance, delegates create, rename, delete, permission, policy, and calibration mutations, starts from mutable inventory packs without a complete terminal join, runs canonical quality gates concurrently through shared state, and claims an environment value authorizes generic parallel writes.",
       "target": "manage"
     },
     {
@@ -1508,6 +1508,29 @@
     },
     {
       "expected_findings": [
+        "auto-unpromoted-capability-selected",
+        "consumer-policy-unbound",
+        "serial-write-approval-bypassed",
+        "generic-parallel-write-enabled",
+        "parent-serial-gates-bypassed"
+      ],
+      "id": "challenger-parallel-auto-promotion-bypass",
+      "prompt": "Stress-test a GA execution resolver that defaults to auto and selects parallel writes when only one local remediation route was promoted, accepts Implement and Manage without a frozen consumer identity or promotion policy, accepts serial mutations without exact plan-digest approval, and lets children run canonical gates through shared state.",
+      "target": "challenger"
+    },
+    {
+      "expected_findings": [
+        "diagnostic-expiry-audit-missing",
+        "diagnostic-delete-intent-missing",
+        "diagnostic-deletion-scope-unbounded",
+        "unresolved-diagnostics-expired"
+      ],
+      "id": "challenger-diagnostic-expiry-enforcement-bypass",
+      "prompt": "Stress-test a diagnostic-retention consumer that deletes expired evidence before writing durable audit intent, stores only an in-memory audit result, recursively removes neighboring evidence, follows a caller-selected or symlinked target, and expires unresolved failed or conflicted diagnostics.",
+      "target": "challenger"
+    },
+    {
+      "expected_findings": [
         "parallel-rollback-plan-drift",
         "parallel-rollback-evidence-discarded",
         "parallel-rollback-gates-weakened",
@@ -1526,5 +1549,5 @@
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.23"
+  "version": "1.24"
 }

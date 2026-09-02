@@ -241,7 +241,7 @@ The reverse bridge keeps detailed provider output in a workspace-relative transc
 
 ## 📊 Artifacts and gates
 
-Codex Rig workflows write under `.reports/codex/<skill>/<timestamp>/`. A completed run normally includes development or review notes, per-gate logs, confidence calibration, and a validated `result.json`. Required gate IDs are lint, format, types, tests, and review; a non-applicable gate needs an explicit reason.
+Codex Rig workflows use `.reports/codex/<skill>/<canonical-safe-identity>/run-<NNN>/` only for a bounded validated non-sensitive identity and otherwise use `.reports/codex/<skill>/<timestamp>/`; raw arguments are never serialized into paths. Assessed PR reviews use the identity `pr-<number>`. A completed run normally includes development or review notes, per-gate logs, confidence calibration, and a validated `result.json`. Required gate IDs are lint, format, types, tests, and review; a non-applicable gate needs an explicit reason.
 
 <details>
 <summary><strong>Show artifact lifecycle and confidence gates</strong></summary>
@@ -254,7 +254,7 @@ Codex Rig workflows write under `.reports/codex/<skill>/<timestamp>/`. A complet
 └── skill-specific evidence
 ```
 
-The run directory is created once per workflow. Shared helpers collect diffs and PR evidence, execute gates, validate artifact shape, map severity, and write the final result. A result is not complete because a file exists: the requested output, gate outcomes, evidence paths, confidence, and unresolved risks must agree. Historical `review/` and `resolve/` artifacts remain readable fallback inputs, but current canonical names are `code-review` and `code-remediate`.
+The run directory is allocated once for local reviews and non-PR workflows. PR review collection begins in a temporary timestamped directory because current-branch input may not yet reveal a PR number. After authoritative `pr.json` succeeds, the run creator promotes the complete run to the next numeric `.reports/codex/code-review/pr-<number>/run-<NNN>/` path; every later helper and artifact uses the printed promoted path. Failed pre-identity collection remains a timestamped unavailable diagnostic rather than an assessed PR review. Shared helpers collect diffs and PR evidence, execute gates, validate artifact shape, map severity, and write the final result. A result is not complete because a file exists: the requested output, gate outcomes, evidence paths, confidence, and unresolved risks must agree. Historical flat code-review, `review/`, and `resolve/` artifacts remain readable fallback inputs without migration, but current canonical names are `code-review` and `code-remediate`.
 
 Confidence is evidence-backed: `<=0.80` is incomplete; `0.80 < confidence < 0.85` needs stronger evidence; `0.85 <= confidence < 0.90` is cautious-low and requires objective recovery evidence; `>=0.90` is fair but still requires material residual limits. A not-applicable gate is recorded with its reason rather than silently omitted.
 

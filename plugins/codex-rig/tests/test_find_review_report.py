@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,7 @@ import pytest
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 FINDER_PATH = PLUGIN_ROOT / "shared" / "find-review-report.py"
+CREATE_RUN_PATH = PLUGIN_ROOT / "shared" / "create_run.py"
 
 
 def _load_finder() -> object:
@@ -69,6 +72,194 @@ def _write_candidate_report(root: Path, timestamp: str, *, pull_number: int = 12
         encoding="utf-8",
     )
     return candidate_path
+
+
+def _write_nested_report(
+    root: Path,
+    run_name: str,
+    *,
+    pull_number: int = 123,
+    result_name: str = "result.json",
+    review_status: str | None = None,
+) -> Path:
+    """Create one report in the PR-scoped, numerically ordered run topology."""
+    report_dir = root / f"pr-{pull_number}" / run_name
+    report_dir.mkdir(parents=True)
+    (report_dir / "pr.json").write_text(
+        json.dumps({"number": pull_number, "url": f"https://github.com/acme/widgets/pull/{pull_number}"}),
+        encoding="utf-8",
+    )
+    metadata: dict[str, object] = {"scope": "pr", "review_decision": {"recommendation": "needs-more-work"}}
+    if review_status is not None:
+        metadata["review_status"] = review_status
+    result_path = report_dir / result_name
+    result_path.write_text(json.dumps({"metadata": metadata}), encoding="utf-8")
+    return result_path
+
+
+class TestPrScopedReviewRuns:
+    """Protect discovery and terminal ordering for PR-scoped review runs."""
+
+    def test_selects_nested_assessed_result(self, tmp_path: Path) -> None:
+        """Discover assessed output below the explicit PR and run directories."""
+        finder = _load_finder()
+        assessed = _write_nested_report(tmp_path, "run-001")
+
+        selected = finder.find_latest_review_report("#123", [tmp_path])
+
+        assert selected == assessed
+
+    def test_orders_run_indexes_numerically(self, tmp_path: Path) -> None:
+        """Prevent lexical ordering from making run 099 newer than run 100."""
+        finder = _load_finder()
+        _write_nested_report(tmp_path, "run-099")
+        newest = _write_nested_report(tmp_path, "run-100")
+
+        selected = finder.find_latest_review_report("123", [tmp_path])
+
+        assert selected == newest
+
+    def test_nested_run_takes_precedence_over_legacy_timestamp(self, tmp_path: Path) -> None:
+        """Treat any matching PR-scoped run as newer than flat timestamp reports."""
+        finder = _load_finder()
+        _write_report(tmp_path, "9999-12-31T23-59-59Z", unavailable=False)
+        nested = _write_nested_report(tmp_path, "run-001")
+
+        selected = finder.find_latest_review_report("123", [tmp_path])
+
+        assert selected == nested
+
+    def test_newer_nested_candidate_blocks_assessed_run(self, tmp_path: Path) -> None:
+        """Require promotion of the highest numbered run before remediation reuse."""
+        finder = _load_finder()
+        _write_nested_report(tmp_path, "run-009")
+        candidate = _write_nested_report(tmp_path, "run-010", result_name="result.candidate.json")
+
+        with pytest.raises(LookupError, match="matching-review-candidate-unpromoted") as error:
+            finder.find_latest_review_report("123", [tmp_path])
+
+        assert str(candidate) in str(error.value)
+
+    def test_older_nested_candidate_does_not_block_assessed_run(self, tmp_path: Path) -> None:
+        """Prefer a promoted later run over an abandoned earlier candidate."""
+        finder = _load_finder()
+        _write_nested_report(tmp_path, "run-009", result_name="result.candidate.json")
+        assessed = _write_nested_report(tmp_path, "run-010")
+
+        selected = finder.find_latest_review_report("123", [tmp_path])
+
+        assert selected == assessed
+
+    def test_newer_nested_closed_run_blocks_assessed_run(self, tmp_path: Path) -> None:
+        """Prevent an earlier assessment from surviving a later terminal close."""
+        finder = _load_finder()
+        _write_nested_report(tmp_path, "run-009")
+        _write_nested_report(tmp_path, "run-010", review_status="closed")
+
+        with pytest.raises(LookupError, match="matching-review-closed-not-remediable"):
+            finder.find_latest_review_report("123", [tmp_path])
+
+    def test_older_nested_closed_run_does_not_block_assessed_run(self, tmp_path: Path) -> None:
+        """Allow a later assessment to supersede an earlier terminal close."""
+        finder = _load_finder()
+        _write_nested_report(tmp_path, "run-009", review_status="closed")
+        assessed = _write_nested_report(tmp_path, "run-010")
+
+        selected = finder.find_latest_review_report("123", [tmp_path])
+
+        assert selected == assessed
+
+    def test_rejects_invalid_nested_result(self, tmp_path: Path) -> None:
+        """Retain explicit result validation inside the new directory topology."""
+        finder = _load_finder()
+        invalid = _write_nested_report(tmp_path, "run-001")
+        invalid.write_text(json.dumps({"metadata": {"scope": "pr"}}), encoding="utf-8")
+
+        with pytest.raises(LookupError, match="invalid-review-report-rerun-code-review"):
+            finder.find_latest_review_report("123", [tmp_path])
+
+    def test_nested_result_requires_explicit_pr_identity(self, tmp_path: Path) -> None:
+        """Do not treat the directory name alone as validated result identity."""
+        finder = _load_finder()
+        result = _write_nested_report(tmp_path, "run-001")
+        (result.parent / "pr.json").unlink()
+
+        with pytest.raises(LookupError, match="missing-matching-review-report"):
+            finder.find_latest_review_report("123", [tmp_path])
+
+    def test_nested_result_rejects_directory_identity_disagreement(self, tmp_path: Path) -> None:
+        """Require the PR directory and collected identity to name the same pull request."""
+        finder = _load_finder()
+        result = _write_nested_report(tmp_path, "run-001")
+        (result.parent / "pr.json").write_text(
+            json.dumps({"number": 456, "url": "https://github.com/acme/widgets/pull/456"}), encoding="utf-8"
+        )
+
+        with pytest.raises(LookupError, match="missing-matching-review-report"):
+            finder.find_latest_review_report("456", [tmp_path])
+
+    @pytest.mark.parametrize(
+        "pr_name,run_name",
+        [("pr-x", "run-001"), ("pr-123", "run-x"), ("pr-123", "run-01"), ("pr-123", "run-000")],
+    )
+    def test_ignores_malformed_nested_directory_names(self, tmp_path: Path, pr_name: str, run_name: str) -> None:
+        """Ignore directories outside the canonical PR and zero-padded run grammar."""
+        finder = _load_finder()
+        report_dir = tmp_path / pr_name / run_name
+        report_dir.mkdir(parents=True)
+        (report_dir / "pr.json").write_text(
+            json.dumps({"number": 123, "url": "https://github.com/acme/widgets/pull/123"}), encoding="utf-8"
+        )
+        (report_dir / "result.json").write_text(
+            json.dumps({"metadata": {"scope": "pr", "review_decision": {"recommendation": "accept-as-is"}}}),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(LookupError, match="missing-matching-review-report"):
+            finder.find_latest_review_report("123", [tmp_path])
+
+
+class TestPromotedRunIntegration:
+    """Join the allocator's printed topology to the remediation finder."""
+
+    def test_finder_selects_the_promoted_run(self, tmp_path: Path) -> None:
+        """Prevent producer and consumer path grammars from drifting apart."""
+        created = subprocess.run(
+            [sys.executable, str(CREATE_RUN_PATH), "--skill", "code-review", "--root", str(tmp_path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert created.returncode == 0, created.stderr
+        staging = Path(created.stdout.strip())
+        (staging / "pr.json").write_text(
+            json.dumps({"number": 123, "url": "https://github.com/acme/widgets/pull/123"}), encoding="utf-8"
+        )
+        (staging / "result.json").write_text(
+            json.dumps({"metadata": {"scope": "pr", "review_decision": {"recommendation": "needs-more-work"}}}),
+            encoding="utf-8",
+        )
+
+        promoted = subprocess.run(
+            [
+                sys.executable,
+                str(CREATE_RUN_PATH),
+                "--skill",
+                "code-review",
+                "--root",
+                str(tmp_path),
+                "--promote-pr-run",
+                str(staging),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        expected = tmp_path / "code-review" / "pr-123" / "run-001" / "result.json"
+        assert promoted.returncode == 0, promoted.stderr
+        assert Path(promoted.stdout.strip()) == expected.parent
+        assert _load_finder().find_latest_review_report("#123", [tmp_path / "code-review"]) == expected
 
 
 def test_newer_unavailable_report_does_not_shadow_older_assessed_review(tmp_path: Path) -> None:

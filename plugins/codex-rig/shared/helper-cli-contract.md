@@ -21,6 +21,10 @@ Helper option schemas live in `--help`, not skills. In a plugin, derive `PLUGIN_
 
 Create every skill run with `python PLUGIN_ROOT/shared/create_run.py --skill <skill-id>`. Retain its single printed path and pass that literal path explicitly to every later helper and artifact operation. Never persist the path in a shell variable or assume state survives between command/tool calls.
 
+Artifact namespaces use `.reports/codex/<skill>/<canonical-safe-identity>/run-<NNN>/` only when the skill defines and validates a bounded canonical safe identity; otherwise they use the generated timestamp. Never serialize raw prompts, paths, URLs, refs, credentials, or arbitrary arguments into directory names. PR review is the first identity-indexed workflow, with the normalized authoritative identity `pr-<number>`.
+
+Local reviews and every non-PR workflow keep the initial `.reports/codex/<skill>/<timestamp>/` path. A PR review initially uses the timestamped code-review path because current-branch input may not reveal a PR number before collection. After successful authoritative `pr.json` collection, invoke `python PLUGIN_ROOT/shared/create_run.py --skill code-review --promote-pr-run <run-directory>`, capture the single printed final path, and use that literal `.reports/codex/code-review/pr-<number>/run-<NNN>/` path for every remaining operation. Promotion derives the PR number from the collected artifact and allocates the next numeric run index; callers never construct either value. A pre-identity collection failure stays in its timestamped unavailable-diagnostic path and is never an assessed PR review. Existing flat code-review artifacts remain valid lookup inputs and require no migration.
+
 Also run each skill-specific local CLI's `--help`. Do not copy full flags/templates into `SKILL.md`; state only:
 
 - gate commands or skip reasons

@@ -965,6 +965,7 @@ def _validate_review_runtime(
             sessions_dir=codex_home / "sessions",
             run_dir=out_dir,
             roles_dir=PLUGIN_ROOT / "roles",
+            expected_consumer_id="code-review",
         )
     except ValueError as error:
         raise SystemExit(f"review-runtime-execution-invalid:{error}") from error
@@ -973,7 +974,9 @@ def _validate_review_runtime(
         or summary.get("network_mode") != "restricted"
         or summary.get("approval_policy") != "never"
         or summary.get("filesystem_credential_isolation") != "unverified"
+        or summary.get("runtime_promotion_eligible") is not True
         or summary.get("write_parallel_eligible") is not False
+        or summary.get("consumer_id") != "code-review"
     ):
         raise SystemExit("review-runtime-execution-evidence-invalid")
     return summary

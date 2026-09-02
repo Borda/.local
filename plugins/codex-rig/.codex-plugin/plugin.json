@@ -10,6 +10,7 @@
       "13 workflow skills and 1 legacy-shim lifecycle manager",
       "15 specialist role cards",
       "Staged execution manifest validation",
+      "Gated portable read-only auto execution",
       "Authenticated cleanup for prior agent shims",
       "Optional SessionStart health diagnostic",
       "Built-in and inline role fallback",
@@ -31,5 +32,5 @@
   "name": "codex-rig",
   "repository": "https://github.com/Borda/AI-Rig",
   "skills": "./skills/",
-  "version": "0.13.0"
+  "version": "0.14.0"
 }

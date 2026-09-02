@@ -9,15 +9,49 @@ import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 CODE_REVIEW_SKILL = PLUGIN_ROOT / "skills" / "code-review" / "SKILL.md"
+CODE_REVIEW_RESULT_TEMPLATE = PLUGIN_ROOT / "skills" / "code-review" / "result-template.json"
+HELPER_CLI_CONTRACT = PLUGIN_ROOT / "shared" / "helper-cli-contract.md"
 REVIEW_VALIDATOR = PLUGIN_ROOT / "skills" / "code-review" / "validate_artifacts.py"
 ROUTING_HELPER = PLUGIN_ROOT / "skills" / "code-review" / "review_routing.py"
 PARALLEL_EXECUTION_TESTS = Path(__file__).with_name("test_parallel_execution.py")
+
+
+class TestPrArtifactPathContract:
+    """Keep PR identity promotion ordered, safe, and topology-neutral downstream."""
+
+    def test_promotes_after_authoritative_collection(self) -> None:
+        """Prevent path promotion before current-branch PR identity is known."""
+        skill = CODE_REVIEW_SKILL.read_text(encoding="utf-8")
+        collection = "For PR scope, inspect `python PLUGIN_ROOT/shared/collect_pr.py --help`"
+        promotion = "create_run.py --skill code-review --promote-pr-run <run-directory>"
+
+        assert skill.index(collection) < skill.index(promotion)
+        assert ".reports/codex/code-review/pr-<number>/run-<NNN>/" in skill
+        assert "Use the printed promoted path literally for every later helper" in skill
+        assert "It is not an assessed PR review and must not be promoted." in skill
+
+    def test_rejects_raw_argument_directory_names(self) -> None:
+        """Prevent prompts, paths, URLs, or credentials from leaking into artifact paths."""
+        contract = HELPER_CLI_CONTRACT.read_text(encoding="utf-8")
+
+        assert ".reports/codex/<skill>/<canonical-safe-identity>/run-<NNN>/" in contract
+        assert "Never serialize raw prompts, paths, URLs, refs, credentials, or arbitrary arguments" in contract
+        assert "otherwise they use the generated timestamp" in contract
+
+    def test_result_template_uses_selected_run_directory(self) -> None:
+        """Keep local and promoted PR paths compatible with one result template."""
+        template = json.loads(CODE_REVIEW_RESULT_TEMPLATE.read_text(encoding="utf-8"))
+
+        assert template["artifact_path"] == "<run-directory>/result.json"
+        assert template["metadata"]["final_handoff"]["handoff_path"] == "<run-directory>/final-handoff.json"
+        assert template["metadata"]["specialist_manifest"] == "<run-directory>/specialist-manifest.json"
 
 
 def load_validator() -> ModuleType:
@@ -513,7 +547,9 @@ def test_review_runtime_consumer_binds_spawned_roles_to_the_shared_validator(
             "network_mode": "restricted",
             "approval_policy": "never",
             "filesystem_credential_isolation": "unverified",
+            "runtime_promotion_eligible": True,
             "write_parallel_eligible": False,
+            "consumer_id": "code-review",
         }
 
     monkeypatch.setattr(validator, "validate_read_only_runtime", validate_runtime)
@@ -538,19 +574,22 @@ def test_review_runtime_consumer_binds_spawned_roles_to_the_shared_validator(
     assert captured["parent_rollout"] == parent_rollout
     assert captured["sessions_dir"] == tmp_path / "codex-home" / "sessions"
     assert captured["roles_dir"] == PLUGIN_ROOT / "roles"
+    assert captured["expected_consumer_id"] == "code-review"
 
 
-def test_review_runtime_consumer_validates_real_schema_v2_portable_evidence(tmp_path: Path) -> None:
-    """Reject legacy Boolean controls instead of projecting them as portable restrictions.
-
-    The regression uses the real shared validator and rollout-shaped child sessions. A
-    plausible but wrong consumer could reuse the legacy ``network: false`` node value
-    and pass without observing the schema-v2 restricted-network host records.
-    """
+@pytest.fixture
+def real_schema_v2_review_runtime(tmp_path: Path) -> dict[str, Any]:
+    """Build consumer-bound rollout evidence for review runtime checks."""
     validator = load_validator()
     fixture_module = load_parallel_execution_tests()
     manifest, execution_path, plan_path, parent_rollout, sessions_dir, _roles_dir = (
         fixture_module._schema_v2_runtime_fixture(tmp_path)
+    )
+    fixture_module._bind_portable_read_consumer_policy(
+        manifest,
+        execution_path,
+        plan_path,
+        consumer_id="code-review",
     )
     out_dir = execution_path.parent
     codex_home = tmp_path / "codex-home"
@@ -589,48 +628,73 @@ def test_review_runtime_consumer_validates_real_schema_v2_portable_evidence(tmp_
             "plan_path": plan_path.name,
         }
     }
+    return {
+        "validator": validator,
+        "manifest": manifest,
+        "execution_path": execution_path,
+        "out_dir": out_dir,
+        "codex_home": codex_home,
+        "nodes": nodes,
+        "selected_passes": selected_passes,
+        "review_manifest": review_manifest,
+    }
 
-    summary = validator._validate_review_runtime(
-        out_dir,
-        review_manifest,
-        selected_passes,
-        codex_home,
-        "parent-thread",
-    )
 
-    assert summary["evidence_level"] == "portable-read-restricted"
-    assert summary["network_mode"] == "restricted"
-    assert summary["approval_policy"] == "never"
-    assert summary["filesystem_credential_isolation"] == "unverified"
-    assert "network_guarantee" not in summary
-    assert summary["write_parallel_eligible"] is False
+class TestReviewRuntimeConsumer:
+    """Protect review's consumer-bound portable runtime contract."""
 
-    nodes[0]["observed_controls"]["network"] = False
-    execution_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
-    review_manifest["runtime_execution"]["manifest_sha256"] = hashlib.sha256(execution_path.read_bytes()).hexdigest()
-
-    with pytest.raises(SystemExit, match="review-runtime-execution-invalid:runtime-node-capability-mismatch:N1"):
-        validator._validate_review_runtime(
-            out_dir,
-            review_manifest,
-            selected_passes,
-            codex_home,
+    def test_accepts_real_schema_v2_evidence(self, real_schema_v2_review_runtime: dict[str, Any]) -> None:
+        """Promote complete restricted-network evidence from the shared validator."""
+        runtime = real_schema_v2_review_runtime
+        summary = runtime["validator"]._validate_review_runtime(
+            runtime["out_dir"],
+            runtime["review_manifest"],
+            runtime["selected_passes"],
+            runtime["codex_home"],
             "parent-thread",
         )
 
+        assert summary["evidence_level"] == "portable-read-restricted"
+        assert summary["network_mode"] == "restricted"
+        assert summary["approval_policy"] == "never"
+        assert summary["filesystem_credential_isolation"] == "unverified"
+        assert "network_guarantee" not in summary
+        assert summary["write_parallel_eligible"] is False
 
-def test_review_runtime_consumer_rejects_spawned_pass_without_runtime_manifest(tmp_path: Path) -> None:
-    """Require authoritative runtime evidence whenever a pass records a child spawn."""
-    validator = load_validator()
-
-    with pytest.raises(SystemExit, match="review-runtime-execution-missing"):
-        validator._validate_review_runtime(
-            tmp_path,
-            {},
-            [{"role": "qa-specialist", "mode": "spawned"}],
-            tmp_path,
-            "parent-thread",
+    def test_rejects_legacy_control_tampering(self, real_schema_v2_review_runtime: dict[str, Any]) -> None:
+        """Reject a legacy Boolean projected as a portable network restriction."""
+        runtime = real_schema_v2_review_runtime
+        runtime["nodes"][0]["observed_controls"]["network"] = False
+        runtime["execution_path"].write_text(
+            json.dumps(runtime["manifest"], indent=2) + "\n",
+            encoding="utf-8",
+            newline="\n",
         )
+        runtime["review_manifest"]["runtime_execution"]["manifest_sha256"] = hashlib.sha256(
+            runtime["execution_path"].read_bytes()
+        ).hexdigest()
+
+        with pytest.raises(SystemExit, match="review-runtime-execution-invalid:runtime-node-capability-mismatch:N1"):
+            runtime["validator"]._validate_review_runtime(
+                runtime["out_dir"],
+                runtime["review_manifest"],
+                runtime["selected_passes"],
+                runtime["codex_home"],
+                "parent-thread",
+            )
+
+    def test_rejects_spawn_without_manifest(self, tmp_path: Path) -> None:
+        """Require authoritative runtime evidence whenever a pass records a child spawn."""
+        validator = load_validator()
+
+        with pytest.raises(SystemExit, match="review-runtime-execution-missing"):
+            validator._validate_review_runtime(
+                tmp_path,
+                {},
+                [{"role": "qa-specialist", "mode": "spawned"}],
+                tmp_path,
+                "parent-thread",
+            )
 
 
 def test_skill_requires_shared_runtime_gate_and_truthful_execution_labels() -> None:
@@ -639,6 +703,7 @@ def test_skill_requires_shared_runtime_gate_and_truthful_execution_labels() -> N
 
     assert "`<run-directory>/execution-plan.json`" in skill
     assert "`<run-directory>/execution-manifest.json`" in skill
+    assert "`consumer_id=code-review`" in skill
     assert "`parallel` only when" in skill
     assert "`independent-spawned`" in skill
     assert "`serial-fallback`" in skill

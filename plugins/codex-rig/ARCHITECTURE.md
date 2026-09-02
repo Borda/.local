@@ -9,12 +9,12 @@ The current generic runtime promotion tier is `portable-read-restricted`. New ge
 ## Maintainer navigation
 
 - [Shared orchestration policy](shared/specialist-orchestration.md) defines routing, ownership, fallback, handoff, and retry rules.
-- [Execution validator](shared/parallel_execution.py) defines the executable schema, digest checks, stage barriers, controls, joins, overlap derivation, and runtime binding.
-- [Generated worktree lifecycle](shared/parallel_worktrees.py) implements the approval-bound P3a fixture proof and the separate code-remediate-local schema-v2 lifecycle; its thin argparse sequence is `prepare`, `create-handover`, `join`, `collect`, `integrate`, `apply-source`, and `cleanup`. It is not a scheduler, registry, or generic write resolver route.
+- [Execution validator](shared/parallel_execution.py) defines the executable schema, digest checks, stage barriers, controls, joins, overlap derivation, closed consumer preflight, exact parent-write approval, and post-join runtime binding.
+- [Generated worktree lifecycle](shared/parallel_worktrees.py) implements the approval-bound generated-fixture proof and the separate code-remediate-local schema-v2 lifecycle; its thin argparse sequence is `prepare`, `create-handover`, `join`, `collect`, `integrate`, `apply-source`, and `cleanup`. It is not a scheduler, registry, or generic write resolver route.
 - [Telemetry helper](shared/parallel_telemetry.py) defines privacy-minimized timing, token accounting, workload matching, and comparison metrics.
 - [Code-review contract](skills/code-review/SKILL.md) is the reference consumer for specialist manifests and runtime evidence.
-- [Implement contract](skills/implement/SKILL.md) declares its disabled P4 read-only evidence candidate and parent-serial mutation boundary.
-- [Manage contract](skills/manage/SKILL.md) declares its disabled P4 read-only inventory candidate and parent-serial mutation boundary.
+- [Implement contract](skills/implement/SKILL.md) declares the promoted portable read-only evidence route and parent-serial mutation boundary.
+- [Manage contract](skills/manage/SKILL.md) declares the promoted portable read-only inventory route and parent-serial mutation boundary.
 - [Plugin README](README.md) gives user-facing activation, review, calibration, and rollback boundaries.
 
 ## Architectural invariants
@@ -34,19 +34,21 @@ The shared resolver accepts `--execution=serial`, `--execution=parallel-read`, `
 
 1. Explicit per-invocation `--execution=...`.
 2. `CODEX_RIG_EXECUTION`.
-3. The shipped phase default.
+3. The shipped default.
 
-The phase default is `serial` until general-availability gates are complete. After all promotion gates complete, the phase default may become `auto`. Early `auto` still resolves to serial when read-only parallelism is not promoted. An explicit unpromoted mode fails closed. `parallel-write` additionally requires the future write promotion and never inherits authorization from `auto`, the environment, or read-only approval.
+The shipped default is `auto`. `auto` selects only an already-promoted read-only consumer route and otherwise resolves safely to `serial`. An explicit unpromoted mode fails closed. `parallel-write` remains unavailable and never inherits authorization from `auto`, the environment, or read-only approval.
 
-The resolver is a request parser and safety gate, not a scheduler. Each skill must still declare its safe parallel surfaces, barriers, ownership, resources, and consumer checks. Until a skill adopts the shared runtime contract, the resolver value is not a universal CLI capability for that skill.
+The resolver is a request parser and safety gate, not a scheduler. `auto` returns the concrete effective mode `parallel-read` only when the closed consumer boundary derives a promoted read route; otherwise it returns `serial`. Each skill must still declare its safe parallel surfaces, barriers, ownership, resources, and consumer checks. Until a skill adopts the shared runtime contract, the resolver value is not a universal CLI capability for that skill.
 
-## P4 consumer declarations
+## Portable read-only consumer declarations
 
-Implement and Manage carry explicit disabled P4 declarations instead of a shared consumer registry or another schema. Each declaration names only its future non-sensitive read-only candidate, the immutable pre-dispatch freeze, one fixed dependency-ready wave, the complete terminal join, serial parent decisions and mutations, validated resource locks, equal-gate `serial-fallback`, acceptance evidence, and fail-closed stop conditions.
+Implement and Manage carry explicit portable read-only declarations instead of a shared consumer registry or another module. Each declaration names only its non-sensitive read-only route, the exact frozen consumer policy, one fixed dependency-ready wave, the complete terminal join, serial parent decisions and mutations, validated resource locks, equal-gate `serial-fallback`, acceptance evidence, and fail-closed stop conditions. The frozen policy must bind `consumer_id`, `capability=portable-read-only`, `promotion_status=promoted`, `parent_mutations=serial`, and `canonical_gates=serial` to the plan digest. The same plan binds `write_policy`: any planned parent mutation requires a separate approval record containing only the exact plan SHA-256, `response=approve`, and `source=explicit-input|user-prompt`.
 
-These declarations do not enable runtime dispatch. Implement keeps source, test, documentation, configuration, calibration, artifact, result, integration, gate, verdict, and promotion work parent-serial. Manage keeps create, update, delete, rename, permission, policy, configuration, documentation, calibration, propagation, artifact, result, gate, verdict, and promotion work parent-serial. Canonical quality gates also remain serial because no isolated resource-compatible gate group has executable adoption evidence.
+Before dispatch, each consumer invokes `parallel_execution.py preflight --consumer <implement|manage>`; the command derives promotion from a closed allowlist, applies flag/environment/default precedence, validates the exact consumer and write policies, and validates required approval without granting parallel-write authority. After terminal join, each invokes `validate-runtime --consumer <implement|manage>` with authoritative runtime paths, then repeats the identical preflight before the first parent mutation. Generic validation without a consumer id remains readable but is explicitly promotion-ineligible. Code Review now binds `consumer_id=code-review` through its existing artifact validator instead of relying on unbound generic evidence.
 
-P3b exact-candidate native Linux and Windows lifecycle results plus a separate user promotion remain prerequisites for any write-capable adoption. After that promotion, each consumer must still pass the shared runtime matrix before its route can opt in. Until both layers pass, the shipped default remains `serial`, generic parallel writes remain disabled, and explicit flags, environment values, `auto`, or natural-language requests cannot activate these declarations.
+The declarations enable only validated portable read-only work. Implement keeps source, test, documentation, configuration, calibration, artifact, result, integration, gate, verdict, and promotion work parent-serial. Manage keeps create, update, delete, rename, permission, policy, configuration, documentation, calibration, propagation, artifact, result, gate, verdict, and promotion work parent-serial. Canonical quality gates also remain serial because no isolated resource-compatible gate group has executable adoption evidence.
+
+The code-remediate-local lifecycle and the Implement/Manage portable read-only routes are separately promoted through their executable acceptance matrices. Generic parallel writes remain disabled, and no flag, environment value, or natural-language request can activate an unpromoted consumer or bypass its plan binding.
 
 ## Eligibility and capability tiers
 
@@ -64,7 +66,7 @@ The tier proves the recorded configuration and observed rollout binding required
 
 ### Write tier
 
-Generic write-capable parallel execution is not promoted: a v2 manifest for the shared resolver containing a write node is rejected before structural acceptance. Code-remediate-local production remediation is a separate consumer-owned lifecycle, not a generic runtime promotion. Its exact schema-v2 plan and approval bind a clean authoritative source repository, baseline `HEAD` and tree, two to four disjoint buckets, actual context-pack paths and SHA-256 values, resource locks, detached worktrees under only the external sibling root `.codex-rig-worktrees/<run-id>`, a fixed new state basename and output names under the run root, the fixed `code-remediate-shared-quality-gates` verification reference, rollback policy, and non-force cleanup policy. Plan, approval, state, patch, rollback, and lifecycle artifacts remain in the authoritative repository's normal `.reports/codex/code-remediate/...` run directory. The lifecycle's completed evidence is hash-bound into the remediation result; it does not change the generic resolver's `write_parallel_promoted` value or the shipped serial default.
+Generic write-capable parallel execution is not promoted: a v2 manifest for the shared resolver containing a write node is rejected before structural acceptance. Code-remediate-local production remediation is a separately promoted consumer-owned lifecycle, not a generic runtime promotion. Its exact schema-v2 plan and approval bind a clean authoritative source repository, baseline `HEAD` and tree, two to four disjoint buckets, actual context-pack paths and SHA-256 values, resource locks, detached worktrees under only the external sibling root `.codex-rig-worktrees/<run-id>`, a fixed new state basename and output names under the run root, the fixed `code-remediate-shared-quality-gates` verification reference, rollback policy, and non-force cleanup policy. Plan, approval, state, patch, rollback, and lifecycle artifacts remain in the authoritative repository's normal `.reports/codex/code-remediate/...` run directory. The lifecycle's completed evidence is hash-bound into the remediation result; it does not change the generic resolver's `write_parallel_promoted` value or grant authority to another consumer.
 
 ## Frozen execution plan
 
@@ -85,6 +87,17 @@ Neutral frozen plan:
   "capability_policy": {
     "tier": "portable",
     "task_sensitivity": "non-sensitive"
+  },
+  "consumer_policy": {
+    "consumer_id": "implement",
+    "capability": "portable-read-only",
+    "promotion_status": "promoted",
+    "parent_mutations": "serial",
+    "canonical_gates": "serial"
+  },
+  "write_policy": {
+    "parent_writes": "none",
+    "approval_requirement": "not-required"
   },
   "requested_mode": "parallel-read",
   "wave": {
@@ -155,7 +168,7 @@ The concurrency ceiling is the minimum of the configured limit, ready independen
 
 ## Approval allowlist and two-phase promotion
 
-Parallel scheduling never expands the authority already granted to the parent task. A read-only child wave inside an authorized workflow does not need a second write approval, but starting a paid or externally networked parent process remains a separate external-capability action and follows the shared five-field approval contract. A prior approval applies only to its stated command boundary and retry policy; it cannot authorize a later paid retry, write wave, external service, broader path, or different plan digest.
+Parallel scheduling never expands the authority already granted to the parent task. Every write, whether serial or parallel, requires a frozen plan and exact digest-bound approval. A read-only child wave inside an authorized workflow does not need a second write approval, but starting a paid or externally networked parent process remains a separate external-capability action and follows the shared five-field approval contract. A prior approval applies only to its stated command boundary and retry policy; it cannot authorize a later paid retry, write wave, external service, broader path, or different plan digest.
 
 | Action | Accepted authority | Never sufficient |
 | -- | -- | -- |
@@ -168,26 +181,106 @@ Parallel scheduling never expands the authority already granted to the parent ta
 
 Runtime approval prefixes are convenience routing rules, not product authority. The owning workflow must still present the required capability brief, preserve the one-attempt or retry boundary, and stop safely when approval is denied or exhausted. The manifest records the portable policy and host binding so a consumer cannot mistake missing evidence for approval.
 
-Write approval is separate. When a future validated structural manifest contains overlapping writes, the allowlist is exactly `response=approve`, `source=explicit-input` or `source=user-prompt`, and `plan_sha256` equal to the frozen plan digest. A flag, environment value, child request, or read-only result never substitutes for this record.
+Write approval is separate and applies to every write. The allowlist is exactly `response=approve`, `source=explicit-input` or `source=user-prompt`, and `plan_sha256` equal to the frozen plan digest. A flag, environment value, child request, `auto`, or read-only result never substitutes for this record.
 
 Promotion is therefore two-phase:
 
 1. Read phase: freeze the read-only plan, validate node provenance and controls, dispatch one wave, bind authoritative parent/child rollout evidence, join every child, derive the actual mode, and promote only a portable-read-restricted result.
-2. Generic write phase: only after a separate skill and rollout approval, freeze a digest-bound write plan, establish path/resource/worktree isolation, obtain exact write approval, validate patch-only outputs and verification, then integrate serially in deterministic order. The generic runtime stops before this phase; documenting it does not enable it. Code-remediate-local uses the separate consumer lifecycle below.
+2. Code-remediate write phase: the promoted consumer freezes a digest-bound write plan, establishes path/resource/worktree isolation, obtains exact write approval, validates patch-only outputs and verification, then integrates serially in deterministic order. The generic runtime still stops before generic parallel writes; documenting this separate lifecycle does not enable a generic write route.
 
-## Dispatch, join, and synchronization gates
+## Canonical G0–G8 execution flow
 
-The host and skill should make these gates observable and durable:
+This is the single versioned gate taxonomy for bounded multi-agent execution. G0 through G8 are parent-owned synchronization gates; the host may schedule an approved read-only wave, but only the parent can integrate, verify, issue the verdict, or promote evidence. A route that cannot satisfy a gate stops or uses the explicitly recorded equal-gate serial fallback.
 
-1. Intake gate: classify the task, identify independent axes, reject sensitive or shared-state work that lacks an isolation route, and select canonical roles.
-2. Freeze gate: write role-specific redacted context packs, owned paths, dependencies, locks, controls, role-card hashes, baseline fingerprints, and the plan digest.
-3. Approval gate: require only the approvals allowed for the selected tier; for future writes, bind the exact plan digest.
-4. Dispatch gate: start every ready node in one wave up to the limit; record parent spawn identity, child identity, route, context hash, and observed controls. Never add a second wave dynamically.
-5. Terminal gate: require a real terminal event. `cancel_requested` is not terminal; failed, cancelled, or missing terminals block acceptance.
-6. Join gate: verify output or patch hash, changed paths, ownership, resources, verifier status, unresolved items, and a parent result-consumption event after child completion.
-7. Derivation gate: compute `parallel`, `independent-spawned`, `serial`, or `serial-fallback` from validated observed intervals, never from a requested label.
-8. Integration gate: reconcile in stage topological order and stable node order, run integration-wide checks after the joined result is frozen, and stop on conflict or baseline drift.
-9. Promotion gate: publish only the evidence level supported by the validator and retain the sanitized evidence needed to reproduce the decision.
+```text
+                             ┌─────┬──────────────────────┐
+                             │ G0  │ Authority and intake │
+                             └─────┴───────┬──────────────┘
+                                           ▼
+                              ┌─────┬────────────────────┐
+                              │ G1  │ Evidence complete? │
+                              └─────┴──────┬─────────────┘
+                              ┌────────────┴────────┐
+                        ✓ YES │                     │ ✗ NO
+                              ▼                     ▼
+                ┌─────┬──────────────────────┐  ┌──────────┐
+                │ G2  │ Freeze route + plan  │  │   STOP   │
+                └─────┴───────┬──────────────┘  └──────────┘
+                              └────────────┐
+                                           ▼
+                              ┌─────┬────────────────────┐
+                              │ G3  │ Writes requested?  │
+                              └─────┴──────┬─────────────┘
+                              ┌────────────┴────────────────────────┐
+                         ✗ NO │                                     │ ✓ YES
+                              ▼                                     ▼
+                    ┌────────────────────┐              ┌────────────────────────┐
+                    │    Read route?     │              │  Promoted + approved?  │
+                    └─────────┬──────────┘              └───────────┬────────────┘
+                  ┌───────────┴───────┐                    ┌────────┴────────┐
+                ✗ NO                ✓ YES                ✓ YES             ✗ NO
+                  ▼                   ▼                    ▼                 ▼
+          ┌─────┬──────────┐  ┌─────┬──────────┐  ┌─────┬────────────┐  ┌──────────┐
+          │ G4  │  Serial  │  │ G4  │   Read   │  │ G4  │ Write wave │  │   STOP   │
+          └─────┴─┬────────┘  └─────┴─┬────────┘  └─────┴───┬────────┘  └──────────┘
+                  └───────────────────┼─────────────────────┘
+                                      ▼
+                      ┌─────┬────────────────────────┐
+                      │ G5  │ Terminal, join, derive │
+                      └─────┴─────────┬──────────────┘
+                                      ▼
+                       ┌─────┬──────────────────────┐
+                       │ G5a │   Nodes terminal?    │
+                       └─────┴────────┬─────────────┘
+                        ┌─────────────┴──────────────┐
+                      ✓ YES                        ✗ NO
+                        ▼                            ▼
+          ┌─────┬──────────────────────┐  ┌──────────────────────┐
+          │ G5b │ Join evidence valid? │  │  Preserve + re-plan  │
+          └─────┴───────┬──────────────┘  └──────────────────────┘
+              ┌─────────┴────────────┐
+            ✓ YES                  ✗ NO
+              ▼                      ▼
+┌─────┬──────────────────────┐  ┌──────────┐
+│ G5c │ Derive observed mode │  │   FAIL   │
+└─────┴───────┬──────────────┘  └──────────┘
+              └───────────────────────┐
+                                      ▼
+                       ┌─────┬──────────────────────┐
+                       │ G6  │  Integrate serially  │
+                       └─────┴────────┬─────────────┘
+                                      ▼
+                       ┌────────────────────────────┐
+                       │     Conflict or drift?     │
+                       └──────────────┬─────────────┘
+                        ┌─────────────┴──────────────┐
+                      ✗ NO                         ✓ YES
+                        ▼                            ▼
+          ┌─────┬──────────────────────┐  ┌──────────────────────┐
+          │ G7  │     Gates pass?      │  │  Preserve + re-plan  │
+          └─────┴───────┬──────────────┘  └──────────────────────┘
+                 ┌──────┴───────────────┐
+             ✓ YES                   ✗ NO
+                 ▼                      ▼
+┌─────┬──────────────────────────┐ ┌──────────┐
+│ G8  │ ACCEPT and retain proof  │ │   FAIL   │
+└─────┴──────────────────────────┘ └──────────┘
+```
+
+The flow's endpoint meanings are fixed: `STOP` means no safe continuation, `re-plan` means the parent must freeze a changed scope or baseline again, `FAIL` means the current result cannot satisfy acceptance, and `ACCEPT` means the parent may publish only the supported evidence and promotion state. Every question in the chart has explicit `✓ YES` and `✗ NO` branches; connector lines and `▼` carry direction, and the approval question's `✓ YES` branch is itself validated before dispatch.
+
+- **G0 — Authority and intake**: Normalize the request, scope, run identity, permitted mutations, sensitivity, and execution request. Apply precedence `--execution`, then `CODEX_RIG_EXECUTION`, then the shipped default. `auto` selects only an already-promoted portable read-only consumer route; otherwise it resolves safely to `serial`. Generic parallel writes remain disabled, and `auto` never bypasses consumer promotion or write approval.
+- **G1 — Evidence ready**: Collect and persist the shared baseline, capability evidence, source-backed context, and required host or rollout records before planning dispatch. Missing, mutable, sensitive, or unverifiable evidence fails closed; a child assertion or requested control is not evidence.
+- **G2 — Route, packs, plan, and digest freeze**: Freeze the DAG, one dependency-ready wave, role-specific context packs, owned paths, resource locks, checks, controls, baseline, role-card hashes, and exact plan digest before any spawn. Dispatch cannot add nodes, broaden ownership, change dependencies, or change the integration baseline.
+- **G3 — Required approvals**: Obtain only approvals required by the selected capability and external boundary. Every write requires a frozen plan and exact digest-bound approval with `response=approve` and an allowed human source. A missing, stale, broader, or mismatched approval stops the route.
+- **G4 — Dependency-ready dispatch**: Dispatch only the fixed ready wave up to the validated resource and concurrency limit, recording parent and child identities, route, context hashes, controls, and start events. If the wave is unsafe or unavailable, execute the same frozen plan serially as `serial-fallback` with equal gates; never add a later wave dynamically.
+- **G5 — Terminal, join, and derivation**: The parent waits for the complete wave before any dependent work, integration, or acceptance. The three G5 sub-gates preserve distinct evidence boundaries.
+  - **G5a — Real terminal state**: Require a real terminal event for every required node. `cancel_requested` is not terminal; failed, cancelled, missing, or ambiguous terminal evidence blocks acceptance and preserves available evidence for safe recovery.
+  - **G5b — Complete join contracts**: Validate every required handoff, output or patch hash, changed path, ownership claim, resource result, verifier status, unresolved item, and parent result-consumption event. A child response alone never proves completion or acceptance.
+  - **G5c — Observed execution derivation**: Derive `parallel`, `independent-spawned`, `serial`, or `serial-fallback` from validated substantive child intervals and the fixed plan. `parallel` requires at least two validated intervals that overlap; a requested mode or spawn count is never sufficient.
+- **G6 — Parent-only deterministic integration**: Freeze the joined result, then reconcile in topological stage order and stable node order using the parent workspace. Conflicts, changed scope, or baseline drift stop integration and require a new frozen plan; partial writes are never integrated automatically.
+- **G7 — Integration-wide verification**: Run the canonical integration-wide checks against the frozen integrated result and retain their exact outcomes. Quality gates remain serial unless a separately adopted contract proves isolation and equal evidence; any failed or missing gate produces `FAIL`.
+- **G8 — Parent verdict, evidence, and promotion**: The parent owns final severity, confidence, residual limits, sanitized artifact retention, user-facing output, and any promotion decision. Publish only the evidence level supported by the validator; successful completion reaches `ACCEPT`, while unsupported or unresolved evidence remains failed or unavailable.
 
 No dependent node starts before its dependency join. No parent acceptance occurs before every required node joins. A user cancellation stops new dispatch, preserves terminal evidence and worktrees, and never integrates partial writes automatically.
 
@@ -236,11 +329,11 @@ The structural validator derives `parallel` only when two or more substantive co
 
 [`shared/parallel_telemetry.py`](shared/parallel_telemetry.py) accepts sanitized rollout rows and emits compact attempt and wave records. It validates cumulative token counters, reconstructs deltas when terminal totals are unavailable, records task timing when present, and HMACs runtime identifiers. It never reads or stores prompts, reasoning, tool arguments, paths, credentials, full environments, raw child messages, or provider prices.
 
-Before a wave dispatches, the parent calls `admit_wave_token_budget` with the frozen positive wave ceiling, stable node order, and positive per-node token reservations. Completed and active reservations must form a stable prefix and remain charged; admission stops at the first reservation that would exceed the ceiling, and that node plus every later unstarted node move to same-gate serial re-planning. Active children are not terminated merely because the admission budget is exhausted. Schema-v2 runtime acceptance reads `token_budgets` from the exact digest-bound plan and rejects any retained wave whose spawned nodes, wave identity, lexical node order, or reservations were not fully admitted. Pre-P5 schema-v2 evidence remains readable only through the explicit `historical_unbudgeted=True` path, which returns `acceptance_blocked=true` and `runtime_promotion_eligible=false`; the default acceptance path still fails closed. This is a hard boundary on pre-dispatch reservations, not a provider-enforced cap on actual child consumption: the current host exposes no enforceable per-child token limit, so retained telemetry reports `actual_over_budget_tokens` instead of claiming actual usage was capped.
+Before a wave dispatches, the parent calls `admit_wave_token_budget` with the frozen positive wave ceiling, stable node order, and positive per-node token reservations. Completed and active reservations must form a stable prefix and remain charged; admission stops at the first reservation that would exceed the ceiling, and that node plus every later unstarted node move to same-gate serial re-planning. Active children are not terminated merely because the admission budget is exhausted. Schema-v2 runtime acceptance reads `token_budgets` from the exact digest-bound plan and rejects any retained wave whose spawned nodes, wave identity, lexical node order, or reservations were not fully admitted. Earlier schema-v2 evidence without token budgets remains readable only through the explicit `historical_unbudgeted=True` path, which returns `acceptance_blocked=true` and `runtime_promotion_eligible=false`; the default acceptance path still fails closed. This is a hard boundary on pre-dispatch reservations, not a provider-enforced cap on actual child consumption: the current host exposes no enforceable per-child token limit, so retained telemetry reports `actual_over_budget_tokens` instead of claiming actual usage was capped.
 
 Wave telemetry records `dispatch_to_final_join` wall time, token counters, mode, attempt count, a SHA-256 digest of a normalized workload key, unavailable fields, and a child-duration maximum as a diagnostic proxy. The child-duration maximum is not the wall-time envelope and cannot support a savings claim.
 
-`build_retained_wave_evidence` accepts only the exact compact wave schema and rejects unknown fields. It replaces the raw wave ID with an HMAC, emits a durable proof digest and bounded counters/status, records admission ceiling, reservations, and actual overrun, and never projects prompts, messages, reasoning, tool data, paths, environments, credentials, or raw runtime identifiers. It emits the storage policy: sanitized diagnostics should expire 30 days after success or resolution, while unresolved failed, cancelled, or conflicted work should remain until resolution. The helper does not persist or delete files; the future runtime storage consumer must enforce and audit that policy before P5/GA promotion.
+`build_retained_wave_evidence` accepts only the exact compact wave schema and rejects unknown fields. It replaces the raw wave ID with an HMAC, emits a durable proof digest and bounded counters/status, records admission ceiling, reservations, and actual overrun, and never projects prompts, messages, reasoning, tool data, paths, environments, credentials, or raw runtime identifiers. Its storage consumer, `enforce_diagnostic_expiry`, appends path-free JSONL evidence to the fixed `expiry-audit.jsonl` before eligible deletion and after each outcome. Sanitized diagnostics expire 30 days after success or resolution; unresolved failed, cancelled, or conflicted work remains until resolution. Only the exact HMAC diagnostic named by the retained record is eligible for deletion.
 
 `compare_parallel_to_serial` reports wall-time savings, speedup, and token multiplier only when serial and parallel waves have the same workload-key digest and both use `dispatch_to_final_join` as their wall-time source. Missing or mismatched baselines return null metrics with explicit unavailable fields. A comparison is not a price estimate and does not by itself promote execution safety.
 
@@ -268,19 +361,19 @@ Neutral telemetry shape:
 
 ## Consumer integration
 
-### P3a fixture proof and code-remediate-local production lifecycle
+### Generated-fixture proof and code-remediate-local production lifecycle
 
-P3a is deliberately narrower than write promotion and treats the active parent session as the operational authority. `shared/parallel_worktrees.py` accepts an exact approved plan for one generated repository, freezes exactly two disjoint work packages at one clean source `HEAD` and tree, and creates separate detached child worktrees. The parent dispatches both subagents before waiting. Each completed child uses `create_completed_child_handover` to return one bounded report with its node ID, terminal status, concise summary, exact changed paths, and canonical patch SHA-256. The helper reads raw Git subprocess bytes through the same lifecycle implementation as the parent join; shell-rendered `git diff` output is never a digest source.
+The generated-fixture proof is deliberately narrower than write promotion and treats the active parent session as the operational authority. `shared/parallel_worktrees.py` accepts an exact approved plan for one generated repository, freezes exactly two disjoint work packages at one clean source `HEAD` and tree, and creates separate detached child worktrees. The parent dispatches both subagents before waiting. Each completed child uses `create_completed_child_handover` to return one bounded report with its node ID, terminal status, concise summary, exact changed paths, and canonical patch SHA-256. The helper reads raw Git subprocess bytes through the same lifecycle implementation as the parent join; shell-rendered `git diff` output is never a digest source.
 
 The parent joins both reports at one barrier. `join_child_handovers` requires both statuses to be `completed`, checks the exact report schema, and compares every reported path and patch digest with the actual detached worktree before persisting the join. The lifecycle strips inherited `GIT_*` redirection overrides, rederives plan, approval, repository, worktree, node, output, and patch authority before transitions, fingerprints a declared retained attempt, and rejects symlinked managed roots, Windows aliases, traversal, case-folded or ancestor ownership collisions, dirty source state, child commits, staged changes, untracked or undeclared paths, deletes, renames, mode/type changes, empty patches, changed authority, and changed source baselines.
 
 After the join, the parent derives both patches itself, rechecks handover paths and hashes, and applies them in stable node order to a separate integration worktree. Successful cleanup begins only after the integration record is durable; it restores only generated owned paths, invokes non-force `git worktree remove`, and records command results and absent-path postconditions. Any missing, failed, cancelled, malformed, mismatched, conflicted, drifted, or cleanup-uncertain result retains diagnostics and blocks acceptance.
 
-The lifecycle record is a compact operational audit trail under parent authority, not cryptographic proof against hostile post-run rewriting. P3a may claim only that the parent froze two generated-fixture packages, dispatched two child sessions to isolated worktrees, joined two completed reports, independently verified the resulting Git changes and patches, and integrated them deterministically. It does not prove a particular child tool, child authorship, edit-time overlap, host attestation, native-Windows Git lifecycle behavior, production eligibility, or general availability. App Server access, brokers, sidecars, session-store discovery, signed receipts, and full-thread filtering are deliberately outside this boundary.
+The lifecycle record is a compact operational audit trail under parent authority, not cryptographic proof against hostile post-run rewriting. The generated-fixture proof may claim only that the parent froze two generated-fixture packages, dispatched two child sessions to isolated worktrees, joined two completed reports, independently verified the resulting Git changes and patches, and integrated them deterministically. It does not prove a particular child tool, child authorship, edit-time overlap, host attestation, native-Windows Git lifecycle behavior, production eligibility, or general availability. App Server access, brokers, sidecars, session-store discovery, signed receipts, and full-thread filtering are deliberately outside this boundary.
 
-Attempt 3 demonstrated the failure boundary: one child hashed RTK-rendered `git diff` output, the parent rejected the mismatch before collecting either patch, persisted bounded join-failure diagnostics, and retained both worktrees. The lifecycle allows no retry of that approved plan. A later attempt must use the canonical helper, a new frozen digest, and separate approval.
+A recorded failure demonstrates the boundary: when one child hashed RTK-rendered `git diff` output, the parent rejected the mismatch before collecting either patch, persisted bounded join-failure diagnostics, and retained both worktrees. The lifecycle allows no retry of that approved plan. Recovery must use the canonical helper, a new frozen digest, and separate approval.
 
-P3a leaves generic `write_parallel_promoted=false`, `write_parallel_eligible=false`, the shipped default `serial`, and every generic production consumer route disabled. Its approval or evidence cannot authorize code-remediate, another consumer, the generic resolver, GA, or the future `auto` default.
+The generated-fixture proof leaves generic `write_parallel_promoted=false` and `write_parallel_eligible=false`; its approval or evidence cannot authorize code-remediate, another consumer, or the generic resolver, and it does not alter the shipped `auto` default.
 
 Code-remediate-local has a separately accepted production lifecycle. A schema-v2 plan and explicit approval must bind one clean authoritative source repository and exact `HEAD`/tree, two to four disjoint buckets, actual context-pack paths and SHA-256 values, resource locks, detached worktrees under only `.codex-rig-worktrees/<run-id>` outside the authoritative checkout, a fixed new state basename and output names under the source-local run root, the fixed `code-remediate-shared-quality-gates` reference, rollback policy, and non-force cleanup policy. Plan, approval, state, patch, rollback, and lifecycle artifacts stay in the authoritative repository's normal `.reports/codex/code-remediate/...` run directory. Preparation and every authority transition re-hash each actual context pack and reject drift. The parent invokes the thin argparse sequence `prepare`, `create-handover`, `join`, `collect`, `integrate`, `apply-source`, and `cleanup`; these operations are not a scheduler, registry, or global promotion mechanism. The parent prepares the worktrees; each child edits only its owned paths, does not commit, and returns canonical terminal status, summary, changed paths, and patch SHA-256. The parent re-derives every patch, joins all terminal handovers, integrates in lexical bucket order in a separate integration worktree, and records only Git-structural integration as `structurally-verified`; it does not execute arbitrary plan-provided commands. After source application, the existing shared quality-gate phase remains the executable result authority and its validated `gates.json` is required for a passing remediation result.
 
@@ -290,7 +383,7 @@ Source application rechecks exact raw integration postimages, captures raw sourc
 
 Its containment claim is `parent-authoritative operational postcondition containment` with `capability_sandbox_verified=false`. The artifact validator independently re-hashes every child patch, the forward source bundle, and the rollback patch beneath the exact run root before accepting lifecycle evidence. Source, worktree, evidence-root, state, output, and patch path components reject symlinks and path escapes. This is not a per-child capability sandbox, hostile-child security boundary, globally atomic source transaction, or security isolation guarantee. Separately sandboxed processes remain a future stronger alternative, not a current prerequisite.
 
-The local macOS production pilot completed the full lifecycle and rollback proof. Installed-package acceptance now executes the same lifecycle suite from manifest-declared payload, and the repository's existing full-test matrix runs that gate on Linux, macOS, and native Windows. Configuration is not runner evidence: P3b promotion remains blocked until the exact candidate records green native Linux and Windows jobs. Every later live write still requires a newly frozen consumer-specific plan and exact digest approval; neither this matrix nor a prior pilot authorizes another write.
+The code-remediate-local production route completed the full lifecycle and rollback proof. Installed-package acceptance executes the same lifecycle suite from manifest-declared payload, and the repository's full-test matrix records that gate on Linux, macOS, and native Windows. Promotion is limited to this consumer-owned route. Every later live write still requires a newly frozen consumer-specific plan and exact digest approval; neither this matrix nor a prior proof authorizes another write.
 
 A consumer such as code review must mirror the validated runtime summary into its metadata, preserve the exact `execution_mode`, `execution_evidence_level`, and `write_parallel_eligible=false`, and keep parent acceptance in the consumer. It must run its own artifact validator after the shared validator, fail on missing or stale plan/manifest correspondence, and never convert `independent-spawned` or a planning label into `parallel`.
 

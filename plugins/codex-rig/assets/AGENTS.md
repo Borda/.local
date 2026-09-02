@@ -55,7 +55,7 @@ Apply this policy to every same or plausibly shared obstacle, incl. one appearin
 
 - Keep live plan for multi-step work, update as task shape changes. Use as session task ledger.
 - One owner per file set at a time. Other thread/agent owns same surface → coordinate, no overwrite.
-- Broader analysis/review output → durable artifact under `.reports/codex/<skill>/<timestamp>/`, final chat summary compact.
+- Broader analysis/review output → durable artifact under `.reports/codex/<skill>/<canonical-safe-identity>/run-<NNN>/` only for a bounded validated non-sensitive identity, otherwise `.reports/codex/<skill>/<timestamp>/`; never serialize raw arguments into paths. Assessed PR reviews use `pr-<number>`. Final chat summary compact.
 - New human-readable reports, handovers, context packs, final summaries use Caveman Ultra: state each fact once; omit filler + repeated context; preserve exact paths, commands, identifiers, evidence, failures, risks, confidence, owner/action. JSON, logs, patches, code, required tables stay lossless. Use clear concise prose if Ultra would make security, irreversible, or ordered instructions ambiguous.
 - Parallel agents: outputs = inputs to consolidation, not interchangeable opinions. Reconcile conflicts explicit.
 - Conclusion depends on unverified assumption → mark hypothesis in summary/artifact.

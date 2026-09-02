@@ -1957,6 +1957,13 @@ def selftest_review_validator(run: CalibrationRun, selftest_dir: Path) -> None:
             {
                 "review_run_id": "selftest-review",
                 "capability_policy": {"task_sensitivity": "non-sensitive"},
+                "consumer_policy": {
+                    "consumer_id": "code-review",
+                    "capability": "portable-read-only",
+                    "promotion_status": "promoted",
+                    "parent_mutations": "serial",
+                    "canonical_gates": "serial",
+                },
                 "token_budgets": [
                     {
                         "wave_id": "review-wave",
@@ -2365,10 +2372,10 @@ def run_write_result(run: CalibrationRun, out_path: Path, metadata: dict[str, An
 
 
 def selftest_find_review_report(run: CalibrationRun, selftest_dir: Path) -> None:
-    """Check current report selection and historical-directory fallback."""
+    """Check PR-scoped run selection and historical flat-directory fallback."""
     fixture = selftest_dir / "review-reports"
     older = fixture / "2026-01-01T00-00-00Z"
-    newer = fixture / "2026-01-02T00-00-00Z"
+    newer = fixture / "pr-123" / "run-002"
     older.mkdir(parents=True, exist_ok=True)
     newer.mkdir(parents=True, exist_ok=True)
     assessed_result = (

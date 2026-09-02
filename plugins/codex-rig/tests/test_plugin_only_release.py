@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 import hashlib
 import importlib.util
 import json
@@ -61,6 +62,7 @@ EXPECTED_KAGGLE_REFERENCES = {
 }
 RELATIVE_DEPENDENCY = re.compile(r"`((?:\.\./\.\./(?:shared|runtime)/|references/)[A-Za-z0-9_./-]+)")
 PRIVATE_WORK_ITEM = re.compile(r"\b(?:W\d+|H\d{2}|M\d{2})\b")
+PRIVATE_ROLLOUT_PHASE = re.compile(r"P[345](?:[ab])?", flags=re.IGNORECASE)
 PRIVATE_PLAN_REFERENCE = re.compile(r"(?:^|[/\s`'\"])(plan_[A-Za-z0-9_.-]+\.md)")
 PERSONAL_ABSOLUTE_PATH = re.compile(
     r"(?:/(?:Users|home)/[^/\\\s'\"]+|(?i:[A-Z]:[\\/]+Users[\\/]+[^/\\\s'\"]+))"
@@ -330,6 +332,7 @@ def test_release_profile_declares_only_packaged_lifecycle_features() -> None:
         "13 workflow skills and 1 legacy-shim lifecycle manager",
         "15 specialist role cards",
         "Staged execution manifest validation",
+        "Gated portable read-only auto execution",
         "Authenticated cleanup for prior agent shims",
         "Optional SessionStart health diagnostic",
         "Built-in and inline role fallback",
@@ -855,7 +858,15 @@ def test_specialist_wave_joins_before_acceptance_without_expanding_fanout() -> N
 
 def test_public_payload_has_no_private_release_references() -> None:
     """Prevent internal planning identifiers and personal paths from entering the release."""
-    forbidden_references = ("plugin-" + "package.json",)
+    forbidden_references = (
+        "plugin-" + "package.json",
+        "(" + "planned" + ")",
+        "GA" + " candidate",
+        "exact-candidate" + " native",
+        "fresh" + " native",
+        "repeat independent" + " QA/challenge",
+        "currently released" + "/default",
+    )
     violations: list[tuple[str, str]] = []
     for path in load_package_builder().iter_payload_files():
         try:
@@ -870,7 +881,150 @@ def test_public_payload_has_no_private_release_references() -> None:
             violations.append((relative, match.group(1)))
         if match := PRIVATE_WORK_ITEM.search(text):
             violations.append((relative, match.group(0)))
+        if match := PRIVATE_ROLLOUT_PHASE.search(text):
+            violations.append((relative, match.group(0)))
         if match := PERSONAL_ABSOLUTE_PATH.search(text):
             violations.append((relative, match.group(0)))
 
     assert violations == []
+
+
+@pytest.fixture
+def canonical_parallel_flow() -> tuple[Path, str, str]:
+    """Load the one released text flow that carries every canonical endpoint."""
+    architecture = PLUGIN_ROOT / "ARCHITECTURE.md"
+    architecture_text = architecture.read_text(encoding="utf-8")
+    flow_blocks = re.findall(r"```text\n(.*?)\n```", architecture_text, flags=re.DOTALL)
+    matching_flows = [
+        flow
+        for flow in flow_blocks
+        if re.search(r"✓\s+YES\b", flow)
+        and re.search(r"✗\s+NO\b", flow)
+        and all(endpoint in flow for endpoint in ("STOP", "re-plan", "FAIL", "ACCEPT"))
+    ]
+    assert len(matching_flows) == 1
+    return architecture, architecture_text, matching_flows[0]
+
+
+class TestParallelExecutionDocumentation:
+    """Protect the canonical bounded-execution documentation contract."""
+
+    def test_has_canonical_gate_definitions(self, canonical_parallel_flow: tuple[Path, str, str]) -> None:
+        """Keep gate definitions self-contained and linked from every consumer."""
+        architecture, architecture_text, _ = canonical_parallel_flow
+        canonical_anchor = "#canonical-g0g8-execution-flow"
+
+        gate_definitions = re.findall(r"^- \*\*G([0-8])\b", architecture_text, flags=re.MULTILINE)
+        assert gate_definitions == [str(index) for index in range(9)]
+        assert re.findall(r"^  - \*\*G5a\b.*terminal", architecture_text, flags=re.IGNORECASE | re.MULTILINE)
+        assert re.findall(r"^  - \*\*G5b\b.*join", architecture_text, flags=re.IGNORECASE | re.MULTILINE)
+        assert re.findall(r"^  - \*\*G5c\b.*derivation", architecture_text, flags=re.IGNORECASE | re.MULTILINE)
+
+        committed_docs = (
+            architecture,
+            PLUGIN_ROOT / "README.md",
+            PLUGIN_ROOT / "skills" / "code-review" / "SKILL.md",
+            PLUGIN_ROOT / "skills" / "implement" / "SKILL.md",
+            PLUGIN_ROOT / "skills" / "manage" / "SKILL.md",
+        )
+        for path in committed_docs:
+            text = path.read_text(encoding="utf-8")
+            assert ".plans/" not in text, path
+            assert "plan_multi-agent-parallelization" not in text, path
+            if path != architecture:
+                assert canonical_anchor in text, path
+
+    def test_has_centered_two_column_gate_cells(self, canonical_parallel_flow: tuple[Path, str, str]) -> None:
+        """Keep every bounded gate and endpoint centered inside its cells."""
+        _, _, flow = canonical_parallel_flow
+        assert "[" not in flow and "]" not in flow
+        assert "{" not in flow and "}" not in flow
+        assert "-->" not in flow
+        assert "✓ YES" in flow and "✗ NO" in flow
+        assert max(len(line) for line in flow.splitlines()) <= 100
+        flow_lines = flow.splitlines()
+        boxed_lines = [line.strip() for line in flow.splitlines() if line.strip().startswith("│")]
+        assert boxed_lines
+        assert all(line.endswith("│") for line in boxed_lines)
+        expected_gate_cells = Counter(
+            [*(f"G{index}" for index in range(9)), "G4", "G4", *(f"G5{suffix}" for suffix in "abc")]
+        )
+        observed_gate_cells: Counter[str] = Counter()
+        for line_index, line in enumerate(flow_lines):
+            separators = [index for index, character in enumerate(line) if character == "│"]
+            for left, right in zip(separators, separators[1:]):
+                cell = line[left + 1 : right]
+                content = cell.strip()
+                if not content:
+                    continue
+                left_padding = len(cell) - len(cell.lstrip())
+                right_padding = len(cell) - len(cell.rstrip())
+                assert abs(left_padding - right_padding) <= 1, (line_index, content, left_padding, right_padding)
+                if content not in expected_gate_cells:
+                    continue
+                observed_gate_cells[content] += 1
+                assert flow_lines[line_index - 1][right] == "┬", (line_index, content, "top")
+                assert flow_lines[line_index + 1][right] == "┴", (line_index, content, "bottom")
+                following_separators = [index for index in separators if index > right]
+                assert following_separators
+                assert line[right + 1 : following_separators[0]].strip()
+        assert observed_gate_cells == expected_gate_cells
+        assert all(
+            re.search(rf"│[^│]*{re.escape(endpoint)}[^│]*│", flow) for endpoint in ("STOP", "re-plan", "FAIL", "ACCEPT")
+        )
+        assert all(
+            line.strip().startswith("│") and line.strip().endswith("│") for line in flow.splitlines() if "?" in line
+        )
+
+    def test_has_horizontal_centered_forks(self, canonical_parallel_flow: tuple[Path, str, str]) -> None:
+        """Keep every decision fork horizontal and attached to its source center."""
+        _, _, flow = canonical_parallel_flow
+        flow_lines = flow.splitlines()
+
+        for question_index, line in enumerate(flow_lines):
+            if "?" not in line:
+                continue
+            bottom_centers = [
+                index for index, character in enumerate(flow_lines[question_index + 1]) if character == "┬"
+            ]
+            fork_centers = [index for index, character in enumerate(flow_lines[question_index + 2]) if character == "┴"]
+            assert bottom_centers == fork_centers
+            fork_window = flow_lines[question_index + 1 : question_index + 5]
+            assert any("✓ YES" in fork_line and "✗ NO" in fork_line for fork_line in fork_window)
+
+    def test_has_continuous_connectors(self, canonical_parallel_flow: tuple[Path, str, str]) -> None:
+        """Keep arrows, elbows, and the three-source join connected by column."""
+        _, _, flow = canonical_parallel_flow
+        flow_lines = flow.splitlines()
+
+        for arrow_index, line in enumerate(flow_lines[:-1]):
+            arrow_centers = [index for index, character in enumerate(line) if character == "▼"]
+            if not arrow_centers:
+                continue
+            box_centers = [
+                match.start() + (match.end() - match.start() - 1) // 2
+                for match in re.finditer(r"┌[─┬]+┐", flow_lines[arrow_index + 1])
+            ]
+            assert len(arrow_centers) == len(box_centers)
+            assert all(abs(arrow - box) <= 1 for arrow, box in zip(arrow_centers, box_centers)), (
+                arrow_index,
+                arrow_centers,
+                box_centers,
+            )
+            if len(arrow_centers) == 1:
+                arrow = arrow_centers[0]
+                assert flow_lines[arrow_index - 1][arrow] in {"┬", "┐", "┼"}, (arrow_index, arrow, "source")
+
+        for connector_index, line in enumerate(flow_lines):
+            if re.fullmatch(r"\s*└─+┐", line):
+                start = line.index("└")
+                end = line.index("┐")
+                assert flow_lines[connector_index - 1][start] == "┬", (connector_index, start, "elbow-source")
+                assert flow_lines[connector_index + 1][end] == "▼", (connector_index, end, "elbow-target")
+            if "┼" in line:
+                merge_markers = [index for index, character in enumerate(line) if character in {"└", "┼", "┘"}]
+                source_connectors = [
+                    index for index, character in enumerate(flow_lines[connector_index - 1]) if character == "┬"
+                ]
+                assert source_connectors == merge_markers
+                assert flow_lines[connector_index + 1][line.index("┼")] == "▼"

@@ -1,13 +1,13 @@
 """Manage approval-bound generated-fixture and remediation worktree lifecycles.
 
 ## Purpose
-Preserve the narrow P3a fixture lifecycle and enforce the frozen P3b code-remediate production-write boundary without promoting generic parallel writes.
+Preserve the narrow generated-fixture lifecycle and enforce the frozen code-remediate-local production-write boundary without promoting generic parallel writes.
 
 ## Scope
 Validate exact frozen plan and approval bytes, create detached sibling child worktrees, verify parent-joined handovers against observed Git changes, derive hash-bound patches, integrate them deterministically, apply one checked source bundle, and remove only successful worktrees after durable evidence exists. The module rejects source dirt, plan drift, child commits, untracked or undeclared paths, symlink traversal, mutable integration drift, partial joins, and ambiguous rollback.
 
 ## Usage
-P3a callers use the existing Python functions. Code-remediate invokes the explicit ``prepare``, ``create-handover``, ``join``, ``collect``, ``integrate``, ``apply-source``, and ``cleanup`` subcommands after a consumer-specific plan digest is approved.
+Generated-fixture callers use the existing Python functions. Code-remediate invokes the explicit ``prepare``, ``create-handover``, ``join``, ``collect``, ``integrate``, ``apply-source``, and ``cleanup`` subcommands after a consumer-specific plan digest is approved.
 
 ## Outputs
 Private JSON lifecycle state, source-local child and integration evidence, parent-derived forward and rollback patches, and JSON CLI results. Successful cleanup removes managed worktrees without force; failure evidence stays available for inspection.
@@ -16,7 +16,7 @@ Private JSON lifecycle state, source-local child and integration evidence, paren
 ``PilotError`` stops dispatch, integration, source application, cleanup, or promotion. Failed, conflicted, cancelled, drifted, or cleanup-uncertain worktrees remain for explicit resolution. Operational path and postcondition containment does not claim per-child capability isolation or global atomicity.
 
 ## Used by
-Codex Rig's P3a acceptance pilot, code-remediate production boundary, artifact validation, and focused installed-package tests. This module is not a scheduler, general worktree manager, or independent authority source.
+Codex Rig's generated-fixture acceptance proof, code-remediate production boundary, artifact validation, and focused installed-package tests. This module is not a scheduler, general worktree manager, or independent authority source.
 """
 
 from __future__ import annotations
@@ -420,7 +420,7 @@ def prepare_write_pilot(
     """Validate authority and create two detached generated child worktrees.
 
     Args:
-        plan_path: Frozen P3a plan inside the workspace.
+        plan_path: Frozen generated-fixture plan inside the workspace.
         approval_path: Explicit approval record bound to the plan bytes.
         workspace_root: Authorized workspace containing the generated evidence root.
         state_path: Private lifecycle JSON artifact written before dispatch.

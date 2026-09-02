@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -15,13 +18,32 @@ from shared.parallel_telemetry import (  # noqa: E402
     build_retained_wave_evidence,
     collect_attempt_telemetry,
     compare_parallel_to_serial,
+    enforce_diagnostic_expiry,
     extract_token_usage,
     hmac_identifier,
     normalize_workload_key,
 )
+from shared import parallel_telemetry  # noqa: E402
 
 
 SECRET = b"telemetry-test-secret"
+
+
+def _symlinks_supported() -> bool:
+    """Return whether this host permits the symlink safety contract to run."""
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        target = root / "target"
+        link = root / "link"
+        target.write_text("target", encoding="utf-8", newline="\n")
+        try:
+            link.symlink_to(target)
+        except OSError:
+            return False
+        return link.is_symlink()
+
+
+SYMLINKS_SUPPORTED = _symlinks_supported()
 
 
 def _row(
@@ -345,3 +367,204 @@ def test_retained_wave_rejects_unknown_fields_and_invalid_lifecycle() -> None:
             budget_ceiling_tokens=200,
             budget_reserved_tokens=150,
         )
+
+
+def _retained_record(*, status: str = "passed", resolved_at: str | None = None) -> dict[str, object]:
+    """Return a compact record with a deterministic 30-day expiry policy."""
+    return build_retained_wave_evidence(
+        _parallel_wave(),
+        hmac_secret=SECRET,
+        proof_sha256="a" * 64,
+        status=status,
+        observed_at="2026-09-02T12:00:00Z",
+        resolved_at=resolved_at,
+        budget_ceiling_tokens=200,
+        budget_reserved_tokens=150,
+    )
+
+
+def _expiry_audit_rows(diagnostics: Path) -> list[dict[str, object]]:
+    """Read durable expiry audit rows from the dedicated diagnostics directory."""
+    return [json.loads(line) for line in (diagnostics / "expiry-audit.jsonl").read_text(encoding="utf-8").splitlines()]
+
+
+def test_expiry_enforcement_deletes_only_the_fixed_sanitized_diagnostic_and_is_idempotent(tmp_path: Path) -> None:
+    """Delete the exact expired diagnostic and report a truthful repeat audit."""
+    record = _retained_record()
+    diagnostics = tmp_path / "diagnostics"
+    diagnostics.mkdir()
+    artifact = diagnostics / f"{record['wave_id_hmac']}.diagnostic.json"
+    artifact.write_text('{"sanitized":true}\n', encoding="utf-8", newline="\n")
+    sibling = diagnostics / "unrelated-retained-evidence.json"
+    sibling.write_text('{"keep":true}\n', encoding="utf-8", newline="\n")
+    other_diagnostic = diagnostics / f"{'f' * 64}.diagnostic.json"
+    other_diagnostic.write_text('{"other":true}\n', encoding="utf-8", newline="\n")
+
+    deleted = enforce_diagnostic_expiry(record, diagnostics_directory=diagnostics, now="2026-10-02T12:00:00Z")
+    assert not artifact.exists()
+    assert sibling.read_text(encoding="utf-8") == '{"keep":true}\n'
+    assert other_diagnostic.read_text(encoding="utf-8") == '{"other":true}\n'
+    assert deleted == {
+        "schema_version": 1,
+        "wave_id_hmac": record["wave_id_hmac"],
+        "status": "passed",
+        "checked_at": "2026-10-02T12:00:00+00:00",
+        "diagnostic_expires_at": "2026-10-02T12:00:00+00:00",
+        "action": "deleted",
+        "deleted": True,
+    }
+    audit_rows = _expiry_audit_rows(diagnostics)
+    assert [row["action"] for row in audit_rows] == ["delete-intent", "deleted"]
+    assert audit_rows[-1] == deleted
+
+    repeated = enforce_diagnostic_expiry(record, diagnostics_directory=diagnostics, now="2026-10-03T12:00:00Z")
+    assert repeated["action"] == "already-missing"
+    assert repeated["deleted"] is False
+    assert _expiry_audit_rows(diagnostics)[-1] == repeated
+    assert sibling.read_text(encoding="utf-8") == '{"keep":true}\n'
+    assert other_diagnostic.read_text(encoding="utf-8") == '{"other":true}\n'
+
+
+def test_expiry_enforcement_never_deletes_unresolved_failure_diagnostics(tmp_path: Path) -> None:
+    """Leave failed, cancelled, and conflicted records untouched until explicitly resolved."""
+    diagnostics = tmp_path / "diagnostics"
+    diagnostics.mkdir()
+    for status in ("failed", "cancelled", "conflicted"):
+        record = _retained_record(status=status)
+        artifact = diagnostics / f"{record['wave_id_hmac']}.diagnostic.json"
+        artifact.write_text("sanitized\n", encoding="utf-8", newline="\n")
+
+        audit = enforce_diagnostic_expiry(record, diagnostics_directory=diagnostics, now="2030-01-01T00:00:00Z")
+        assert audit["action"] == "retained-unresolved"
+        assert audit["deleted"] is False
+        assert artifact.is_file()
+        assert _expiry_audit_rows(diagnostics)[-1] == audit
+
+
+def test_expiry_enforcement_deletes_expired_resolved_failure_diagnostic(tmp_path: Path) -> None:
+    """Treat an explicit resolution as the 30-day expiry anchor for a failed record."""
+    record = _retained_record(status="failed", resolved_at="2026-09-05T12:00:00Z")
+    diagnostics = tmp_path / "diagnostics"
+    diagnostics.mkdir()
+    artifact = diagnostics / f"{record['wave_id_hmac']}.diagnostic.json"
+    artifact.write_text("sanitized\n", encoding="utf-8", newline="\n")
+
+    audit = enforce_diagnostic_expiry(record, diagnostics_directory=diagnostics, now="2026-10-05T12:00:00Z")
+    assert audit["action"] == "deleted"
+    assert audit["diagnostic_expires_at"] == "2026-10-05T12:00:00+00:00"
+    assert not artifact.exists()
+    assert _expiry_audit_rows(diagnostics)[-1] == audit
+
+
+def test_expiry_enforcement_requires_durable_audit_before_deletion(tmp_path: Path) -> None:
+    """Keep the diagnostic when the fixed durable audit target cannot accept evidence."""
+    record = _retained_record()
+    diagnostics = tmp_path / "diagnostics"
+    diagnostics.mkdir()
+    artifact = diagnostics / f"{record['wave_id_hmac']}.diagnostic.json"
+    artifact.write_text("sanitized\n", encoding="utf-8", newline="\n")
+    (diagnostics / "expiry-audit.jsonl").mkdir()
+
+    with pytest.raises(TelemetryError, match="diagnostic-audit-target-not-regular-file"):
+        enforce_diagnostic_expiry(record, diagnostics_directory=diagnostics, now="2026-10-02T12:00:00Z")
+
+    assert artifact.read_text(encoding="utf-8") == "sanitized\n"
+
+
+def test_expiry_enforcement_preserves_diagnostic_when_intent_fsync_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prevent deletion when the intent row cannot reach the audit durability boundary."""
+    record = _retained_record()
+    diagnostics = tmp_path / "diagnostics"
+    diagnostics.mkdir()
+    artifact = diagnostics / f"{record['wave_id_hmac']}.diagnostic.json"
+    artifact.write_text("sanitized\n", encoding="utf-8", newline="\n")
+
+    def fail_fsync(_descriptor: int) -> None:
+        """Simulate a storage failure at the audit durability boundary."""
+        raise OSError("full")
+
+    monkeypatch.setattr(parallel_telemetry.os, "fsync", fail_fsync)
+
+    with pytest.raises(TelemetryError, match="diagnostic-audit-write-failed"):
+        enforce_diagnostic_expiry(record, diagnostics_directory=diagnostics, now="2026-10-02T12:00:00Z")
+
+    assert artifact.read_text(encoding="utf-8") == "sanitized\n"
+
+
+def test_expiry_enforcement_retains_intent_when_outcome_fsync_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Leave a recoverable intent trail when deletion succeeds but its outcome fsync fails."""
+    record = _retained_record()
+    diagnostics = tmp_path / "diagnostics"
+    diagnostics.mkdir()
+    artifact = diagnostics / f"{record['wave_id_hmac']}.diagnostic.json"
+    artifact.write_text("sanitized\n", encoding="utf-8", newline="\n")
+    real_fsync = os.fsync
+    calls = 0
+
+    def fail_second_fsync(descriptor: int) -> None:
+        """Fail only the post-deletion audit durability boundary."""
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("full")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(parallel_telemetry.os, "fsync", fail_second_fsync)
+    with pytest.raises(TelemetryError, match="diagnostic-audit-write-failed"):
+        enforce_diagnostic_expiry(record, diagnostics_directory=diagnostics, now="2026-10-02T12:00:00Z")
+
+    assert not artifact.exists()
+    assert _expiry_audit_rows(diagnostics)[0]["action"] == "delete-intent"
+
+
+def test_expiry_enforcement_rejects_timestamp_policy_and_target_drift(tmp_path: Path) -> None:
+    """Fail closed before deletion for ambiguous time, record drift, and unsafe targets."""
+    record = _retained_record()
+    diagnostics = tmp_path / "diagnostics"
+    diagnostics.mkdir()
+    artifact = diagnostics / f"{record['wave_id_hmac']}.diagnostic.json"
+
+    with pytest.raises(TelemetryError, match="retention-now-invalid"):
+        enforce_diagnostic_expiry(record, diagnostics_directory=diagnostics, now="2026-10-02T12:00:00")
+
+    drifted = {**record, "diagnostic_expires_at": "2026-10-03T12:00:00+00:00"}
+    with pytest.raises(TelemetryError, match="retained-record-policy-drift"):
+        enforce_diagnostic_expiry(drifted, diagnostics_directory=diagnostics, now="2026-10-03T12:00:00Z")
+
+    artifact.mkdir()
+    with pytest.raises(TelemetryError, match="diagnostic-target-not-regular-file"):
+        enforce_diagnostic_expiry(record, diagnostics_directory=diagnostics, now="2026-10-03T12:00:00Z")
+
+
+@pytest.mark.skipif(not SYMLINKS_SUPPORTED, reason="symlink capability unavailable")
+def test_expiry_enforcement_rejects_symlinked_directory_and_target(tmp_path: Path) -> None:
+    """Reject symlink routes so expiry cannot escape the dedicated diagnostics directory."""
+    record = _retained_record()
+    diagnostics = tmp_path / "diagnostics"
+    diagnostics.mkdir()
+    directory_link = tmp_path / "diagnostics-link"
+    directory_link.symlink_to(diagnostics, target_is_directory=True)
+    with pytest.raises(TelemetryError, match="diagnostic-directory-symlink-invalid"):
+        enforce_diagnostic_expiry(record, diagnostics_directory=directory_link, now="2026-10-03T12:00:00Z")
+
+    parent = tmp_path / "parent"
+    nested_diagnostics = parent / "diagnostics"
+    nested_diagnostics.mkdir(parents=True)
+    parent_link = tmp_path / "parent-link"
+    parent_link.symlink_to(parent, target_is_directory=True)
+    with pytest.raises(TelemetryError, match="diagnostic-directory-path-escape"):
+        enforce_diagnostic_expiry(record, diagnostics_directory=parent_link / "diagnostics", now="2026-10-03T12:00:00Z")
+
+    artifact = diagnostics / f"{record['wave_id_hmac']}.diagnostic.json"
+    outside = tmp_path / "outside-diagnostic.json"
+    outside.write_text("keep\n", encoding="utf-8", newline="\n")
+    artifact.symlink_to(outside)
+    with pytest.raises(TelemetryError, match="diagnostic-target-symlink-invalid"):
+        enforce_diagnostic_expiry(record, diagnostics_directory=diagnostics, now="2026-10-03T12:00:00Z")
+    assert outside.read_text(encoding="utf-8") == "keep\n"
