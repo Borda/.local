@@ -19,7 +19,7 @@ Usage:
 
     python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/resolve_index_env.py" --check-exists
     # exit 1 when INDEX file missing; temp files still written for diagnostics
-    # (uses default prefix "codemap"; prefer --output-prefix for concurrent safety)
+    # (uses default prefix "codemap"; prefer ``--output-prefix`` for concurrent safety)
 
 Flags:
     --check-exists       verify INDEX file exists; exit 1 with stderr message if missing.
@@ -33,7 +33,7 @@ Exit codes:
     1 — resolver produced no output, or (with ``--check-exists``) INDEX file missing
         (temp files still written so caller can read PROJ for diagnostics)
     2 — unknown flag
-    3 — unsafe CLAUDE_PLUGIN_ROOT or --output-prefix (validation failure)
+    3 — unsafe CLAUDE_PLUGIN_ROOT or ``--output-prefix`` (validation failure)
 """
 
 from __future__ import annotations
@@ -50,8 +50,8 @@ from pathlib import Path
 
 _SCRIPT_NAME = "resolve_index_env"
 
-# --output-prefix must be a single bare token — no path separators — blocking traversal
-# out of TMPDIR (SEC-M8 / CWE-22). A leading/trailing dot-run is still rejected via the
+# ``--output-prefix`` must be a single bare token — no path separators — blocking traversal
+# out of TMPDIR (CWE-22). A leading/trailing dot-run is still rejected via the
 # fullmatch below (no bare "." or ".." token), but an embedded "." is legitimate (project
 # basenames like "Borda.local", "site.com" are common).
 _VALID_OUTPUT_PREFIX_RE = re.compile(r"(?!\.\.?$)[a-zA-Z0-9_.-]+")
@@ -74,7 +74,7 @@ def _validate_plugin_root(plugin_root: str) -> str:
     """Validate ``CLAUDE_PLUGIN_ROOT`` before it is used to build a subprocess path.
 
     An attacker-controlled ``CLAUDE_PLUGIN_ROOT`` would otherwise let
-    :func:`_run_resolver` execute an arbitrary ``resolve_proj_index.py`` (SEC-H1). A regex
+    :func:`_run_resolver` execute an arbitrary ``resolve_proj_index.py``. A regex
     on the raw, unnormalized string cannot express containment (``..`` segments are never
     collapsed) and previously both rejected the real installed path (after the
     ``codemap`` -> ``codemap-py`` rename) and accepted attacker-chosen directories whose
@@ -160,7 +160,7 @@ def _resolve_csid() -> str:
 def _resolve_tmpdir() -> str:
     """Return a safe temp directory: ``TMPDIR`` only when absolute and owned by this user.
 
-    An untrusted ``TMPDIR`` is a write-anywhere primitive (SEC-M8); a directory owned by
+    An untrusted ``TMPDIR`` is a write-anywhere primitive; a directory owned by
     another user can be a symlink-swap target. When ``TMPDIR`` fails either check, fall back
     to :func:`tempfile.gettempdir`.
 
@@ -187,7 +187,7 @@ def _validate_output_prefix(prefix: str) -> str:
     """Validate the ``--output-prefix`` value against path traversal.
 
     A prefix containing ``/`` would escape ``TMPDIR``, and a bare ``.``/``..`` token would
-    resolve to a directory rather than a filename prefix (SEC-M8 / CWE-22) — both rejected.
+    resolve to a directory rather than a filename prefix (CWE-22) — both rejected.
     An embedded ``.`` is otherwise accepted: the documented recipe builds the prefix from a
     project's git-root basename (``codemap-$(basename ...)``), and basenames containing a
     dot are common (this very repository's is ``Borda.local``).
@@ -368,7 +368,7 @@ def _run_resolver(plugin_root: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns the process exit code.
+    """CLI entry point - returns the process exit code.
 
     Always writes PROJ/INDEX to temp files before any failure exit so callers
     can read partial results for diagnostics even when the script exits non-zero.
@@ -392,7 +392,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         return int(exc.code) if exc.code is not None else 0
 
-    # --output-prefix determines the sentinel filenames, so it must validate first.
+    # ``--output-prefix`` determines the sentinel filenames, so it must validate first.
     try:
         prefix = _validate_output_prefix(args.output_prefix)
     except ValueError as exc:

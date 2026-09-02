@@ -45,7 +45,7 @@ def test_value_with_equals_and_empty() -> None:
 
 
 def test_load_quotes_single_quotes(capsys: pytest.CaptureFixture[str]) -> None:
-    """load() emits shell-safe single-quote-escaped lines."""
+    """Emit shell-safe single-quote-escaped lines."""
     st.set_values("ns4", ["MSG=a b'c"])
     st.load_values("ns4")
     out = capsys.readouterr().out
@@ -88,7 +88,7 @@ def test_load_skips_unsafe_key_from_state_file(capsys: pytest.CaptureFixture[str
 
 
 def test_clear_removes_file() -> None:
-    """clear() deletes the state file; load() then produces nothing."""
+    """Remove persisted state completely when clearing it."""
     st.set_values("ns6", ["A=1"])
     assert st.state_path("ns6").is_file()
     assert st.clear("ns6") == 0

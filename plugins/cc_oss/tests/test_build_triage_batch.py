@@ -1,8 +1,7 @@
 """Tests for ``bin/build_triage_batch.py`` — thread identifiers → codemap-py query batch spec.
 
-The module maps extracted candidate identifiers to ``codemap-py query batch`` queries
-(dotted modules → ``rdeps``, bare symbols → ``find-symbol``) and writes the JSON
-array to an output file for the oss:analyse stale-symbol check.
+The module maps extracted candidate identifiers to ``codemap-py query batch`` queries (dotted modules → ``rdeps``, bare
+symbols → ``find-symbol``) and writes the JSON array to an output file for the oss:analyse stale-symbol check.
 """
 
 from __future__ import annotations

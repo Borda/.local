@@ -55,7 +55,7 @@ class TestChecklist:
         assert cl.failures == ["b"]
 
     def test_record_coerces_truthy_to_bool(self, script_run_cli: Any) -> None:
-        """``record`` stores a real bool so result payloads stay JSON-clean."""
+        """Store a real bool so result payloads stay JSON-clean."""
         cl = script_run_cli._Checklist()
         cl.record("a", ["non-empty"])
         assert cl.checks == [("a", True)]

@@ -1,4 +1,7 @@
-"""Authoritative implementation. Its ``shadowed.pyi`` sibling is a shadowed_stub."""
+"""Authoritative implementation.
+
+Its ``shadowed.pyi`` sibling is a shadowed_stub.
+"""
 
 from typing import TYPE_CHECKING
 

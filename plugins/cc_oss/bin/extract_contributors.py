@@ -24,7 +24,7 @@ Args:
 
 Exit codes:
     0 — listing emitted (possibly empty if range has no non-bot authors)
-    1 — bad args (no range given, both --range and --from/--to, or unknown flag)
+    1 — bad args (no range given, both ``--range`` and ``--from/--to``, or unknown flag)
     2 — git invocation failed
 """
 
@@ -148,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
         No doctest — subprocess-dependent; covered by pytest with monkeypatch.
     """
     args = list(sys.argv[1:] if argv is None else argv)
-    # Honour only -h/--help via argparse; all other flags keep the manual reject
+    # Honour only ``-h/--help`` via argparse; all other flags keep the manual reject
     # loop below (exit 1 on unknown arg) — argparse's native exit-2 would break
     # the legacy contract that a bad flag exits 1.
     if args in (["-h"], ["--help"]):

@@ -253,8 +253,8 @@ class TestGatesContract:
             pytest.param("Rebuild now", id="b-rebuild"),
             pytest.param("Continue with stale data", id="b-stale"),
             pytest.param("Skip codemap", id="b-skip"),
-            # E-N7: was the bare `scan-index` alias, which every skill and consumer wrapper
-            # had already migrated off — the wrappers cancelled it with an explicit override.
+            # The former bare `scan-index` alias had already been replaced by every skill
+            # and consumer wrapper, which otherwise needed an explicit override.
             pytest.param("run `codemap-py index` in the foreground", id="build-gated-launcher"),
         ],
     )

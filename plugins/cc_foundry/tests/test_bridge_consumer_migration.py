@@ -1,7 +1,7 @@
 """Regression checks for consumer migration to the bridge plugin.
 
-The fixture below deliberately names retired selectors. Production files must
-not contain them, while this test must retain them to detect a regression.
+The fixture below deliberately names retired selectors. Production files must not contain them, while this test must
+retain them to detect a regression.
 """
 
 from __future__ import annotations

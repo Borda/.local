@@ -12,7 +12,7 @@ Determinism: stable file order, LF-terminated generated manifest, fixed on-disk
 modes, no timestamps. The per-file ``exec`` flag is a platform-neutral boolean
 taken from git's tracked mode (``100755``), never from the build host's
 ``st_mode`` — a Windows and a POSIX build of the same commit therefore emit a
-byte-identical ``package-manifest.json`` (review F10 closure). ``--check``
+byte-identical ``package-manifest.json``. ``--check``
 rebuilds to a temporary directory and byte-compares.
 
 Mode authority: by default the exec-mode map is derived from ``source_root``'s
@@ -222,7 +222,7 @@ def _iter_source_payload(source_root: Path, tracked: dict[str, bool]) -> list[tu
     caller uses for exec modes), not a filesystem walk: a path under an include-dir
     prefix that has no entry in ``tracked`` is untracked and simply excluded from the
     payload, rather than admitted and later failing the mode-map lookup. This is what
-    keeps membership and mode authority from diverging (review MEDIUM closure).
+    keeps membership and mode authority from diverging.
 
     Raises:
         ValueError: on a symlink in the payload, a case-folding collision, a missing
@@ -341,9 +341,8 @@ def _compare(built: Path, reference: Path) -> list[str]:
 def _exec_mode_mismatches(out: Path, manifest: dict[str, Any]) -> list[str]:
     """On POSIX, return files whose on-disk executable bit disagrees with the manifest.
 
-    The manifest ``exec`` flag is the platform-neutral source of truth; this
-    verifies the build actually applied it. On non-POSIX hosts the executable bit
-    is unreliable, so no mismatch is reported.
+    The manifest ``exec`` flag is the platform-neutral source of truth; this verifies the build actually applied it. On
+    non-POSIX hosts the executable bit is unreliable, so no mismatch is reported.
     """
     if os.name != "posix":
         return []
@@ -366,8 +365,8 @@ def _run_check(source_root: Path, out: Path, mode_map: dict[str, bool] | None = 
             reference = Path(tmp) / "reference"
             build_package(source_root, reference, mode_map)
         diffs = _compare(rebuild, reference)
-        # Verify executable modes on BOTH the temp rebuild and the --out reference: a
-        # byte-identical file whose mode was tampered in --out is invisible to _compare.
+        # Verify executable modes on BOTH the temp rebuild and the ``--out`` reference: a
+        # byte-identical file whose mode was tampered in ``--out`` is invisible to _compare.
         mode_mismatches = sorted(
             set(_exec_mode_mismatches(rebuild, manifest)) | set(_exec_mode_mismatches(reference, manifest))
         )

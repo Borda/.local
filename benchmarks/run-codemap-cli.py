@@ -68,7 +68,7 @@ already unit-tested in plugins/codemap-py/tests/. Each needs scan-index to build
 absent the suite skips (like S/H/X). They run OFFLINE — independent of the repo_path / index_path.
 
   Suite D — diff-impact: changed module/symbol detection, risk tiers (HIGH >=5 importers / MODERATE /
-                         LOW), test-impact union, single coverage block, --base scoping, unmapped file.
+                         LOW), test-impact union, single coverage block, ``--base`` scoping, unmapped file.
   Suite B — batch: N valid + 1 invalid → exit 0, per-item order, invalid item top-level error + ok:false,
                    one shared coverage block, byte-equivalence of a batched result vs its standalone form.
   Suite R — src_roots: two configured roots → naming from each root, collision winner under a configured
@@ -84,9 +84,9 @@ index-version stability against a frozen snapshot, not correctness. They run on 
 EXCLUDED from the primary verdict (below), each passing on an exact/tolerant match to that snapshot:
   Suite S — Symbol lookup (SE-01..SE-05): scan-query symbol start_line within ±3 of gt; S2 = all pass.
   Suite H — Health (CQ-01..CQ-05): undocumented/uncovered total == gt.count; H1/H2 = all pass.
-  Suite X — Xrefs broken (CQ-04): xrefs --broken count + target set == gt; X1 = all pass.
+  Suite X — Xrefs broken (CQ-04): ``xrefs --broken`` count + target set == gt; X1 = all pass.
 
-Index path resolution: .cache/codemap/ is checked before .cache/scan/ (scan-index --root default).
+Index path resolution: .cache/codemap/ is checked before .cache/scan/ (``scan-index --root`` default).
 
 ## Requirements
 
@@ -121,8 +121,8 @@ Index path resolution: .cache/codemap/ is checked before .cache/scan/ (scan-inde
 ## Output
 
   Default: stdout = human verdict + self-consistency lines + summary envelope (JSON) + report path
-  (with --report); stderr = progress; markdown report at benchmarks/results/code-YYYY-MM-DD.md.
-  --json-only: stdout = one compact JSON object per scenario (JSONL) then the summary envelope; human
+  (with ``--report``); stderr = progress; markdown report at benchmarks/results/code-YYYY-MM-DD.md.
+  ``--json-only``: stdout = one compact JSON object per scenario (JSONL) then the summary envelope; human
   logs, progress bar, and report suppressed.
 
 ## JSON output schema (per-scenario lines + summary envelope)
@@ -346,7 +346,7 @@ THRESHOLDS = {
     # Health suite (H): undocumented / uncovered counts match tasks-bench.json ground truth
     "H1": {"count_match": True},  # undocumented tasks
     "H2": {"count_match": True},  # uncovered tasks
-    # Xrefs suite (X): xrefs --broken count matches tasks-bench.json ground truth
+    # Xrefs suite (X): ``xrefs --broken`` count matches tasks-bench.json ground truth
     "X1": {"count_match": True},
     # Deterministic correctness suites (D/B/R/K/U): fixture repos with KNOWN ground truth,
     # constructed independently of scan-query output — genuine independent-oracle checks that
@@ -1270,8 +1270,8 @@ def run_query_shape_query(
 def _hardware_info() -> dict[str, str | int | None]:
     """Capture stdlib-only host identity (platform/processor/cpu_count/python).
 
-    L1/L2/L3 latency gates are hardware-calibrated; recording the host in the report
-    header and JSON envelope keeps a slow CI runner's pass/fail flip interpretable.
+    L1/L2/L3 latency gates are hardware-calibrated; recording the host in the report header and JSON envelope keeps a
+    slow CI runner's pass/fail flip interpretable.
     """
     return {
         "platform": platform.platform(),
@@ -1718,9 +1718,8 @@ def compute_self_consistency(results: list[ScenarioResult]) -> dict:
 class _OutputState:
     """Module-level output-verbosity flag (mirrors the module-level ``_console``).
 
-    ``quiet`` is set to ``True`` by :func:`main` in ``--json-only`` mode so that
-    human progress narration via :func:`log` is suppressed and stdout carries
-    only the scenario JSONL and the final summary envelope.
+    ``quiet`` is set to ``True`` by :func:`main` in ``--json-only`` mode so that human progress narration via
+    :func:`log` is suppressed and stdout carries only the scenario JSONL and the final summary envelope.
     """
 
     quiet: bool = False
@@ -2133,8 +2132,8 @@ def _score_accuracy_tasks(tasks: list[Task], scan_query_bin: Path, index_path: P
 def _a1_scenario(rows: list[dict]) -> ScenarioResult:
     """Build the A1 result: AST precision + grep recall floor for high-risk tasks.
 
-    PASS requires EVERY scored module to meet both thresholds; group means are reported
-    as context only and never decide the gate, so one failing module cannot be masked.
+    PASS requires EVERY scored module to meet both thresholds; group means are reported as context only and never decide
+    the gate, so one failing module cannot be masked.
     """
     thr = THRESHOLDS["A1"]
     group = [m for m in rows if m["risk_tier"] in _A1_TIERS]
@@ -2178,9 +2177,8 @@ def _a1_scenario(rows: list[dict]) -> ScenarioResult:
 def _a2_scenario(rows: list[dict]) -> ScenarioResult:
     """Build the A2 result: AST precision must be perfect for lower-risk tasks (precision-only).
 
-    With no recall gate, a non-errored EMPTY result would score precision 1.0 vacuously; such modules
-    are treated as N/A (excluded from the perfection check), never a free pass, and A2 FAILS if every
-    module is empty or errored.
+    With no recall gate, a non-errored EMPTY result would score precision 1.0 vacuously; such modules are treated as N/A
+    (excluded from the perfection check), never a free pass, and A2 FAILS if every module is empty or errored.
     """
     thr = THRESHOLDS["A2"]
     group = [m for m in rows if m["risk_tier"] not in _A1_TIERS]
@@ -2279,8 +2277,8 @@ def run_measure_accuracy(repo_path: Path, scan_query_bin: Path, index_path: Path
 
 # Assumed number of structural queries a skill session issues before the index goes stale.
 # This is an explicit stated assumption, NOT telemetry: it is the divisor used to amortize the
-# one-time scan-index build cost over a session (L3) and to fold the build into the honest
-# build-inclusive speedup (L4). A conservative value; on a large repo the real build cost dominates
+# one-time scan-index build cost over a session and to fold the build into the honest
+# build-inclusive speedup. A conservative value; on a large repo the real build cost dominates
 # and L3 is expected to fail under it — that failure is owned by the primary verdict, not hidden.
 _QUERIES_PER_SESSION = 10
 
@@ -2968,7 +2966,7 @@ def run_suite_xrefs(
     index_path: Path,
     repo_path: Path,
 ) -> list[ScenarioResult]:
-    """Suite X: xrefs --broken self-consistency / determinism check.
+    """Suite X: ``xrefs --broken`` self-consistency / determinism check.
 
     Runs ``xrefs --broken`` for each OSS task with ``check == "xrefs_broken"`` and
     confirms both the broken count and the broken target/line pairs.  Ground truth
@@ -3309,7 +3307,7 @@ def _check_diff_impact(scan_query_bin: Path, root: Path, index_path: Path, cl: _
     cl.record("test_impact_union_names_test_file", any("test_lib.py" in f for f in test_files))
     cl.record("single_coverage_block", "index" in data and all("index" not in m for m in modules))
     cl.record("unmapped_file_surfaced", "extra.py" in data.get("unmapped_files", []))
-    # --base scopes the diff: an empty base (HEAD) still reports the working-tree edit here,
+    # ``--base`` scopes the diff: an empty base (HEAD) still reports the working-tree edit here,
     # so verify a committed range instead by committing the edit and diffing HEAD~1.
     _fixture_git(root, "add", "-A")
     _fixture_git(root, "commit", "-q", "-m", "edit lib")
@@ -3778,7 +3776,7 @@ def _ensure_index(index_path: Path, repo_path: Path, scan_index_bin: Path | None
 
     Args:
         index_path: Resolved (possibly non-existent) candidate index path.
-        repo_path: Repository root passed to scan-index --root.
+        repo_path: Repository root passed to scan-index ``--root``.
         scan_index_bin: Path to scan-index, or None when it could not be found.
 
     Returns:
@@ -3917,7 +3915,7 @@ def main(
     verdict = compute_verdict(all_results)
     envelope = build_summary_envelope(all_results, repo_path, index_path, verdict)
 
-    # --json-only: emit scenario JSONL + summary envelope on stdout, nothing else.
+    # ``--json-only``: emit scenario JSONL + summary envelope on stdout, nothing else.
     if json_only:
         for r in all_results:
             emit(r)

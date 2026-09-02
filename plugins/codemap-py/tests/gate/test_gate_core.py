@@ -1,16 +1,13 @@
-"""Process-safe read/write gate tests (plan §4.4).
+"""Process-safe read/write gate tests.
 
-Each cross-process case uses the ``spawn`` start method so every child is a
-genuinely independent process with its own ``fcntl``/``msvcrt`` handles — the
-only faithful way to exercise the coordination contract. POSIX ``fork`` cases
-use ``os.fork`` directly and are skipped on Windows with a named reason. Every
-test is bounded well under 10s.
+Each cross-process case uses the ``spawn`` start method so every child is a genuinely independent process with its own
+``fcntl``/``msvcrt`` handles — the only faithful way to exercise the coordination contract. POSIX ``fork`` cases use
+``os.fork`` directly and are skipped on Windows with a named reason. Every test is bounded well under 10s.
 
-Cross-process ordering is reconstructed from the gate's event log
-(``CODEMAP_RWGATE_EVENTLOG``): every lifecycle transition appends one JSON line,
-and the file's APPEND order (atomic ``O_APPEND`` writes) is the order key — not
-the wall-clock ``t`` field, which is diagnostics only. A parent asserts global
-ordering (e.g. no index open during any writer's exclusive phase) from that.
+Cross-process ordering is reconstructed from the gate's event log (``CODEMAP_RWGATE_EVENTLOG``): every lifecycle
+transition appends one JSON line, and the file's APPEND order (atomic ``O_APPEND`` writes) is the order key — not the
+wall-clock ``t`` field, which is diagnostics only. A parent asserts global ordering (e.g. no index open during any
+writer's exclusive phase) from that.
 """
 
 from __future__ import annotations
@@ -143,10 +140,9 @@ def _join(procs: list, timeout: float = 9.0) -> None:
 def _events(log: str) -> list[dict]:
     """Return gate events in file-APPEND order — the cross-process order key.
 
-    ``O_APPEND`` writes are atomic at EOF on host-local filesystems, so line
-    order reflects real write order and preserves causality. We deliberately do
-    NOT sort by wall-clock ``t`` (it is diagnostics only and can be non-monotonic
-    under clock adjustment).
+    ``O_APPEND`` writes are atomic at EOF on host-local filesystems, so line order reflects real write order and
+    preserves causality. We deliberately do NOT sort by wall-clock ``t`` because it is diagnostic only and can move
+    backward when the clock is adjusted.
     """
     if not Path(log).exists():
         return []
@@ -489,15 +485,13 @@ def test_readonly_root_refused(tmp_path: Path) -> None:
         os.chmod(ro, 0o700)  # restore so pytest can clean up
 
 
-# ── release-path exception safety (Codex review F4) ──────────────────────────
+# ── release-path exception safety ──────────────────────────
 def test_build_failure_with_contended_release_propagates_and_recovers(index: Path, monkeypatch) -> None:
-    """F4: a build error is not masked by a contended release, and intent never leaks.
+    """Preserve build errors during contended release and intent cleanup.
 
-    Forces the release-mutex reacquire to time out (a holder thread keeps the
-    registry mutex through the writer's release window) while build_fn raises.
-    The original exception must propagate (not IndexBusy), the writer's OS lock
-    must still be dropped (no leak), and a later writer must reclaim the stale
-    intent by liveness and publish.
+    Forces the release-mutex reacquire to time out (a holder thread keeps the registry mutex through the writer's
+    release window) while build_fn raises. The original exception must propagate (not IndexBusy), the writer's OS lock
+    must still be dropped (no leak), and a later writer must reclaim the stale intent by liveness and publish.
     """
     monkeypatch.setattr(_rwgate, "_RELEASE_TIMEOUT", 0.2)  # force the release-mutex timeout
     coord = index.parent / ".index-rw"
@@ -540,11 +534,9 @@ def test_build_failure_with_contended_release_propagates_and_recovers(index: Pat
 def test_append_event_line_win32_branch_writes_parseable_lines(tmp_path: Path, monkeypatch) -> None:
     """The lock-guarded Windows append path emits whole, parseable JSON lines.
 
-    Windows CRT ``_O_APPEND`` is seek-then-write, not atomic across processes;
-    the guarded branch is the fix for torn event lines (JSONDecodeError "Extra
-    data" in the order oracles). Simulate ``win32`` on every host — the branch
-    only touches the portable ``_os_try_lock``/``_os_unlock`` seam, so no
-    host-only API is missing on POSIX.
+    Windows CRT ``_O_APPEND`` is seek-then-write, not atomic across processes; the guarded branch is the fix for torn
+    event lines (JSONDecodeError "Extra data" in the order oracles). Simulate ``win32`` on every host — the branch only
+    touches the portable ``_os_try_lock``/``_os_unlock`` seam, so no host-only API is missing on POSIX.
     """
     monkeypatch.setattr(_rwgate.sys, "platform", "win32")
     log = tmp_path / "ev.jsonl"
@@ -558,8 +550,8 @@ def test_append_event_line_win32_branch_writes_parseable_lines(tmp_path: Path, m
 def test_append_event_line_win32_branch_spins_until_lock(tmp_path: Path, monkeypatch) -> None:
     """A briefly contended log lock delays the append instead of tearing or dropping.
 
-    First acquisition attempt is refused (simulated contention); the spin loop
-    must retry and still land the complete event line.
+    First acquisition attempt is refused (simulated contention); the spin loop must retry and still land the complete
+    event line.
     """
     monkeypatch.setattr(_rwgate.sys, "platform", "win32")
     attempts = {"n": 0}

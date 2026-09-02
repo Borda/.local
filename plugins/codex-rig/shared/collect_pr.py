@@ -3,27 +3,40 @@
 
 ## Purpose
 
-Assemble the PR-specific metadata, review threads, patch, Git target/head evidence, and local checkout required before a source review. The bundle makes the authoritative base repository and exact PR head explicit before any reviewer inspects source.
+Assemble the PR-specific metadata, review threads, patch, Git target/head evidence, and local checkout required before a
+source review. The bundle makes the authoritative base repository and exact PR head explicit before any reviewer
+inspects source.
 
 ## Scope
 
-It orchestrates one PR evidence recipe and writes its artifact bundle; every GitHub read delegates to ``github_read.py`` and remote mutation is forbidden. With ``--checkout``, it additionally selects the matching local remote, fetches the target/head evidence, and records checkout identity without using forced Git operations.
+It orchestrates one PR evidence recipe and writes its artifact bundle; every GitHub read delegates to ``github_read.py``
+and remote mutation is forbidden. With ``--checkout``, it additionally selects the matching local remote, fetches the
+target/head evidence, and records checkout identity without using forced Git operations.
 
 ## Usage
 
-Run ``python collect_pr.py --target <number-or-url> --out <directory> [--checkout]`` from code-review or code-remediate PR mode. Reusing an output directory is supported because the collector removes its own prior evidence before starting a new attempt.
+Run ``python collect_pr.py --target <number-or-url> --out <directory> [--checkout]`` from code-review or code-remediate
+PR mode. Reusing an output directory is supported because the collector removes its own prior evidence before starting a
+new attempt.
 
 ## Used by
 
-The PR code-review/remediation workflows and collector acceptance tests use this module; it is not a general issue or discussion reader. Its review-thread GraphQL query is intentionally limited to the PR identified by the fetched ``pr.json`` payload.
+The PR code-review/remediation workflows and collector acceptance tests use this module; it is not a general issue or
+discussion reader. Its review-thread GraphQL query is intentionally limited to the PR identified by the fetched
+``pr.json`` payload.
 
 ## Outputs
 
-It writes PR metadata, threads, diff/stat files, routing, target/head checks, optional checkout evidence, and classified terminal failure markers. A successful bundle includes files such as ``pr.json``, ``review-threads.json``, ``diff.patch``, ``pr-routing.json``, and checkout identity records when checkout was requested.
+It writes PR metadata, threads, diff/stat files, routing, target/head checks, optional checkout evidence, and classified
+terminal failure markers. A successful bundle includes files such as ``pr.json``, ``review-threads.json``,
+``diff.patch``, ``pr-routing.json``, and checkout identity records when checkout was requested.
 
 ## Failure
 
-Missing tools, unsafe core GitHub reads, invalid PR identity, or checkout mismatch returns ``2`` and blocks source review. Review-thread collection is supplemental: its failure is recorded and lowers downstream confidence without blocking exact local source review. Each attempt clears prior collector artifacts before starting, then retains current-attempt evidence and diagnostics if a later core step fails.
+Missing tools, unsafe core GitHub reads, invalid PR identity, or checkout mismatch returns ``2`` and blocks source
+review. Review-thread collection is supplemental: its failure is recorded and lowers downstream confidence without
+blocking exact local source review. Each attempt clears prior collector artifacts before starting, then retains evidence
+and diagnostics from the current attempt if a later core step fails.
 """
 
 from __future__ import annotations

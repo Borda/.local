@@ -1,8 +1,7 @@
 """Tests for ``bin/commit_action_item.py``.
 
-``subprocess.run`` and ``which`` monkeypatched — no real git invocations.
-Tests cover arg validation, empty-stage short-circuit, sentinel lifecycle,
-successful commit path, and the pure ``_slug`` function.
+``subprocess.run`` and ``which`` monkeypatched — no real git invocations. Tests cover argument validation, the early
+return for an empty stage, sentinel lifecycle, the successful commit path, and the pure ``_slug`` function.
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ import commit_action_item as cai
 
 @pytest.mark.parametrize("flag", ["-h", "--help"])
 def test_help_exits_0_without_git(monkeypatch: pytest.MonkeyPatch, flag: str) -> None:
-    """``-h``/``--help`` prints usage and exits 0; no subprocess/git ever runs."""
+    """Print help without invoking Git or another subprocess."""
     called: list[Any] = []
     monkeypatch.setattr(cai.subprocess, "run", lambda *a, **k: called.append(a))
     with pytest.raises(SystemExit) as exc:
@@ -106,7 +105,7 @@ def test_missing_message_file_arg_exits_1(
 
 
 def test_message_file_not_found_exits_1(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """``--message-file`` points to non-existent path → exit 1 'not found'."""
+    """Reject a message-file path that does not exist."""
     rc = cai.main(["--message-file", str(tmp_path / "nonexistent.txt")])
     assert rc == 1
     assert "not found" in capsys.readouterr().err
@@ -200,7 +199,7 @@ def test_successful_commit_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
 
 
 def test_commit_failure_forwards_returncode(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """git commit exits non-zero → that exit code forwarded."""
+    """Git commit exits non-zero → that exit code forwarded."""
     msg = tmp_path / "msg.txt"
     msg.write_text("msg\n")
     monkeypatch.setattr(cai, "which", lambda _: "/fake/git")
@@ -298,7 +297,7 @@ def test_sentinel_created_before_commit(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
     monkeypatch.setattr(cai, "which", lambda _: "/fake/git")
     monkeypatch.setattr(cai.subprocess, "run", _fake_run)
-    # SEC-M7: commit_action_item now prefers TMPDIR / XDG_RUNTIME_DIR over
+    # Commit_action_item now prefers TMPDIR / XDG_RUNTIME_DIR over
     # tempfile.gettempdir() — set TMPDIR so the sentinel lands in our fake dir.
     monkeypatch.setenv("TMPDIR", str(fake_tmpdir))
     monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
@@ -308,7 +307,7 @@ def test_sentinel_created_before_commit(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
 
 def test_git_missing_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """``which`` returns None for git → FileNotFoundError raised."""
+    """Return None for git → FileNotFoundError raised."""
     msg = tmp_path / "msg.txt"
     msg.write_text("msg\n")
     monkeypatch.setattr(cai, "which", lambda _: None)
@@ -333,7 +332,7 @@ def test_git_missing_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     ],
 )
 def test_slug(text: str, expected: str) -> None:
-    """``_slug`` lowercases, replaces non-alnum runs, strips trailing hyphens."""
+    """Lowercase, replaces non-alnum runs, strips trailing hyphens."""
     assert cai._slug(text) == expected
 
 
@@ -343,7 +342,7 @@ def test_slug(text: str, expected: str) -> None:
 
 
 def test_build_each_message_structure() -> None:
-    """``each`` message has subject, attribution block, challenge line, Claude trailer."""
+    """Build each-item messages with all required sections and attribution."""
     fields = cai.EachMessageFields(
         summary="Fix off-by-one",
         item_id="7",
@@ -369,20 +368,20 @@ def test_build_each_message_truncates_comment_to_72_chars() -> None:
 
 
 def test_build_each_message_codex_trailer_opt_in() -> None:
-    """``include_codex=True`` appends the Codex co-author trailer."""
+    """Append the Codex co-author trailer."""
     msg = cai.build_each_message(cai.EachMessageFields("s", "1", "a", "9", "c", "evidence=VALID", include_codex=True))
     assert "Co-authored-by: OpenAI Codex <codex@openai.com>" in msg
 
 
 def test_build_mode_and_message_file_conflict_exits_1(capsys: pytest.CaptureFixture[str]) -> None:
-    """``--build`` with ``--message-file`` → exit 1 with conflict message."""
+    """Reject conflicting build and message-file options."""
     rc = cai.main(["--build", "--message-file", "m.txt", "--files", "a.py"])
     assert rc == 1
     assert "not both" in capsys.readouterr().err
 
 
 def test_build_mode_commits_rendered_message(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``--build`` renders a temp message file and commits it via ``-F``."""
+    """Render a temp message file and commits it via ``-F``."""
     calls: list[list[str]] = []
     monkeypatch.setattr(cai, "which", lambda _: "/fake/git")
     monkeypatch.setattr(cai.subprocess, "run", _make_git_mock(calls=calls))

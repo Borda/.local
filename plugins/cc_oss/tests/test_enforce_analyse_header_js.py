@@ -221,7 +221,7 @@ def test_simulated_windows_report_file_resolution_is_canonical_and_contained() -
 
 
 def test_trailing_slash_tmpdir_resolves_sentinel(tmp_path: Path, repo: Path, analyse_run: Path) -> None:
-    """macOS exports TMPDIR with a trailing slash — the sentinel must still resolve."""
+    """MacOS exports TMPDIR with a trailing slash — the sentinel must still resolve."""
     assert _denial_reason(_run(tmp_path, _ask_payload(cwd=str(repo)), tmpdir_suffix="/")) is not None
 
 

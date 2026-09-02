@@ -1,10 +1,9 @@
 """Regression coverage for persisted, static symbol re-export aliases.
 
-The call scanner faithfully records the spelling visible to a consumer.  Package
-``__init__`` files can re-export that spelling one or more times, however, so the
-reverse graph must normalize only aliases proven by a top-level ``ImportFrom``.
-These tests exercise the public index/query boundary and do not reuse scanner
-resolution helpers as an oracle.
+The call scanner faithfully records the spelling visible to a consumer.  Package ``__init__`` files can re-export that
+spelling one or more times, however, so the reverse graph must normalize only aliases proven by a top-level
+``ImportFrom``. These tests exercise the public index/query boundary and do not reuse scanner resolution helpers as an
+oracle.
 """
 
 from __future__ import annotations

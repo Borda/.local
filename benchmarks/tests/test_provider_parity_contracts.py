@@ -1,7 +1,7 @@
 """Acceptance contract for the provider-neutral parity contract library.
 
-These tests intentionally define the small B1 surface shared by future provider
-adapters. They do not exercise a provider CLI or execute a model.
+These tests intentionally define the small B1 surface shared by future provider adapters. They do not exercise a
+provider CLI or execute a model.
 """
 
 from __future__ import annotations
@@ -228,7 +228,7 @@ class TestArmContracts:
             core.deterministic_arm_order(fixed_revision, "claude", "model", "FN-02", 0)
 
     def test_arm_order_returns_the_named_provider_own_arms(self) -> None:
-        """A-L2: the shared ordering is provider-keyed, not Claude-only."""
+        """The shared ordering is provider-keyed, not Claude-only."""
         coordinates = ("arm-order-fixed-oracle", "gpt-5.6-luna", "FN-02", 1)
         revision, model, task_id, repetition = coordinates
 
@@ -472,11 +472,10 @@ class TestResultEligibility:
         ],
     )
     def test_zero_query_b_cell_is_adherent_on_both_providers(self, arm: str) -> None:
-        """A-H1: B is an optional-use canary, so declining to query is compliant.
+        """B is an optional-use canary, so declining to query is compliant.
 
-        Treating the Codex B arm as required-use marked exactly the no-query cells
-        non-adherent, dropping them from pooling and biasing the pooled B result
-        toward the runs that happened to use Codemap.
+        Treating the Codex B arm as required-use marked exactly the no-query cells non-adherent, dropping them from
+        pooling and biasing the pooled B result toward the runs that happened to use Codemap.
         """
         assert core.treatment_adherence(arm, codemap_use_compliance=False, contaminated=False) is True
 
@@ -488,15 +487,15 @@ class TestResultEligibility:
         ],
     )
     def test_zero_query_c_cell_remains_non_adherent(self, arm: str) -> None:
-        """A-H1: the strict arm keeps its required-use contract on both providers."""
+        """The strict arm keeps its required-use contract on both providers."""
         assert core.treatment_adherence(arm, codemap_use_compliance=False, contaminated=False) is False
 
     def test_contamination_still_overrides_optional_use_adherence(self) -> None:
-        """A-H1: optional use never excuses a contaminated cell."""
+        """Optional use never excuses a contaminated cell."""
         assert core.treatment_adherence("B_direct_required", codemap_use_compliance=False, contaminated=True) is False
 
     def test_zero_query_codex_b_cell_stays_pooling_eligible(self) -> None:
-        """A-H1: adherence alone is useless if the row is still dropped from pooling."""
+        """Adherence alone is useless if the row is still dropped from pooling."""
         record = _record(
             provider="codex",
             arm="B_direct_required",
@@ -799,8 +798,8 @@ class TestAgenticAnswerContracts:
     def test_oracle_scores_production_and_test_importers_with_stable_ranking(self, tmp_path: Path) -> None:
         """AST truth excludes tests, self-imports, dynamic imports, and broken files.
 
-        A response that omits an expected-empty field or reverses a tied ranking
-        must lose its component instead of receiving credit from prose recall.
+        A response that omits an expected-empty field or reverses a tied ranking must lose its component instead of
+        receiving credit from prose recall.
         """
         package = tmp_path / "pkg"
         tests = tmp_path / "tests"

@@ -436,7 +436,7 @@ def iter_md_files(root: str, pattern: str = "*.md") -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns process exit code."""
+    """Extract matching code blocks from the requested inputs."""
     parser = argparse.ArgumentParser(
         prog="extract_code_blocks",
         description="Extract fenced code blocks from Markdown files (JSONL to stdout).",

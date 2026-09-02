@@ -1,9 +1,8 @@
 """Tests for ``bin/extract_contributors.py``.
 
-``subprocess.run`` and module-level ``which`` are monkeypatched — no real
-``git`` invocations. ``is_bot``, ``dedupe_by_email``, and ``_build_range`` are
-tested directly as pure functions; arg validation and the ``git log`` path are
-covered via ``main(argv)`` calls.
+``subprocess.run`` and module-level ``which`` are monkeypatched — no real ``git`` invocations. ``is_bot``,
+``dedupe_by_email``, and ``_build_range`` are tested directly as pure functions; arg validation and the ``git log`` path
+are covered via ``main(argv)`` calls.
 """
 
 from __future__ import annotations
@@ -47,7 +46,7 @@ class _FakeCompleted:
     ],
 )
 def test_is_bot(line: str, expected: bool) -> None:
-    """``is_bot`` flags ``[bot]`` logins and generic noreply; keeps GitHub privacy-email humans."""
+    """Flag ``[bot]`` logins and generic noreply; keeps GitHub privacy-email humans."""
     assert ec.is_bot(line) is expected
 
 
@@ -75,7 +74,7 @@ def test_dedupe_by_email_keeps_first_name_drops_bots_sorted() -> None:
     ],
 )
 def test_build_range(range_arg: str, from_ref: str, to_ref: str, expected: str) -> None:
-    """``_build_range`` resolves --range / --from / --to into a git range."""
+    """Resolve ``--range`` / ``--from`` / ``--to`` into a git range."""
     assert ec._build_range(range_arg, from_ref, to_ref) == expected
 
 
@@ -92,7 +91,7 @@ def test_no_range_arg_exits_1(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_range_and_from_conflict_exits_1(capsys: pytest.CaptureFixture[str]) -> None:
-    """Both --range and --from → exit 1 with conflict message."""
+    """Both ``--range`` and ``--from`` → exit 1 with conflict message."""
     rc = ec.main(["--range", "v1..v2", "--from", "v1"])
     assert rc == 1
     assert "not both" in capsys.readouterr().err
@@ -123,7 +122,7 @@ def test_emits_deduped_bot_free_list(monkeypatch: pytest.MonkeyPatch, capsys: py
 
 
 def test_git_failure_exits_2(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """git log non-zero exit → exit 2 with stderr surfaced."""
+    """Git log non-zero exit → exit 2 with stderr surfaced."""
     monkeypatch.setattr(ec, "which", lambda _: "/fake/git")
     monkeypatch.setattr(ec.subprocess, "run", lambda *_a, **_k: _FakeCompleted(returncode=128, stderr="bad revision"))
     rc = ec.main(["--range", "v1..v2"])
@@ -132,7 +131,7 @@ def test_git_failure_exits_2(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Cap
 
 
 def test_repo_flag_inserts_git_c(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``--repo`` inserts ``-C <root>`` into the git command."""
+    """Insert ``-C <root>`` into the git command."""
     recorded: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
@@ -146,7 +145,7 @@ def test_repo_flag_inserts_git_c(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_git_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``which`` returns None for git → FileNotFoundError raised."""
+    """Return None for git → FileNotFoundError raised."""
     monkeypatch.setattr(ec, "which", lambda _: None)
     with pytest.raises(FileNotFoundError, match="git"):
         ec.main(["--range", "v1..v2"])

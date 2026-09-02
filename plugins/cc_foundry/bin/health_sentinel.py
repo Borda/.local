@@ -151,11 +151,13 @@ def has_new_files(sentinel: Path, run_dir: Path) -> bool:
 
 
 def _cmd_start(skill_id: str) -> int:
-    """Handle ``start`` subcommand. Returns exit code.
+    """Handle ``start`` subcommand.
 
-    ``LAUNCH_AT`` is emitted as a bare integer; ``SENTINEL`` is shell-quoted
-    via ``shlex.quote`` so a downstream ``eval`` cannot trigger word-splitting
-    or glob expansion even if the path contains special characters.
+    ``LAUNCH_AT`` is emitted as a bare integer. ``SENTINEL`` is shell-quoted via ``shlex.quote`` so a downstream
+    ``eval`` cannot trigger word splitting or glob expansion when the path contains special characters.
+
+    Returns:
+        Process exit code.
     """
     launch_at, sentinel = create_sentinel(skill_id)
     print(f"LAUNCH_AT={launch_at}\nSENTINEL={shlex.quote(sentinel.as_posix())}")
@@ -184,7 +186,10 @@ def _validate_sentinel(sentinel: Path) -> Path:
 
 
 def _cmd_check(sentinel: str, run_dir: str) -> int:
-    """Handle ``check`` subcommand. Returns exit code (0 alive, 1 stalled)."""
+    """Handle ``check`` subcommand.
+
+    Returns exit code (0 alive, 1 stalled).
+    """
     try:
         safe_sentinel = _validate_sentinel(Path(sentinel))
     except ValueError as exc:
@@ -194,7 +199,7 @@ def _cmd_check(sentinel: str, run_dir: str) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns exit code."""
+    """Inspect the health sentinel and report its status."""
     parser = argparse.ArgumentParser(
         description="Health-monitoring sentinel helper.",
         add_help=True,

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Synchronize the repository's normal-session model policy into Codex home.
 
-Updates only ``model`` and ``review_model`` in ``CODEX_HOME/config.toml`` and maintains one authenticated personal-policy block in ``CODEX_HOME/AGENTS.md``. All unrelated configuration and instructions remain user-owned.
+Updates only ``model`` and ``review_model`` in ``CODEX_HOME/config.toml``.
+
+Maintains one authenticated personal-policy block in ``CODEX_HOME/AGENTS.md``. All unrelated configuration and
+instructions remain user-owned.
 """
 
 from __future__ import annotations
@@ -20,11 +23,18 @@ BEGIN_PREFIX = "<!-- borda-local:session-model-policy begin sha256="
 END_MARKER = "<!-- borda-local:session-model-policy end -->\n"
 BEGIN_PATTERN = re.compile(r"<!-- borda-local:session-model-policy begin sha256=([0-9a-f]{64}) -->\n")
 MODEL_PATTERN = re.compile(
-    r"""^(?P<indent>\s*)(?P<spelling>model|review_model|"model"|"review_model"|'model'|'review_model')"""
-    r"""(?P<separator>\s*=\s*)(?P<value>"(?:[^"\\]|\\.)*"|'[^']*')(?P<suffix>\s*(?:#.*)?)$"""
+    r"^(?P<indent>\s*)(?P<spelling>model|review_model|"
+    '"model"|"review_model"|'
+    "'model'|'review_model')"
+    r"(?P<separator>\s*=\s*)(?P<value>"
+    r'"(?:[^"\\]|\\.)*"'
+    r"|'[^']*')(?P<suffix>\s*(?:#.*)?)$"
 )
 MODEL_ASSIGNMENT_PATTERN = re.compile(
-    r"""^\s*(?:model|review_model|"model"|"review_model"|'model'|'review_model')\s*="""
+    r"^\s*(?:model|review_model|"
+    '"model"|"review_model"|'
+    "'model'|'review_model')"
+    r"\s*="
 )
 TABLE_PATTERN = re.compile(r"^\s*\[")
 MANAGED_KEYS = frozenset({"model", "review_model"})

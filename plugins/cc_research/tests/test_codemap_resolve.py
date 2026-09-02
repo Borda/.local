@@ -1,13 +1,11 @@
 """Regression tests for cc_research's codemap gate wiring.
 
-``bin/codemap_resolve.py`` is byte-identical to cc_develop's canonical copy (E-M1), so the
-resolver's own behaviour is pinned once on the canonical side. What must be pinned *here*
-is that this plugin's shipped copy really is that file and that research's own wrapper
-supplies research's sentinel name — the only per-plugin difference left.
+``bin/codemap_resolve.py`` is byte-identical to cc_develop's canonical copy, so the resolver's own behaviour is pinned
+once on the canonical side. What must be pinned *here* is that this plugin's shipped copy really is that file and that
+research's own wrapper supplies research's sentinel name — the only per-plugin difference left.
 
-E-H1/E-H3 are re-asserted against the shipped copy rather than trusted transitively: the
-byte-identity check and these behavioural checks fail independently, so a bad propagation
-cannot pass by matching a stale canonical.
+These are re-asserted against the shipped copy rather than trusted transitively: the byte-identity check and these
+behavioural checks fail independently, so a bad propagation cannot pass by matching a stale canonical.
 """
 
 from __future__ import annotations
@@ -47,12 +45,12 @@ def _git_repo(tmp_path: Path, name: str) -> Path:
 
 
 def test_shipped_copy_matches_the_canonical_resolver():
-    """E-M1: cc_develop is canonical; drift here is what the MANIFEST entry must prevent."""
+    """Cc_develop is canonical; drift here is what the MANIFEST entry must prevent."""
     assert _RESEARCH_RESOLVER.read_bytes() == _DEV_RESOLVER.read_bytes()
 
 
 def test_index_is_found_from_a_repository_subdirectory(tmp_path, monkeypatch):
-    """E-H1: research skills run from wherever the session sits; the index lives at the root."""
+    """Research skills run from wherever the session sits; the index lives at the root."""
     root = _git_repo(tmp_path, "proj")
     index = root / ".cache" / "codemap" / "proj.json"
     index.parent.mkdir(parents=True)
@@ -65,7 +63,7 @@ def test_index_is_found_from_a_repository_subdirectory(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("name", ["café", "my+proj", "two words"])
 def test_project_name_is_the_raw_basename(tmp_path, monkeypatch, name):
-    """E-H3: sanitizing here sought a filename the scanner never writes."""
+    """Sanitizing here sought a filename the scanner never writes."""
     root = _git_repo(tmp_path, name)
     monkeypatch.delenv("CODEMAP_INDEX_DIR", raising=False)
     monkeypatch.chdir(root)
@@ -74,13 +72,13 @@ def test_project_name_is_the_raw_basename(tmp_path, monkeypatch, name):
 
 
 def test_retired_plugin_label_is_gone():
-    """E-L2: this copy had drifted to the retired bare `codemap` label in user-facing text."""
+    """This copy had drifted to the retired bare `codemap` label in user-facing text."""
     assert resolver.TOOL_LABEL == "codemap-py"
     assert not hasattr(resolver, "QUERY_LABEL")
 
 
 def test_research_wrapper_supplies_the_research_prefix(monkeypatch):
-    """E-M1: the sentinel name is research's concern and lives in research's own wrapper."""
+    """The sentinel name is research's concern and lives in research's own wrapper."""
     flag = _load(_RESEARCH_BIN / "codemap-flag.py", "research_codemap_flag_under_test")
     captured: dict[str, list[str]] = {}
 

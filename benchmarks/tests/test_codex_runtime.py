@@ -96,7 +96,7 @@ _TERMINAL = json.dumps({"type": "turn.completed", "status": "completed"})
 
 
 def test_fallback_counts_search_and_read_items_but_not_unrelated_commands() -> None:
-    """B-M1: fallback means the agent searched by hand, not that any command ran."""
+    """Fallback means the agent searched by hand, not that any command ran."""
     runtime = _load()
     stream = "\n".join(
         (
@@ -116,7 +116,7 @@ def test_fallback_counts_search_and_read_items_but_not_unrelated_commands() -> N
 
 
 def test_legacy_assistant_tool_use_block_attributes_a_codemap_query() -> None:
-    """B-M2: the compatibility path could never credit a Codemap call before."""
+    """The compatibility path could never credit a Codemap call before."""
     runtime = _load()
     stream = "\n".join(
         (
@@ -157,7 +157,7 @@ def test_legacy_assistant_tool_use_block_attributes_a_codemap_query() -> None:
 def test_malformed_usage_is_coerced_or_counted_never_silently_zeroed(
     usage: dict[str, Any], expected_input: int, expected_output: int, expected_malformed: int
 ) -> None:
-    """B-M3: provider schema drift must not degrade a paid turn into a free run."""
+    """Provider schema drift must not degrade a paid turn into a free run."""
     runtime = _load()
     stream = "\n".join((json.dumps({"type": "turn.completed", "status": "completed", "usage": usage}),))
 
@@ -169,7 +169,7 @@ def test_malformed_usage_is_coerced_or_counted_never_silently_zeroed(
 
 
 def test_usage_events_are_treated_as_cumulative_not_additive() -> None:
-    """B-M4: pins the documented cumulative-within-a-turn assumption (README)."""
+    """Pins the documented cumulative-within-a-turn assumption (README)."""
     runtime = _load()
     stream = "\n".join(
         (
@@ -188,7 +188,7 @@ def test_usage_events_are_treated_as_cumulative_not_additive() -> None:
 
 
 def test_skill_versus_direct_attribution_follows_configuration_not_the_stream(tmp_path: Path) -> None:
-    """B-M5: identical bytes are labelled skill or direct purely by the caller's arm."""
+    """Identical bytes are labelled skill or direct purely by the caller's arm."""
     runtime = _load()
     stream = "\n".join((_native_command(_QUERY_COMMAND, output=_QUERY_OUTPUT, item_id="query"), _TERMINAL))
     skill_path = tmp_path / "SKILL.md"

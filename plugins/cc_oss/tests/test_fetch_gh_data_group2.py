@@ -1,8 +1,7 @@
 """Tests for ``bin/fetch_gh_data_group2.py``.
 
-Arg-validation tests run without any subprocess calls. The happy-path
-and decode tests monkeypatch ``subprocess.run`` and ``which`` so no
-real ``gh`` invocation occurs.
+Arg-validation tests run without any subprocess calls. The happy-path and decode tests monkeypatch ``subprocess.run``
+and ``which`` so no real ``gh`` invocation occurs.
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ class _FakeCompleted:
 
 
 def _b64(text: str) -> str:
-    """Helper: encode UTF-8 ``text`` as base64 (no trailing newline)."""
+    """Encode UTF-8 text as base64 without a trailing newline."""
     return base64.b64encode(text.encode("utf-8")).decode("ascii")
 
 
@@ -49,7 +48,7 @@ def test_missing_owner_exits_1(capsys: pytest.CaptureFixture[str], tmp_path: Pat
 
 
 def test_missing_repo_exits_1(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
-    """``--owner`` but no ``--repo`` → exit 1 with '--repo required' on stderr."""
+    """Require a repository when an owner is provided."""
     rc = fgd.main(
         [
             "--owner",
@@ -134,7 +133,7 @@ def test_path_traversal_rejected(
 
 
 def test_decode_b64_roundtrip() -> None:
-    """``_decode_b64`` round-trips arbitrary UTF-8 text."""
+    """Round-trip arbitrary UTF-8 text."""
     assert fgd._decode_b64(_b64("hello world\nline 2")) == "hello world\nline 2"
 
 
@@ -175,7 +174,6 @@ def _stub_gh_run(payload_map: dict[str, str]):
             Match is suffix-based — first matching key wins; unmatched
             calls return rc=1 + empty (simulates 404).
     """
-
     # Order keys longest-first so more-specific paths (e.g.
     # ``/contents/.github/CODEOWNERS``) match before less-specific
     # prefixes (``/contents/.github``).
@@ -352,7 +350,7 @@ def test_all_404s_writes_no_records(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 
 
 def test_codeowners_fallback_to_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """``.github/CODEOWNERS`` 404 → falls back to root ``CODEOWNERS`` and records ``source=CODEOWNERS``."""
+    """Fall back to the root ownership file when the GitHub-specific path is absent."""
 
     def _run(cmd, *args, **kwargs):  # type: ignore[no-untyped-def]
         api_path = cmd[2] if len(cmd) >= 3 else ""
@@ -386,7 +384,7 @@ def test_codeowners_fallback_to_root(monkeypatch: pytest.MonkeyPatch, tmp_path: 
 
 
 def test_gh_missing_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """``which`` returns None → FileNotFoundError propagates."""
+    """Return None → FileNotFoundError propagates."""
     monkeypatch.setattr(fgd, "which", lambda _: None)
     with pytest.raises(FileNotFoundError, match="gh"):
         fgd.main(

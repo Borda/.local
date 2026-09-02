@@ -1,13 +1,11 @@
-"""codemap-py CLI gate wiring and doctor resolver (plan §4.4; review F1/F2).
+"""Codemap-py CLI gate wiring and doctor resolver.
 
-Proves the shipped ``codemap-py index/query`` enters the RW gate (a live writer
-lease forces ``query`` to return a bounded ``index_busy``) and that ``doctor``
-reports the exact path from the single §4.4 resolver, including the flat
+Proves the shipped ``codemap-py index/query`` enters the RW gate (a live writer lease forces ``query`` to return a
+bounded ``index_busy``) and that ``doctor`` reports the exact path from the single index resolver, including the flat
 ``CODEMAP_INDEX_DIR`` layout.
 
-Also covers the exit-1 surfaces the capability contract requires to be bounded and
-structured rather than a traceback: a corrupt index reached through the dispatcher
-(C-H2) and a writer refusing to downgrade a newer-schema index (C-M3).
+Also covers the exit-1 surfaces the capability contract requires to be bounded and structured rather than a traceback: a
+corrupt index reached through the dispatcher and a writer refusing to downgrade a newer-schema index.
 """
 
 from __future__ import annotations
@@ -66,7 +64,7 @@ def _run_cli(args: list[str], *, cwd: Path | None = None) -> subprocess.Complete
 def test_doctor_index_path_matches_resolver(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_override: bool
 ) -> None:
-    """doctor's index_path equals _index_identity.resolve_index(), override or not."""
+    """Doctor's index_path equals _index_identity.resolve_index(), override or not."""
     if with_override:
         monkeypatch.setenv("CODEMAP_INDEX_DIR", str(tmp_path))
     else:
@@ -79,10 +77,10 @@ def test_doctor_index_path_matches_resolver(
 
 
 def test_doctor_override_reports_the_flat_resolver_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Under CODEMAP_INDEX_DIR doctor reports the flat ``<override>/<project>.json`` (C-H1).
+    """Under CODEMAP_INDEX_DIR doctor reports the flat ``<override>/<project>.json``.
 
-    Formerly doctor printed a root-keyed ``<override>/<root-key>/<project>.json`` that no
-    writer ever produced, so the path it reported did not exist.
+    Formerly doctor printed a root-keyed ``<override>/<root-key>/<project>.json`` that no writer ever produced, so the
+    path it reported did not exist.
     """
     monkeypatch.setenv("CODEMAP_INDEX_DIR", str(tmp_path))
     identity = _index_identity.resolve_index()
@@ -94,13 +92,12 @@ def test_doctor_override_reports_the_flat_resolver_path(tmp_path: Path, monkeypa
 
 
 def test_override_lease_write_and_report_paths_are_one_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """End-to-end C-H1: the leased, written, loaded, and doctor-reported paths agree.
+    """Prove end to end that leased, written, loaded, and doctor-reported paths agree.
 
-    The finding was a four-way split under ``CODEMAP_INDEX_DIR`` — the resolver root-keyed
-    the path, the writer wrote flat, doctor printed the root-keyed one, and the reader
-    loaded the flat one. Asserting them equal one at a time cannot catch that; only
-    building an index and comparing every reported path against the file that actually
-    appeared does.
+    The finding was a four-way split under ``CODEMAP_INDEX_DIR`` — the resolver root-keyed the path, the writer wrote
+    flat, doctor printed the root-keyed one, and the reader loaded the flat one. Asserting them equal one at a time
+    cannot catch that; only building an index and comparing every reported path against the file that actually appeared
+    does.
     """
     project = tmp_path / "proj"
     project.mkdir()
@@ -210,7 +207,7 @@ def _hold_writer_intent(index_path: str, ready: Path, hold: float) -> None:
 
 
 def test_query_under_live_writer_returns_index_busy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A live writer lease forces the shipped query into a bounded index_busy (F1)."""
+    """A live writer lease forces the shipped query into a bounded index_busy."""
     monkeypatch.setenv("CODEMAP_INDEX_DIR", str(tmp_path))
     monkeypatch.setenv("CODEMAP_GATE_TIMEOUT", "1")
     index_path = str(_index_identity.resolve_index().index_path)
@@ -233,12 +230,11 @@ def test_query_under_live_writer_returns_index_busy(tmp_path: Path, monkeypatch:
 def test_corrupt_index_via_dispatcher_is_a_structured_error_not_a_traceback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A corrupt index through ``codemap-py query`` exits 1 with a structured error (C-H2).
+    """A corrupt index through ``codemap-py query`` exits 1 with a structured error.
 
-    The standalone ``scan-query`` path was already graceful; the dispatcher was not.
-    ``rwgate._load_index`` guarded only FileNotFoundError, so JSONDecodeError escaped
-    ahead of the query engine's own handling and reached the user as a raw traceback —
-    which capability-contract.md forbids for every exit-1 surface.
+    The standalone ``scan-query`` path was already graceful; the dispatcher was not. ``rwgate._load_index`` guarded only
+    FileNotFoundError, so JSONDecodeError escaped ahead of the query engine's own handling and reached the user as a raw
+    traceback — which capability-contract.md forbids for every exit-1 surface.
     """
     monkeypatch.setenv("CODEMAP_INDEX_DIR", str(tmp_path))
     index_path = _index_identity.resolve_index().index_path
@@ -270,11 +266,10 @@ def test_corrupt_index_via_dispatcher_is_a_structured_error_not_a_traceback(
 
 
 def test_writer_refuses_to_downgrade_a_newer_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """An older writer refuses to overwrite a newer-schema index (C-M3).
+    """An older writer refuses to overwrite a newer-schema index.
 
-    The refusal was advertised in the gate's docstring but implemented as ``return None``,
-    so an older tool silently downgraded a shared index and forced the newer reader to
-    rebuild on every query.
+    The refusal was advertised in the gate's docstring but implemented as ``return None``, so an older tool silently
+    downgraded a shared index and forced the newer reader to rebuild on every query.
     """
     monkeypatch.setenv("CODEMAP_INDEX_DIR", str(tmp_path))
     project = tmp_path / "proj"

@@ -96,7 +96,7 @@ def resolve_memory_dir(project: str | None, timeout: int = 5) -> str | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns exit code."""
+    """Resolve and print the selected memory directory."""
     parser = argparse.ArgumentParser(
         description="Resolve project-scoped Claude memory directory.",
         add_help=True,

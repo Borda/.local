@@ -1,10 +1,9 @@
 """Minimal child environments that still let an interpreter start on every host.
 
-A scoring boundary that micro-executes model-authored code hands the child the smallest
-environment that can run it. "Smallest" is not the same set on every platform: a Windows
-CPython reads ``SystemRoot`` while seeding its hash randomization and aborts before the
-payload runs when the variable is absent, so an environment pruned to ``PATH`` alone is
-not minimal there — it is broken.
+A scoring boundary that micro-executes model-authored code hands the child the smallest environment that can run it.
+"Smallest" is not the same set on every platform: a Windows CPython reads ``SystemRoot`` while seeding its hash
+randomization and aborts before the payload runs when the variable is absent, so an environment pruned to ``PATH`` alone
+is not minimal there — it is broken.
 """
 
 from __future__ import annotations

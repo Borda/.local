@@ -1,7 +1,7 @@
 """Tests for benchmarks/_bench_common/claude_transport.py.
 
-Focus: the previously-uncovered hot path (``stream_claude`` + ``parse_result_usage``), which
-runs a live ``claude -p`` subprocess in production and so is exercised by no other unit test.
+Focus: the previously-uncovered hot path (``stream_claude`` + ``parse_result_usage``), which runs a live ``claude -p``
+subprocess in production and so is exercised by no other unit test.
 """
 
 from __future__ import annotations
@@ -55,10 +55,10 @@ def _patch_popen(monkeypatch: pytest.MonkeyPatch, module: Any, proc: Any) -> Non
 
 
 class TestParseResultUsage:
-    """Contract: sum cached input parts, capture cost + success from a result event."""
+    """Sum cached input parts, capture cost + success from a result event."""
 
     def test_sums_cache_parts_into_input(self, script_claude_stream: Any) -> None:
-        """input_tokens = uncached + cache_creation + cache_read; success on 'success' subtype."""
+        """Combine every input-token category and recognize a successful result event."""
         ev = {
             "usage": {
                 "input_tokens": 10,
@@ -88,7 +88,7 @@ class TestParseResultUsage:
 
 
 class TestStreamClaude:
-    """Contract: route decoded events, skip blanks/garbage, report mechanics via StreamOutcome."""
+    """Route decoded events, skip blanks/garbage, report mechanics via StreamOutcome."""
 
     def test_routes_valid_events_and_captures_outcome(
         self, script_claude_stream: Any, monkeypatch: pytest.MonkeyPatch

@@ -39,7 +39,7 @@ def run_installer(
 
 
 def run_remover(codex_home: Path) -> subprocess.CompletedProcess[str]:
-    """Run the packaged installer in --remove mode against one isolated Codex home."""
+    """Run the packaged installer in ``--remove`` mode against one isolated Codex home."""
     return subprocess.run(
         [sys.executable, str(INSTALLER), "--remove", "--codex-home", str(codex_home)],
         capture_output=True,
@@ -320,7 +320,7 @@ def test_remove_refuses_modified_managed_block(tmp_path: Path) -> None:
 
 
 def test_remove_requires_no_source_argument(tmp_path: Path) -> None:
-    """Prove --remove needs only --codex-home while install still requires --source."""
+    """Prove ``--remove`` needs only ``--codex-home`` while install still requires ``--source``."""
     missing_source = subprocess.run(
         [sys.executable, str(INSTALLER), "--codex-home", str(tmp_path)],
         capture_output=True,

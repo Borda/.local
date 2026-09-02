@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """scripts/codemap_py_cli.py — compatibility shim for :mod:`codemap_py.cli`.
 
-``scripts/codemap_py_entry.py`` imports :mod:`codemap_py.cli` directly
-(plan §7.2); this shim exists only so consumers that import the bare
-``codemap_py_cli`` name after inserting ``scripts/`` onto their own
+``scripts/codemap_py_entry.py`` imports :mod:`codemap_py.cli` directly; this shim exists only so consumers that import
+the bare ``codemap_py_cli`` name after inserting ``scripts/`` onto their own
 ``sys.path`` (tests, an editable checkout) keep working. It prepends
 ``<plugin-root>/src`` to the process import path, then replaces its own entry
 in ``sys.modules`` with the real package module so every attribute access —

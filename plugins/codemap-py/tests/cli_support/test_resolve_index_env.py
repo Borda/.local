@@ -42,9 +42,8 @@ _write_sentinel_file = _mod._write_sentinel_file
 def _no_session_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Clear CSID/CLAUDE_CODE_SESSION_ID so ``_resolve_csid()`` degrades to "shared".
 
-    Without this, a real Claude Code session running the suite would leak its own
-    session id into written filenames, making ``_read_resolve_file``'s fixed
-    ``-shared`` suffix assumption non-deterministic.
+    Without this, a real Claude Code session running the suite would leak its own session id into written filenames,
+    making ``_read_resolve_file``'s fixed ``-shared`` suffix assumption non-deterministic.
     """
     monkeypatch.delenv("CSID", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
@@ -127,11 +126,11 @@ class TestParseResolverOutput:
         assert parse_resolver_output("myproj\n/tmp/idx.json\n") == ("myproj", "/tmp/idx.json")
 
     def test_missing_second_line(self) -> None:
-        """Returns empty INDEX when only PROJ line present."""
+        """Return empty INDEX when only PROJ line present."""
         assert parse_resolver_output("only-proj\n") == ("only-proj", "")
 
     def test_empty_input(self) -> None:
-        """Returns both empty when stdout is empty."""
+        """Return both empty when stdout is empty."""
         assert parse_resolver_output("") == ("", "")
 
     def test_extra_lines_ignored(self) -> None:
@@ -166,7 +165,7 @@ class TestFormatEvalLine:
 
 
 class TestMainHappyPath:
-    """``main()`` — successful resolver: writes temp files, exits 0."""
+    """Write temporary output files when resolution succeeds."""
 
     def test_happy_path_writes_temp_files(
         self,
@@ -206,10 +205,10 @@ class TestSentinelNewlineContract:
 
 
 class TestCheckExists:
-    """``--check-exists`` — gate exit code on INDEX file presence."""
+    """Gate the exit code on whether the index file exists."""
 
     def test_present_index_exits_0(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``--check-exists`` with a real INDEX file → exit 0, temp files written."""
+        """Write temporary state and succeed when the index exists."""
         index = tmp_path / "with-index.json"
         index.write_text("{}", encoding="utf-8")
         monkeypatch.setattr(_mod.subprocess, "run", _make_resolver_mock("with-index", str(index)))
@@ -222,7 +221,7 @@ class TestCheckExists:
     def test_missing_index_exits_1_but_writes_temp_files(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """``--check-exists`` with absent INDEX → exit 1, temp files still written, error on stderr."""
+        """Write temporary state but fail when the index is absent."""
         missing = tmp_path / "absent.json"  # never created
         monkeypatch.setattr(_mod.subprocess, "run", _make_resolver_mock("no-idx", str(missing)))
         monkeypatch.setenv("TMPDIR", str(tmp_path))
@@ -253,7 +252,7 @@ class TestResolverFailure:
         assert "produced no output" in captured.err
 
     def test_check_exists_with_empty_resolver_exits_1(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``--check-exists`` does not change behaviour when resolver itself fails first."""
+        """Do not change behaviour when resolver itself fails first."""
         monkeypatch.setattr(_mod.subprocess, "run", _make_empty_resolver_mock())
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--check-exists"])
@@ -264,7 +263,7 @@ class TestUnknownFlag:
     """Unknown CLI flag → exit 2 with stderr message naming the flag."""
 
     def test_unknown_flag_exits_2(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """``--no-such-flag`` → exit 2 + stderr mentioning the flag."""
+        """Reject an unknown option and identify it in the error output."""
         rc = main(["--no-such-flag"])
         captured = capsys.readouterr()
         assert rc == 2
@@ -273,12 +272,11 @@ class TestUnknownFlag:
 
 
 class TestValidatePluginRoot:
-    """``_validate_plugin_root()`` — containment via resolved-path identity, not a name regex.
+    """Validate plugin-root containment through resolved path identity.
 
-    Regression coverage for the residual-critical finding that the prior regex hardcoded
-    the pre-rename plugin name ``codemap`` (rejecting the real installed/source root after
-    the ``codemap-py`` rename) while also accepting attacker-chosen directories that merely
-    matched the pattern's shape (no traversal normalization).
+    Regression coverage for the residual-critical finding that the prior regex hardcoded the pre-rename plugin name
+    ``codemap`` (rejecting the real installed/source root after the ``codemap-py`` rename) while also accepting
+    attacker-chosen directories that merely matched the pattern's shape (no traversal normalization).
     """
 
     def test_own_plugin_root_is_accepted(self) -> None:
@@ -304,11 +302,10 @@ class TestValidatePluginRoot:
 
 
 class TestValidateOutputPrefix:
-    """``_validate_output_prefix()`` — dotted basenames accepted, ``.``/``..`` rejected.
+    """Accept dotted output basenames while rejecting directory traversal.
 
-    Regression coverage for the residual-critical finding that the prior
-    ``[a-zA-Z0-9_-]+`` pattern rejected any project directory name containing a dot
-    (including this repository's own ``Borda.local``), a hard break in the documented
+    Regression coverage for the residual-critical finding that the prior ``[a-zA-Z0-9_-]+`` pattern rejected any project
+    directory name containing a dot (including this repository's own ``Borda.local``), a hard break in the documented
     ``codemap-$(basename ...)`` recipe.
     """
 
@@ -324,11 +321,11 @@ class TestValidateOutputPrefix:
 
 
 class TestSentinelSymlinkSafety:
-    """``_write_sentinel_file()`` — refuses to follow a pre-planted symlink.
+    """Refuse to follow a pre-existing sentinel symlink.
 
-    Regression coverage for the residual-critical finding that ``Path.write_text`` (the
-    prior implementation) follows an existing symlink at the predictable sentinel path,
-    letting a co-located attacker overwrite an arbitrary file the invoking user can write.
+    Regression coverage for the residual-critical finding that ``Path.write_text`` (the prior implementation) follows an
+    existing symlink at the predictable sentinel path, letting a co-located attacker overwrite an arbitrary file the
+    invoking user can write.
     """
 
     def test_preplanted_symlink_is_not_followed(self, tmp_path: Path) -> None:
@@ -354,9 +351,9 @@ class TestSentinelSymlinkSafety:
 class TestStaleSentinelClearedOnValidationFailure:
     """A validation failure after a successful run must not leave the prior PROJ/INDEX readable.
 
-    Regression coverage for the residual-critical finding that an exit-3 (unsafe
-    ``CLAUDE_PLUGIN_ROOT``) run used to skip the temp-file write entirely, so the shell
-    consumer's ``[ -n "$PROJ" ]`` liveness check would pass on stale, unrelated-project data.
+    Regression coverage for the residual-critical finding that an exit-3 (unsafe ``CLAUDE_PLUGIN_ROOT``) run used to
+    skip the temp-file write entirely, so the shell consumer's ``[ -n "$PROJ" ]`` liveness check would pass on stale,
+    unrelated-project data.
     """
 
     def test_failing_run_after_success_empties_sentinels(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

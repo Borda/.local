@@ -193,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
         No doctest — subprocess-dependent; covered by pytest.
     """
     args = list(sys.argv[1:] if argv is None else argv)
-    # Honour only -h/--help via argparse; every other flag flows through the manual
+    # Honour only ``-h/--help`` via argparse; every other flag flows through the manual
     # loop below (unknown arg → exit 1, gh/tag guards → exit 2). A broad parse_args
     # would replace those custom exit codes with argparse's exit-2 — keep the loop.
     if args in (["-h"], ["--help"]):
@@ -247,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         range_arg = f"{last_tag}..HEAD"
     else:
-        # User-supplied --range bypasses the auto-derived allowlist above —
+        # User-supplied ``--range`` bypasses the auto-derived allowlist above —
         # apply the same allowlist on both endpoints of the range so a crafted
         # value cannot smuggle git option flags (`--upload-pack=…`) or ref
         # expressions (`HEAD~`) past the SemVer/SHA gate (A03:2021).

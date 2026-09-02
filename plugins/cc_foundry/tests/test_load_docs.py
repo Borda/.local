@@ -1,8 +1,7 @@
 """Tests for the two doc-loading bin/ scripts.
 
-Covers ``bin/load_mode.py`` (skill ``modes/``/``templates/`` loader) and
-``bin/load_shared_doc.py`` (plugin ``skills/_shared`` loader). Both wrap an
-existing resolver and add file emission, so the tests focus on the contract the
+Covers ``bin/load_mode.py`` (skill ``modes/``/``templates/`` loader) and ``bin/load_shared_doc.py`` (plugin
+``skills/_shared`` loader). Both wrap an existing resolver and add file emission, so the tests focus on the contract the
 call sites depend on: byte-exact stdout, ``! BREAKING`` on stdout, and exit codes.
 """
 
@@ -84,7 +83,10 @@ def test_load_mode_passes_crlf_through_unchanged(fake_plugin: Path, capsysbinary
 
 
 def test_load_mode_missing_subdir_breaks(fake_plugin: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """Unresolvable subdir prints ``! BREAKING`` on stdout and exits 1."""
+    """Report an unresolvable mode directory and exit with status 1.
+
+    The stdout diagnostic begins with ``! BREAKING``.
+    """
     assert load_mode.main(["demo", "nosuchdir", "one.md"]) == 1
     captured = capsys.readouterr()
     assert captured.out == "! BREAKING: demo/nosuchdir not found — run /foundry:setup first\n"
@@ -104,7 +106,7 @@ def test_load_mode_rejects_path_separator(fake_plugin: Path, capsys: pytest.Capt
 
 
 def test_load_mode_fallback_source_finds_sibling_tree(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``--fallback-source`` resolves this install's own skills dir when the cascade misses."""
+    """Resolve this install's own skills dir when the cascade misses."""
     monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
     assert load_mode.source_fallback_dir("audit", "modes") is not None
     assert load_mode.source_fallback_dir("__nonexistent__", "modes") is None

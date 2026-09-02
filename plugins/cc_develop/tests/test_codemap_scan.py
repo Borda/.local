@@ -101,10 +101,9 @@ def _stub_scan_query_present(monkeypatch: pytest.MonkeyPatch, present: bool = Tr
 def _stub_git(monkeypatch: pytest.MonkeyPatch, diff_files: list[str] | None = None) -> None:
     """Fake git whose repository top-level is the test's CWD.
 
-    The scanner writes the index under the repository root, so the previous stub — which
-    reported the root as ``/fake/<name>`` while the fixture created the index in the CWD —
-    encoded the CWD-vs-root split that E-H1 removed. With resolution now anchored on the
-    root, the stub must report the directory the index actually lives in.
+    The scanner writes the index under the repository root, so the previous stub — which reported the root as
+    ``/fake/<name>`` while the fixture created the index in the CWD — encoded the obsolete CWD-versus-root split. With
+    resolution now anchored on the repository root, the stub must report the directory where the index actually lives.
     """
     top = str(Path.cwd())
 
@@ -127,12 +126,12 @@ def test_main_missing_source_returns_1(in_tmp_cwd: Path, capsys: pytest.CaptureF
 
 @pytest.mark.parametrize("source", [pytest.param(s, id=s.value) for s in cs.ScanSource])
 def test_source_accepts_every_enum_member(source: cs.ScanSource) -> None:
-    """Every ScanSource member is a valid --source value — CLI choices cannot drift from the enum."""
+    """Every ScanSource member is a valid ``--source`` value — CLI choices cannot drift from the enum."""
     assert cs._parse_args([f"--source={source.value}"]).source == source
 
 
 def test_source_rejects_value_outside_enum() -> None:
-    """A --source value with no ScanSource member exits 2 (argparse bad-choice)."""
+    """A ``--source`` value with no ScanSource member exits 2 (argparse bad-choice)."""
     with pytest.raises(SystemExit) as excinfo:
         cs._parse_args(["--source=bogus"])
     assert excinfo.value.code == 2
@@ -179,7 +178,7 @@ def test_main_find_mode_invokes_scan_query_per_module_and_coupled(
     rc = cs.main(["--source=find", "--target", "src/pkg", "--limit", "7"])
     assert rc == 0
 
-    # Each module → one codemap-py query rdeps call; plus one coupled --top N at end.
+    # Each module → one codemap-py query rdeps call; plus one coupled ``--top N`` at end.
     rdep_calls = [c for c in calls if c[:3] == ["codemap-py", "query", "rdeps"]]
     coupled_calls = [c for c in calls if c[:3] == ["codemap-py", "query", "coupled"]]
     rdep_modules = {c[3] for c in rdep_calls}

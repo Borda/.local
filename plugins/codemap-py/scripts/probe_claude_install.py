@@ -21,7 +21,7 @@ Flow (all inside the disposable config dir):
    ``codex-skills/`` directory (which may ship in the payload but must not be a Claude skills source).
 5. Source-independent runtime proof (``_probe_runtime.runtime_proof``): DELETE the whole disposable
    source tree (copy checkout + candidate + marketplace) BEFORE any execution — the source the
-   installed bytes came from is now literally unavailable (§9.4 step 03) — then run
+   installed bytes came from is now literally unavailable — then run
    ``doctor``/``index``/``query`` from the installed cache bytes under a scrubbed env, asserting no
    FORBIDDEN path (temp checkout OR developer repo) leaks via env, argv, or installed bytes and the
    interpreter is non-forbidden. Deletion of the developer git checkout itself stays a Phase 6

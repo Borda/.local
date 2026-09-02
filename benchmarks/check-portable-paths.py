@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Reject hardcoded machine and temporary paths in benchmark source and docs.
 
-Generated manifests, paid-run evidence, and regression fixtures are excluded:
-they may preserve machine paths as immutable evidence or deliberate bad inputs.
+Generated manifests, paid-run evidence, and regression fixtures are excluded: they may preserve machine paths as
+immutable evidence or deliberate bad inputs.
 """
 
 from __future__ import annotations

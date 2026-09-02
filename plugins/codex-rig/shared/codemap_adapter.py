@@ -3,29 +3,45 @@
 
 ## Purpose
 
-Add one bounded structural-context observation to a Codex Rig workflow without coupling to codemap-py internals or source paths. The adapter records both interpreter health and category-specific query completeness so downstream decisions can distinguish healthy context from degraded context.
+Add one bounded structural-context observation to a Codex Rig workflow without coupling to codemap-py internals or
+source paths. The adapter records both interpreter health and category-specific query completeness so downstream
+decisions can distinguish healthy context from degraded context.
 
 ## Scope
 
-It calls only ``codemap-py doctor --json`` and public query commands; absence or incompatibility is non-fatal and callers retain local inspection. ``CODEMAP_BIN`` is accepted only when it names an absolute, non-symlink executable, and every subprocess is bounded by the requested timeout.
+It calls only ``codemap-py doctor --json`` and public query commands; absence or incompatibility is non-fatal and
+callers retain local inspection. ``CODEMAP_BIN`` is accepted only when it names an absolute, non-symlink executable, and
+every subprocess is bounded by the requested timeout.
 
 ## Usage
 
-Run ``python codemap_adapter.py probe`` or ``python codemap_adapter.py context --category {analysis,implementation,review,audit}`` and persist the result once per workflow. The context form accepts an optional dotted target, ``--query-kind`` (skip, one compact fact, or standard), repository root, timeout, and ``--out`` path; it always prints the same JSON payload that it writes.
+Run ``python codemap_adapter.py probe`` or use the adapter's ``context`` action with ``--category`` and persist the
+result once per workflow. The context form accepts an optional dotted target, ``--query-kind`` (skip, one compact fact,
+or standard), repository root, timeout, and ``--out`` path; it always prints the same JSON payload that it writes.
 
 ## Used by
 
-The ``change-analysis``, ``implement``, ``audit``, and ``code-review`` skills consume these observations; see the adjacent ``codemap-contract.md`` for the category/query mapping. The module is also exercised by portable helper tests that verify status reduction and the public CLI contract.
+The ``change-analysis``, ``implement``, ``audit``, and ``code-review`` skills consume these observations; see the
+adjacent ``codemap-contract.md`` for the category/query mapping. The module is also exercised by portable helper tests
+that verify status reduction and the public CLI contract.
 
 ## Outputs
 
-It returns or writes one versioned JSON probe/context payload whose status makes an unavailable optional integration explicit. Context payloads contain ``protocol_version``, ``artifact_schema_version``, category, query kind, target, probe details, and one outcome record per mapped query, while ``probe`` emits only the probe record. A ``skip`` context records status ``skipped`` without resolving or running Codemap.
+It returns or writes one versioned JSON probe/context payload whose status makes an unavailable optional integration
+explicit. Context payloads contain ``protocol_version``, ``artifact_schema_version``, category, query kind, target,
+probe details, and one outcome record per mapped query, while ``probe`` emits only the probe record. A ``skip`` context
+records status ``skipped`` without resolving or running Codemap.
 
-Each query outcome also records the index path the provider reported for that query, and the payload lists every query whose path disagreed with the probe's resolver-derived one under ``index_path_divergence``. That disagreement is reported as evidence and never reconciled or folded into the status; a provider that reports no path yields ``null`` and no divergence claim.
+Each query outcome also records the index path the provider reported for that query, and the payload lists every query
+whose path disagreed with the probe's resolver-derived one under ``index_path_divergence``. That disagreement is
+reported as evidence and never reconciled or folded into the status; a provider that reports no path yields ``null`` and
+no divergence claim.
 
 ## Failure
 
-Launcher absence, unsupported output, timeout, or malformed JSON is classified in the probe/context status rather than blocking the primary workflow. An unknown category still raises ``ValueError`` because it is invalid caller input, whereas a failed optional query is represented in the JSON outcome and the CLI exits successfully.
+Launcher absence, unsupported output, timeout, or malformed JSON is classified in the probe/context status rather than
+blocking the primary workflow. An unknown category still raises ``ValueError`` because it is invalid caller input,
+whereas a failed optional query is represented in the JSON outcome and the CLI exits successfully.
 """
 
 from __future__ import annotations
@@ -71,7 +87,7 @@ class QuerySpec:
 
 
 CATEGORY_QUERIES: dict[str, tuple[QuerySpec, ...]] = {
-    # analysis/research: centrality, symbol/import context, completeness metadata (plan §8.4).
+    # analysis/research: centrality, symbol/import context, completeness metadata.
     "analysis": (
         QuerySpec("central", requires_target=False),
         QuerySpec("deps", requires_target=True),
@@ -115,7 +131,7 @@ _FACT_QUERY_SPECS: dict[str, QuerySpec] = {
 
 @dataclass(frozen=True)
 class DoctorReport:
-    """Parsed `codemap-py doctor --json` payload."""
+    """Parsed ``codemap-py doctor --json`` payload."""
 
     python: str
     version: str
@@ -278,7 +294,7 @@ def _resolve_codemap_executable() -> LauncherResolution:
 
 
 def _probe_codemap(resolution: LauncherResolution, timeout: float) -> ProbeResult:
-    """Probe one resolved launcher through `doctor --json`; never re-resolve it."""
+    """Probe one resolved launcher through ``doctor --json``; never re-resolve it."""
     if resolution.launcher is None:
         return ProbeResult(resolution.status, resolution.detail, None, None)
     exit_code, payload, error = _run_json([resolution.launcher, "doctor", "--json"], timeout)

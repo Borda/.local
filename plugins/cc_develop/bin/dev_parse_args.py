@@ -13,8 +13,8 @@ Two calling conventions:
            --bool semble SEMBLE_ENABLED false \\
            --codemap CODEMAP_RAW auto)"
 
-2. **Skill-driven with file writes** — caller passes ``--skill <name>
-   --write-files <arguments>``; script looks up the per-skill flag set
+2. **Skill-driven with file writes** — caller passes the ``--skill <name>`` and
+   ``--write-files <arguments>`` options; the script looks up the per-skill flag set
    internally and writes each resulting value to a per-flag temp file
    under ``${TMPDIR:-/tmp}/`` with a ``-<CSID>`` session-scoping suffix on
    every filename (no ``eval`` required by the caller).
@@ -34,7 +34,7 @@ Flag spec types (each occupies 3 positional tokens after the type keyword):
     --bool FLAG VAR DEFAULT     --FLAG present → VAR=true;  absent → VAR=DEFAULT
     --neg-bool FLAG VAR DEFAULT --FLAG present → VAR=false; absent → VAR=DEFAULT
     --codemap VAR DEFAULT       --codemap/--no-codemap → strict/off/auto with
-                                double-condition guard (--no-codemap wins on conflict)
+                                double-condition guard (``--no-codemap`` wins on conflict)
     --int FLAG VAR DEFAULT      --FLAG N or --FLAG=N → VAR=N (integer)
     --str FLAG VAR DEFAULT      --FLAG VAL or --FLAG=VAL → VAR=VAL (string)
 
@@ -107,7 +107,7 @@ class SpecType(str, Enum):
 
 
 # Spec keyword → count of positional tokens it consumes. Codemap takes 2 (VAR DEFAULT,
-# no FLAG — it is always the --codemap/--no-codemap pair); every other kind takes 3.
+# no FLAG — it is always the ``--codemap``/``--no-codemap`` pair); every other kind takes 3.
 _TYPE_ARITIES: dict[str, int] = {f"--{kind.value}": (2 if kind == SpecType.CODEMAP else 3) for kind in SpecType}
 
 
@@ -189,7 +189,7 @@ def _shell_quote(value: str) -> str:
 
 
 def _extract_value_flag(flag: str, args: str) -> tuple[str | None, str]:
-    """Extract --flag VALUE or --flag=VALUE from args.
+    """Extract ``--flag VALUE`` or ``--flag=VALUE`` from args.
 
     Returns (value_or_None, args_with_flag_and_value_stripped).
 
@@ -202,7 +202,7 @@ def _extract_value_flag(flag: str, args: str) -> tuple[str | None, str]:
         (None, 'fix issue')
     """
     # --flag=VALUE form. Require a full flag-token match so --planets does not
-    # satisfy --plan, and preserve the historical non-whitespace value contract.
+    # satisfy ``--plan``, and preserve the historical non-whitespace value contract.
     eq_pattern = re.compile(r"(?<!\S)--" + re.escape(flag) + r"=(\S+)")
     m = eq_pattern.search(args)
     if m:
@@ -258,8 +258,8 @@ def extract_flags(arguments: str, specs: list[FlagSpec]) -> tuple[dict[str, str]
                 result[spec.var] = spec.default
 
         elif spec.kind == SpecType.CODEMAP:
-            # Double-condition guard: --no-codemap wins; --codemap only sets strict
-            # when --no-codemap absent.
+            # Double-condition guard: ``--no-codemap`` wins; ``--codemap`` only sets strict
+            # when ``--no-codemap`` absent.
             no_pattern = re.compile(r"(?<!\S)--no-codemap(?![A-Za-z0-9_-])")
             yes_pattern = re.compile(r"(?<!\S)--codemap(?![A-Za-z0-9_-])")
             has_no = no_pattern.search(clean) is not None
@@ -328,7 +328,7 @@ def run(arguments: str, spec_tokens: list[str]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Skill registry (used by --skill <name> --write-files)
+# Skill registry (used by ``--skill <name> --write-files``)
 # ---------------------------------------------------------------------------
 
 
@@ -422,7 +422,8 @@ def _per_skill_filename(skill: str, spec: FlagSpec) -> str:
 
 
 def _tmp_dir() -> Path:
-    """Return the directory temp files are written to (mirrors shell ``${TMPDIR:-/tmp}`` — tmpdir-exempt: base dir only, not a filename).
+    """Return the directory temp files are written to (mirrors shell ``${TMPDIR:-/tmp}`` — tmpdir-exempt: base dir only,
+    not a filename).
 
     Per-file session suffixing happens in ``_per_skill_filename``/``write_skill_files``, not here.
     """
@@ -442,7 +443,8 @@ def write_skill_files(skill: str, arguments: str, tmp_dir: Path | None = None) -
     Args:
         skill: registered skill name (key of ``SKILL_SPECS``).
         arguments: raw ``$ARGUMENTS`` string.
-        tmp_dir: override for the temp directory (defaults to ``${TMPDIR:-/tmp}`` — tmpdir-exempt: base dir only, not a filename).
+        tmp_dir: override for the temp directory (defaults to ``${TMPDIR:-/tmp}`` — tmpdir-exempt: base directory
+            only, not a filename).
 
     Returns:
         Dict mapping each declared shell variable name to its resolved string value.
@@ -528,8 +530,8 @@ def main(argv: list[str] | None = None) -> int:
     * ``dev_parse_args.py ARGUMENTS [SPEC...]`` — print eval-able shell block on stdout
       (legacy form used by ``eval "$(...)"`` callers).
     * ``dev_parse_args.py --skill <name> --write-files ARGUMENTS`` — parse using the
-      registered skill specs and write each value to a temp file under ``${TMPDIR:-/tmp}`` (tmpdir-exempt: base dir only, not a filename).
-      Each written file gets its own ``-<CSID>`` suffix, see ``_per_skill_filename``.
+      registered skill specs and write each value under ``${TMPDIR:-/tmp}`` (tmpdir-exempt: base directory only, not a
+      filename). Each written file gets its own ``-<CSID>`` suffix, see ``_per_skill_filename``.
 
     Args:
         argv: Optional argv override (defaults to ``sys.argv[1:]``).
@@ -542,7 +544,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = list(sys.argv[1:] if argv is None else argv)
 
-    # argparse only supplies -h/--help; the blob and spec tokens are dispatched directly
+    # argparse only supplies ``-h/--help``; the blob and spec tokens are dispatched directly
     # because they carry ``--``-shaped tokens argparse must never try to match.
     if args and args[0] in {"-h", "--help"}:
         parser = argparse.ArgumentParser(

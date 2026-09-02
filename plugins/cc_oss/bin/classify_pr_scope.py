@@ -14,7 +14,7 @@ Classification rules (mirror of the original SKILL.md bash block, applied in ord
 4. 3 or more Python files → ``REFACTOR``
 5. Anything else → ``MIXED``
 
-A label or title keyword override applies after step 3: if the FIX heuristic
+A label or title keyword override applies after the small-change heuristic: if that heuristic
 fires but PR labels or title carry a refactor/perf/cleanup signal, the verdict
 is upgraded to ``REFACTOR`` so perf-optimizer and solution-architect still run.
 
@@ -37,9 +37,8 @@ from enum import Enum
 class PRScope(str, Enum):
     """Scope verdict driving which oss:review specialists get dispatched.
 
-    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is
-    ``>=3.10``. Values are the uppercase labels the skill's bash blocks read
-    off stdout, so the CLI surface is unchanged.
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``. Values are the uppercase labels
+    the skill's bash blocks read off stdout, so the CLI surface is unchanged.
     """
 
     CHORE = "CHORE"
@@ -148,16 +147,15 @@ def classify(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns exit code.
+    """Classify pull-request scope from command-line metrics.
 
     Args:
         argv: Optional argument list (defaults to ``sys.argv[1:]``).
 
     Returns:
-        ``0`` on success; argparse exits ``2`` on bad arguments.
+        ``0`` on success. Argparse exits ``2`` for invalid arguments.
 
-    Examples:
-        No doctest — argv-dependent; covered by pytest with ``capsys``.
+    No doctest is provided because behavior depends on command-line arguments; pytest covers it with ``capsys``.
     """
     parser = argparse.ArgumentParser(
         prog="classify_pr_scope.py",

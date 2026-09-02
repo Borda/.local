@@ -1,8 +1,7 @@
-"""diff-impact: git diff → changed modules + symbols → blast radius in one JSON.
+"""Diff-impact: git diff → changed modules + symbols → blast radius in one JSON.
 
-The subcommand joins per-module ``rdeps``/``coupled``, per-symbol ``fn-rdeps``,
-and a union ``test-impact`` for every module the working-tree diff touches,
-tiered by reverse-dependency count. Tests drive it over a real git fixture repo
+The subcommand joins per-module ``rdeps``/``coupled``, per-symbol ``fn-rdeps``, and a union ``test-impact`` for every
+module the working-tree diff touches, tiered by reverse-dependency count. Tests drive it over a real git fixture repo
 because the diff source is ``git diff --name-only``.
 """
 
@@ -47,7 +46,7 @@ def _git(root: Path, *args: str) -> None:
 
 @pytest.fixture
 def git_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
-    """A committed git repo: ``lib`` imported by ``app``, one test file, index scanned."""
+    """Create an indexed repository for diff-impact tests."""
     root = tmp_path / "proj"
     root.mkdir()
     (root / "lib.py").write_text("def helper(x):\n    return x + 1\n\n\ndef untouched(y):\n    return y\n")
@@ -97,7 +96,10 @@ class TestDiffImpact:
         assert "pytest" in data["test_impact"]["pytest_cmd"]
 
     def test_base_ref_scopes_the_diff(self, git_project, scan_query):
-        """--base <ref> diffs against that ref: a committed change is visible via HEAD~1."""
+        """Verify command-line option behavior.
+
+        --base <ref> diffs against that ref: a committed change is visible via HEAD~1.
+        """
         root, index_path = git_project
         (root / "lib.py").write_text("def helper(x):\n    return x + 4\n\n\ndef untouched(y):\n    return y\n")
         _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-am", "tweak")
@@ -125,7 +127,7 @@ class TestDiffImpact:
         assert first == second
 
     def test_single_coverage_block(self, git_project, scan_query):
-        """diff-impact emits exactly one coverage block for the whole join."""
+        """Diff-impact emits exactly one coverage block for the whole join."""
         root, index_path = git_project
         (root / "lib.py").write_text("def helper(x):\n    return x + 6\n\n\ndef untouched(y):\n    return y\n")
         data = _query(scan_query, root, index_path, "--no-heal", "diff-impact")
@@ -134,7 +136,10 @@ class TestDiffImpact:
 
 
 class TestDiffFileMode:
-    """--diff-file feeds the change set from a fetched unified diff (PR-review mode)."""
+    """Verify command-line option behavior.
+
+    --diff-file feeds the change set from a fetched unified diff (PR-review mode).
+    """
 
     _DIFF = (
         "diff --git a/lib.py b/lib.py\n"

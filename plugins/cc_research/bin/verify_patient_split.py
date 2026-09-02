@@ -39,7 +39,7 @@ def _validate_csv_path(raw: str) -> Path | None:
       * The current working directory (treated as the project root)
       * The project's ``.experiments`` subdirectory
       * ``~/.claude/projects`` (per-project session data; narrower than the
-        full ``~/.claude`` tree — SEC-L8)
+        full ``~/.claude`` tree — )
       * The OS temporary directory — needed for pytest ``tmp_path`` runs.
 
     Args:
@@ -137,7 +137,10 @@ def compute_overlap(train_csv: Path, test_csv: Path, column: str = "patient_id")
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    """Build CLI arg parser. Separate for testability."""
+    """Build CLI arg parser.
+
+    Separate for testability.
+    """
     parser = argparse.ArgumentParser(
         description="Detect patient_id overlap between train/test split CSVs.",
     )
@@ -152,7 +155,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Reads CSVs, prints verdict to stdout, returns exit code.
+    """Check train/test CSVs for patient overlap and return the process status.
+
+    Reads CSVs and prints the verdict to stdout.
 
     Args:
         argv: Optional argv list (for testing); defaults to ``sys.argv[1:]``.

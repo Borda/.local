@@ -1,8 +1,7 @@
 """Stage implementation for the source-anchored Codex ReadCrop benchmark.
 
-The structural runner supplies only disposable A/B/C homes and native Codex
-event parsing. This stage owns its read-crop prompt, strict answer envelope,
-source oracle, and separately reported tool-payload cost.
+The structural runner supplies only disposable A/B/C homes and native Codex event parsing. This stage owns its read-crop
+prompt, strict answer envelope, source oracle, and separately reported tool-payload cost.
 """
 
 from __future__ import annotations

@@ -2,27 +2,35 @@
 
 ## Purpose
 
-Separate pure mutation planning from filesystem access so the proposed shim change can be reviewed and cryptographically bound. Its operation list is the narrow contract between lifecycle evidence and the transaction executor.
+Separate pure mutation planning from filesystem access so the proposed shim change can be reviewed and cryptographically
+bound. Its operation list is the narrow contract between lifecycle evidence and the transaction executor.
 
 ## Scope
 
-Validates roster/state/observations and builds operation values in memory; it performs no writes or subprocess calls. It does not approve a plan or inspect live paths, so callers must obtain fresh observations before invoking it.
+Validates roster/state/observations and builds operation values in memory; it performs no writes or subprocess calls. It
+does not approve a plan or inspect live paths, so callers must obtain fresh observations before invoking it.
 
 ## Usage
 
-Import ``build_candidate`` after lifecycle observation, then bind it with the approval module before transaction execution. Keep the returned canonical bytes and digest attached to the same observation set through the approval step.
+Import ``build_candidate`` after lifecycle observation, then bind it with the approval module before transaction
+execution. Keep the returned canonical bytes and digest attached to the same observation set through the approval step.
 
 ## Used by
 
-``manage_role_agents.py``, approval binding, and shim planning acceptance tests call this planner. The manager presents its candidate to the user, while the transaction module executes only the separately bound operations.
+``manage_role_agents.py``, approval binding, and shim planning acceptance tests call this planner. The manager presents
+its candidate to the user, while the transaction module executes only the separately bound operations.
 
 ## Outputs
 
-Returns a ``CandidatePlan`` with canonical operation order, state transitions, and a digest suitable for immutable approval binding. The plan records expected before/after identities so execution can verify every role target instead of applying a best-effort diff.
+Returns a ``CandidatePlan`` with canonical operation order, state transitions, and a digest suitable for immutable
+approval binding. The plan records expected before/after identities so execution can verify every role target instead of
+applying a best-effort diff.
 
 ## Failure
 
-Inconsistent state, unsupported version ordering, duplicate targets, or invalid roster data raises ``CandidateError`` and stops planning. No caller may reinterpret a partial operation list as safe because the digest is produced only for a fully validated candidate.
+Inconsistent state, unsupported version ordering, duplicate targets, or invalid roster data raises ``CandidateError``
+and stops planning. No caller may reinterpret a partial operation list as safe because the digest is produced only for a
+fully validated candidate.
 """
 
 from __future__ import annotations
@@ -70,8 +78,8 @@ class Operation:
 class CandidatePlan:
     """Bind candidate operations to exact canonical bytes and their digest.
 
-    This value is not an approval. A live doctor and complete descriptor-bound
-    observations must wrap it in the full lifecycle approval before mutation.
+    This value is not an approval. A live doctor and complete descriptor-bound observations must wrap it in the full
+    lifecycle approval before mutation.
     """
 
     action: str
@@ -425,9 +433,8 @@ def build_candidate(
 ) -> CandidatePlan:
     """Build one deterministic operation candidate for later approval binding.
 
-    The result cannot authorize mutation. It omits live doctor, root, lock,
-    executable, recovery, and descriptor observations required by the public
-    lifecycle approval contract.
+    The result cannot authorize mutation. It omits live doctor, root, lock, executable, recovery, and descriptor
+    observations required by the public lifecycle approval contract.
     """
     if not isinstance(action, str) or action not in {"install", "remove"} or mode != "converge":
         _fail("unsupported candidate action or mode")
@@ -475,8 +482,7 @@ def build_candidate(
 def revalidate_candidate_digest(candidate: CandidatePlan, expected_digest: str) -> None:
     """Require rebuilt candidate bytes to match their expected digest.
 
-    Digest equality proves only candidate determinism and is never lifecycle
-    approval or mutation authorization.
+    Digest equality proves only candidate determinism and is never lifecycle approval or mutation authorization.
     """
     if not isinstance(candidate, CandidatePlan):
         _fail("candidate value required")

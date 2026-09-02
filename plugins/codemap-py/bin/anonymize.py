@@ -25,7 +25,7 @@ Usage:
 Exit codes:
     0 — success (directory mode counts oversized files as skipped instead of failing)
     1 — input not found, or a file input larger than MAX_LOG_SIZE
-    2 — refused: output directory contains a salt file, or --output with a directory input
+    2 — refused: output directory contains a salt file, or ``--output`` with a directory input
 """
 
 from __future__ import annotations
@@ -72,8 +72,8 @@ _FREE_TEXT_FIELDS = ("error", "stderr")
 
 #: Fields holding a command line, a file path, or the user's own words: ``target``
 #: (Read path / Grep pattern / search command) and ``intent`` (skill arguments). Every
-#: identifier in them is project data, not only the dotted ones — ``grep -rn
-#: internal_secret_name src/`` carries no dot at all — so they are scrubbed with
+#: identifier in them is project data, not only the dotted ones — for example,
+#: ``grep -rn internal_secret_name src/`` carries no dot at all — so they are scrubbed with
 #: :func:`_anonymize_command`, which pseudonymizes bare identifiers too.
 _COMMAND_FIELDS = ("intent", "target")
 
@@ -177,13 +177,13 @@ def _pseudo(value: str, salt: bytes) -> str:
 
 
 def _is_qualified(v: str) -> bool:
-    """Return True if v looks like a qualified Python name (contains . or ::).
+    """Return whether ``v`` contains ``.`` or ``::`` as a qualified-name separator.
 
     Args:
         v: String to check.
 
     Returns:
-        Whether v appears to be a qualified name.
+        Whether ``v`` appears to be a qualified name.
 
     Examples:
         >>> _is_qualified("pkg.auth")
@@ -527,9 +527,8 @@ def _directory_output(input_dir: Path, input_path: Path, out_dir: str | None, sa
 def _directory_inputs(input_dir: Path, exclude_root: Path | None = None) -> list[Path]:
     """Return every JSONL file below a directory input in deterministic order.
 
-    Files under *exclude_root* (the export destination) are skipped so a re-run
-    whose export root sits inside the input tree never re-ingests its own prior
-    anonymized exports.
+    Files under *exclude_root* (the export destination) are skipped so a re-run whose export root sits inside the input
+    tree never re-ingests its own prior anonymized exports.
     """
     paths = (path for path in input_dir.rglob("*.jsonl") if path.is_file())
     if exclude_root is not None:

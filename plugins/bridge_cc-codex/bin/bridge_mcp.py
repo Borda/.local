@@ -1,20 +1,15 @@
 """Expose reverse bridge calls through a portable stdio MCP server.
 
-Purpose: Let a Codex-installed bridge hand work to a locally authenticated Claude
-CLI without invoking that CLI from the model sandbox. Scope: The module speaks
-the small JSON-RPC subset needed by stdio MCP clients: initialize, the
-initialized notification, tools/list, and tools/call. It defines implement,
-advise, and review tools, validates request arguments at the transport edge,
-and calls the shared Python supervisor for execution and artifact handling.
-Usage: Start ``bridge_mcp.py --stdio`` from the installed plugin's MCP config.
-The process reads one JSON-RPC object per stdin line and emits one response line
-per request that has an id. Outputs: A successful tool call returns one compact
-public bridge envelope in a text content item; protocol errors are JSON-RPC
-errors and never corrupt stdout with diagnostics. Failure: Invalid messages,
-unknown tools, malformed request values, and child failures are returned as
-structured protocol or envelope errors. Used by: Codex-facing implement, advise,
-and review skills through the bridge plugin's stdio MCP declaration. This server
-uses only Python's standard library and imports bridge_call from its own bin
+Purpose: Let a Codex-installed bridge hand work to a locally authenticated Claude CLI without invoking that CLI from the
+model sandbox. Scope: The module speaks the small JSON-RPC subset needed by stdio MCP clients: initialize, the
+initialized notification, tools/list, and tools/call. It defines implement, advise, and review tools, validates request
+arguments at the transport edge, and calls the shared Python supervisor for execution and artifact handling. Usage:
+Start ``bridge_mcp.py --stdio`` from the installed plugin's MCP config. The process reads one JSON-RPC object per stdin
+line and emits one response line per request that has an id. Outputs: A successful tool call returns one compact public
+bridge envelope in a text content item; protocol errors are JSON-RPC errors and never corrupt stdout with diagnostics.
+Failure: Invalid messages, unknown tools, malformed request values, and child failures are returned as structured
+protocol or envelope errors. Used by: Codex-facing implement, advise, and review skills through the bridge plugin's
+stdio MCP declaration. This server uses only Python's standard library and imports bridge_call from its own bin
 directory, so it remains valid after the plugin is installed outside this repo.
 """
 
@@ -73,10 +68,9 @@ STATUS_TOOL_NAME = "bridge_status"
 def _plugin_version() -> str:
     """Read the authoritative plugin version from the installed Claude manifest.
 
-    The one tool whose purpose is diagnosing stale installs must never report
-    a hardcoded literal that can drift from the manifests on a release bump.
-    An unreadable manifest degrades to ``unknown`` instead of crashing the
-    stdio server at import time.
+    The one tool whose purpose is diagnosing stale installs must never report a hardcoded literal that can drift from
+    the manifests on a release bump. An unreadable manifest degrades to ``unknown`` instead of crashing the stdio server
+    at import time.
     """
     manifest = Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json"
     try:
@@ -273,9 +267,8 @@ def _request_from_arguments(verb: str, arguments: dict[str, Any], trusted_worksp
 def _refused_write_roots(workspace: Path) -> set[Path]:
     """Return the launch directories too broad to root an acceptEdits run.
 
-    ``Path.home`` can raise on hosts with no home resolution (minimal
-    containers); an unknown home must not crash the server, only narrow the
-    refusal set to the filesystem root.
+    ``Path.home`` can raise on hosts with no home resolution (minimal containers); an unknown home must not crash the
+    server, only narrow the refusal set to the filesystem root.
     """
     roots = {Path(workspace.anchor)}
     try:

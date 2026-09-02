@@ -70,19 +70,19 @@ class TestGenerate:
         assert [member.value for member in SymbolType] == ["function", "method", "class"]
 
     def test_function_type(self):
-        """function routes to @deprecated wrapper."""
+        """Function routes to @deprecated wrapper."""
         code = generate(SymbolType.FUNCTION, "old_fn", "new_fn")
         assert "@deprecated" in code
         assert "deprecated_class" not in code
 
     def test_method_type(self):
-        """method routes to @deprecated wrapper (same as function)."""
+        """Method routes to @deprecated wrapper (same as function)."""
         code = generate(SymbolType.METHOD, "old_m", "new_m")
         assert "@deprecated" in code
         assert "deprecated_class" not in code
 
     def test_class_type(self):
-        """class routes to @deprecated_class wrapper."""
+        """Class routes to @deprecated_class wrapper."""
         code = generate(SymbolType.CLASS, "OldCls", "NewCls")
         assert "@deprecated_class" in code
 
@@ -227,21 +227,24 @@ class TestWrapperFromDecorator:
 
 class TestCLI:
     def test_auto_mode_function(self, capsys, monkeypatch):
-        """Auto mode with --type function produces deprecated wrapper."""
+        """Auto mode with ``--type function`` produces deprecated wrapper."""
         monkeypatch.setattr(sys, "argv", ["g", "--type", "function", "--old-name", "f", "--new-name", "g"])
         _mod.main()
         out = capsys.readouterr().out
         assert "@deprecated" in out and "f" in out
 
     def test_auto_mode_class(self, capsys, monkeypatch):
-        """Auto mode with --type class produces deprecated_class wrapper."""
+        """Auto mode with ``--type class`` produces deprecated_class wrapper."""
         monkeypatch.setattr(sys, "argv", ["g", "--type", "class", "--old-name", "Old", "--new-name", "New"])
         _mod.main()
         out = capsys.readouterr().out
         assert "@deprecated_class" in out
 
     def test_auto_mode_version_flags(self, capsys, monkeypatch):
-        """--since and --removed-in flow into decorator."""
+        """Verify command-line option behavior.
+
+        ``--since`` and ``--removed-in`` flow into decorator.
+        """
         monkeypatch.setattr(
             sys,
             "argv",
@@ -264,7 +267,10 @@ class TestCLI:
         assert "1.2.3" in out and "2.0.0" in out
 
     def test_explicit_mode_decorator(self, capsys, monkeypatch):
-        """--decorator mode uses provided decorator line."""
+        """Verify command-line option behavior.
+
+        ``--decorator`` mode uses provided decorator line.
+        """
         monkeypatch.setattr(
             sys,
             "argv",
@@ -276,14 +282,14 @@ class TestCLI:
         assert "def foo(*args, **kwargs): ..." in out
 
     def test_missing_new_name_in_auto_mode_exits(self, monkeypatch):
-        """Auto mode without --new-name should fail."""
+        """Auto mode without ``--new-name`` should fail."""
         monkeypatch.setattr(sys, "argv", ["g", "--type", "function", "--old-name", "f"])
         with pytest.raises(SystemExit) as exc_info:
             _mod.main()
         assert exc_info.value.code != 0
 
     def test_bad_type_exits(self, monkeypatch):
-        """argparse rejects invalid --type choice (exit 2)."""
+        """Argparse rejects invalid ``--type`` choice (exit 2)."""
         monkeypatch.setattr(sys, "argv", ["g", "--type", "variable", "--old-name", "x", "--new-name", "y"])
         with pytest.raises(SystemExit) as exc_info:
             _mod.main()

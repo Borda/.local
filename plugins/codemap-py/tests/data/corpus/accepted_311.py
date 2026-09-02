@@ -1,7 +1,7 @@
 """Corpus module: syntax accepted by every supported CPython (3.10 through 3.14).
 
-Frozen grammar baseline. scan-index must index this module identically on every
-matrix cell — it never degrades. Do not add post-3.11 syntax here.
+Frozen grammar baseline. scan-index must index this module identically on every matrix cell — it never degrades. Do not
+add post-3.11 syntax here.
 """
 
 from __future__ import annotations

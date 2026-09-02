@@ -9,7 +9,7 @@ session id never collapses concurrent writers into one unqualified ``cli.jsonl``
 ``bin/_runtime_log.py`` is a compatibility shim that aliases this module in
 ``sys.modules``.
 
-Contract (plan §4.4 "Logging"):
+Contract:
 
 - runtime identity is an allowlist ``{claude, codex, direct}``; an invalid value
   falls back to ``direct`` with a bounded diagnostic and never becomes a path

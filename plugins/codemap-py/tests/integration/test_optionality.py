@@ -1,9 +1,8 @@
-"""Symmetric optionality — provider-only lane (plan §8.5, acceptance F-08).
+"""Symmetric optionality — provider-only lane.
 
-``-k provider_only``: with every declared consumer hidden/absent, ``codemap-py``'s own six
-skills stay discoverable, the shared-index/logging surface resolves fine, and the
-non-mutating ``integrate audit`` inspection path names absent consumers from bytes on disk
-alone — never by importing, locating, or installing a ``cc_*``/``codex-rig`` package.
+``-k provider_only``: with every declared consumer hidden/absent, ``codemap-py``'s own six skills stay discoverable, the
+shared-index/logging surface resolves fine, and the non-mutating ``integrate audit`` inspection path names absent
+consumers from bytes on disk alone — never by importing, locating, or installing a ``cc_*``/``codex-rig`` package.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ def _write_manifest(plugin_dir: Path, runtime: integration.Runtime, name: str, v
 
 
 def _provider_only_root(base: Path) -> Path:
-    """A disposable tree with only ``codemap-py`` present — every declared consumer absent."""
+    """Create a disposable tree containing only the Codemap provider."""
     root = base / "provider-only"
     root.mkdir()
     _write_manifest(root / integration.PROVIDER_DIR, integration.Runtime.CLAUDE, integration.PROVIDER_NAME, "1.0.0")
@@ -41,7 +40,7 @@ def _tree_snapshot(root: Path) -> dict[str, bytes]:
 
 @pytest.fixture
 def provider_only_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A provider-only fixture repo, chdir'd into, with native-CLI probing stubbed absent."""
+    """Provide a provider-only repository with native CLI discovery disabled."""
     root = _provider_only_root(tmp_path)
     monkeypatch.chdir(root)
     monkeypatch.setattr(integration, "_native_json_probe", lambda argv: None)
@@ -86,7 +85,7 @@ def test_provider_only_six_skills_discoverable_regardless_of_consumers() -> None
 
 
 def test_provider_only_audit_names_absent_consumers_from_bytes(provider_only_repo: Path) -> None:
-    """``audit`` with every consumer hidden reports each as a named absent state, not an error."""
+    """Report hidden consumers as named absent states rather than errors."""
     report = integration.build_audit_report("both", provider_only_repo / integration.PROVIDER_DIR)
     for runtime_name in ("claude", "codex"):
         block = report["provider"]["runtimes"][runtime_name]
@@ -105,14 +104,14 @@ def test_provider_only_audit_names_absent_consumers_from_bytes(provider_only_rep
 
 
 def test_provider_only_audit_is_zero_write(provider_only_repo: Path) -> None:
-    """``audit`` in the provider-only lane still never mutates the fixture tree."""
+    """Keep provider-only audits free of fixture-tree mutations."""
     before = _tree_snapshot(provider_only_repo)
     integration.build_audit_report("both", provider_only_repo / integration.PROVIDER_DIR)
     assert _tree_snapshot(provider_only_repo) == before
 
 
 def test_provider_only_audit_cli_exits_zero(provider_only_repo: Path) -> None:
-    """``integrate audit`` exits 0 with absent optional consumers and evidence warnings."""
+    """Exit 0 with absent optional consumers and evidence warnings."""
     code = integration.run(["audit", "--runtime", "both", "--json"], provider_only_repo / integration.PROVIDER_DIR)
     assert code == 0
 

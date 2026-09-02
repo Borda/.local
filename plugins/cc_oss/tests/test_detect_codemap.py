@@ -1,8 +1,7 @@
 """Tests for bin/detect_codemap.py — codemap availability detection.
 
-Covers: missing --prefix exit 2, --force-off, codemap-py query present/absent,
-index present/absent, --strict mode errors, option overrides, env vars,
-and _resolve_proj() helper.
+Covers: missing ``--prefix`` exit 2, ``--force-off``, codemap-py query present/absent, index present/absent,
+``--strict`` mode errors, option overrides, env vars, and _resolve_proj() helper.
 """
 
 from __future__ import annotations
@@ -17,16 +16,19 @@ import detect_codemap  # type: ignore[import-not-found]
 
 
 class TestMain:
-    """main() entry-point behaviour."""
+    """Verify the command-line entry-point behavior."""
 
     def test_missing_prefix_exits_2(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """No --prefix → exit 2, usage message on stderr."""
+        """No ``--prefix`` → exit 2, usage message on stderr."""
         rc = detect_codemap.main([])
         assert rc == 2
         assert "Usage" in capsys.readouterr().err
 
     def test_force_off_writes_false_and_exits_0(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """--force-off → writes 'false', exits 0 regardless of codemap state."""
+        """Verify command-line option behavior.
+
+        ``--force-off`` → writes 'false', exits 0 regardless of codemap state.
+        """
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         with mock.patch("detect_codemap.shutil.which", return_value=None):
             rc = detect_codemap.main(["--prefix", "test", "--force-off"])
@@ -36,7 +38,7 @@ class TestMain:
     def test_scan_query_present_index_present_writes_true(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """codemap-py query on PATH + index file exists → writes 'true', exits 0."""
+        """Codemap-py query on PATH + index file exists → writes 'true', exits 0."""
         idx_dir = tmp_path / "idx"
         idx_dir.mkdir()
         (idx_dir / "myproj.json").write_text("{}")
@@ -49,7 +51,7 @@ class TestMain:
     def test_scan_query_present_index_absent_writes_false(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """codemap-py query on PATH but no index file → writes 'false', exits 0."""
+        """Codemap-py query on PATH but no index file → writes 'false', exits 0."""
         idx_dir = tmp_path / "idx"
         idx_dir.mkdir()
         monkeypatch.setenv("TMPDIR", str(tmp_path))
@@ -59,7 +61,7 @@ class TestMain:
         assert (tmp_path / "test-codemap-enabled-shared").read_text() == "false\n"
 
     def test_scan_query_absent_writes_false(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """codemap-py query not on PATH → writes 'false', exits 0."""
+        """Codemap-py query not on PATH → writes 'false', exits 0."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         with mock.patch("detect_codemap.shutil.which", return_value=None):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "myproj", "--idx-dir", str(tmp_path / "idx")])
@@ -72,7 +74,10 @@ class TestMain:
         capsys: pytest.CaptureFixture[str],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """--strict + codemap-py query absent → exit 1, install hint on stderr."""
+        """Verify command-line option behavior.
+
+        ``--strict`` + codemap-py query absent → exit 1, install hint on stderr.
+        """
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         with mock.patch("detect_codemap.shutil.which", return_value=None):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "proj", "--idx-dir", str(tmp_path), "--strict"])
@@ -85,7 +90,10 @@ class TestMain:
         capsys: pytest.CaptureFixture[str],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """--strict + codemap-py query present + no index → exit 1, build-index hint on stderr."""
+        """Verify command-line option behavior.
+
+        ``--strict`` + codemap-py query present + no index → exit 1, build-index hint on stderr.
+        """
         idx_dir = tmp_path / "idx"
         idx_dir.mkdir()
         monkeypatch.setenv("TMPDIR", str(tmp_path))
@@ -95,7 +103,10 @@ class TestMain:
         assert "/codemap-py:scan-codebase" in capsys.readouterr().err
 
     def test_proj_override_used_as_index_slug(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """--proj overrides git-derived slug; index looked up as <proj>.json."""
+        """Verify command-line option behavior.
+
+        ``--proj`` overrides git-derived slug; index looked up as <proj>.json.
+        """
         idx_dir = tmp_path / "idx"
         idx_dir.mkdir()
         (idx_dir / "custom-proj.json").write_text("{}")
@@ -106,7 +117,10 @@ class TestMain:
         assert (tmp_path / "test-codemap-enabled-shared").read_text() == "true\n"
 
     def test_idx_dir_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """--idx-dir overrides default .cache/codemap lookup path."""
+        """Verify command-line option behavior.
+
+        ``--idx-dir`` overrides default .cache/codemap lookup path.
+        """
         custom_idx = tmp_path / "custom-index"
         custom_idx.mkdir()
         (custom_idx / "proj.json").write_text("{}")
@@ -117,7 +131,7 @@ class TestMain:
         assert (tmp_path / "test-codemap-enabled-shared").read_text() == "true\n"
 
     def test_codemap_index_dir_env_var(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """CODEMAP_INDEX_DIR env var sets default index dir when --idx-dir absent."""
+        """CODEMAP_INDEX_DIR env var sets default index dir when ``--idx-dir`` is absent."""
         idx_dir = tmp_path / "env-idx"
         idx_dir.mkdir()
         (idx_dir / "envproj.json").write_text("{}")
@@ -154,16 +168,16 @@ def _init_repo(path: Path) -> Path:
 
 
 class TestProjectRoot:
-    """_project_root() — git-toplevel anchoring (E-H1)."""
+    """Anchor project discovery at the Git top-level directory."""
 
     def test_git_success_returns_toplevel(self) -> None:
-        """git rev-parse success → the reported toplevel path, not the CWD."""
+        """Git rev-parse success → the reported toplevel path, not the CWD."""
         mock_result = mock.Mock(returncode=0, stdout="/home/user/my-project\n")
         with mock.patch("detect_codemap.subprocess.run", return_value=mock_result):
             assert detect_codemap._project_root() == Path("/home/user/my-project")
 
     def test_git_nonzero_exit_falls_back_to_cwd(self) -> None:
-        """git rev-parse non-zero exit → CWD, matching the provider's own fallback."""
+        """Git rev-parse non-zero exit → CWD, matching the provider's own fallback."""
         mock_result = mock.Mock(returncode=128, stdout="")
         with mock.patch("detect_codemap.subprocess.run", return_value=mock_result):
             assert detect_codemap._project_root() == Path.cwd()
@@ -177,27 +191,30 @@ class TestProjectRoot:
             assert detect_codemap._project_root() == Path.cwd()
 
     def test_git_missing_binary_falls_back_to_cwd(self) -> None:
-        """git absent (OSError) → CWD, never an exception."""
+        """Git absent (OSError) → CWD, never an exception."""
         with mock.patch("detect_codemap.subprocess.run", side_effect=OSError("no git")):
             assert detect_codemap._project_root() == Path.cwd()
 
 
 class TestResolveProj:
-    """_resolve_proj() — raw-basename naming, matching the provider (E-H3)."""
+    """Match provider naming through the raw project basename."""
 
     def test_basename_used_verbatim(self) -> None:
         """Plain basename returned as-is."""
         assert detect_codemap._resolve_proj(None, Path("/home/user/my-project")) == "my-project"
 
     def test_proj_override_wins(self) -> None:
-        """--proj bypasses the root-derived name entirely."""
+        """Verify command-line option behavior.
+
+        ``--proj`` bypasses the root-derived name entirely.
+        """
         assert detect_codemap._resolve_proj("explicit-proj", Path("/home/user/other")) == "explicit-proj"
 
     @pytest.mark.parametrize("name", ["my repo with spaces", "café", "a+b", "proj(1)"])
     def test_special_chars_are_not_stripped(self, name: str) -> None:
         """Space/'+'/non-ASCII survive: the scanner writes the RAW basename.
 
-        Regression for E-H3 — the old unicode-``isalnum`` filter turned ``a+b`` into
+        Regression: the old unicode-``isalnum`` filter turned ``a+b`` into
         ``ab`` and ``my repo`` into ``myrepo``, so the consumer sought a filename the
         scanner never wrote: a permanent, silent false ``no_index``.
         """
@@ -208,11 +225,10 @@ class TestIndexAnchoring:
     """End-to-end index location — anchored at the git root, not the CWD."""
 
     def test_subdir_invocation_finds_root_anchored_index(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Invoked from a repo subdirectory, the root's index still counts (E-H1).
+        """Invoked from a repo subdirectory, the root's index still counts.
 
-        The old default was the cwd-relative string ``.cache/codemap``, so running any
-        skill from ``<repo>/pkg/sub`` probed ``<repo>/pkg/sub/.cache/codemap`` and
-        reported ``no_index`` while the index sat at the repo root.
+        The old default was the cwd-relative string ``.cache/codemap``, so running any skill from ``<repo>/pkg/sub``
+        probed ``<repo>/pkg/sub/.cache/codemap`` and reported ``no_index`` while the index sat at the repo root.
         """
         root = _init_repo(tmp_path / "my-repo")
         index_dir = root / ".cache" / "codemap"
@@ -232,7 +248,7 @@ class TestIndexAnchoring:
         assert not (subdir / ".cache").exists(), "must not have probed a cwd-relative index dir"
 
     def test_non_ascii_repo_name_index_found(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """A repo directory named ``café`` resolves to ``café.json`` (E-H3)."""
+        """A repo directory named ``café`` resolves to ``café.json``."""
         root = _init_repo(tmp_path / "café")
         index_dir = root / ".cache" / "codemap"
         index_dir.mkdir(parents=True)
@@ -250,7 +266,7 @@ class TestIndexAnchoring:
     def test_directory_named_like_index_does_not_pass_gate(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A *directory* called ``<proj>.json`` is not an index (E-L3)."""
+        """A *directory* called ``<proj>.json`` is not an index."""
         idx_dir = tmp_path / "idx"
         (idx_dir / "proj.json").mkdir(parents=True)
         monkeypatch.setenv("TMPDIR", str(tmp_path))
@@ -262,7 +278,7 @@ class TestIndexAnchoring:
 
 
 class TestCurrency:
-    """Currency probe — fail-open, but never silently (E-L4)."""
+    """Currency probe — fail-open, but never silently."""
 
     def test_probe_failure_announces_the_coercion(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

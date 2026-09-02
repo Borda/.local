@@ -41,8 +41,8 @@ Usage:
 Both subcommands are **report-only by default**; ``--apply`` performs removal.
 
 Exit codes:
-    0 — success (nothing reclaimable, or reclaimed when --apply given)
-    1 — at least one artifact is reclaimable and --apply was not given
+    0 — success (nothing reclaimable, or reclaimed when ``--apply`` given)
+    1 — at least one artifact is reclaimable and ``--apply`` was not given
     2 — usage or environment error (not a git repository, bad arguments)
 """
 
@@ -499,8 +499,8 @@ def sweep_worktrees(
     """Inspect every worktree directory under *root*.
 
     Scans the directory rather than ``git worktree list`` alone, so a directory
-    that exists on disk but is not registered is still seen. ``git worktree
-    prune`` cannot help there: prune removes *registrations whose directory is
+    that exists on disk but is not registered is still seen. ``git worktree prune``
+    cannot help there: prune removes *registrations whose directory is
     gone*, which is the exact opposite case.
 
     Args:
@@ -713,7 +713,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point; returns exit code.
+    """Inspect or reclaim stale Git artifacts selected by the command line.
 
     Args:
         argv: Argument list (defaults to ``sys.argv[1:]``).

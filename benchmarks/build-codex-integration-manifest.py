@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Build or relock the Codex plain/CLI/Skill manifest; never run models or tasks.
 
-The output derives canonical benchmark identities from the committed structural
-methodology manifest. ``--check`` fails closed if generated records no longer
-match their source inputs; the default mode writes the deterministic machine and
+The output derives canonical benchmark identities from the committed structural methodology manifest. ``--check`` fails
+closed if generated records no longer match their source inputs; the default mode writes the deterministic machine and
 human review records.
 """
 

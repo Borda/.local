@@ -1,8 +1,7 @@
 """Acceptance contract for the agentic answer oracle.
 
-Each test pins one failure mode the audit found in the oracle itself: a scored
-answer being marked wrong because the oracle, not the model, resolved imports
-differently; free evidence credit from substring containment; and the emitted
+Each test pins one failure mode the audit found in the oracle itself: a scored answer being marked wrong because the
+oracle, not the model, resolved imports differently; free evidence credit from substring containment; and the emitted
 prompt withholding the convention it scores against.
 """
 
@@ -38,10 +37,9 @@ def _write(root: Path, relative: str, source: str) -> None:
 def mixed_import_tree(tmp_path: Path) -> Path:
     """Source tree whose only importer uses one mixed ``from`` statement.
 
-    ``utilities`` is a package holding a real ``parsing`` submodule, so the
-    importer's statement resolves one alias concretely and one not at all. The
-    module under test (``pkg.trainer.trainer``) is reached only through the
-    package import that statement also carries.
+    ``utilities`` is a package holding a real ``parsing`` submodule, so the importer's statement resolves one alias
+    concretely and one not at all. The module under test (``pkg.trainer.trainer``) is reached only through the package
+    import that statement also carries.
     """
     root = tmp_path / "src"
     for package in ("pkg", "pkg.trainer", "pkg.utilities"):
@@ -57,18 +55,17 @@ def mixed_import_tree(tmp_path: Path) -> Path:
 
 
 def test_mixed_from_import_credits_package_and_submodule(mixed_import_tree: Path) -> None:
-    """A-H2: a partially resolving ``from`` import still credits its package.
+    """A partially resolving ``from`` import still credits its package.
 
-    Before the fix a single concretely resolving alias suppressed package credit
-    entirely, so the importer the task exists to find never appeared in the
-    expected set and a correct answer was scored as a false positive.
+    Before the fix a single concretely resolving alias suppressed package credit entirely, so the importer the task
+    exists to find never appeared in the expected set and a correct answer was scored as a false positive.
     """
     oracle = agentic_contracts.build_oracle(_task(), mixed_import_tree)
     assert oracle.expected["production_importers"] == ("pkg.consumer",)
 
 
 def test_package_import_credit_is_not_all_or_nothing(mixed_import_tree: Path) -> None:
-    """A-H2: the concrete submodule keeps its credit alongside the package."""
+    """The concrete submodule keeps its credit alongside the package."""
     oracle = agentic_contracts.build_oracle(
         _task(primary_module="pkg.utilities.parsing"),
         mixed_import_tree,
@@ -77,7 +74,7 @@ def test_package_import_credit_is_not_all_or_nothing(mixed_import_tree: Path) ->
 
 
 def test_correct_answer_scores_one_on_mixed_import_tree(mixed_import_tree: Path) -> None:
-    """A-H2: naming the true importer is scored correct, not penalized."""
+    """Naming the true importer is scored correct, not penalized."""
     oracle = agentic_contracts.build_oracle(_task(), mixed_import_tree)
     score = agentic_contracts.score_answer(oracle, {"production_importers": ["pkg.consumer"]})
     assert score.correct is True
@@ -85,7 +82,7 @@ def test_correct_answer_scores_one_on_mixed_import_tree(mixed_import_tree: Path)
 
 
 def test_import_convention_is_disclosed_in_the_scored_prompt() -> None:
-    """A-H3: the oracle's import convention reaches the model it scores."""
+    """The oracle's import convention reaches the model it scores."""
     instruction = agentic_contracts.answer_format_instruction(_task())
     assert agentic_contracts.IMPORT_CONVENTION_INSTRUCTION in instruction
     assert "from a.b import c" in instruction
@@ -93,7 +90,7 @@ def test_import_convention_is_disclosed_in_the_scored_prompt() -> None:
 
 
 def test_oracle_uses_the_shared_import_convention(mixed_import_tree: Path) -> None:
-    """A-H3: agentic and MB/GR oracles resolve imports through one helper."""
+    """Agentic and MB/GR oracles resolve imports through one helper."""
     import ast
 
     from benchmarks._bench_common import python_source
@@ -122,7 +119,7 @@ def _evidence_oracle() -> agentic_contracts.AgenticOracle:
     ],
 )
 def test_evidence_recall_rejects_substring_containment(text: str) -> None:
-    """A-M1: a longer dotted name no longer donates recall to a shorter one."""
+    """A longer dotted name no longer donates recall to a shorter one."""
     metrics = agentic_contracts.score_evidence_metrics(_evidence_oracle(), exposure_text=text, tool_calls=1)
     assert metrics.erec == pytest.approx(0.0)
     assert metrics.deff == pytest.approx(0.0)
@@ -140,13 +137,13 @@ def test_evidence_recall_rejects_substring_containment(text: str) -> None:
     ],
 )
 def test_evidence_recall_credits_a_whole_name_mention(text: str) -> None:
-    """A-M1: genuine whole-name mentions keep their credit."""
+    """Genuine whole-name mentions keep their credit."""
     metrics = agentic_contracts.score_evidence_metrics(_evidence_oracle(), exposure_text=text, tool_calls=1)
     assert metrics.erec == pytest.approx(1.0)
 
 
 def test_report_recall_uses_the_same_whole_name_rule() -> None:
-    """A-M1: exposure and report recall share one matching rule."""
+    """Exposure and report recall share one matching rule."""
     oracle = _evidence_oracle()
     metrics = agentic_contracts.score_evidence_metrics(
         oracle,

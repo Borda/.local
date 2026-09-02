@@ -2,27 +2,37 @@
 
 ## Purpose
 
-Provide a replayable, fail-closed record of transaction progress and rollback eligibility. The journal makes each durable checkpoint explicit so recovery can distinguish committed work from an interrupted mutation.
+Provide a replayable, fail-closed record of transaction progress and rollback eligibility. The journal makes each
+durable checkpoint explicit so recovery can distinguish committed work from an interrupted mutation.
 
 ## Scope
 
-Parses, validates, and transitions journal values in memory; filesystem I/O belongs to the transaction and POSIX modules. It owns the schema and transition graph, but does not decide which operation should be planned or how a path is written.
+Parses, validates, and transitions journal values in memory; filesystem I/O belongs to the transaction and POSIX
+modules. It owns the schema and transition graph, but does not decide which operation should be planned or how a path is
+written.
 
 ## Usage
 
-Import journal constructors and transition helpers from the shim manager; this module has no direct user CLI. Callers should validate a parsed journal before advancing it and persist only the canonical serialization returned by these helpers.
+Import journal constructors and transition helpers from the shim manager; this module has no direct user CLI. Callers
+should validate a parsed journal before advancing it and persist only the canonical serialization returned by these
+helpers.
 
 ## Used by
 
-``_agent_shim_transaction.py``, lifecycle recovery logic, and journal contract tests call these journal helpers. The transaction caller uses their successor checks as the durable gate between filesystem checkpoints.
+``_agent_shim_transaction.py``, lifecycle recovery logic, and journal contract tests call these journal helpers. The
+transaction caller uses their successor checks as the durable gate between filesystem checkpoints.
 
 ## Outputs
 
-Returns validated journal dataclasses and canonical serialized values describing allowed forward and rollback transitions. These values retain operation hashes, modes, images, and progress needed to verify both completion and restoration.
+Returns validated journal dataclasses and canonical serialized values describing allowed forward and rollback
+transitions. These values retain operation hashes, modes, images, and progress needed to verify both completion and
+restoration.
 
 ## Failure
 
-Malformed records, forbidden transitions, oversized data, or hash/mode mismatches raise typed journal errors before a transaction advances. A rejected transition leaves the caller responsible for recovery handling and never authorizes an inferred next state.
+Malformed records, forbidden transitions, oversized data, or hash/mode mismatches raise typed journal errors before a
+transaction advances. A rejected transition leaves the caller responsible for recovery handling and never authorizes an
+inferred next state.
 """
 
 from __future__ import annotations

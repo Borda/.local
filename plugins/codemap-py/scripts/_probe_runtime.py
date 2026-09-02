@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Disposable-source-copy runtime proof for the codemap-py install probes (plan §9.4 step 03/04).
+"""Disposable-source-copy runtime proof for the codemap-py install probes.
 
 The developer git checkout cannot be deleted from a pytest process running inside
 it, so the probes instead build from a DISPOSABLE COPY of the tracked plugin
-source that is then deleted — satisfying §9.4 step 03 ("make the source checkout
-unavailable") literally, without touching the developer checkout:
+source that is then deleted, making the source checkout unavailable without
+touching the developer checkout:
 
 1. capture the authoritative exec-mode map from the REAL repo's git index
    (``real_source_mode_map``) BEFORE any copy exists; copy the plugin working
@@ -94,11 +94,10 @@ def stage_disposable_source(repo_root: Path, checkout_parent: Path) -> Path:
 def real_source_mode_map(repo_root: Path) -> dict[str, bool]:
     """Return the authoritative exec-mode map from the REAL repo's git index.
 
-    Must be called BEFORE ``stage_disposable_source`` makes any copy: the copy's own
-    freshly synthesized index is not authoritative (see ``stage_disposable_source``).
-    The real repo's tracked history IS authoritative regardless of the build host's
-    ``core.filemode`` setting, since ``git ls-files --stage`` reports the mode recorded
-    at commit time, not a live re-check of the working-tree bit.
+    Must be called BEFORE ``stage_disposable_source`` makes any copy: the copy's own freshly synthesized index is not
+    authoritative (see ``stage_disposable_source``). The real repo's tracked history IS authoritative regardless of the
+    build host's ``core.filemode`` setting, since ``git ls-files --stage`` reports the mode recorded at commit time, not
+    a live re-check of the working-tree bit.
     """
     return build_package._git_exec_modes(repo_root / "plugins" / "codemap-py")
 
@@ -113,8 +112,8 @@ def write_real_mode_map(repo_root: Path, dest: Path) -> Path:
 def build_from_checkout(checkout: Path, candidate: Path, mode_map_path: Path) -> tuple[bool, str]:
     """Build the candidate by running the disposable COPY's builder (copy is SOURCE_ROOT).
 
-    ``mode_map_path`` (``write_real_mode_map``'s output) overrides the copy's own
-    synthesized git index — the copy is never the mode authority.
+    ``mode_map_path`` (``write_real_mode_map``'s output) overrides the copy's own synthesized git index — the copy is
+    never the mode authority.
     """
     proc = subprocess.run(
         [

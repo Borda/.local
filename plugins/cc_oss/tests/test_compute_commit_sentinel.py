@@ -49,7 +49,7 @@ class TestGetSentinelPath:
 
     def test_basic_path(self, monkeypatch) -> None:
         # Force a deterministic base dir — get_sentinel_path prefers TMPDIR
-        # over /tmp (SEC-M7: macOS /tmp is world-readable).
+        # over /tmp (MacOS /tmp is world-readable).
         monkeypatch.setenv("TMPDIR", "/tmp")
         monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
         with self._mock_git("/home/user/MyRepo", "main"):
@@ -71,7 +71,7 @@ class TestGetSentinelPath:
         assert path == "/tmp/claude-commit-auth-proj-hotfix-my-fix"
 
     def test_tmpdir_preferred_over_default(self, monkeypatch, tmp_path) -> None:
-        """SEC-M7 regression: per-user TMPDIR must take precedence over /tmp."""
+        """Regression: per-user TMPDIR must take precedence over /tmp."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
         with self._mock_git("/home/user/Project", "main"):

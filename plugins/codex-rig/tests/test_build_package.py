@@ -221,9 +221,9 @@ def test_generation_rejects_incomplete_public_roster(
 def test_generation_excludes_runtime_report_debris(tmp_path: Path) -> None:
     """Runtime `.reports/` artifacts never enter or invalidate the package manifest.
 
-    A calibration run writes gitignored, machine-local artifacts under `.reports/`
-    inside the plugin tree; a later manifest refresh must neither sweep those
-    paths into the tracked manifest nor report the manifest stale because of them.
+    A calibration run writes gitignored, machine-local artifacts under `.reports/` inside the plugin tree; a later
+    manifest refresh must neither sweep those paths into the tracked manifest nor report the manifest stale because of
+    them.
     """
     installed = copied_plugin(tmp_path)
     debris = installed / ".reports" / "codex" / "calibration" / "run" / "debris.txt"

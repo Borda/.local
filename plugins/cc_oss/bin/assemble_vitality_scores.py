@@ -45,7 +45,7 @@ _DEFAULT_WEIGHTS: dict[int, float] = {
     TRAJECTORY: 0.07,
 }
 
-_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB — F-10 guard against runaway reads
+_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB guard against runaway reads
 
 
 def _read_text_guarded(path: Path) -> str:
@@ -113,7 +113,7 @@ def load_weights(scoring_file: Path) -> dict[int, float]:
             seen.add(axis)
             weights[axis] = float(m.group(2))
 
-    # Superset (not exact-set) guard — keeps axes 10-13 once real 13-axis rubric parses (F1).
+    # Superset (not exact-set) guard — keeps axes 10-13 once real 13-axis rubric parses.
     if read_error is None and not malformed and set(weights) >= set(_DEFAULT_WEIGHTS):
         return weights
 

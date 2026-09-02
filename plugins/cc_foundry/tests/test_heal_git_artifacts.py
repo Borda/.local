@@ -120,8 +120,8 @@ class TestSimulatedWindowsPidLiveness:
     def test_absent_windll_degrades_to_false(self, monkeypatch):
         """Regression: prove absence is handled, not merely untested.
 
-        ``ctypes.windll`` does not exist on POSIX hosts; deleting it makes the
-        assertion meaningful on Windows too, where it does.
+        ``ctypes.windll`` does not exist on POSIX hosts; deleting it makes the assertion meaningful on Windows too,
+        where it does.
         """
         monkeypatch.delattr(ctypes, "windll", raising=False)
         assert _mod._pid_alive_windows(4242) is False
@@ -133,7 +133,7 @@ class TestSimulatedWindowsPidLiveness:
         assert _mod.pid_alive(4242) is True
 
     def test_simulated_windows_branch_never_uses_os_kill(self, monkeypatch):
-        """``os.kill(pid, 0)`` on Windows can disturb a live process."""
+        """Avoid probing a live Windows process through a disruptive signal."""
 
         def forbidden(*_args, **_kwargs):
             raise AssertionError("os.kill must not be called on the Windows branch")
@@ -292,7 +292,7 @@ class TestSweepLocks:
 
 class TestSweepWorktrees:
     def test_orphan_directory_detected(self, tmp_path, monkeypatch):
-        """git worktree prune cannot see this case — it removes the inverse."""
+        """Git worktree prune cannot see this case — it removes the inverse."""
         root = tmp_path / ".claude" / "worktrees"
         (root / "agent-orphan").mkdir(parents=True)
         past = time.time() - 60 * 86400

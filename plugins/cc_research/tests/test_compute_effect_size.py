@@ -27,11 +27,11 @@ class TestRankBiserialR:
     """Effect-size formula contract: r = 4*W/(n*(n+1)) - 1."""
 
     def test_zero_statistic_returns_minus_one(self) -> None:
-        """W=0 maps to r=-1 — all signed ranks negative."""
+        """Map an all-negative signed-rank result to the lower effect-size bound."""
         assert ces.rank_biserial_r(0.0, 8) == -1.0
 
     def test_max_statistic_returns_plus_one(self) -> None:
-        """W = n*(n+1)/2 maps to r=+1 — all signed ranks positive."""
+        """Map an all-positive signed-rank result to the upper effect-size bound."""
         # n=8 → max W = 36; r should be 1.0
         assert ces.rank_biserial_r(36.0, 8) == 1.0
 
@@ -41,7 +41,7 @@ class TestRankBiserialR:
         assert ces.rank_biserial_r(18.0, 8) == 0.0
 
     def test_zero_n_raises(self) -> None:
-        """n must be positive — n=0 raises ValueError."""
+        """N must be positive — n=0 raises ValueError."""
         with pytest.raises(ValueError, match="n must be positive"):
             ces.rank_biserial_r(5.0, 0)
 
@@ -62,7 +62,7 @@ class TestComputeFromPayload:
         assert ces.compute_from_payload({"n": 8, "statistic": None}) == ""
 
     def test_missing_statistic_key_returns_empty_string(self) -> None:
-        """``d.get('statistic')`` semantics — missing key behaves like None."""
+        """Treat a missing statistic key like an explicit null value."""
         assert ces.compute_from_payload({"n": 8}) == ""
 
     def test_numeric_statistic_produces_str_of_float(self) -> None:
@@ -103,7 +103,7 @@ class TestArgparseCLI:
     """Argparse-surface test: ``--help`` exits 0 without touching the stdin contract."""
 
     def test_help_exits_zero(self) -> None:
-        """``--help`` prints usage and exits 0 (argparse contract); stdin is never read."""
+        """Print usage and exit 0 (argparse contract); stdin is never read."""
         result = subprocess.run([sys.executable, str(_SCRIPT), "--help"], capture_output=True, text=True)
         assert result.returncode == 0
         assert "usage" in result.stdout.lower()

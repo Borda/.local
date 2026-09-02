@@ -1,8 +1,7 @@
 """Tests for extract_code_blocks.py — I/O and integration paths.
 
-Pure functions (normalize_lang, estimate_tokens, classify_block, parse_blocks,
-iter_md_files) are covered by doctests in the module. This file tests the
-main() CLI: argument parsing, file walking, filtering flags, and JSONL output.
+Pure functions (normalize_lang, estimate_tokens, classify_block, parse_blocks, iter_md_files) are covered by doctests in
+the module. This file tests the main() CLI: argument parsing, file walking, filtering flags, and JSONL output.
 """
 
 from __future__ import annotations
@@ -70,7 +69,8 @@ class TestEstimateTokens:
 
 
 class TestClassifyBlock:
-    """classify_block: three-tier heuristic — known code marker, known non-code marker with content override, unknown/empty marker falls back to signal density."""
+    """classify_block: three-tier heuristic — known code marker, known non-code marker with content override,
+    unknown/empty marker falls back to signal density."""
 
     @pytest.mark.parametrize("marker", ["bash", "python", "js", "yaml", "sql", "dockerfile"])
     def test_known_code_marker_is_true(self, marker: str) -> None:
@@ -109,7 +109,8 @@ class TestClassifyBlock:
 
 
 class TestParseBlocks:
-    """parse_blocks: fenced block extraction — fields, multi-block, edge cases (empty, unclosed, tilde), line numbering."""
+    """parse_blocks: fenced block extraction — fields, multi-block, edge cases (empty, unclosed, tilde), line
+    numbering."""
 
     def test_basic_block_fields(self) -> None:
         """All fields populated correctly for a single bash block."""
@@ -159,7 +160,7 @@ class TestParseBlocks:
         assert blocks[0].line_end == 5
 
     def test_non_code_marker_classified_false(self) -> None:
-        """text-marked block with prose content has is_code=False."""
+        """Text-marked block with prose content has is_code=False."""
         blocks = ecb.parse_blocks("```text\nThis is a plain sentence.\n```\n", "f.md")
         assert len(blocks) == 1
         assert blocks[0].is_code is False
@@ -197,7 +198,8 @@ class TestIterMdFiles:
 
 
 class TestMain:
-    """main: CLI integration — JSONL output correctness, filtering flags (--all, --min-tokens, --include), error handling."""
+    """Main: CLI integration — JSONL output correctness, filtering flags (``--all``, ``--min-tokens``, ``--include``),
+    error handling."""
 
     def test_default_code_only(self, md_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
         """Default mode emits only is_code=True blocks."""
@@ -210,13 +212,19 @@ class TestMain:
         assert "python" in langs
 
     def test_include_all_emits_non_code(self, md_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """--all flag includes is_code=False blocks."""
+        """Verify command-line option behavior.
+
+        --all flag includes is_code=False blocks.
+        """
         ecb.main([str(md_dir), "--all"])
         objects = [json.loads(ln) for ln in capsys.readouterr().out.splitlines() if ln.strip()]
         assert False in {obj["is_code"] for obj in objects}
 
     def test_min_tokens_filters_small_blocks(self, md_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """--min-tokens excludes blocks below threshold."""
+        """Verify command-line option behavior.
+
+        --min-tokens excludes blocks below threshold.
+        """
         ecb.main([str(md_dir), "--min-tokens", "10"])
         objects = [json.loads(ln) for ln in capsys.readouterr().out.splitlines() if ln.strip()]
         assert all(obj["token_estimate"] >= 10 for obj in objects)
@@ -242,7 +250,10 @@ class TestMain:
         }.issubset(obj.keys())
 
     def test_include_pattern_filters_files(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """--include glob restricts which files are scanned."""
+        """Verify command-line option behavior.
+
+        --include glob restricts which files are scanned.
+        """
         (tmp_path / "notes.md").write_text("```bash\necho hi\n```\n")
         (tmp_path / "SKILL.md").write_text("```python\nimport os\n```\n")
         ecb.main([str(tmp_path), "--include", "SKILL.md"])

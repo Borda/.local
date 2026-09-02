@@ -94,7 +94,7 @@ def make_run_dir(base_dir: str) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point; returns exit code.
+    """Create and print a validated Foundry run directory.
 
     Args:
         argv: Argument list (defaults to sys.argv[1:]).

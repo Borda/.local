@@ -1,10 +1,8 @@
 """Tests for ``bin/run_pytest_short.py``.
 
-The script validates ``PYTEST_CMD`` against the same allowlist as ``pytest_gate``,
-captures combined stdout+stderr from pytest via incremental ``Popen`` reads
-(byte-capped at ``_MAX_OUTPUT_BYTES``), then prints only the last ``tail_n``
-lines (default 20). Bad ``tail_n`` falls back to 20. ``subprocess.Popen`` is
-monkeypatched so no real pytest runs.
+The script validates ``PYTEST_CMD`` against the same allowlist as ``pytest_gate``, captures combined stdout+stderr from
+pytest via incremental ``Popen`` reads (byte-capped at ``_MAX_OUTPUT_BYTES``), then prints only the last ``tail_n``
+lines (default 20). Bad ``tail_n`` falls back to 20. ``subprocess.Popen`` is monkeypatched so no real pytest runs.
 """
 
 from __future__ import annotations
@@ -65,7 +63,7 @@ def test_default_tail_20(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Capture
 
 
 def test_custom_tail_n(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """``tail_n=5`` → only the last 5 lines printed."""
+    """Print only the requested number of trailing lines."""
     _patch_subprocess(monkeypatch, returncode=0, stdout=_make_lines(30))
     rc = run_pytest_short.main(["pytest", ".", "5"])
     assert rc == 0
@@ -93,7 +91,7 @@ def test_tail_n_larger_than_output(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """``tail_n`` greater than line count → entire output printed."""
+    """Print all output when the requested tail exceeds its length."""
     _patch_subprocess(monkeypatch, returncode=0, stdout=_make_lines(3))
     rc = run_pytest_short.main(["pytest", ".", "100"])
     assert rc == 0
@@ -223,7 +221,7 @@ def test_rejects_symlink_target_outside_cwd(
 
 
 def test_resolves_first_token_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``"uv run pytest"`` → only ``uv`` is path-resolved; other tokens kept literal."""
+    """Resolve only the executable in a multi-token test command."""
     recorded = _patch_subprocess(monkeypatch, returncode=0, stdout="")
     run_pytest_short.main(["uv run pytest", "tests/"])
     cmd = recorded[0]["cmd"]

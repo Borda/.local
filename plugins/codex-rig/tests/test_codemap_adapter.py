@@ -32,8 +32,8 @@ def load_adapter() -> ModuleType:
 def _write_fake_codemap_py(bin_dir: Path, script_body: str) -> None:
     """Install a fake `codemap-py` executable on a directory meant to be prepended to PATH.
 
-    Uses an absolute-path shebang (POSIX) rather than `/usr/bin/env bash`/python, so the fake
-    binary still runs when a test intentionally narrows `PATH` to prove absence/isolation.
+    Uses an absolute-path shebang (POSIX) rather than `/usr/bin/env bash`/python, so the fake binary still runs when a
+    test intentionally narrows `PATH` to prove absence/isolation.
     """
     if os.name == "nt":
         fake = bin_dir / "codemap-py.bat"
@@ -88,7 +88,7 @@ _DIVERGENT_QUERY = {
 
 
 def _fake_script(doctor_payload: dict, doctor_exit: int, query_payload: dict, query_exit: int) -> str:
-    """Build a fake `codemap-py` dispatcher that answers `doctor --json` and `query <sub>`."""
+    """Build a fake ``codemap-py`` dispatcher that answers ``doctor --json`` and ``query <sub>``."""
     return f"""
 import json, sys
 if sys.argv[1:2] == ["doctor"]:
@@ -113,7 +113,7 @@ def test_probe_absent_when_codemap_py_not_on_path(monkeypatch: pytest.MonkeyPatc
 
 
 def test_probe_available_when_doctor_reports_supported(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Report `available` once `doctor --json` returns a supported interpreter."""
+    """Report ``available`` once ``doctor --json`` returns a supported interpreter."""
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _CLEAN_QUERY, 0))
     monkeypatch.setenv("PATH", str(tmp_path))
     adapter = load_adapter()
@@ -266,7 +266,7 @@ def test_probe_incompatible_when_interpreter_unsupported(monkeypatch: pytest.Mon
 
 
 def test_probe_incompatible_when_doctor_exits_nonzero(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Report `incompatible` when `doctor --json` itself fails."""
+    """Report ``incompatible`` when ``doctor --json`` itself fails."""
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 1, _CLEAN_QUERY, 0))
     monkeypatch.setenv("PATH", str(tmp_path))
     adapter = load_adapter()
@@ -554,9 +554,9 @@ def test_divergent_index_path_is_recorded_as_evidence_without_changing_status(
 ) -> None:
     """Report a query that opened a different index than `doctor` resolved, and keep both paths.
 
-    The status must stay `available`: the answers themselves were complete and fresh. Folding the
-    disagreement into the status would assert which of the two processes was wrong, and would cost
-    the reader the two paths that make the disagreement diagnosable.
+    The status must stay `available`: the answers themselves were complete and fresh. Folding the disagreement into the
+    status would assert which of the two processes was wrong, and would cost the reader the two paths that make the
+    disagreement diagnosable.
     """
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _DIVERGENT_QUERY, 0))
     monkeypatch.setenv("PATH", str(tmp_path))
@@ -582,9 +582,9 @@ def test_not_indexed_exit_records_the_addressed_path_and_its_divergence(
 ) -> None:
     """Keep the path a failed load addressed: a wrong index dir is exactly what diverges.
 
-    A not-indexed exit raised by a failed load reports the path at the payload root rather
-    than under `index`. That path is the only provenance such a run has, and comparing it is
-    the case the field most needs to cover — the query never opened the index the probe found.
+    A not-indexed exit raised by a failed load reports the path at the payload root rather than under `index`. That path
+    is the only provenance such a run has, and comparing it is the case the field most needs to cover — the query never
+    opened the index the probe found.
     """
     not_indexed = {"error": "index is not valid JSON", "path": _DIVERGENT_INDEX_PATH}
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, not_indexed, 3))
@@ -703,7 +703,7 @@ def test_standard_batch_of_only_target_requiring_queries_keeps_its_bounded_error
 
 
 def test_cli_context_persists_json_to_out_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """The `context` CLI mode prints JSON and persists the identical bytes to `--out`."""
+    """The ``context`` CLI mode prints JSON and persists the identical bytes to ``--out``."""
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _CLEAN_QUERY, 0))
     env = dict(os.environ, PATH=f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}")
     out_path = tmp_path / "run" / "codemap-context.json"
@@ -787,7 +787,7 @@ _CODEMAP_BIN_DIR = PLUGIN_ROOT.parent / "codemap-py" / "bin"
 
 
 def _real_cli_ready(path_with_bin: str) -> bool:
-    """Return whether the real codemap-py launcher answers `doctor --json` with an eligible interpreter."""
+    """Return whether the real codemap-py launcher answers ``doctor --json`` with an eligible interpreter."""
     if not (_CODEMAP_BIN_DIR / "codemap-py").is_file():
         return False
     try:
@@ -811,12 +811,12 @@ REAL_CLI_READY = _real_cli_ready(f"{_CODEMAP_BIN_DIR}{os.pathsep}{os.environ.get
     not REAL_CLI_READY, reason="real codemap-py CLI unavailable (installed-plugin isolation or no eligible CPython)"
 )
 def test_root_scoped_query_runs_against_real_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Unmocked regression: a root-scoped query drives the ACTUAL codemap-py grammar (--root must precede the subcommand).
+    """Unmocked regression: a root-scoped query drives the ACTUAL codemap-py grammar (``--root`` must precede the
+    subcommand).
 
-    Every other test in this file fakes the subprocess, so none exercises argparse's real
-    grammar — the pre-fix argv order (`query central --root .`) passed those fakes yet errors
-    against the real CLI. This runs the genuine launcher on a tiny real fixture and asserts a
-    root-scoped query returns exit 0 with parseable metadata.
+    Every other test in this file fakes the subprocess, so none exercises argparse's real grammar — the pre-fix argv
+    order (``query central --root .``) passed those fakes yet errors against the real CLI. This runs the genuine
+    launcher on a tiny real fixture and asserts a root-scoped query returns exit 0 with parseable metadata.
     """
     path_with_bin = f"{_CODEMAP_BIN_DIR}{os.pathsep}{os.environ.get('PATH', '')}"
     monkeypatch.setenv("PATH", path_with_bin)

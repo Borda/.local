@@ -1,22 +1,42 @@
 """Collect privacy-minimized telemetry for staged multi-agent execution.
 
 ## Purpose
-Convert sanitized rollout event rows into compact attempt and wave telemetry that can compare parallel execution with a matched serial baseline.
+
+Convert sanitized rollout event rows into compact attempt and wave telemetry that can compare parallel execution with a
+matched serial baseline.
 
 ## Scope
-Own schema validation, token-counter handling, HMAC identifier projection, task timing extraction, derived comparison metrics, compact retained-proof policy, and audited expiry deletion of one fixed sanitized diagnostic artifact. The module does not schedule agents, read prompts, persist raw rollout data, recursively delete files, estimate provider prices, or decide whether a rollout phase passes.
+
+Own schema validation, token-counter handling, HMAC identifier projection, task timing extraction, derived comparison
+metrics, compact retained-proof policy, and audited expiry deletion of one fixed sanitized diagnostic artifact. The
+module does not schedule agents, read prompts, persist raw rollout data, recursively delete files, estimate provider
+prices, or decide whether a rollout phase passes.
 
 ## Usage
-Callers pass already-parsed JSON objects to :func:`collect_attempt_telemetry`, combine attempts with :func:`aggregate_wave_telemetry`, compare matched waves with :func:`compare_parallel_to_serial`, and project an exact wave through :func:`build_retained_wave_evidence`. Storage consumers call :func:`enforce_diagnostic_expiry` with that exact record, an explicit time, and a dedicated diagnostics directory.
+
+Callers pass already-parsed JSON objects to :func:`collect_attempt_telemetry`, combine attempts with
+:func:`aggregate_wave_telemetry`, compare matched waves with :func:`compare_parallel_to_serial`, and project an exact
+wave through :func:`build_retained_wave_evidence`. Storage consumers call :func:`enforce_diagnostic_expiry` with that
+exact record, an explicit time, and a dedicated diagnostics directory.
 
 ## Outputs
-Returned dictionaries contain numeric counters, bounded enums, timing fields, HMAC identifiers, aggregate comparisons, expiry audit evidence, and explicit unavailable-field reasons only. Expiry enforcement appends compact JSON Lines evidence to ``expiry-audit.jsonl`` before an eligible deletion and after every outcome; it may unlink only ``<wave_id_hmac>.diagnostic.json`` directly inside the supplied dedicated directory and makes no network request.
+
+Returned dictionaries contain numeric counters, bounded enums, timing fields, HMAC identifiers, aggregate comparisons,
+expiry audit evidence, and explicit unavailable-field reasons only. Expiry enforcement appends compact JSON Lines
+evidence to ``expiry-audit.jsonl`` before an eligible deletion and after every outcome; it may unlink only
+``<wave_id_hmac>.diagnostic.json`` directly inside the supplied dedicated directory and makes no network request.
 
 ## Failure
-Malformed counters, raw identifiers in output fields, negative timing, invalid modes, inconsistent token totals, record-policy drift, ambiguous timestamps, or unsafe diagnostic paths raise ``TelemetryError``. Missing optional timing is represented as ``None`` instead of being fabricated, so incomplete observability cannot appear measured.
+
+Malformed counters, raw identifiers in output fields, negative timing, invalid modes, inconsistent token totals, record
+policy drift, ambiguous timestamps, or unsafe diagnostic paths raise ``TelemetryError``. Missing optional timing is
+represented as ``None`` instead of being fabricated, so incomplete observability cannot appear measured.
 
 ## Used by
-Read-only runtime pilots, storage consumers, calibration, and skill consumers that need wall-time and token evidence without retaining prompts, reasoning, tool arguments, paths, credentials, or child messages. Acceptance logic consumes these returned records separately; this module is not an execution controller.
+
+Read-only runtime pilots, storage consumers, calibration, and skill consumers that need wall-time and token evidence
+without retaining prompts, reasoning, tool arguments, paths, credentials, or child messages. Acceptance logic consumes
+these returned records separately; this module is not an execution controller.
 """
 
 from __future__ import annotations
@@ -93,7 +113,6 @@ _DIAGNOSTIC_EXPIRY_AUDIT = "expiry-audit.jsonl"
 
 def hmac_identifier(secret: bytes, identifier: str) -> str:
     """Project one runtime identifier to a deterministic privacy-safe digest."""
-
     if not isinstance(secret, bytes) or not secret:
         raise TelemetryError("hmac-secret-required")
     if not isinstance(identifier, str) or not identifier:
@@ -103,7 +122,6 @@ def hmac_identifier(secret: bytes, identifier: str) -> str:
 
 def normalize_workload_key(value: str) -> str:
     """Normalize a non-empty workload identity without accepting raw prompts."""
-
     if not isinstance(value, str):
         raise TelemetryError("workload-key-required")
     normalized = unicodedata.normalize("NFKC", value).strip().casefold()
@@ -188,7 +206,6 @@ def _reconstruct_usage(samples: Sequence[dict[str, int]]) -> tuple[dict[str, int
 
 def extract_token_usage(rows: Iterable[Mapping[str, Any]]) -> tuple[dict[str, int], str, bool]:
     """Extract token counters and their evidence source from rollout rows."""
-
     samples: list[dict[str, int]] = []
     terminal_seen = False
     for row in rows:
@@ -216,7 +233,6 @@ def extract_token_usage(rows: Iterable[Mapping[str, Any]]) -> tuple[dict[str, in
 
 def extract_task_timing(rows: Iterable[Mapping[str, Any]]) -> dict[str, int | None]:
     """Extract the latest task duration and time-to-first-token values."""
-
     completions: list[Mapping[str, Any]] = []
     for row in rows:
         if not isinstance(row, Mapping):
@@ -245,7 +261,6 @@ def collect_attempt_telemetry(
     parent_attempt_id: str | None = None,
 ) -> dict[str, Any]:
     """Build one sanitized attempt record from rollout rows."""
-
     if not isinstance(role, str) or not role:
         raise TelemetryError("role-required")
     if not isinstance(outcome, str) or not outcome:
@@ -278,7 +293,6 @@ def aggregate_wave_telemetry(
     dispatch_to_final_join_ms: int,
 ) -> dict[str, Any]:
     """Aggregate unique sanitized attempts into one compact wave record."""
-
     if not isinstance(wave_id, str) or not wave_id:
         raise TelemetryError("wave-id-required")
     if mode not in EXECUTION_MODES:
@@ -334,7 +348,6 @@ def aggregate_wave_telemetry(
 
 def compare_parallel_to_serial(parallel: Mapping[str, Any], serial: Mapping[str, Any]) -> dict[str, Any]:
     """Compute matched wall-time and token multipliers without price claims."""
-
     parallel_wall = parallel.get("wall_time_ms")
     serial_wall = serial.get("wall_time_ms")
     parallel_total = parallel.get("total_tokens")
@@ -398,7 +411,10 @@ def build_retained_wave_evidence(
 ) -> dict[str, Any]:
     """Build durable compact proof plus a bounded diagnostic-retention policy.
 
-    The input must be the exact output of :func:`aggregate_wave_telemetry`; unknown fields fail closed so raw prompts, paths, messages, or environment data cannot silently cross the retention boundary. Durable proof remains compact, while separate sanitized diagnostics expire 30 days after success or resolution and unresolved terminal problems remain available until resolution.
+    The input must be the exact output of :func:`aggregate_wave_telemetry`; unknown fields fail closed so raw prompts,
+    paths, messages, or environment data cannot silently cross the retention boundary. Durable proof remains compact,
+    while separate sanitized diagnostics expire 30 days after success or resolution and unresolved terminal problems
+    remain available until resolution.
     """
     if set(wave) != _WAVE_FIELDS:
         raise TelemetryError("retained-wave-fields-invalid")
@@ -645,7 +661,11 @@ def _record_diagnostic_audit(
 def enforce_diagnostic_expiry(record: Mapping[str, Any], *, diagnostics_directory: Path, now: str) -> dict[str, Any]:
     """Audit expiry policy and delete at most one expired sanitized diagnostic.
 
-    Only exact records returned by :func:`build_retained_wave_evidence` are accepted. Every outcome is appended to the fixed durable audit before return. Eligible deletion records an intent before unlinking and a completion afterward, so an interrupted completion retains evidence for a later idempotent check. The sole allowed deletion target is the direct child named ``<wave_id_hmac>.diagnostic.json`` of a non-symlinked diagnostics directory; symlinks and non-regular targets fail closed.
+    Only exact records returned by :func:`build_retained_wave_evidence` are accepted. Every outcome is appended to the
+    fixed durable audit before return. Eligible deletion records an intent before unlinking and a completion afterward,
+    so an interrupted completion retains evidence for a later idempotent check. The sole allowed deletion target is the
+    direct child named ``<wave_id_hmac>.diagnostic.json`` of a diagnostics directory that is not a symlink; symlinks and
+    targets that are not regular files fail closed.
     """
     wave_id_hmac, status, expiry = _validated_retained_expiry(record)
     checked_at = _retention_timestamp(now, "now")

@@ -1,10 +1,8 @@
 """Smoke tests for ``oss/bin/resolve_shared_path.py``.
 
-The oss copy is a verbatim duplicate of foundry's canonical module
-(cross-plugin imports are forbidden — oss must work standalone). These
-tests confirm the contract surface: no ``/tmp`` literal, no CRLF in
-output, env-tier-0 happy path, source-tree fallback, and argument
-validation.
+The oss copy is a verbatim duplicate of foundry's canonical module (cross-plugin imports are forbidden — oss must work
+standalone). These tests confirm the contract surface: no ``/tmp`` literal, no CRLF in output, env-tier-0 happy path,
+source-tree fallback, and argument validation.
 """
 
 from __future__ import annotations

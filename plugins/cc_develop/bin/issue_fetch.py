@@ -63,8 +63,8 @@ def main(argv: list[str] | None = None) -> int:
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     args = list(sys.argv[1:] if argv is None else argv)
 
-    # argparse supplies only -h/--help; the $ARGUMENTS blob carries ``--``-shaped tokens that
-    # must stay opaque, so --repo and the blob are dispatched by the direct scan below.
+    # argparse supplies only ``-h/--help``; the $ARGUMENTS blob carries ``--``-shaped tokens that
+    # must stay opaque, so ``--repo`` and the blob are dispatched by the direct scan below.
     if args and args[0] in {"-h", "--help"}:
         parser = argparse.ArgumentParser(
             prog="issue_fetch.py",
@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.add_argument("--repo", metavar="OWNER/REPO", help="Optional upstream repo override (fork workflow).")
         parser.parse_args(args)  # exits 0 after printing help
 
-    # Extract --repo flag (supports fork/upstream workflow).
+    # Extract the ``--repo`` flag (supports fork/upstream workflow).
     repo: str | None = None
     positional: list[str] = []
     i = 0

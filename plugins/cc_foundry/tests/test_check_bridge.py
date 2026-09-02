@@ -44,9 +44,9 @@ class TestBridgeStatus:
     def test_registry_entry_without_install_path_is_absent(self, tmp_path: Path) -> None:
         """A selector key with no installed entry must not read as installed.
 
-        The root ``Makefile`` only treats a plugin as installed when an entry carries ``installPath``.
-        A checker that accepted the bare key would tell a skill the bridge is available
-        while the installer that placed it there disagrees.
+        The root ``Makefile`` only treats a plugin as installed when an entry carries ``installPath``. A checker that
+        accepted the bare key would tell a skill the bridge is available while the installer that placed it there
+        disagrees.
         """
         manifest = tmp_path / ".claude" / "plugins" / "installed_plugins.json"
         manifest.parent.mkdir(parents=True)
@@ -56,8 +56,8 @@ class TestBridgeStatus:
     def test_available_from_marketplace_cache(self, tmp_path: Path) -> None:
         """The exact marketplace cache layout answers only when no registry exists.
 
-        A machine whose registry file has not been written yet still has a usable bridge
-        on disk, so the cache is the fallback for that one case.
+        A machine whose registry file has not been written yet still has a usable bridge on disk, so the cache is the
+        fallback for that one case.
         """
         (tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig" / check_bridge.TARGET_PLUGIN / "0.1.0").mkdir(
             parents=True
@@ -67,10 +67,9 @@ class TestBridgeStatus:
     def test_stale_cache_never_overrides_a_readable_registry(self, tmp_path: Path) -> None:
         """Leftover cache directories from an uninstall must not report available.
 
-        ``claude plugin uninstall`` drops the registry entry but leaves the version
-        directory behind — real machines accumulate several per plugin. Consulting the
-        cache alongside a readable registry would dispatch skills into an uninstalled
-        plugin for as long as those directories survive.
+        ``claude plugin uninstall`` drops the registry entry but leaves the version directory behind — real machines
+        accumulate several per plugin. Consulting the cache alongside a readable registry would dispatch skills into an
+        uninstalled plugin for as long as those directories survive.
         """
         manifest = tmp_path / ".claude" / "plugins" / "installed_plugins.json"
         manifest.parent.mkdir(parents=True)

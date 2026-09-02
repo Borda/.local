@@ -49,7 +49,7 @@ FALLBACK_LIMIT = 10
 # fn-rdeps/fn-blast are NOT in this set: they require `module::fn` qnames and a
 # name-only diff yields bare modules — every such batch item failed "Symbol not
 # found" in production (2026-07 usage audit). Function-level queries return once
-# qname derivation from diff hunks lands (audit plan P1.2b).
+# Derive qualified names from diff hunks before resolving the affected symbols.
 PER_MODULE_QUERIES: tuple[tuple[str, ...], ...] = (
     ("rdeps",),  # importer count → risk tier
     ("mock-rdeps",),

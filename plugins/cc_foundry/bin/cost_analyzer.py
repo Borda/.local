@@ -115,7 +115,7 @@ def tier(model: str) -> str:
 
 
 def cost(usage: dict, model: str = "opus") -> float:
-    """Price one usage object in USD. Missing keys count as zero.
+    """Price one usage object in USD - missing keys count as zero.
 
     Examples:
         >>> round(cost({"output_tokens": 1_000_000}), 2)
@@ -250,9 +250,8 @@ def _row_to_call(row: dict, existing: dict[str, Call]) -> Call | None:
 def _parse_rows(path: Path) -> tuple[dict[str, Call], dict[str, int], float, float]:
     """Read one transcript file, deduplicating usage rows by message id.
 
-    Shared by the main-loop file and every subagent file — both carry the
-    identical row shape. ``isSidechain`` is already ``true`` on subagent
-    rows, so no caller-side tagging is needed.
+    Shared by the main-loop file and every subagent file — both carry the identical row shape. ``isSidechain`` is
+    already ``true`` on subagent rows, so no caller-side tagging is needed.
     """
     calls: dict[str, Call] = {}
     commands: dict[str, int] = {}
@@ -292,11 +291,9 @@ def _load_agent_spend(jf: Path, sub_calls: dict[str, Call]) -> AgentSpend:
 def load_session(main_path: Path) -> Session:
     """Parse one session: its main-loop file plus every subagent transcript.
 
-    Subagent files live at ``<main_path stem>/subagents/agent-*.jsonl``,
-    sibling to the flat ``<session-id>.jsonl``. Each has a matching
-    ``agent-*.meta.json`` carrying ``agentType`` and ``description``, used
-    for the per-agent cost rollup — more reliable than scanning the main
-    transcript for ``Agent`` tool_use blocks, which misses agents spawned
+    Subagent files live at ``<main_path stem>/subagents/agent-*.jsonl``, sibling to the flat ``<session-id>.jsonl``.
+    Each has a matching ``agent-*.meta.json`` carrying ``agentType`` and ``description``, used for the per-agent cost
+    rollup — more reliable than scanning the main transcript for ``Agent`` tool_use blocks, which misses agents spawned
     through the ``Workflow`` tool.
     """
     calls_by_id, commands, ts_first, ts_last = _parse_rows(main_path)
@@ -566,8 +563,8 @@ def _run_session_mode(root: Path, args: argparse.Namespace) -> list[str] | int:
 def _collect_window_sessions(root: Path, cutoff: float) -> list[Session]:
     """Load every session under ``root`` whose activity falls at/after ``cutoff``.
 
-    A file-mtime pre-check skips parsing anything provably older than the
-    window before paying for a full transcript read.
+    A file-mtime pre-check skips parsing anything provably older than the window before paying for a full transcript
+    read.
     """
     sessions: list[Session] = []
     for candidate in discover_sessions(root):
@@ -606,7 +603,10 @@ def _write_report(lines: list[str], output: str | None) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry. Writes a markdown ``## Tokens & cost`` section to ``--output``."""
+    """CLI entry.
+
+    Writes a markdown ``## Tokens & cost`` section to ``--output``.
+    """
     args = _build_parser().parse_args(argv)
     root = Path(args.projects_root).expanduser()
 

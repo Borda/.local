@@ -296,17 +296,16 @@ def binary_search(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Entry point. Returns process exit code.
+    """Find the test that pollutes a failing test and return the process status.
 
     Args:
-        argv: Optional argv override (defaults to ``sys.argv[1:]``).
+        argv: Optional argument override (defaults to ``sys.argv[1:]``).
 
     Returns:
-        ``0`` when a polluter is found; ``1`` on validation failure (missing
-        arg, isolation pass, no candidates, pytest missing); argparse exits
-        ``2`` on malformed args.
+        ``0`` when a polluter is found or ``1`` on validation failure, including a missing argument, an isolated pass,
+        no candidates, or a missing pytest executable. Argparse exits ``2`` for malformed arguments.
 
-    No doctest — subprocess- and argv-dependent; covered by pytest.
+    No doctest is provided because behavior depends on subprocesses and arguments; pytest covers the command.
     """
     parser = argparse.ArgumentParser(
         prog="find-polluter.py",

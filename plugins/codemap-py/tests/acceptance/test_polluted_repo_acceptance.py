@@ -1,24 +1,23 @@
 """Integration-level acceptance for codemap index hardening (exclusions, dedup, completeness).
 
-Driven through the shared ``polluted_repo`` factory fixture (see conftest.py): one
-realistic git repo exercising exclusions, deterministic dedup, direction-scoped
-query completeness, and stale-index self-heal — the cross-task interaction the
-per-concern unit suites (test_scan_index.py, test_query_complete.py) do not cover.
+Driven through the shared ``polluted_repo`` factory fixture (see conftest.py): one realistic git repo exercising
+exclusions, deterministic dedup, direction-scoped query completeness, and stale-index self-heal — the cross-task
+interaction the per-concern unit suites (test_scan_index.py, test_query_complete.py) do not cover.
 
-Tree recap (collision-free variant; dotted names in parentheses):
-    pkg/leaf.py       (pkg.leaf)     — healthy leaf
-    pkg/consumer.py   (pkg.consumer) — imports pkg.leaf
-    pkg/broken.py     (pkg.broken)   — SyntaxError → degraded
-    .claude/worktrees/agent-x/pkg/…  — excluded ghost copy (pruned, never collides)
-    vendored-lib/vendored.py         — pruned via .codemapignore
-The ``with_collision=True`` variant adds wt/pkg/… → a real pkg.* qualname collision.
+Tree recap for the collision-free variant, with dotted names in parentheses:
 
-``TestExcludedPathStaleness`` regression-guards a fixed scan-index/scan-query integration
-gap: scan-index filters excluded paths out of the index ``file_shas`` while
-scan-query's staleness diff applies the same exclusions (shared via
-``bin/_exclusions.py``), so a ``.codemapignore``-excluded tracked ``.py`` (here
-``vendored-lib/vendored.py``) no longer counts as "added" and the index is not
-falsely reported stale.
+* ``pkg/leaf.py`` (``pkg.leaf``) is a healthy leaf.
+* ``pkg/consumer.py`` (``pkg.consumer``) imports ``pkg.leaf``.
+* ``pkg/broken.py`` (``pkg.broken``) contains a syntax error and is marked degraded.
+* ``.claude/worktrees/agent-x/pkg/…`` is an excluded ghost copy that is pruned before it can collide.
+* ``vendored-lib/vendored.py`` is pruned through ``.codemapignore``.
+
+The ``with_collision=True`` variant adds ``wt/pkg/…`` to create a real ``pkg.*`` qualified-name collision.
+
+``TestExcludedPathStaleness`` regression-guards a fixed scan-index/scan-query integration gap: scan-index filters
+excluded paths out of the index ``file_shas`` while scan-query's staleness diff applies the same exclusions (shared via
+``bin/_exclusions.py``), so a ``.codemapignore``-excluded tracked ``.py`` (here ``vendored-lib/vendored.py``) no longer
+counts as "added" and the index is not falsely reported stale.
 """
 
 from __future__ import annotations
@@ -66,7 +65,7 @@ def _module_paths(index: dict) -> set[str]:
 
 
 class TestExclusions:
-    """the ghost worktree and vendored dir never enter the module index."""
+    """The ghost worktree and vendored dir never enter the module index."""
 
     def test_no_modules_under_excluded_roots(self, polluted_repo):
         """Fresh scan indexes zero modules under .claude/ or the vendored dir."""
@@ -99,7 +98,7 @@ class TestExclusions:
 
 
 class TestDedupDeterminism:
-    """the non-excluded duplicate tree collides deterministically."""
+    """The non-excluded duplicate tree collides deterministically."""
 
     def test_collision_recorded_for_shared_qualname(self, polluted_repo):
         """pkg/leaf.py and wt/pkg/leaf.py share dotted name pkg.leaf → one collision record."""
@@ -137,7 +136,7 @@ class TestDedupDeterminism:
 
 
 class TestDirectionScopedIncompleteness:
-    """a degraded file forces global-in / whole-graph queries to report incomplete."""
+    """A degraded file forces global-in / whole-graph queries to report incomplete."""
 
     def test_degraded_file_registered(self, polluted_repo, scan_query):
         """broken.py registers as the sole degraded module, surfaced in degraded_files."""
@@ -164,7 +163,7 @@ class TestDirectionScopedIncompleteness:
 
 
 class TestSelfHeal:
-    """a stale index is refreshed inline before the query answers."""
+    """A stale index is refreshed inline before the query answers."""
 
     def test_new_committed_edge_surfaces_via_heal(self, polluted_repo, scan_query):
         """Committing a new importer then querying rdeps auto-heals and reflects the new edge."""
@@ -179,7 +178,10 @@ class TestSelfHeal:
         assert "pkg.newcaller" in data["imported_by"], "self-heal must surface the newly-committed edge"
 
     def test_no_heal_flag_keeps_stale_result(self, polluted_repo, scan_query):
-        """--no-heal answers from the stale index: the new edge stays invisible."""
+        """Verify command-line option behavior.
+
+        --no-heal answers from the stale index: the new edge stays invisible.
+        """
         root, index_path = polluted_repo()
         (root / "pkg" / "newcaller.py").write_text(
             "import pkg.leaf\n\n\ndef also(x):\n    return pkg.leaf.leaf_fn(x)\n"
@@ -192,15 +194,13 @@ class TestSelfHeal:
 
 
 class TestExcludedPathStaleness:
-    """↔1.1: excluded tracked .py files must not poison staleness or completeness.
+    """Keep excluded tracked Python files from poisoning staleness or completeness.
 
-    scan-index drops ``.codemapignore``-excluded paths from the index ``file_shas``;
-    scan-query's staleness diff now applies the same exclusions (shared via
-    ``bin/_exclusions.py``), so an excluded tracked file such as
-    ``vendored-lib/vendored.py`` no longer shows as an "added" blob. A freshly scanned,
-    unmodified repo therefore reports fresh, and ``query_complete`` reaches True once no
-    degraded file constrains the direction. This regression-guards the earlier bug where
-    any excluded tracked ``.py`` forced the index permanently stale.
+    The excluded tracked fixture is ``vendored-lib/vendored.py``. Scan-index drops paths matched by ``.codemapignore``
+    from the index ``file_shas``, and scan-query's staleness diff applies the same exclusions through
+    ``bin/_exclusions.py``. The fixture therefore no longer appears as an "added" blob. A freshly scanned, unmodified
+    repo reports fresh, and ``query_complete`` reaches True once no degraded file constrains the direction. This guards
+    against the earlier bug where any excluded tracked Python file forced the index to remain stale.
     """
 
     def test_fresh_index_reports_not_stale(self, polluted_repo, scan_query):

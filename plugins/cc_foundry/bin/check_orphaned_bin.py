@@ -158,7 +158,7 @@ def find_orphans(plugins_dir: Path) -> list[OrphanFinding]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns process exit code."""
+    """Report orphaned executable scripts for selected plugins."""
     parser = argparse.ArgumentParser(
         prog="check_orphaned_bin",
         description="Detect bin/ scripts not referenced in plugin .md files.",

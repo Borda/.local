@@ -1,9 +1,8 @@
 """Tests for ``bin/merge_specialist_batch.py``.
 
-``subprocess.run`` and module-level ``which`` are monkeypatched — no real
-``git`` invocations. Covers plan parsing, the each-mode passthrough (no
-soft-reset), the non-each soft-reset behaviour, and conflict handling that
-stops the plan and reports remaining entries.
+``subprocess.run`` and module-level ``which`` are monkeypatched — no real ``git`` invocations. Covers plan parsing, the
+each-mode passthrough (no soft-reset), the non-each soft-reset behaviour, and conflict handling that stops the plan and
+reports remaining entries.
 """
 
 from __future__ import annotations
@@ -61,7 +60,7 @@ class TestParsePlan:
         assert msb.parse_plan("[]") == []
 
     def test_optional_group_and_module_fields(self) -> None:
-        """group/module are read when present and default to empty strings when absent."""
+        """Group/module are read when present and default to empty strings when absent."""
         raw = (
             '[{"item_id": "1", "sha": "aaa1111", "group": "sw", "module": "pkg.core"},'
             ' {"item_id": "2", "sha": "bbb2222"}]'
@@ -170,7 +169,7 @@ class TestRunPlanConflict:
 
 
 class TestMainCli:
-    """main(): CLI wiring — reads plan file, prints JSON, sets exit code from conflict state."""
+    """Read a merge plan and report its conflict state through the command line."""
 
     def test_clean_plan_exits_0(
         self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -209,7 +208,10 @@ class TestMainCli:
     def test_centrality_file_reorders_before_apply(
         self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """--centrality-file reorders whole groups so the most-central group's shas are picked first."""
+        """Verify command-line option behavior.
+
+        ``--centrality-file`` reorders whole groups so the most-central group's shas are picked first.
+        """
         recorded = _patch_git(monkeypatch)
         plan_file = tmp_path / "plan.json"
         plan_file.write_text(
@@ -225,7 +227,7 @@ class TestMainCli:
         assert pick_shas == ["bbb2222", "aaa1111"]
 
     def test_missing_required_args_exits_2(self) -> None:
-        """Neither --plan nor --commit-mode supplied → argparse exits 2."""
+        """Neither ``--plan`` nor ``--commit-mode`` supplied → argparse exits 2."""
         with pytest.raises(SystemExit) as exc:
             msb.main([])
         assert exc.value.code == 2

@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Build or verify the no-model Codex shared agentic manifest.
 
-The manifest freezes the shared task/prompt/scoring identity before any paid
-Codex agentic run.  It intentionally records no credential paths or auth
-material.  ``--check`` is read-only and fails closed on generated-byte drift.
+The manifest freezes the shared task/prompt/scoring identity before any paid Codex agentic run.  It intentionally
+records no credential paths or auth material.  ``--check`` is read-only and fails closed on generated-byte drift.
 """
 
 from __future__ import annotations

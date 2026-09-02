@@ -13,9 +13,9 @@ from pathlib import Path
 def _symlinks_available() -> bool:
     """Return whether the current host permits creating a file symlink.
 
-    Windows can, given Developer Mode or an elevated session, and the hosted CI runner does —
-    so the question is a per-host capability, not a platform. Asking it by attempting the
-    operation keeps the answer honest on both sides instead of writing Windows off wholesale.
+    Windows can, given Developer Mode or an elevated session, and the hosted CI runner does — so the question concerns
+    host capability, not platform identity. Asking it by attempting the operation keeps the answer honest on both sides
+    instead of writing Windows off wholesale.
     """
     with tempfile.TemporaryDirectory() as scratch:
         root = Path(scratch)

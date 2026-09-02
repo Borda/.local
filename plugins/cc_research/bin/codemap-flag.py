@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""codemap-flag.py — resolve --codemap / --no-codemap out of a skill's arguments and persist
+"""codemap-flag.py — resolve ``--codemap`` / ``--no-codemap`` out of a skill's arguments and persist
 the answer to that skill's codemap-enabled sentinel.
 
 Wraps bin/codemap_resolve.py with the flag parsing that was duplicated verbatim in run/ and
@@ -11,7 +11,7 @@ Usage: CODEMAP_RAW=$(python codemap-flag.py <sentinel-slug> "$ARGUMENTS") || exi
   Writes true/false to ${TMPDIR:-/tmp}/<sentinel-slug>-codemap-enabled-${CSID}.
 Requires: CSID exported by the caller — a child's own parent process id is the calling shell,
   not the Claude Code process, so deriving it here would name a different sentinel.
-Exit codes: 0 = resolved · 1 = --codemap (strict) but codemap unavailable · 2 = bad args
+Exit codes: 0 = resolved · 1 = ``--codemap`` (strict) but codemap unavailable · 2 = bad args
 """
 
 from __future__ import annotations
@@ -45,9 +45,9 @@ def _resolve_mode(args: str) -> str:
 def _run_resolver(raw: str, csid: str) -> tuple[str, bool]:
     """Run bin/codemap_resolve.py for *raw*, returning (stripped stdout, succeeded).
 
-    ``--currency-prefix`` is supplied here because ``codemap_resolve.py`` is byte-identical
-    across consuming plugins (propagate_shared.py MANIFEST); research's sentinel name is
-    research's own concern and must never be hard-coded in that shared file.
+    ``--currency-prefix`` is supplied here because ``codemap_resolve.py`` is byte-identical across consuming plugins
+    (propagate_shared.py MANIFEST); research's sentinel name is research's own concern and must never be hard-coded in
+    that shared file.
     """
     resolver = Path(__file__).resolve().parent / "codemap_resolve.py"
     # Invoked through sys.executable, not the shebang: a bare `#!` is not honoured

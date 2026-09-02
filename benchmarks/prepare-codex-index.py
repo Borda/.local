@@ -143,9 +143,8 @@ def index_contract(
 ) -> dict[str, Any]:
     """Return and validate the active index lock and scanner schema identity.
 
-    The Codex manifest must carry the same index identity as the provider-neutral
-    methodology source. When the schema source is supplied, an older manifest
-    lock is rejected even if an old index's bytes still match that lock.
+    The Codex manifest must carry the same index identity as the provider-neutral methodology source. When the schema
+    source is supplied, an older manifest lock is rejected even if an old index's bytes still match that lock.
     """
     manifest = _load_json(manifest_path)
     expected = manifest.get("index")
@@ -239,17 +238,14 @@ def verify_index(
 def _replace_root(value: Any, source_root: str, locked_root: str) -> Any:
     """Replace scanner-root path prefixes recursively without changing structure.
 
-    Only a string that *is* the scan root, or a path beneath it, is rewritten. The
-    previous bare ``str.replace`` rewrote every occurrence in every string, so a
-    content field that merely mentions the checkout path (a docstring first line, a
-    captured subprocess argument) was edited too — and those rewritten bytes are the
-    ones hashed and installed, which makes the installed index disagree with the
-    source it was scanned from. Anchoring on a separator boundary additionally
-    keeps a sibling directory whose name merely extends the root (``…/repo-other``
-    beside ``…/repo``) out of the locked tree; a bare ``startswith`` would fold it in.
-    Which separators bound the tree is decided by the root's own spelling
-    (:func:`_root_boundary_separators`), never by the host, so the same payload
-    relocates identically on every OS.
+    Only a string that *is* the scan root, or a path beneath it, is rewritten. The previous bare ``str.replace`` rewrote
+    every occurrence in every string, so a content field that merely mentions the checkout path (a docstring first line,
+    a captured subprocess argument) was edited too — and those rewritten bytes are the ones hashed and installed, which
+    makes the installed index disagree with the source it was scanned from. Anchoring on a separator boundary
+    additionally keeps a sibling directory whose name merely extends the root (``…/repo-other`` beside ``…/repo``) out
+    of the locked tree; a bare ``startswith`` would fold it in. Which separators bound the tree is decided by the root's
+    own spelling (:func:`_root_boundary_separators`), never by the host, so the same payload relocates identically on
+    every OS.
     """
     if isinstance(value, str):
         if value == source_root:

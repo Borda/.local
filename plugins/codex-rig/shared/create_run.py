@@ -3,27 +3,38 @@
 
 ## Purpose
 
-Give each workflow invocation an isolated, predictable evidence location without requiring shell-specific timestamp handling. The generated directory is the handoff point that later helpers use for all run-scoped evidence and results. A collected PR review can subsequently promote that complete directory into a stable PR-specific sequence.
+Give each workflow invocation an isolated, predictable evidence location without requiring shell-specific timestamp
+handling. The generated directory is the handoff point that later helpers use for all run-scoped evidence and results. A
+collected PR review can subsequently promote that complete directory into a stable PR-specific sequence.
 
 ## Scope
 
-It validates a canonical skill identifier and either creates one local directory or promotes one direct-child ``code-review`` run. Promotion reads the authoritative PR number from the run's ``pr.json`` and moves the whole run atomically; it neither changes evidence files nor starts a workflow.
+It validates a canonical skill identifier and either creates one local directory or promotes one direct child produced
+by ``code-review``. Promotion reads the authoritative PR number from the run's ``pr.json`` and moves the whole run
+atomically; it neither changes evidence files nor starts a workflow.
 
 ## Usage
 
-Run ``python create_run.py --skill <canonical-skill-id>`` once and use the printed path literally in later commands. After PR collection, run it again with ``--skill code-review --promote-pr-run <created-path>``. Pass ``--root`` consistently when a workflow owns a different local artifact root.
+Run ``python create_run.py --skill <canonical-skill-id>`` once and use the printed path literally in later commands.
+After PR collection, run it again with ``--skill code-review --promote-pr-run <created-path>``. Pass ``--root``
+consistently when a workflow owns a different local artifact root.
 
 ## Used by
 
-Every artifact-producing workflow skill and portable workflow-helper tests use this creator. Downstream commands depend on its stdout path rather than recomputing timestamps or assuming a shell-specific date utility.
+Every artifact-producing workflow skill and portable workflow-helper tests use this creator. Downstream commands depend
+on its stdout path rather than recomputing timestamps or assuming a shell-specific date utility.
 
 ## Outputs
 
-Creation prints a UTC timestamp path beneath ``.reports/codex/<skill>/`` unless an explicit root is supplied. Promotion prints ``<root>/code-review/pr-<number>/run-<NNN>`` using the next positive numeric index with at least three digits. The directory is moved as one filesystem entry, retaining every collected artifact.
+Creation prints a UTC timestamp path beneath ``.reports/codex/<skill>/`` unless an explicit root is supplied. Promotion
+prints ``<root>/code-review/pr-<number>/run-<NNN>`` using the next positive numeric index with at least three digits.
+The directory is moved as one filesystem entry, retaining every collected artifact.
 
 ## Failure
 
-Invalid skill IDs and unwritable paths exit non-zero. Promotion also fails closed for an unsupported skill, an unsafe or misplaced source, missing or invalid PR identity, or malformed sequence siblings. Atomic destination collisions are rescanned and retried without overwriting an accepted run.
+Invalid skill IDs and unwritable paths exit non-zero. Promotion also fails closed for an unsupported skill, an unsafe or
+misplaced source, missing or invalid PR identity, or malformed sequence siblings. Atomic destination collisions are
+rescanned and retried without overwriting an accepted run.
 """
 
 from __future__ import annotations

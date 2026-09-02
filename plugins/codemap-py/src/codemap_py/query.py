@@ -169,10 +169,9 @@ _capture: list[str] | None = None
 def _print(*args: object, **kwargs: object) -> None:
     """Forward to built-in print; for stdout output also append a cli.jsonl record.
 
-    In batch mode (:data:`_capture` set) a stdout write is diverted into the capture
-    buffer and neither printed nor logged — the batch driver owns the single real
-    stdout write and one telemetry record for the whole batch. stderr writes
-    (``file=`` kwarg) always go straight through regardless of mode.
+    In batch mode (:data:`_capture` set) a stdout write is diverted into the capture buffer and neither printed nor
+    logged — the batch driver owns the single real stdout write and one telemetry record for the whole batch. stderr
+    writes (``file=`` kwarg) always go straight through regardless of mode.
     """
     if not kwargs.get("file") and _capture is not None:
         _capture.append(str(args[0]) if args else "")
@@ -196,13 +195,12 @@ def _print(*args: object, **kwargs: object) -> None:
 def _has_call_graph(index: dict) -> bool:
     """Return True if the index was built with call graph data (schema v3+).
 
-    Gates on the fixed ``CALL_GRAPH_MIN_VER`` floor (3 — when the ``calls`` field
-    first shipped), NOT the live ``SCAN_VERSION``: any index at or above v3 carries
-    call edges, so a future ``SCAN_VERSION`` bump must not retroactively reject a
-    still-valid pre-current index for fn-deps/fn-rdeps/fn-central/fn-blast.
+    Gates on the fixed ``CALL_GRAPH_MIN_VER`` floor (3 — when the ``calls`` field first shipped), NOT the live
+    ``SCAN_VERSION``: any index at or above v3 carries call edges, so a future ``SCAN_VERSION`` bump must not
+    retroactively reject a still-valid pre-current index for fn-deps/fn-rdeps/fn-central/fn-blast.
 
-    Accepts both int and string values for ``scan_version`` — older index files
-    may have been written by tools that serialised the field as a string.
+    Accepts both int and string values for ``scan_version`` — older index files may have been written by tools that
+    serialised the field as a string.
     """
     raw = index.get("scan_version", 0)
     try:
@@ -327,7 +325,7 @@ def _find_index_in_scan_dir(scan_dir: Path, parent: Path) -> Path | None:
     safe_candidates = _safe_glob_candidates(scan_dir, sorted(scan_dir.glob("*.json")))
     if not safe_candidates:
         return None
-    # Schema-validate glob candidates before trusting one (SEC-M10): an
+    # Schema-validate glob candidates before trusting one: an
     # arbitrary .json in the cache dir must not be loaded unvalidated.
     valid = [c for c in safe_candidates if _is_valid_index_file(c)]
     if not valid:
@@ -403,7 +401,7 @@ def _is_valid_index_file(path: Path) -> bool:
     Validates the two structural invariants every index must satisfy before it is
     trusted: an integer ``scan_version`` and a list ``modules`` field. Used to
     reject crafted or unrelated ``*.json`` files picked up by the strategy-2 glob
-    fallback (SEC-M10), which would otherwise be handed to ``load_index`` blindly.
+    fallback, which would otherwise be handed to ``load_index`` blindly.
 
     Size is bounded by ``_MAX_INDEX_SIZE_BYTES`` before parsing to avoid memory
     exhaustion via ``json.load`` on an oversized candidate. Any read/parse error
@@ -521,10 +519,10 @@ def _emit_gate_error(code: str, detail: str) -> None:
 
 
 def _gate_timeout_kwargs() -> dict[str, float]:
-    """Optional bounded gate timeout from ``CODEMAP_GATE_TIMEOUT`` (seconds).
+    """Return the optional bounded gate timeout.
 
-    Absent or non-positive leaves the gate's own default bound; a positive value
-    lets callers (and tests) shorten the wait before ``index_busy``.
+    Absent or non-positive leaves the gate's own default bound; a positive value lets callers (and tests) shorten the
+    wait before ``index_busy``.
     """
     raw = os.environ.get("CODEMAP_GATE_TIMEOUT", "").strip()
     try:
@@ -545,7 +543,7 @@ _LOADED_INDEX_PATH: str = ""
 
 
 def _load_index_leased(index_path: Path) -> dict:
-    """Load and self-check the index under a shared read lease (plan §4.4).
+    """Load and self-check the index under a shared read lease.
 
     The lease is taken HERE, in the engine, rather than by whatever launched it, so
     every route into a query holds one: ``codemap-py query``, ``bin/scan-query``, and
@@ -614,7 +612,7 @@ def _git_cwd_kwargs() -> dict[str, str]:
 
 
 # Self-heal bounds: when the index is stale at query time we run
-# `scan-index --incremental` inline so the answer reflects the current tree.
+# ``scan-index --incremental`` inline so the answer reflects the current tree.
 # Bounded so the heal never dominates the query path — a large change set or a
 # slow scan falls back to the stale-honest result instead.
 _HEAL_MAX_CHANGED_FILES = 50  # skip heal when more than this many .py files changed
@@ -624,10 +622,9 @@ _HEAL_TIMEOUT_S = 10  # hard wall-clock cap on the incremental scan subprocess
 def _autobuild_disabled() -> bool:
     """Return whether the caller requires queries to use the existing index exactly as-is.
 
-    ``SCAN_NO_AUTOBUILD=1`` is used by isolated benchmark and CI environments
-    so index refresh work cannot leak into measured query cost. Only the
-    documented value ``"1"`` opts out; an unset or malformed value preserves
-    the interactive self-heal default.
+    ``SCAN_NO_AUTOBUILD=1`` is used by isolated benchmark and CI environments so index refresh work cannot leak into
+    measured query cost. Only the documented value ``"1"`` opts out; an unset or malformed value preserves the
+    interactive self-heal default.
     """
     return os.environ.get("SCAN_NO_AUTOBUILD") == "1"
 
@@ -635,9 +632,8 @@ def _autobuild_disabled() -> bool:
 class _FileShas(NamedTuple):
     """Tracked blob SHAs plus how confidently they were obtained.
 
-    ``status`` is what separates "git says nothing changed" from "git never
-    answered". Collapsing the two — the previous behaviour, an empty dict for both —
-    let a git failure be read as proof of a fresh index.
+    ``status`` is what separates "git says nothing changed" from "git never answered". Collapsing the two — the previous
+    behaviour, an empty dict for both — let a git failure be read as proof of a fresh index.
     """
 
     shas: dict[str, str]
@@ -706,8 +702,8 @@ def _warn_staleness_undetermined(exc: BaseException) -> None:
 def _resolve_current_file_shas() -> _FileShas:
     """Read tracked source blob SHAs from git once, classifying any failure.
 
-    Includes ``.py``, ``.pyi``, ``.rst``, and ``docs/**/*.md`` via
-    :data:`_INDEXED_PATHSPEC` because each can affect the index.
+    Includes ``.py``, ``.pyi``, ``.rst``, and ``docs/**/*.md`` via :data:`_INDEXED_PATHSPEC` because each can affect the
+    index.
     """
     git_root = _get_git_root_cached()
     if git_root is None:
@@ -732,10 +728,9 @@ def _resolve_current_file_shas() -> _FileShas:
 def _current_file_shas() -> _FileShas:
     """Return the memoized tracked-blob SHAs (and their status) for this invocation.
 
-    Memoized because two independent consumers ask the same question on every query —
-    :func:`_changed_py_files` for the self-heal decision and :func:`_coverage` for the
-    honesty block — which otherwise spawned two identical ``git ls-files`` subprocesses
-    per query. The working tree cannot change under a single query, so one call is both
+    Memoized because two independent consumers ask the same question on every query — :func:`_changed_py_files` for the
+    self-heal decision and :func:`_coverage` for the honesty block. Without this memo, each query spawned two identical
+    subprocesses running ``git ls-files``. The working tree cannot change under a single query, so one call is both
     cheaper and guaranteed self-consistent.
     """
     global _file_shas_cache
@@ -747,9 +742,8 @@ def _current_file_shas() -> _FileShas:
 def _get_current_file_shas() -> dict[str, str]:
     """Return tracked source blob SHAs using the scanner's exact file-set contract.
 
-    Thin accessor over :func:`_current_file_shas` for callers that only need the
-    mapping; callers that must distinguish "nothing changed" from "git never answered"
-    read ``.status`` instead.
+    Thin accessor over :func:`_current_file_shas` for callers that only need the mapping; callers that must distinguish
+    "nothing changed" from "git never answered" read ``.status`` instead.
     """
     return _current_file_shas().shas
 
@@ -957,9 +951,8 @@ def build_symbol_map(index: dict, exclude_tests: bool = False) -> dict[str, tupl
 def _resolve_symbol_alias(index: dict, qname: str) -> str | None:
     """Resolve a persisted static symbol alias without trusting malformed chains.
 
-    Scan-index writes only canonical alias targets, but query must still treat an
-    edited or otherwise malformed index defensively. A cycle therefore returns
-    ``None`` rather than looping or inventing a target.
+    Scan-index writes only canonical alias targets, but query must still treat an edited or otherwise malformed index
+    defensively. A cycle therefore returns ``None`` rather than looping or inventing a target.
     """
     aliases = index.get("symbol_aliases", {})
     if not isinstance(aliases, dict):
@@ -1046,7 +1039,7 @@ _rev_graph_cache: dict | None = None
 
 # set once in main() before any command runs. True when the index's stored
 # scan_root does not match where this query is being resolved against (a mismatched
-# --root, or a CWD outside the scanned tree). A root-mismatched index answers about a
+# ``--root``, or a CWD outside the scanned tree). A root-mismatched index answers about a
 # DIFFERENT project, so its graph can never be a complete answer here — this flag both
 # surfaces in every coverage block and forces query_complete=false in _query_complete.
 _root_mismatch: bool = False
@@ -1428,7 +1421,10 @@ def _query_complete(
 
 
 def _local_complete(base: dict, *, module_status: str | None, module_name: str | None) -> tuple[bool, str]:
-    """Completeness for a local (module-scoped) query. See :func:`_query_complete`."""
+    """Completeness for a local (module-scoped) query.
+
+    See :func:`_query_complete`.
+    """
     if module_status != "ok":
         return False, "module_degraded"
     # Untracked files never affect a single module's own entry → not a local veto.
@@ -1439,7 +1435,10 @@ def _local_complete(base: dict, *, module_status: str | None, module_name: str |
 
 
 def _wide_complete(base: dict) -> tuple[bool, str]:
-    """Completeness for a global-in / whole-graph query. See :func:`_query_complete`."""
+    """Completeness for a global-in / whole-graph query.
+
+    See :func:`_query_complete`.
+    """
     for key, reason in (("degraded", "degraded"), ("untracked_py", "untracked"), ("collision_count", "collision")):
         if base[key]:
             return False, reason
@@ -1580,8 +1579,8 @@ def _coverage_note(
 # (fail-verbose: never silently compact when we can't prove same-session).
 
 _SESSION_MARKER_TTL_MS = 30 * 60 * 1000  # 30 min — matches the hook writer's guard
-_verbose_coverage: bool = False  # set from --verbose-coverage in main(); forces full block
-_force_compact_coverage: bool = False  # set from --compact in main(); opt-in coverage diet
+_verbose_coverage: bool = False  # set from ``--verbose-coverage`` in main(); forces full block
+_force_compact_coverage: bool = False  # set from ``--compact`` in main(); opt-in coverage diet
 _COMPACT_ALIAS_LIMITATION_LIMIT = 8
 _coverage_full_keys = (
     "total_modules",
@@ -1946,10 +1945,9 @@ def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False, entity: Ent
 def _production_rdep_counts(index: dict) -> dict[str, int]:
     """Return incoming import counts after removing every test-module edge.
 
-    ``rdep_count`` is stored during index construction and intentionally includes
-    test importers. ``central --exclude-tests`` needs a separate count so it
-    describes the production import graph rather than merely hiding test
-    candidates. Module aliases use the same canonicalization as graph metrics.
+    ``rdep_count`` is stored during index construction and intentionally includes test importers. Using ``central`` with
+    ``--exclude-tests`` needs a separate count so it describes the production import graph rather than merely hiding
+    test candidates. Module aliases use the same canonicalization as graph metrics.
     """
     aliases = index.get("module_aliases", {})
     counts: dict[str, int] = {}
@@ -2183,7 +2181,7 @@ def cmd_packages(index: dict) -> None:
 def _resolve_project_root(explicit_root: Path | None, index: dict) -> Path:
     """Resolve project root for file path lookups using priority chain.
 
-    Priority: explicit --root flag > scan_root stored in index > git root from CWD > CWD.
+    Priority: explicit ``--root`` flag > scan_root stored in index > git root from CWD > CWD.
     """
     if explicit_root is not None:
         return explicit_root.resolve()
@@ -2289,10 +2287,10 @@ def _extract_import_block(lines: list[str], file_path: Path | None) -> str:
 def _symbol_source_and_staleness(
     sym: Symbol, lines: list[str], rel_path: str, file_path: Path | None
 ) -> tuple[str, bool, str | None]:
-    """Slice *sym*'s source out of *lines* and detect whether that slice is stale (M2).
+    """Slice *sym*'s source out of *lines* and detect whether that slice is stale.
 
-    A stale slice is blanked before returning (SEC-M12: never emit source that may
-    point at a different function because the file shrank/moved since indexing) —
+    A stale slice is blanked before returning: never emit source that may
+    point at a different function because the file shrank or moved since indexing. Instead,
     callers fall back to ``Read(path)`` and see ``stale_reason`` for diagnostics.
 
     Args:
@@ -2465,17 +2463,23 @@ def cmd_symbols(index: dict, module: str) -> None:
 
 
 _DANGEROUS_PATTERN = re.compile(
-    r"""
-    # adjacent quantifiers: a++, a**, a*+, a+{2,}
-    (?:\+|\*|\{[0-9]+,?\})\s*(?:\+|\*|\{[0-9]+,?\})
-    |
-    # group with inner quantifier then outer quantifier: (a+)+, (a+)*, (.+){2,}
-    \([^)]*(?:\+|\*|\?|\{[0-9])[^)]*\)\s*(?:\+|\*|\?|\{[0-9])
-    """,
+    (
+        "\n"
+        r"    # adjacent quantifiers: a++, a**, a*+, a+{2,}"
+        "\n"
+        r"    (?:\+|\*|\{[0-9]+,?\})\s*(?:\+|\*|\{[0-9]+,?\})"
+        "\n"
+        r"    |"
+        "\n"
+        r"    # group with inner quantifier then outer quantifier: (a+)+, (a+)*, (.+){2,}"
+        "\n"
+        r"    \([^)]*(?:\+|\*|\?|\{[0-9])[^)]*\)\s*(?:\+|\*|\?|\{[0-9])"
+        "\n    "
+    ),
     re.VERBOSE,
 )
 
-# Alternation-based catastrophic backtracking that _DANGEROUS_PATTERN misses (SEC-L6):
+# Alternation-based catastrophic backtracking that _DANGEROUS_PATTERN misses:
 # any single-level alternation group followed by an outer quantifier — e.g.
 # (a|aa)+, (a*|b*)+, (foo|foo)*. Overlapping or quantified branches under an outer
 # +/*/{ are the classic exponential-backtracking shape. [^()] keeps this to a flat
@@ -2615,7 +2619,7 @@ def _exit_symbol_not_found(index: dict, qname: str) -> None:
 
 
 def cmd_fn_deps(index: dict, qname: str) -> None:
-    """What does function *qname* call? Lists forward call edges.
+    """List the functions called by a qualified function name.
 
     Args:
         index: parsed codemap index dict (must be v3 with call graph).
@@ -2646,7 +2650,7 @@ def cmd_fn_deps(index: dict, qname: str) -> None:
 
 
 def cmd_fn_rdeps(index: dict, qname: str, exclude_tests: bool = False) -> None:
-    """What calls function *qname*? Lists reverse call edges.
+    """List the functions that call a qualified function name.
 
     The caller list is deduplicated: each calling symbol appears at most once even
     when it calls *qname* from several call sites. ``count`` and its explicit alias
@@ -2890,9 +2894,9 @@ def cmd_test_impact(index: dict, qname: str, include_mocks: bool = True) -> None
     Two input modes:
 
     * ``module::symbol`` — BFS over static reverse call graph; filters to
-      test modules.  Also collects ``mock_patches`` for the symbol.
+      test modules. Also collects ``mock_patches`` for the symbol.
     * bare ``module`` — BFS over static reverse import graph; filters to
-      test modules.  Also collects ``mock_patches`` for every symbol in the
+      test modules. Also collects ``mock_patches`` for every symbol in the
       module.
 
     Args:
@@ -3476,7 +3480,10 @@ def _module_uncovered_candidates(m: dict) -> list[dict]:
 
 
 class UncoveredSort(str, Enum):
-    """Sort order for the ``uncovered`` query. Inherits str so CLI values map straight onto members."""
+    """Sort order for the ``uncovered`` query.
+
+    Inherits str so CLI values map straight onto members.
+    """
 
     LOC = "loc"
     NAME = "name"
@@ -3813,7 +3820,7 @@ def cmd_xrefs(index: dict, query: str, broken: bool) -> None:
         )
         return
 
-    # --broken mode: scan refs whose target module matches *query* (or all if query == "").
+    # ``--broken`` mode: scan refs whose target module matches *query* (or all if query == "").
     sym_map = _get_symbol_map(index)
     module_prefix = f"{query}::" if query else ""
     broken_refs: list[dict] = []
@@ -4043,7 +4050,7 @@ def cmd_dead_modules(index: dict, args: argparse.Namespace) -> None:
             for future filtering options).
     """
     _require_feature(index, DEAD_SYMBOL_MIN_VER, "dead-symbol")
-    _ = args  # placeholder — kept for future filtering knobs (e.g. --min-loc)
+    _ = args  # placeholder — kept for future filtering knobs (e.g. ``--min-loc``)
 
     findings: list[dict] = []
     for m in index.get("modules", []):
@@ -4687,7 +4694,10 @@ def _add_symbol_subparsers(sub: argparse._SubParsersAction) -> None:
 
 
 def _add_callgraph_subparsers(sub: argparse._SubParsersAction) -> None:
-    """Register call-graph subcommands (require v3+ index): fn-deps, fn-rdeps, fn-central, fn-blast, test-impact, mock-rdeps."""
+    """Register call-graph subcommands that require a version 3 or newer index.
+
+    Registers ``fn-deps``, ``fn-rdeps``, ``fn-central``, ``fn-blast``, ``test-impact``, and ``mock-rdeps``.
+    """
     p_fn_deps = sub.add_parser("fn-deps", help="What does a function call? (requires v3 index)")
     p_fn_deps.add_argument("qname", help="Full qname: module::symbol, e.g. 'mypackage.auth::validate_token'")
 

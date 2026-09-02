@@ -23,9 +23,8 @@ def _terminal_failure_gate() -> str:
 def test_terminal_pr_collection_failure_is_review_unavailable_not_merge_decision() -> None:
     """Keep a failed evidence collection separate from a PR review outcome.
 
-    A T0 failure means no source review occurred. The user therefore needs a
-    plain operational diagnostic, not a ``needs-more-work`` recommendation or
-    any table that could be mistaken for PR findings.
+    A T0 failure means no source review occurred. The user therefore needs a plain operational diagnostic, not a
+    ``needs-more-work`` recommendation or any table that could be mistaken for PR findings.
     """
     skill = CODE_REVIEW_SKILL.read_text(encoding="utf-8")
     terminal_gate = _terminal_failure_gate()

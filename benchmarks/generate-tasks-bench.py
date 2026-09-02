@@ -73,7 +73,7 @@ class TaskType(str, Enum):
 
 
 # Test-file / test-directory detection — mirrors scan-index ``_TEST_PATH_RE`` so the AST oracle
-# excludes the same test modules scan-query does (review N1). Matched against repo-relative paths.
+# excludes the same test modules scan-query does. Matched against repo-relative paths.
 _TEST_PATH_RE = re.compile(r"(^|/)tests?/|/test_[^/]+\.py$|/[^/]+_test\.py$|/conftest\.py$")
 
 # Kept in sync with ``scan-query --help`` by the benchmark test suite.  Query
@@ -121,13 +121,11 @@ def _expected_query_contract_errors(
 ) -> list[str]:
     """Return structural and command-support defects in executable task query contracts.
 
-    ``real_issue`` tasks retain historical provenance and are not execution
-    coordinates for the locked provider-parity study. When
-    ``executable_task_types`` is supplied, only those validator-backed task
-    types are checked; this lets the generator retain its fail-closed unknown
-    task reporting without a schema error hiding it. Every checked task must
-    declare at least one exact ``{cmd, args}`` query so B/C preflight can
-    verify use without interpreting natural-language prompts.
+    ``real_issue`` tasks retain historical provenance and are not execution coordinates for the locked provider-parity
+    study. When ``executable_task_types`` is supplied, only those validator-backed task types are checked; this lets the
+    generator retain its fail-closed unknown task reporting without a schema error hiding it. Every checked task must
+    declare at least one exact ``{cmd, args}`` query so B/C preflight can verify use without interpreting free-form
+    prompts.
     """
     errors: list[str] = []
     for task in tasks:
@@ -236,7 +234,7 @@ def _detect_src_root(repo: Path) -> Path:
 
 
 def _module_name_for(fpath: Path, repo: Path, src_root: Path) -> str:
-    """Derive the dotted module name of *fpath* in scan-query's namespace (review N1).
+    """Derive the dotted module name of *fpath* in scan-query's namespace.
 
     A file inside a package (its parent holds an ``__init__.py``) is named by its ``__init__.py``
     chain (:func:`module_from_init_chain`, scan-index Strategy 2); a loose module is named relative
@@ -282,7 +280,7 @@ def resolve_index_path(arg: str | None, repo_path: Path) -> Path:
     raises; may return a not-yet-built path).
 
     Args:
-        arg: Explicit --index-path argument; if given, returned as-is.
+        arg: Explicit ``--index-path`` argument; if given, returned as-is.
         repo_path: Root of the repository being indexed.
 
     Returns:
@@ -409,7 +407,7 @@ class _CallFinder(ast.NodeVisitor):
 class _QualifiedCallFinder(ast.NodeVisitor):
     """AST visitor crediting only callers whose call receiver statically resolves to the target.
 
-    Conservative (precision-first) qualified caller oracle for ground truth (review N1). Unlike
+    Conservative (precision-first) qualified caller oracle for ground truth. Unlike
     :class:`_CallFinder` (simple-name match, which over-approximates), an attribute call
     ``recv.method()`` is credited only when *recv* resolves to the target's class — ``self`` / ``cls``
     inside that class, or a direct ``Class.method()`` / ``Class().method()`` reference — so a
@@ -624,7 +622,7 @@ def _reexports_symbol(
 
 
 def _walk_caller_sets(primary_fn: str, repo: Path) -> tuple[set[str], set[str], str | None]:
-    """Walk repo AST once, returning both the qualified (authoritative) and loose caller sets (review N1).
+    """Walk repo AST once, returning both the qualified (authoritative) and loose caller sets.
 
     The qualified set (:class:`_QualifiedCallFinder`) is the authoritative ground truth: it credits a
     caller only when the call receiver statically resolves to the target's class/module. The loose set
@@ -694,7 +692,7 @@ def _walk_caller_sets(primary_fn: str, repo: Path) -> tuple[set[str], set[str], 
 def _callers_via_ast(primary_fn: str, repo: Path) -> tuple[set[str], str | None]:
     """Return the authoritative (qualified) caller set of ``primary_fn`` independent of scan-query.
 
-    Thin wrapper over :func:`_walk_caller_sets` exposing only the qualified set (review N1). The loose
+    Thin wrapper over :func:`_walk_caller_sets` exposing only the qualified set. The loose
     simple-name set is available via :func:`_walk_caller_sets` for divergence diagnostics.
 
     Args:
@@ -846,7 +844,7 @@ class _PublicSymbolFinder(ast.NodeVisitor):
     Qualified names are the dotted scope within the module (``Class.method``); a symbol is public
     when no component starts with ``_`` (matches scan-query ``_is_public_symbol``). Unlike
     :class:`_UndocFinder`, docstring presence is irrelevant — this enumerates the full public surface
-    so the uncovered oracle (review C-2) can subtract test-referenced symbols from it.
+    so the uncovered oracle can subtract test-referenced symbols from it.
 
     Args:
         symbols: Mutable set accumulating public qualified names.
@@ -886,7 +884,7 @@ def _is_patch_call(func: ast.expr) -> bool:
 
 
 class _TestRefFinder(ast.NodeVisitor):
-    """AST visitor collecting the simple names a test module references (review C-2).
+    """AST visitor collecting the simple names a test module references.
 
     The independent oracle is deliberately broad: every test ``Name`` and ``Attribute`` identifier
     is recorded, plus the last dotted component of every string argument to a ``patch(...)`` /
@@ -916,7 +914,7 @@ class _TestRefFinder(ast.NodeVisitor):
 
 
 def _collect_test_references(repo: Path) -> set[str]:
-    """Return the set of simple names referenced by any test module under *repo* (review C-2).
+    """Return the set of simple names referenced by any test module under *repo*.
 
     Args:
         repo: Repository root directory.
@@ -932,7 +930,7 @@ def _collect_test_references(repo: Path) -> set[str]:
 
 
 def _uncovered_via_ast(repo: Path, module: str | None = None) -> tuple[set[str], str | None]:
-    """Independent AST oracle for the ``uncovered`` check: public symbols no test references (review C-2).
+    """Independent AST oracle for the ``uncovered`` check: public symbols no test references.
 
     Mirrors scan-query ``cmd_uncovered`` independently: a public symbol (per :func:`_is_public_qualname`,
     no leading-underscore component) in a non-test module is *uncovered* when its simple name does not
@@ -1019,7 +1017,7 @@ def _module_imports(tree: ast.Module) -> set[str]:
 
 
 def _build_import_graph(repo: Path, exclude_tests: bool = True) -> dict[str, set[str]]:
-    """Build the repo's module import graph, edges restricted to in-repo modules (review DI/GR).
+    """Build the repository's module import graph with edges restricted to repository modules.
 
     Mirrors scan-query ``rdeps``/``central`` semantics: module *A* imports module *M* iff *M* appears
     literally as an import target of *A* (``import M`` or ``from M import ...``) AND *M* is itself a repo
@@ -1057,7 +1055,7 @@ def _build_import_graph(repo: Path, exclude_tests: bool = True) -> dict[str, set
 
 
 def _central_via_ast(repo: Path, top: int, exclude_tests: bool = True) -> list[tuple[str, int]]:
-    """Return the top-N most-imported repo modules ranked by importer count (review GR).
+    """Return the top-N most-imported repository modules ranked by importer count.
 
     Independent AST oracle for scan-query ``central``: each module's rank is its in-degree in the
     import graph (:func:`_build_import_graph`) — the number of repo modules importing it. Ties are
@@ -1092,7 +1090,7 @@ def _central_via_ast(repo: Path, top: int, exclude_tests: bool = True) -> list[t
 
 
 def _module_importers_via_ast(repo: Path, module: str, exclude_tests: bool = True) -> tuple[set[str], str | None]:
-    """Return the repo modules that import *module* — its import fan-in (module blast radius, review MB).
+    """Return the repository modules that import *module*, which defines its module blast radius.
 
     Independent AST oracle for the reverse relation of :func:`_central_via_ast`: where ``central`` ranks
     modules by in-degree, this enumerates the *rdeps* (importers) of a single target module. A module *A*
@@ -1128,7 +1126,7 @@ def _module_importers_via_ast(repo: Path, module: str, exclude_tests: bool = Tru
 
 
 def _import_path_via_ast(repo: Path, source: str, target: str, exclude_tests: bool = True) -> list[str] | None:
-    """Return a shortest import path ``source -> ... -> target`` over the import graph, or None (review GR).
+    """Return a shortest ``source -> ... -> target`` path over the import graph, or ``None``.
 
     Independent AST oracle for scan-query ``path``: breadth-first search over
     :func:`_build_import_graph` yields a shortest module chain where each step is a direct import.
@@ -1174,7 +1172,7 @@ def _import_path_via_ast(repo: Path, source: str, target: str, exclude_tests: bo
 
 
 def _shortest_path_is_unique(repo: Path, source: str, target: str, exclude_tests: bool = True) -> bool:
-    """Return True when exactly one shortest import path connects *source* to *target* (review GR).
+    """Return whether exactly one shortest import path connects *source* to *target*.
 
     A path task's ground truth is only well-defined when the shortest path is unique — otherwise the
     agent could report a different, equally-short chain. This counts shortest paths by BFS layer: each
@@ -1221,7 +1219,7 @@ def _shortest_path_is_unique(repo: Path, source: str, target: str, exclude_tests
 
 
 def _fn_blast_via_ast(primary_fn: str, repo: Path, depth: int = 2) -> tuple[set[str], str | None]:
-    """Return the transitive caller closure of *primary_fn* up to *depth* hops (review GR).
+    """Return the transitive caller closure of *primary_fn* up to *depth* hops.
 
     Independent AST oracle for scan-query ``fn-blast``: starts from the direct callers
     (:func:`_callers_via_ast`) and repeats the caller walk on each newly-found caller, up to *depth*
@@ -1269,7 +1267,7 @@ def _fn_blast_via_ast(primary_fn: str, repo: Path, depth: int = 2) -> tuple[set[
 
 
 def _test_modules_importing_via_ast(repo: Path, module: str) -> tuple[set[str], str | None]:
-    """Return test modules whose imports include *module* (DI test-file mapping oracle, review DI).
+    """Return test modules whose imports include *module* for the diff-impact oracle.
 
     Independent AST oracle for the diff-impact test-file recall metric: a change to *module* should be
     covered by re-running the test modules that import it. Scans every test file (matched by
@@ -1352,11 +1350,11 @@ def _validate_fn(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, d
     # caller field already contains "module::QualifiedName" — use directly; dedup first
     scan_callers = sorted(set(e["caller"] for e in called_by))
 
-    # AST oracle is AUTHORITATIVE for caller lists (review C-2): scan-query fn-rdeps is the
+    # AST oracle is AUTHORITATIVE for caller lists: scan-query fn-rdeps is the
     # very tool the codemap arm invokes, so grading it against its own output is circular.
     # The QUALIFIED AST walk (receiver-resolved) is the ground truth — the loose simple-name walk
     # over-approximates (same-named methods in unrelated classes) and is kept only as a diagnostic
-    # (review N1). Module names are derived structurally (no `src.` prefix) and test modules excluded.
+    # Module names are derived structurally (no `src.` prefix), and test modules are excluded.
     ast_callers, ast_loose, _ast_err = _walk_caller_sets(primary_fn, repo)
     callers = sorted(ast_callers)
     unique_count = len(callers)
@@ -1373,7 +1371,7 @@ def _validate_fn(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, d
         "exclude_tests": gt.get("exclude_tests", False),
         "note": gt.get("note", "static edges only (import/local/self-resolved); dynamic dispatch excluded by design"),
         "fn_callers_scan": scan_callers,  # diagnostic — output of the tool under test
-        "fn_callers_ast_loose": sorted(ast_loose),  # diagnostic — simple-name over-approximation (review N1)
+        "fn_callers_ast_loose": sorted(ast_loose),  # diagnostic — simple-name over-approximation
         "scan_caller_count": len(scan_callers),
         "raw_caller_count": raw_count,  # diagnostic — scan-query `count` field
         "ast_divergence": {
@@ -1637,7 +1635,7 @@ def _validate_undocumented_ast(
     """Validate a pure ``undocumented`` check against the independent AST oracle.
 
     The AST oracle (:func:`_undocumented_via_ast`) is authoritative; scan-query output is
-    stored under ``*_scan`` diagnostic keys only (review C-2). Mutates ``live_gt`` in place
+    stored under ``*_scan`` diagnostic keys only. Mutates ``live_gt`` in place
     with both authoritative and diagnostic values, and warns loudly on divergence.
 
     Args:
@@ -1699,7 +1697,7 @@ def _validate_uncovered_ast(
     repo: Path,
     live_gt: dict[str, Any],
 ) -> tuple[list[str], str]:
-    """Validate a pure ``uncovered`` check against the independent AST oracle (review C-2 remainder).
+    """Validate a pure ``uncovered`` check against the independent AST oracle.
 
     The AST oracle (:func:`_uncovered_via_ast`) is authoritative; scan-query output is stored under
     ``*_scan`` diagnostic keys only. Mutates ``live_gt`` in place with both authoritative and
@@ -1795,7 +1793,7 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
         if scan_count != len(scan_syms):
             return False, None, "undocumented total conflicts with symbol count"
         if check == "undocumented":
-            # AST oracle is authoritative (review C-2) — scan-query is the tool under test.
+            # AST oracle is authoritative — scan-query is the tool under test.
             module = _query_module_arg(q.get("args", []))
             undoc_problems, undoc_err = _validate_undocumented_ast(
                 task, gt, module, scan_count, scan_syms, repo, live_gt
@@ -1804,7 +1802,7 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
                 return False, None, undoc_err
             problems.extend(undoc_problems)
         else:
-            # TODO(review C-2): combined_health undocumented/uncovered GT still scan-query-derived
+            # TODO: combined_health undocumented/uncovered GT still scan-query-derived
             # (circular) — needs the independent AST oracle wired the same way as the pure
             # `undocumented` check above.
             live_gt["undocumented_count"] = scan_count
@@ -1830,16 +1828,16 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
         if len(scan_syms) != expected_scan_symbols:
             return False, None, "uncovered total conflicts with symbol count"
         if check == "uncovered":
-            # AST oracle is authoritative (review C-2 remainder) — scan-query is the tool under test.
+            # AST oracle is authoritative — scan-query is the tool under test.
             module = _query_module_arg(q.get("args", []))
             uncov_problems, uncov_err = _validate_uncovered_ast(task, gt, module, scan_count, scan_syms, repo, live_gt)
             if uncov_err:
                 return False, None, uncov_err
             problems.extend(uncov_problems)
         else:
-            # TODO(review C-2 remainder): combined_health bundles undocumented+uncovered and its
+            # TODO: combined_health bundles undocumented+uncovered and its
             # uncovered slice is still scan-query-derived (circular). The pure `uncovered` check
-            # above is now oracle-backed; combined_health refreshes only via --update-from-tool.
+            # above is now oracle-backed; combined_health refreshes only via ``--update-from-tool``.
             live_gt["uncovered_count"] = scan_count
             live_gt["uncovered_symbols"] = scan_syms
 
@@ -1905,17 +1903,17 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
             )
 
     if check == "xrefs_broken":
-        # TODO(review C-2 remainder): xrefs_broken GT remains scan-query-derived (circular). A faithful
+        # TODO: xrefs_broken GT remains scan-query-derived (circular). A faithful
         # independent oracle is out of scope here because scan-query reads `sphinx_xrefs[*].target`
         # values that scan-index ALREADY resolved to `module::name` keys at index-build time (parsing
-        # `:func:`/`:class:`/`:meth:`/`:exc:`/`mkdocs` roles, stripping `~`, resolving relative/current-
-        # module refs). Reproducing that normalization independently means re-implementing scan-index's
+        # `:func:`/`:class:`/`:meth:`/`:exc:`/`mkdocs` roles, stripping `~`, and resolving references relative to the
+        # current module). Reproducing that normalization independently means re-implementing scan-index's
         # `_SPHINX_RESOLVABLE_ROLES` extraction + target resolution against an AST-built symbol map — a
         # different (likely divergent) normalization would make the oracle non-comparable rather than
         # independent. What is missing precisely: (1) an AST docstring-role parser emitting raw targets;
         # (2) a faithful re-implementation of scan-index's raw-target → `module::name` normalization;
         # (3) an AST symbol-map builder to resolve `broken = target not in symbol_map`. Until (1)-(3)
-        # exist, xrefs_broken stays behind --update-from-tool (see _update_is_oracle_backed).
+        # exist, xrefs_broken stays behind ``--update-from-tool`` (see _update_is_oracle_backed).
         q = expected_queries[0]
         data = run_scan_query(sq, ["xrefs"] + q.get("args", []), index, repo)
         if data is None:
@@ -2075,11 +2073,11 @@ def _validate_graph_central(task: dict, sq: Path, index: Path, repo: Path) -> tu
 def _validate_module_blast_radius(
     task: dict, sq: Path, index: Path, repo: Path
 ) -> tuple[bool, dict[str, Any] | None, str]:
-    """Validate a ``module_blast_radius`` task: importers (import fan-in) of a target module (review MB).
+    """Validate a ``module_blast_radius`` task against the target module's importers.
 
     Independent AST oracle (:func:`_module_importers_via_ast`) — the reverse relation of BR's per-function
     callers, at module granularity: which repo modules import ``primary_module``. Ground truth is
-    AST-only (scan-query is never consulted), so it refreshes under a plain --update alongside the
+    AST-only (scan-query is never consulted), so it refreshes under a plain ``--update`` alongside the
     caller-graph / graph series. ``sq``/``index`` are unused (kept for the uniform validator signature).
 
     Args:
@@ -2398,7 +2396,8 @@ def _build_updated_ground_truth(task_type: TaskType, live_gt: dict[str, Any], ex
         TaskType.GRAPH_FN_BLAST,
         TaskType.MODULE_BLAST_RADIUS,
     ):
-        # AST-oracle-only GT (review DI/GR/MB); live_gt already carries the cleared gt_pending flag.
+        # Diff-impact, graph, and module-blast ground truth comes only from the AST oracle;
+        # live_gt already carries the cleared gt_pending flag.
         return {**existing_gt, **live_gt}
     if task_type == TaskType.REVIEW_ASSISTANCE:
         # Review refreshes nested answer keys in place.  Top-level
@@ -2411,10 +2410,10 @@ def _build_updated_ground_truth(task_type: TaskType, live_gt: dict[str, Any], ex
 
 
 # Task types whose refreshed ground truth comes from an INDEPENDENT oracle (AST), not from
-# scan-query (the tool under test). Only these may be refreshed under a plain --update; every
-# other type is scan-query-derived (circular) and requires --update-from-tool (review C-3).
-# The diff-impact / graph series (review DI/GR) are AST-oracle-only by construction — their GT never
-# touches scan-query — so they refresh under a plain --update alongside the caller-graph types.
+# scan-query (the tool under test). Only these may be refreshed under a plain ``--update``; every
+# other type is scan-query-derived (circular) and requires ``--update-from-tool``.
+# The diff-impact and graph series use only the AST oracle by construction, so their ground truth never
+# touches scan-query — so they refresh under a plain ``--update`` alongside the caller-graph types.
 _ORACLE_BACKED_TYPES: frozenset[TaskType] = frozenset(
     {
         TaskType.FN_CALL_GRAPH,
@@ -2428,7 +2427,7 @@ _ORACLE_BACKED_TYPES: frozenset[TaskType] = frozenset(
     }
 )
 
-# code_quality checks with a dedicated independent AST oracle (review C-2 / C-2 remainder).
+# code_quality checks with a dedicated independent AST oracle.
 _ORACLE_BACKED_CQ_CHECKS: frozenset[str] = frozenset({"undocumented", "uncovered"})
 
 
@@ -2511,11 +2510,11 @@ def _merge_rv_sub_questions(task: dict, live_gt: dict) -> list[dict]:
 
 
 def _refresh_task_gt(task: dict, live_gt: dict, update_from_tool: bool) -> tuple[dict, str]:
-    """Build the updated task dict for --update, gating scan-query-derived (circular) refresh.
+    """Build the updated task dict for ``--update``, gating scan-query-derived (circular) refresh.
 
-    Oracle-backed types (:func:`_update_is_oracle_backed`) refresh under a plain --update.
+    Oracle-backed types (:func:`_update_is_oracle_backed`) refresh under a plain ``--update``.
     Scan-query-derived types refresh only when ``update_from_tool`` is True, after a loud
-    circularity warning and an existing→live diff (review C-3).
+    circularity warning and an existing→live diff.
 
     Args:
         task: Task dict being refreshed.
@@ -2562,10 +2561,9 @@ def main(
             combined_health) are skipped unless ``update_from_tool`` is also set.
         update_from_tool: Also refresh scan-query-derived ground truth (circular — the tool
             under test grades itself). Prints a loud circularity warning and an existing→live
-            diff per task before writing. Use only for deliberate re-baselining (review C-3).
+            diff per task before writing. Use only for deliberate re-baselining.
         verbose: Print live ground truth on failure.
     """
-
     # Resolve plugin root for binary lookup
     plugin_root = git_toplevel()
 
@@ -2633,7 +2631,7 @@ def main(
     skipped: list[str] = []
     updated_tasks: list[dict] = []
 
-    # Loop variable is `entry`, NOT `task` — `task` holds the --task filter (a str | None) and
+    # Loop variable is `entry`, NOT `task` — `task` holds the ``--task`` filter (a str | None) and
     # must survive the loop for the write-back guard below (`if task is None`). Rebinding it here
     # would leave it pointing at the last task dict, making the full-file write-back unreachable.
     for entry in tasks:
@@ -2664,7 +2662,7 @@ def main(
                 print(f"         live_gt = {json.dumps(live_gt, indent=2)}")
 
             if update and live_gt is not None:
-                # Circular refresh (scan-query-derived GT) is gated behind --update-from-tool (review C-3).
+                # Circular refresh (scan-query-derived GT) is gated behind ``--update-from-tool``.
                 stored_task, status = _refresh_task_gt(entry, live_gt, update_from_tool)
                 updated_tasks.append(stored_task)
                 print(f"         {status}")
@@ -2674,7 +2672,7 @@ def main(
     if update:
         if skipped:
             print("\nUpdate aborted: every task type must have a validator")
-        # Only write the full file when no --task filter was given (`task` is the filter, str | None).
+        # Only write the full file when no ``--task`` filter was given (`task` is the filter, str | None).
         elif task is None:
             # newline="\n" pins LF bytes on every OS: the task file is a byte-compared,
             # hash-stable benchmark artefact, and text mode would otherwise translate each

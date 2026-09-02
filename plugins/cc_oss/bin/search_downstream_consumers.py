@@ -12,7 +12,7 @@ Usage:
 
 Exit codes:
     0 — search ran (empty result acceptable — no downstream consumers found)
-    1 — bad args (missing --package or no symbols provided)
+    1 — bad args (missing ``--package`` or no symbols provided)
     2 — gh CLI failure on every symbol query
 """
 
@@ -26,7 +26,7 @@ from shutil import which
 
 # GitHub code-search query strings must not carry quote/colon/.. or shell-special
 # characters — those let an attacker pollute the search operators or break out
-# of the embedded query (F-129).  We accept dotted Python identifiers (e.g.
+# of the embedded query.  We accept dotted Python identifiers (e.g.
 # ``foo.bar.Baz``), digits, hyphen, and underscore — nothing else.
 _QUERY_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
 _FORBIDDEN_QUERY_SUBSTRINGS: tuple[str, ...] = ("..", '"', ":", "`", "$", "(", ")", "<", ">", "\\")
@@ -96,8 +96,8 @@ def _resolve(cmd: str) -> str:
 def search_consumers(package: str, symbols: list[str]) -> tuple[int, set[str]]:
     """Query GitHub code search for each symbol; return success count and repo set.
 
-    For each symbol runs: ``gh api search/code --field "q=from <package> import <symbol>
-    language:python" --paginate --jq '.items[].repository.full_name'``.
+    For each symbol, runs a ``gh api search/code`` query for imports of that symbol
+    and extracts repository names from the response.
 
     Args:
         package: Python package name used in the import query.
@@ -157,8 +157,8 @@ def main(argv: list[str] | None = None) -> int:
         No doctest — requires subprocess; covered by pytest with monkeypatch.
     """
     args = list(sys.argv[1:] if argv is None else argv)
-    # Honour only -h/--help via argparse; the manual loop below treats every other
-    # token as a symbol (or --package value), so a broad parse_args would misread
+    # Honour only ``-h/--help`` via argparse; the manual loop below treats every other
+    # token as a symbol (or ``--package`` value), so a broad parse_args would misread
     # symbol positionals — keep the legacy passthrough intact.
     if args in (["-h"], ["--help"]):
         argparse.ArgumentParser(
@@ -189,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
         print("search_downstream_consumers: no symbols provided (argv or stdin)", file=sys.stderr)
         return 1
 
-    # Sanitize before they reach the gh search query (F-129).  Reject the whole
+    # Sanitize before they reach the gh search query.  Reject the whole
     # invocation rather than dropping individual entries — search operator
     # pollution from a single bad token would skew the union result silently.
     try:

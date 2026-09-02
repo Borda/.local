@@ -1,22 +1,58 @@
 """Validate truthful staged parallel-execution manifests.
 
 ## Purpose
-    Admit a stable prefix of frozen child token reservations before dispatch, and turn recorded execution-manifest evidence into one fail-closed acceptance summary. The validator makes a claimed parallel run structurally coherent only when its manifest contains the required provenance, controls, completed outputs, parent joins, and overlap. A consuming workflow must separately bind recorded events and controls to authoritative host observations before calling them runtime-proven.
+
+Admit a stable prefix of frozen child token reservations before dispatch, and turn recorded execution-manifest
+evidence into one fail-closed acceptance summary. The validator makes a claimed parallel run structurally coherent only
+when its manifest contains the required provenance, controls, completed outputs, parent joins, and overlap. A consuming
+workflow must separately bind recorded events and controls to authoritative host observations before calling them
+runtime-proven.
 
 ## Scope
-    Validate a positive parent-owned wave ceiling and per-node reservations, then validate schema-v1 manifests supplied by workflow owners. It checks serial stage barriers, deterministic integration order, role and context digests, selected attempts, output digests, bounded retries, node controls, exact frozen-plan approval for every write, and concurrent write ownership. ``validate_read_only_runtime`` requires schema-v2 capability evidence and binds a frozen parent-owned plan, redacted parent spawn evidence, child lineage, declared controls, terminal completion, actual child timing, and literal portable-read-restricted host facts. Generic unbound evidence remains readable but is promotion-ineligible; a promoted result requires an exact closed consumer policy. It does not dispatch or terminate agents, enforce provider token usage, create worktrees, alter repository files, infer missing host events, or decide a workflow's final user-facing result.
+
+Validate a positive parent-owned wave ceiling and per-node reservations, then validate schema-v1 manifests
+supplied by workflow owners. It checks serial stage barriers, deterministic integration order, role and context digests,
+selected attempts, output digests, bounded retries, node controls, exact frozen-plan approval for every write, and
+concurrent write ownership. ``validate_read_only_runtime`` requires schema-v2 capability evidence and binds a frozen
+parent-owned plan, redacted parent spawn evidence, child lineage, declared controls, terminal completion, actual child
+timing, and literal portable-read-restricted host facts. Generic unbound evidence remains readable but is ineligible for
+promotion; a promoted result requires an exact closed consumer policy. It does not dispatch or terminate agents, enforce
+provider token usage, create worktrees, alter repository files, infer missing host events, or decide a workflow's final
+user-facing result.
 
 ## Usage
-    Call ``admit_wave_token_budget`` with the frozen ceiling, stable node order, reservations, and completed/active state before any spawn. Import ``validate_execution_manifest`` and pass the decoded manifest plus the run directory holding context/output evidence and the installed roles directory holding ``<role_id>/ROLE.md``. Implement, Manage, and Code Review use the executable ``preflight`` or ``validate-runtime`` commands so promotion is derived from a closed consumer allowlist, the exact plan and write approval are bound before mutation, and post-join evidence carries a mandatory consumer id. Callers must treat a nonzero exit or ``ValueError`` as a failed contract, preserve the manifest for diagnosis, and never substitute a child response for required evidence.
+
+Call ``admit_wave_token_budget`` with the frozen ceiling, stable node order, reservations, and completed/active
+state before any spawn. Import ``validate_execution_manifest`` and pass the decoded manifest plus the run directory
+holding context/output evidence and the installed roles directory holding ``<role_id>/ROLE.md``. Implement, Manage, and
+Code Review use the executable ``preflight`` or ``validate-runtime`` commands so promotion is derived from a closed
+consumer allowlist, the exact plan and write approval are bound before mutation, and post-join evidence carries a
+mandatory consumer id. Callers must treat a nonzero exit or ``ValueError`` as a failed contract, preserve the manifest
+for diagnosis, and never substitute a child response for required evidence.
 
 ## Outputs
-    A budget return identifies admitted, completed, active, and serial-replan nodes plus reservation totals and the explicit non-enforced provider-cap boundary. A successful manifest return has ``acceptance_blocked``, ``actual_mode``, and ``integration_order``. A portable runtime return adds the manifest digest, safe spawn and parent-join projections, ``portable-read-restricted`` evidence level, literal ``network_mode=restricted`` and ``approval_policy=never``, and ``filesystem_credential_isolation=unverified``; it never returns raw prompts, raw spawn arguments, or child messages. No files are written.
+
+A budget return identifies admitted, completed, active, and serial-replan nodes plus reservation totals and the
+explicit non-enforced provider-cap boundary. A successful manifest return has ``acceptance_blocked``, ``actual_mode``,
+and ``integration_order``. A portable runtime return adds the manifest digest, safe spawn and parent join projections,
+``portable-read-restricted`` evidence level, literal ``network_mode=restricted`` and ``approval_policy=never``, and
+``filesystem_credential_isolation=unverified``; it never returns raw prompts, raw spawn arguments, or child messages. No
+files are written.
 
 ## Failure
-    Invalid ceilings, reservations, state overlaps, or already-exceeded admission state raise stable ``ValueError`` messages. Unsupported schemas, malformed identifiers or paths, DAG gaps/cycles, missing serial stage barriers, mismatched digests, unenforced recorded controls, missing or invalid write authority, overlapping write owners or locks, invalid retries, false parallel claims, and joins before a real terminal event also fail closed. Runtime validation additionally rejects rollout-shape drift, ambiguous lineage, timing mismatch, sensitive output, control disagreement, malformed consumer or capability evidence, or external-network response items. ``cancel_requested`` is not terminal.
+
+Invalid ceilings, reservations, state overlaps, or already-exceeded admission state raise stable ``ValueError``
+messages. Unsupported schemas, malformed identifiers or paths, DAG gaps/cycles, missing serial stage barriers,
+mismatched digests, unenforced recorded controls, missing or invalid write authority, overlapping write owners or locks,
+invalid retries, false parallel claims, and joins before a real terminal event also fail closed. Runtime validation
+additionally rejects rollout-shape drift, ambiguous lineage, timing mismatch, sensitive output, control disagreement,
+malformed consumer or capability evidence, or external-network response items. ``cancel_requested`` is not terminal.
 
 ## Used by
-    Codex Rig workflow runtimes and their installed-package tests use this helper before integrating specialist outputs. Read-only pilots use the same validation path as later isolated write workflows, keeping the safety contract local to one shipped stdlib module rather than distributing policy through registries or runtime-specific wrappers.
+
+Codex Rig workflow runtimes and their installed-package tests use this helper before integrating specialist
+outputs. Read-only pilots use the same validation path as later isolated write workflows, keeping the safety contract
+local to one shipped stdlib module rather than distributing policy through registries or runtime-specific wrappers.
 """
 
 from __future__ import annotations
@@ -66,7 +102,8 @@ def resolve_execution_mode(
 ) -> dict[str, str | bool]:
     """Resolve one execution request without granting write approval.
 
-    Explicit ``--execution=...`` input overrides ``CODEX_RIG_EXECUTION``. The shipped default is ``auto``. Unpromoted explicit modes fail closed, while ``auto`` safely resolves to serial until read-only parallelism is promoted.
+    Explicit ``--execution=...`` input overrides ``CODEX_RIG_EXECUTION``. The shipped default is ``auto``. Unpromoted
+    explicit modes fail closed, while ``auto`` safely resolves to serial until read-only parallelism is promoted.
     """
     if explicit is not None:
         prefix = "--execution="
@@ -108,7 +145,10 @@ def admit_wave_token_budget(
 ) -> dict[str, object]:
     """Admit a stable node prefix without exceeding frozen token reservations.
 
-    The returned decision governs dispatch admission only. It preserves existing work and routes the first non-fitting node plus every later unstarted node to same-gate serial re-planning. Provider usage can exceed a reservation because the current host does not expose an enforceable per-child token cap; telemetry must report that difference separately.
+    The returned decision governs dispatch admission only. It preserves existing work and routes the first non-fitting
+    node plus every later unstarted node to same-gate serial re-planning. Provider usage can exceed a reservation
+    because the current host does not expose an enforceable per-child token cap; telemetry must report that difference
+    separately.
     """
     if not isinstance(ceiling_tokens, int) or isinstance(ceiling_tokens, bool) or ceiling_tokens <= 0:
         raise ValueError("token-budget-ceiling-invalid")
@@ -1277,7 +1317,11 @@ def validate_read_only_runtime(
 ) -> dict[str, object]:
     """Bind schema-v2 portable-read-restricted evidence to observed rollout records.
 
-    This validator returns literal observed host facts, never a global network, command, filesystem credential, or host-isolation guarantee. Pass ``expected_consumer_id`` only for a promoted consumer route; the exact frozen plan must then keep that consumer's capability portable-read-only and its mutations and canonical gates serial. ``historical_unbudgeted=True`` reads earlier schema-v2 evidence without token budgets only; its summary is acceptance-blocked and cannot promote a runtime route.
+    This validator returns literal observed host facts, never a global guarantee about network, command, filesystem
+    credential, or host isolation. Pass ``expected_consumer_id`` only for a promoted consumer route; the exact frozen
+    plan must then keep that consumer's capability portable-read-only and its mutations and canonical gates serial.
+    ``historical_unbudgeted=True`` reads earlier schema-v2 evidence without token budgets only; its summary is
+    acceptance-blocked and cannot promote a runtime route.
     """
     if not isinstance(historical_unbudgeted, bool):
         raise ValueError("runtime-historical-reader-flag-invalid")

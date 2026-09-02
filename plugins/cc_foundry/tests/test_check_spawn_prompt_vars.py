@@ -1,7 +1,7 @@
 """Tests for check_spawn_prompt_vars bin script.
 
-Covers markdown block detection, $VAR flagging, caller-substituted var filtering,
-non-markdown $VAR not flagged, and CLI integration.
+Covers markdown block detection, $VAR flagging, caller-substituted var filtering, non-markdown $VAR not flagged, and CLI
+integration.
 """
 
 from __future__ import annotations
@@ -210,6 +210,9 @@ class TestMain:
         assert cspv.main([str(f)]) == 1
 
     def test_timeout_arg_accepted(self, tmp_path: Path) -> None:
-        """--timeout flag is accepted without error."""
+        """Verify command-line option behavior.
+
+        The ``--timeout`` flag is accepted without error.
+        """
         _file(tmp_path, "no fences\n")
         assert cspv.main(["--scan-dir", str(tmp_path), "--timeout", "10"]) == 0

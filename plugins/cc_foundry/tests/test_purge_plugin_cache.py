@@ -1,8 +1,7 @@
 """Tests for ``bin/purge_plugin_cache.py``.
 
-Doctests cover the pure helpers (``version_key``, ``age_hours``). This file
-exercises the guard predicates and the CLI against a real temporary cache tree,
-because the whole point of the script is deciding what is safe to delete — mocks
+Doctests cover the pure helpers (``version_key``, ``age_hours``). This file exercises the guard predicates and the CLI
+against a real temporary cache tree, because the whole point of the script is deciding what is safe to delete — mocks
 would test the mock. Every test asserts on the filesystem after the run.
 """
 
@@ -87,7 +86,10 @@ class TestContract:
         assert vdir.is_dir()
 
     def test_apply_deletes_exactly_the_candidate(self, cache: Path, registry: Path) -> None:
-        """--apply removes the candidate and spares a non-orphaned sibling."""
+        """Verify command-line option behavior.
+
+        ``--apply`` removes the candidate and spares a non-orphaned sibling.
+        """
         doomed = _make_version(cache, "ghost", "0.1.0", orphan_hours=100)
         kept = _make_version(cache, "other", "0.2.0")
 
@@ -161,7 +163,10 @@ class TestGuards:
         assert vdir.is_dir()
 
     def test_keeps_protected_path(self, cache: Path, registry: Path) -> None:
-        """--protect shields a dir that would otherwise qualify."""
+        """Verify command-line option behavior.
+
+        ``--protect`` shields a dir that would otherwise qualify.
+        """
         vdir = _make_version(cache, "ghost", "0.1.0", orphan_hours=100)
 
         _run(cache, registry, "--apply", "--protect", str(vdir))
@@ -182,8 +187,8 @@ class TestGuards:
     def test_purges_newest_version_of_unregistered_plugin(self, cache: Path, registry: Path) -> None:
         """A plugin absent from the registry has no live consumer — all versions go.
 
-        This is the renamed/uninstalled-plugin case (e.g. ``codemap`` after the
-        rename to ``codemap-py``); nothing else would ever reclaim its tree.
+        This is the renamed/uninstalled-plugin case (e.g. ``codemap`` after the rename to ``codemap-py``); nothing else
+        would ever reclaim its tree.
         """
         newest = _make_version(cache, "ghost", "0.10.0", orphan_hours=100)
 

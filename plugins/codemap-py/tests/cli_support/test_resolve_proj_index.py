@@ -45,7 +45,7 @@ class TestComputeProjIndex:
         assert index == work / ".cache" / "codemap" / f"{proj}.json"
 
     def test_codemap_index_dir_env_overrides_path(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``CODEMAP_INDEX_DIR`` env var moves the index to an arbitrary directory."""
+        """Relocate the index through the configured index directory."""
         work = tmp_path / "my-project"
         work.mkdir()
         custom_dir = tmp_path / "custom-cache"
@@ -102,7 +102,7 @@ class TestMain:
     def test_check_exits_1_when_index_absent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """``--check`` exits 1 and prints ✗ when index file does not exist."""
+        """Report a missing project index as a failure."""
         work = tmp_path / "myproj"
         work.mkdir()
         monkeypatch.chdir(work)
@@ -119,7 +119,7 @@ class TestMain:
     def test_check_exits_0_when_index_present(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """``--check`` exits 0 and prints ✓ when index file exists."""
+        """Report an existing project index as valid."""
         work = tmp_path / "myproj"
         work.mkdir()
         monkeypatch.chdir(work)
@@ -139,7 +139,7 @@ class TestMain:
     def test_output_has_no_crlf(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """stdout must not contain CRLF (Windows text-mode regression guard)."""
+        """Stdout must not contain CRLF (Windows text-mode regression guard)."""
         work = tmp_path / "proj"
         work.mkdir()
         monkeypatch.chdir(work)

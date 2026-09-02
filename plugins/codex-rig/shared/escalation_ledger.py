@@ -3,27 +3,38 @@
 
 ## Purpose
 
-Make progress-stall escalation observable instead of relying on an agent's self-description. The validator prevents a lifecycle owner from silently repeating work after the defined no-progress or non-closing trigger. It also preserves the exact evidence needed for a human to choose a next step.
+Make progress-stall escalation observable instead of relying on an agent's self-description. The validator prevents a
+lifecycle owner from silently repeating work after the defined no-progress or non-closing trigger. It also preserves the
+exact evidence needed for a human to choose a next step.
 
 ## Scope
 
-This helper validates one JSON ledger for one closure condition. It does not select a model, execute an advisory request, modify project files, or decide whether the workstream should be accepted. Callers retain those decisions and record only their observed outcome here.
+This helper validates one JSON ledger for one closure condition. It does not select a model, execute an advisory
+request, modify project files, or decide whether the workstream should be accepted. Callers retain those decisions and
+record only their observed outcome here.
 
 ## Usage
 
-Run `python PLUGIN_ROOT/shared/escalation_ledger.py --ledger <run-directory>/reasoning-progress.json` after recording each triggered escalation state and before another work cycle. A zero exit means the bounded state is internally consistent; a non-zero exit means the caller must stop and repair the record or hand off.
+Run `python PLUGIN_ROOT/shared/escalation_ledger.py --ledger <run-directory>/reasoning-progress.json` after recording
+each triggered escalation state and before another work cycle. A zero exit means the bounded state is internally
+consistent; a non-zero exit means the caller must stop and repair the record or hand off.
 
 ## Outputs
 
-The command prints `escalation-ledger-valid` on success. On malformed, incomplete, unsafe, or unbounded state it prints `escalation-ledger-invalid:<reason>` and exits with status 2, leaving the ledger unchanged for inspection.
+The command prints `escalation-ledger-valid` on success. On malformed, incomplete, unsafe, or unbounded state it prints
+`escalation-ledger-invalid:<reason>` and exits with status 2, leaving the ledger unchanged for inspection.
 
 ## Failure
 
-Validation rejects two consecutive cycles without material progress or three evidence-backed non-closing cycles that remain marked as ordinary work. It also rejects advisory records without an observed read-only sandbox, advisor state changes, a second recovery path, and incomplete human handoffs.
+Validation rejects two consecutive cycles without material progress or three evidence-backed non-closing cycles that
+remain marked as ordinary work. It also rejects advisory records without an observed read-only sandbox, advisor state
+changes, a second recovery path, and incomplete human handoffs.
 
 ## Used by
 
-The `implement`, `investigate`, and `code-remediate` lifecycle owners, plus `delegation-lead`, use this contract through the canonical reasoning-progress policy. Regression tests and calibration fixtures exercise the same rules so shipped advice-routing instructions and executable validation cannot drift apart.
+The `implement`, `investigate`, and `code-remediate` lifecycle owners, plus `delegation-lead`, use this contract through
+the canonical reasoning-progress policy. Regression tests and calibration fixtures exercise the same rules so shipped
+advice-routing instructions and executable validation cannot drift apart.
 """
 
 from __future__ import annotations

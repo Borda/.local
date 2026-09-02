@@ -21,9 +21,8 @@ an enumeration-completeness one — a real flag the docs never mention is fine.
 The docstring scan is deliberately confined to ``Usage:`` invocation lines anchored on
 the script's own basename, for the same reason the SKILL.md scan requires a literal
 invocation: a bin/ docstring's prose legitimately names flags that are not its own.
-Summary lines describe a wrapped tool's flags (``run pytest --tb=short``) or the flags a
-script parses back out of an argument string (``extract --root and --incremental from
-$ARGUMENTS``), and a ``Usage:`` line may pipe another command's flags into this one
+Summary lines describe a wrapped tool's flags, such as ``run pytest --tb=short``, or flags
+a script extracts from ``$ARGUMENTS``. A ``Usage:`` line may also pipe another command's flags into this one
 (``codemap-py query central --top 100000 | resolve_centrality.py --files a.py``).
 Measured over the live tree, scanning whole docstrings reports 25 such files and every
 one is a false positive; anchoring as described reports none. Since a false positive in
@@ -52,7 +51,7 @@ Output (stdout):
 Exit codes:
     0 — every documented flag matches a real argparse flag
     1 — one or more documented flags drifted from the script's argparse
-    2 — bad/missing required argument (argparse default) or invalid --plugins-dir
+    2 — bad/missing required argument (argparse default) or invalid ``--plugins-dir``
 """
 
 from __future__ import annotations
@@ -455,14 +454,14 @@ def _scan_skill_lines(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns the process exit code.
+    """Scan plugin documentation for CLI flag drift and return the process status.
 
     Args:
         argv: Optional argv override (defaults to ``sys.argv[1:]``).
 
     Returns:
         ``0`` when clean, ``1`` when drifted flags exist; argparse exits ``2`` on bad
-        args and this returns ``2`` when --plugins-dir escapes or is not a directory.
+        args and this returns ``2`` when ``--plugins-dir`` escapes or is not a directory.
 
     No doctest — argv/filesystem-dependent; covered by pytest with tmp_path.
     """
@@ -478,7 +477,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    # SEC-M1: normalise --plugins-dir so ``..`` cannot escape the project tree (CWE-22 guard).
+    # Normalise --plugins-dir so ``..`` cannot escape the project tree (CWE-22 guard).
     plugins_dir = Path(args.plugins_dir).resolve()
     project_root = Path.cwd().resolve()
     try:

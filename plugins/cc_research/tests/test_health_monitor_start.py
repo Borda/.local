@@ -38,9 +38,8 @@ def _parse_kv(output: str) -> dict[str, str]:
 def sentinel_cleanup() -> list[str]:
     """Collect skill-ids used by a test; remove their sentinel files on teardown.
 
-    ``health_monitor_start.py`` writes to the fixed platform temp dir (not
-    ``tmp_path`` — the script owns that path, not the test), so cleanup must
-    happen out-of-band. Tests append the skill-id(s) they used.
+    ``health_monitor_start.py`` writes to the fixed platform temp dir (not ``tmp_path`` — the script owns that path, not
+    the test), so cleanup must happen out-of-band. Tests append the skill-id(s) they used.
     """
     skill_ids: list[str] = []
     yield skill_ids
@@ -51,10 +50,10 @@ def sentinel_cleanup() -> list[str]:
 
 
 class TestArgparse:
-    """argparse-layer behaviour: --help and golden README invocation."""
+    """Argparse-layer behaviour: ``--help`` and golden README invocation."""
 
     def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """``--help`` prints usage and exits 0 (argparse SystemExit)."""
+        """Print usage and exit 0 (argparse SystemExit)."""
         with pytest.raises(SystemExit) as exc:
             health_monitor_start.main(["--help"])
         assert exc.value.code == 0
@@ -126,7 +125,7 @@ class TestHappyPath:
     def test_launch_at_matches_sentinel_timestamp(
         self, capsys: pytest.CaptureFixture[str], sentinel_cleanup: list[str]
     ) -> None:
-        """``LAUNCH_AT`` value appears as trailing ``<ts>`` in sentinel path."""
+        """Append the launch timestamp to the sentinel path."""
         skill_id = "test-skill-tsmatch"
         sentinel_cleanup.append(skill_id)
         health_monitor_start.main([skill_id])
@@ -136,7 +135,7 @@ class TestHappyPath:
         assert m.group(1) == kv["LAUNCH_AT"]
 
     def test_output_has_no_crlf(self, capsys: pytest.CaptureFixture[str], sentinel_cleanup: list[str]) -> None:
-        """stdout must not contain CRLF (Windows text-mode regression guard)."""
+        """Stdout must not contain CRLF (Windows text-mode regression guard)."""
         skill_id = "test-skill-crlf"
         sentinel_cleanup.append(skill_id)
         health_monitor_start.main([skill_id])

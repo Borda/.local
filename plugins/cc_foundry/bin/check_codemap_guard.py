@@ -300,7 +300,7 @@ def check(root: Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns 0 when every guard is managed, 1 otherwise."""
+    """CLI entry point - returns 0 when every guard is managed, 1 otherwise."""
     parser = argparse.ArgumentParser(description="Fail on unmanaged codemap index-guard copies.")
     parser.add_argument("--root", default=".", help="repository root (default: cwd)")
     parser.add_argument("--list", action="store_true", help="print the guard registry and exit")

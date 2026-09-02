@@ -1,9 +1,8 @@
 """Tests for ``bin/extract_changed_symbols.py``.
 
-``subprocess.run`` and ``which`` monkeypatched — no real ``git`` calls.
-``tmp_path`` + ``monkeypatch.chdir`` control which ``__init__.py`` files
-are visible to ``_find_init_files``. Tests cover range validation, empty
-diff, symbol extraction, deduplication, and default range behaviour.
+``subprocess.run`` and ``which`` monkeypatched — no real ``git`` calls. ``tmp_path`` + ``monkeypatch.chdir`` control
+which ``__init__.py`` files are visible to ``_find_init_files``. Tests cover range validation, empty diff, symbol
+extraction, deduplication, and default range behaviour.
 """
 
 from __future__ import annotations
@@ -78,7 +77,7 @@ def test_no_init_py_exits_0(
 def test_empty_diff_exits_0(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``__init__.py`` present but diff is empty → exit 0, empty stdout."""
+    """Return empty successful output for an unchanged initializer."""
     (tmp_path / "__init__.py").write_text("")
     _patch_git(monkeypatch, diff_stdout="")
     monkeypatch.chdir(tmp_path)

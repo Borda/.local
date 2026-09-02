@@ -1,9 +1,8 @@
 """Tests for ``bin/pytest_gate.py``.
 
-The script validates ``PYTEST_CMD`` against an allowlist
-(``pytest``, ``uv run pytest``, ``python -m pytest``), then execs pytest with
-``--tb=short -v``. ``subprocess.run`` is monkeypatched so no real test runs;
-``shutil.which`` is patched so ``_resolve`` succeeds without the binary present.
+The script validates ``PYTEST_CMD`` against an allowlist (``pytest``, ``uv run pytest``, ``python -m pytest``), then
+execs pytest with ``--tb=short -v``. ``subprocess.run`` is monkeypatched so no real test runs; ``shutil.which`` is
+patched so ``_resolve`` succeeds without the binary present.
 """
 
 from __future__ import annotations
@@ -65,14 +64,14 @@ def test_runner_detection_outputs_are_allowlisted() -> None:
 
 
 def test_allowlisted_poetry_run(captured_argv: list[list[str]]) -> None:
-    """``"poetry run pytest"`` accepted; first token resolved; full argv passed."""
+    """Accept an allowlisted Poetry command and pass its fully resolved arguments."""
     rc = pytest_gate.main(["poetry run pytest", "tests/"])
     assert rc == 0
     assert captured_argv[0] == ["/fake/bin/poetry", "run", "pytest", "--tb=short", "tests/", "-v"]
 
 
 def test_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
-    """``--help`` prints usage and exits 0 before any pytest run."""
+    """Print usage and exit 0 before any pytest run."""
     with pytest.raises(SystemExit) as exc:
         pytest_gate.main(["--help"])
     assert exc.value.code == 0
@@ -87,7 +86,7 @@ def test_golden_invocation(captured_argv: list[list[str]]) -> None:
 
 
 def test_default_cmd_and_target(captured_argv: list[list[str]]) -> None:
-    """No args → ``pytest --tb=short . -v`` invoked with resolved binary."""
+    """Confirm no arguments invoke pytest with short tracebacks and verbose output."""
     rc = pytest_gate.main([])
     assert rc == 0
     assert len(captured_argv) == 1
@@ -95,14 +94,14 @@ def test_default_cmd_and_target(captured_argv: list[list[str]]) -> None:
 
 
 def test_allowlisted_uv_run(captured_argv: list[list[str]]) -> None:
-    """``"uv run pytest"`` split to 3 tokens; first resolved; full argv passed."""
+    """Split a uv-based test command while preserving its complete argument vector."""
     rc = pytest_gate.main(["uv run pytest", "tests/"])
     assert rc == 0
     assert captured_argv[0] == ["/fake/bin/uv", "run", "pytest", "--tb=short", "tests/", "-v"]
 
 
 def test_allowlisted_python_m_pytest(captured_argv: list[list[str]]) -> None:
-    """``"python -m pytest"`` split to 3 tokens; first resolved."""
+    """Split a module-based Python test command and resolve its executable."""
     rc = pytest_gate.main(["python -m pytest", "tests/foo.py"])
     assert rc == 0
     assert captured_argv[0] == ["/fake/bin/python", "-m", "pytest", "--tb=short", "tests/foo.py", "-v"]

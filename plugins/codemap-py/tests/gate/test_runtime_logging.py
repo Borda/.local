@@ -1,6 +1,6 @@
 """Runtime log isolation (claude / codex / direct).
 
-Proves the logging contract (plan §4.4 "Logging"):
+Proves the logging contract:
 
 - each runtime writes into its own ``<log-root>/<runtime>/`` subtree; Claude and
   Codex never append to the same file;

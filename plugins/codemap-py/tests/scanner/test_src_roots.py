@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-# Phase 3 slices 3+4 (plan §12) moved scan-index's implementation into the package:
+# The scan-index implementation now lives in the package:
 # discovery/parsing (incl. former bin/_exclusions.py content) -> codemap_py.scanner,
 # graph/dedup/index-write -> codemap_py.graph. bin/scan-index is now a thin launcher,
 # so unit-level access imports the package modules directly.
@@ -272,10 +272,9 @@ class TestMonorepoScan:
     def test_root_path_wins_collision_over_stray_copy(self, tmp_path: Path, scan_index):
         """A stray copy of a package colliding with a root path loses deterministically.
 
-        The stray sits directly at the project root, so single-root fallback names it
-        ``pkg_b.mod_b`` — colliding with the real package under ``services/api/src``.
-        The configured-root path must win, since it ranks under a source root and the
-        stray is under none.
+        The stray sits directly at the project root, so single-root fallback names it ``pkg_b.mod_b`` — colliding with
+        the real package under ``services/api/src``. The configured-root path must win, since it ranks under a source
+        root and the stray is under none.
         """
         _materialize_monorepo(tmp_path)
         stray = tmp_path / "pkg_b"

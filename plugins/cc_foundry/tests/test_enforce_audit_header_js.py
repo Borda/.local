@@ -2,16 +2,16 @@
 
 The hook is a ``PreToolUse`` gate on ``AskUserQuestion``. Its contract:
 
-* **Scoped to in-flight audits** — it acts only when the Step-3 sentinel
+* **Scoped to in-flight audits** — it acts only when the audit-state sentinel
   ``${TMPDIR:-/tmp}/audit-state-<CSID>/run-dir`` exists; without it every
   ``AskUserQuestion`` passes through untouched (empty stdout, exit 0).
 * **Scoped to the follow-up gate** — recognised by the verbatim fixed option
   labels SKILL.md mandates (``Fix auto-fixable (Recommended)`` / ``Fix ALL``).
-  The other questions an audit legitimately asks before Step 5 exists — the
+  Other questions legitimately asked before findings are aggregated — the
   ``! BREAKING`` acknowledgment, the unsupported-flag prompt — pass through.
 * **Denies a missing aggregate** — sentinel present but ``$RUN_DIR/summary.jsonl``
-  absent or empty means Step 5 (aggregate and classify findings) never happened,
-  so the gate is denied with an actionable reason.
+  absent or empty means the findings were not aggregated and classified, so
+  the gate is denied with an actionable reason.
 * **Resolves the relative run dir** — ``make_run_dir.py`` is called with the
   relative base ``.reports/audit``, so the sentinel normally holds a relative
   path that only resolves against the payload's ``cwd``.
@@ -124,8 +124,7 @@ def _call_export(name: str, *args: object) -> object:
 def audit_run(tmp_path: Path) -> tuple[Path, Path, str]:
     """Stage an audit that reached Step 3: run dir on disk plus its state sentinel.
 
-    Returns the run dir, the sentinel file, and the project cwd the relative
-    sentinel value resolves against.
+    Returns the run dir, the sentinel file, and the project cwd the relative sentinel value resolves against.
     """
     project = tmp_path / "repo"
     run_dir = project / RUN_DIR_REL
@@ -236,7 +235,7 @@ def test_simulated_windows_run_dir_resolution_is_canonical_and_contained() -> No
 
 
 def test_trailing_slash_tmpdir_resolves_sentinel(tmp_path: Path, audit_run: tuple[Path, Path, str]) -> None:
-    """macOS exports TMPDIR with a trailing slash — the sentinel must still resolve."""
+    """MacOS exports TMPDIR with a trailing slash — the sentinel must still resolve."""
     _, _, cwd = audit_run
 
     assert _denial_reason(_run(tmp_path, _gate_payload(cwd=cwd), tmpdir_suffix="/")) is not None

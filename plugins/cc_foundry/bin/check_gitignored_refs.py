@@ -99,9 +99,8 @@ def candidate_tokens(line: str) -> list[str]:
 def resolve_existing_file(token: str, root: Path, source_dir: Path) -> Path | None:
     """Return the existing regular file a token resolves to, if any.
 
-    Tries the token relative to the repository root first (the dominant way
-    these references are written), then relative to the referencing file's own
-    directory.
+    Tries the token relative to the repository root first (the dominant way these references are written), then relative
+    to the referencing file's own directory.
     """
     portable_token = token.replace("\\", "/")
     for base in (root, source_dir):

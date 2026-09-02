@@ -1193,8 +1193,8 @@ def test_version_gate_is_a_minimum_floor_not_an_exact_pin(
 ) -> None:
     """Host CLI releases at or above the pinned floor stay supported; older or unreadable ones fail closed.
 
-    Host CLIs self-update between bridge releases; an exact-match gate made every
-    setup action fail unsupported-version the day after either CLI shipped an update.
+    Host CLIs self-update between bridge releases; an exact-match gate made every setup action fail unsupported-version
+    the day after either CLI shipped an update.
     """
     setup = _setup_module()
     monkeypatch.setattr(setup, "_capture", lambda argv: (True, reported, ""))
@@ -1210,9 +1210,8 @@ def test_codex_not_logged_in_status_is_never_treated_as_authenticated(
 ) -> None:
     """A zero-exit "Not logged in" status must not satisfy the authentication gate.
 
-    ``codex login status`` can exit 0 while printing "Not logged in"; a bare
-    substring match on "logged in" would claim host authentication and let a
-    paid live verification proceed against an unauthenticated peer.
+    ``codex login status`` can exit 0 while printing "Not logged in"; a bare substring match on "logged in" would claim
+    host authentication and let a paid live verification proceed against an unauthenticated peer.
     """
     setup = _setup_module()
     monkeypatch.setattr(setup.subprocess, "run", lambda argv, **kwargs: _completed(list(argv), "Not logged in\n"))
@@ -1228,8 +1227,8 @@ def test_verify_live_with_live_skip_plans_no_operation_even_when_unconfigured(
 ) -> None:
     """A live-verification request under live=skip must not smuggle a configure argv into its plan.
 
-    On an unconfigured host the configure fallback used to fill the plan, so the
-    operator was asked to approve a plugin install under a plan labeled live verification.
+    On an unconfigured host the configure fallback used to fill the plan, so the operator was asked to approve a plugin
+    install under a plan labeled live verification.
     """
     setup = _setup_module()
     _redirect_user_state(setup, monkeypatch, tmp_path / "user-state")
@@ -1247,9 +1246,8 @@ def test_expired_failure_record_allows_one_fresh_approved_attempt(
 ) -> None:
     """A failure record older than the retry TTL no longer blocks a newly approved identical operation.
 
-    The permanent form of this block contradicted its own "wait and retry" guidance:
-    with no expiry and no cleanup path the exact operation stayed locked forever
-    while host state was unchanged.
+    The permanent form of this block contradicted its own "wait and retry" guidance: with no expiry and no cleanup path
+    the exact operation stayed locked forever while host state was unchanged.
     """
     setup = _setup_module()
     user_root = tmp_path / "user-state"
@@ -1273,9 +1271,8 @@ def test_approved_configuration_uses_the_network_sized_timeout(
 ) -> None:
     """The approved marketplace install runs with the configure budget, not the 20 s probe timeout.
 
-    A marketplace install downloads plugin payloads; under the shared probe timeout a
-    slow link journaled a failure while the child could still complete, and the failed
-    record then blocked the repeat of that same install.
+    A marketplace install downloads plugin payloads; under the shared probe timeout a slow link journaled a failure
+    while the child could still complete, and the failed record then blocked the repeat of that same install.
     """
     setup = _setup_module()
     _redirect_user_state(setup, monkeypatch, tmp_path / "user-state")
@@ -1294,9 +1291,9 @@ def test_empty_approval_denial_reports_the_actual_request_instead_of_fabricated_
 ) -> None:
     """A trailing bare --approve denial must echo the real action, policy, scope, and workspace.
 
-    The old fallback hardcoded action=all live=prompt and hand-parsed only
-    space-separated flags, so a denied live=required run was reported under the
-    softer prompt policy and equals-form flags silently described a different invocation.
+    The old fallback hardcoded action=all live=prompt and hand-parsed only space-separated flags, so a denied
+    live=required run was reported under the softer prompt policy and equals-form flags silently described a different
+    invocation.
     """
     setup = _setup_module()
     _redirect_user_state(setup, monkeypatch, tmp_path / "user-state")

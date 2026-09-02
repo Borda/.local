@@ -154,10 +154,9 @@ def emit_preamble(message: str) -> None:
 def regular_file_stat(path: Path) -> os.stat_result | None:
     """Return *path*'s stat when it is a regular file, or ``None`` when it is not usable.
 
-    Folds what used to be a ``stat()`` inside ``try`` followed by a separate ``is_file()``
-    branch — a second syscall that could only ever fire for a directory or device node
-    sitting where the index belongs. Both conditions now mean the same thing to the caller:
-    there is no index to read.
+    Folds what used to be a ``stat()`` inside ``try`` followed by a separate ``is_file()`` branch — a second syscall
+    that could only ever fire for a directory or device node sitting where the index belongs. Both conditions now mean
+    the same thing to the caller: there is no index to read.
     """
     try:
         info = path.stat()

@@ -21,9 +21,9 @@ from pathlib import Path
 def _read_sentinel(path: Path) -> str:
     """First newline-terminated line of *path*; empty string otherwise.
 
-    Mirrors `{ IFS= read -r VALUE < "$SENTINEL"; } 2>/dev/null || VALUE=""`: `read` exits
-    non-zero on a final line with no trailing newline, and that `||` branch then wipes the
-    partial value — so an unterminated line reads as empty here too and falls to <default>.
+    Mirrors `{ IFS= read -r VALUE < "$SENTINEL"; } 2>/dev/null || VALUE=""`: `read` exits non-zero on a final line with
+    no trailing newline, and that `||` branch then wipes the partial value — so an unterminated line reads as empty here
+    too and falls to <default>.
     """
     try:
         with path.open("r", encoding="utf-8", errors="replace") as handle:

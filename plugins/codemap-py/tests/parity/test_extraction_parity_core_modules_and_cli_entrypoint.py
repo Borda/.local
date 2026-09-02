@@ -1,4 +1,4 @@
-"""Extraction parity: core modules + CLI entrypoint (plan §12 Phase 3, step 1; §7.2).
+"""Extraction parity: core modules + CLI entrypoint.
 
 Proves the schema/index-paths/gate/runtime-log/telemetry move into
 ``src/codemap_py`` preserved behavior exactly:
@@ -74,16 +74,15 @@ _PATH_CLASSES = [
 def test_bin_shim_aliases_the_package_module(shim: object, pkg: object) -> None:
     """Importing the legacy ``bin/_*.py`` shim yields the exact codemap_py module object.
 
-    Object identity (not just equal behavior) proves a test that monkeypatches
-    a private attribute through the old bare-name import (e.g.
-    ``monkeypatch.setattr(_rwgate, "_RELEASE_TIMEOUT", ...)``) mutates the same
-    module the real dispatcher uses — never a separate re-exported copy.
+    Object identity (not just equal behavior) proves that a test using the old bare-name import to monkeypatch a private
+    attribute (e.g. ``monkeypatch.setattr(_rwgate, "_RELEASE_TIMEOUT", ...)``) mutates the same module the real
+    dispatcher uses — never a separate re-exported copy.
     """
     assert shim is pkg
 
 
 def test_scripts_shim_aliases_the_cli_module() -> None:
-    """``scripts/codemap_py_cli.py`` aliases :mod:`codemap_py.cli`, not a copy."""
+    """Expose the package command-line module through the compatibility alias."""
     import codemap_py.cli as cli_pkg
 
     assert codemap_py_cli is cli_pkg
@@ -94,7 +93,7 @@ def test_scripts_shim_aliases_the_cli_module() -> None:
 
 @pytest.mark.parametrize("dirname", _PATH_CLASSES)
 def test_resolve_index_matches_via_shim_and_package(tmp_path: Path, dirname: str) -> None:
-    """``resolve_index`` agrees through the bin/ shim and the package import."""
+    """Agree through the bin/ shim and the package import."""
     root = tmp_path / dirname
     root.mkdir()
 
@@ -143,7 +142,7 @@ def _run_module(args: list[str], *, cwd: Path, env: dict[str, str]) -> subproces
 )
 @pytest.mark.parametrize("dirname", _PATH_CLASSES)
 def test_entry_and_module_doctor_output_are_byte_identical(tmp_path: Path, dirname: str) -> None:
-    """``doctor --json`` matches stdout/stderr/exit code across both bootstrap paths."""
+    """Match stdout/stderr/exit code across both bootstrap paths."""
     root = tmp_path / dirname
     root.mkdir()
     env = {**os.environ, "CODEMAP_LOGGING": "false"}
@@ -183,9 +182,8 @@ def test_entry_and_module_unknown_command_exit_parity(tmp_path: Path, dirname: s
 def test_runtime_log_import_no_longer_needs_bare_name_fallback() -> None:
     """codemap_py.runtime_log imports index_paths as a package module, not a bare name.
 
-    Slice 1 replaced the transitional ``try: import _index_identity`` bootstrap
-    (needed only while ``_runtime_log.py`` lived in ``bin/`` with no package
-    around it) with a normal package-internal import.
+    Slice 1 replaced the transitional ``try: import _index_identity`` bootstrap (needed only while ``_runtime_log.py``
+    lived in ``bin/`` with no package around it) with a normal package-internal import.
     """
     import inspect
 

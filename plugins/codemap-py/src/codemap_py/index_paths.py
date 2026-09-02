@@ -11,7 +11,7 @@ is never part of the resolved path — only the logging subtree is runtime-scope
 ``sys.modules``, so every public name is reachable unchanged through either
 import path.
 
-Resolution rules (plan §4.4 "Shared project index"):
+Resolution rules:
 
 - the canonical root is the git repository root (else the current directory),
   with symlinks/case aliases collapsed so an alias of the same project resolves
@@ -313,9 +313,8 @@ def diagnose_split_index_roots(path_a: Path, path_b: Path) -> Diagnostic | None:
 def _is_plausible_plugin_dir(path: Path) -> bool:
     """Return whether *path* is a bounded, marker-bearing plugin directory.
 
-    The resolver rejects filesystem roots and home directories before scanning
-    installed plugin candidates, preventing an untrusted explicit path from
-    turning migration checks into a broad traversal.
+    The resolver rejects filesystem roots and home directories before scanning installed plugin candidates, preventing
+    an untrusted explicit path from turning migration checks into a broad traversal.
     """
     if not path.is_dir():
         return False

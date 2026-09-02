@@ -1,7 +1,7 @@
 """Tests for ``bin/verify_perm.py``.
 
-Pure ``status_for`` covered by doctest in source; this file exercises
-file-bound behaviour using ``tmp_path`` and CLI surface via ``capsys``.
+Pure ``status_for`` covered by doctest in source; this file exercises file-bound behaviour using ``tmp_path`` and CLI
+surface via ``capsys``.
 """
 
 from __future__ import annotations
@@ -55,13 +55,13 @@ class TestRuleInSettings:
         assert verify_perm.rule_in_settings("Bash(ls:*)", p) is False
 
     def test_missing_permissions_key(self, tmp_path: Path) -> None:
-        """``permissions`` key absent → False."""
+        """Reject settings that omit the permissions mapping."""
         p = tmp_path / "s.json"
         p.write_text("{}", encoding="utf-8")
         assert verify_perm.rule_in_settings("Bash(ls:*)", p) is False
 
     def test_allow_not_a_list(self, tmp_path: Path) -> None:
-        """``allow`` is not a list → False."""
+        """Reject a permissions allow value that is not a list."""
         p = tmp_path / "s.json"
         p.write_text(json.dumps({"permissions": {"allow": "not-a-list"}}), encoding="utf-8")
         assert verify_perm.rule_in_settings("Bash(ls:*)", p) is False
@@ -117,7 +117,7 @@ class TestStatusFor:
 
 
 class TestMain:
-    """main: CLI — stdout format + exit codes across modes."""
+    """Main: CLI — stdout format + exit codes across modes."""
 
     def _setup(self, tmp_path: Path, allow: list[str], guide_rules: list[str]) -> tuple[Path, Path]:
         s = tmp_path / "settings.json"
@@ -131,7 +131,7 @@ class TestMain:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """present mode + rule in both → "OK / OK", exit 0."""
+        """Present mode + rule in both → "OK / OK", exit 0."""
         rule = "Bash(ls:*)"
         s, g = self._setup(tmp_path, [rule], [rule])
         rc = verify_perm.main([rule, str(s), str(g), "present"])
@@ -145,7 +145,7 @@ class TestMain:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """present mode + missing from settings → "MISSING / OK", exit 1."""
+        """Present mode + missing from settings → "MISSING / OK", exit 1."""
         rule = "Bash(ls:*)"
         s, g = self._setup(tmp_path, [], [rule])
         rc = verify_perm.main([rule, str(s), str(g), "present"])
@@ -159,7 +159,7 @@ class TestMain:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """present mode + missing from guide → "OK / MISSING", exit 1."""
+        """Present mode + missing from guide → "OK / MISSING", exit 1."""
         rule = "Bash(ls:*)"
         s, g = self._setup(tmp_path, [rule], [])
         rc = verify_perm.main([rule, str(s), str(g), "present"])
@@ -173,7 +173,7 @@ class TestMain:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """absent mode + rule absent from both → "OK / OK", exit 0."""
+        """Absent mode + rule absent from both → "OK / OK", exit 0."""
         rule = "Bash(rm:*)"
         s, g = self._setup(tmp_path, ["Bash(ls:*)"], ["Bash(ls:*)"])
         rc = verify_perm.main([rule, str(s), str(g), "absent"])
@@ -187,7 +187,7 @@ class TestMain:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """absent mode + lingering in settings → "STILL_PRESENT / OK", exit 1."""
+        """Absent mode + lingering in settings → "STILL_PRESENT / OK", exit 1."""
         rule = "Bash(ls:*)"
         s, g = self._setup(tmp_path, [rule], [])
         rc = verify_perm.main([rule, str(s), str(g), "absent"])
@@ -201,7 +201,7 @@ class TestMain:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """absent mode + lingering in guide → "OK / STILL_PRESENT", exit 1."""
+        """Absent mode + lingering in guide → "OK / STILL_PRESENT", exit 1."""
         rule = "Bash(ls:*)"
         s, g = self._setup(tmp_path, [], [rule])
         rc = verify_perm.main([rule, str(s), str(g), "absent"])

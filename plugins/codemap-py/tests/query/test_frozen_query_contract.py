@@ -1,9 +1,8 @@
 """Regression contracts for frozen Codemap query execution.
 
-``SCAN_NO_AUTOBUILD=1`` is the benchmark/CI opt-out for query-time index
-mutation. These tests keep its public contract separate from the interactive
-self-heal tests: the existing index is answered exactly as stored, stale
-metadata remains honest, and no incremental scan is launched.
+``SCAN_NO_AUTOBUILD=1`` is the benchmark/CI opt-out for query-time index mutation. These tests keep its public contract
+separate from the interactive self-heal tests: the existing index is answered exactly as stored, stale metadata remains
+honest, and no incremental scan is launched.
 """
 
 from __future__ import annotations
@@ -70,10 +69,9 @@ def test_frozen_query_preserves_stale_index_without_incremental_refresh(
 ) -> None:
     """The frozen opt-out answers the stored graph and never self-heals it.
 
-    Prevents benchmark query time from silently including an index refresh.
-    A plausibly wrong implementation that merely suppresses the completion
-    message still fails because the newly committed importer must remain absent
-    and the result must declare itself stale.
+    Prevents benchmark query time from silently including an index refresh. A plausibly wrong implementation that merely
+    suppresses the completion message still fails because the newly committed importer must remain absent and the result
+    must declare itself stale.
     """
     root, index_path = stale_git_project
     env = {**os.environ, "SCAN_NO_AUTOBUILD": "1"}
@@ -97,9 +95,8 @@ def test_frozen_query_preserves_stale_index_without_incremental_refresh(
 def test_frozen_query_reports_a_missing_index_without_building(tmp_path: Path, scan_query: Path) -> None:
     """Frozen execution rejects a missing index with an explicit repair action.
 
-    Prevents a future query launcher from hiding an index build behind the
-    benchmark opt-out. A generic missing-file error is insufficient because it
-    does not tell the caller that the opt-out caused the refusal.
+    Prevents a future query launcher from hiding an index build behind the benchmark opt-out. A generic missing-file
+    error is insufficient because it does not tell the caller that the opt-out caused the refusal.
     """
     root = tmp_path / "missing-frozen-index"
     root.mkdir()
@@ -155,9 +152,8 @@ def test_reverse_query_rejects_unsupported_limit_argument(
 ) -> None:
     """Reverse queries reject ``--limit`` because their default contract is exhaustive.
 
-    Prevents the documentation/integration layer from implying an unsupported
-    cap. The parser assertion is exact, so accidentally accepting and ignoring
-    the option cannot pass.
+    Prevents the documentation/integration layer from implying an unsupported cap. The parser assertion is exact, so
+    accidentally accepting and ignoring the option cannot pass.
     """
     root, index_path, _expected_modules, _expected_callers = wide_reverse_graph
     result = subprocess.run(
@@ -174,11 +170,10 @@ def test_reverse_query_rejects_unsupported_limit_argument(
 def test_reverse_queries_return_all_names_without_a_limit(
     wide_reverse_graph: tuple[Path, Path, set[str], set[str]], scan_query: Path
 ) -> None:
-    """rdeps and fn-rdeps preserve every stored name above historical display caps.
+    """Rdeps and fn-rdeps preserve every stored name above historical display caps.
 
-    Prevents a compact-output optimization from silently truncating either
-    reverse graph. Set equality catches both an omitted tail and an unexpected
-    name, unlike a weak ``count >= 100`` assertion.
+    Prevents a compact-output optimization from silently truncating either reverse graph. Set equality catches both an
+    omitted tail and an unexpected name, unlike a weak ``count >= 100`` assertion.
     """
     root, index_path, expected_modules, expected_callers = wide_reverse_graph
 
@@ -209,9 +204,8 @@ def test_compact_reverse_queries_only_reduce_metadata_not_result_arrays(
 ) -> None:
     """The public compact mode preserves all reverse names and required honesty fields.
 
-    Prevents a compact-output implementation from treating data arrays as
-    disposable metadata. The explicit full-mode comparison protects the default
-    output contract while the 105-entry graph detects a hidden display cap.
+    Prevents a compact-output implementation from treating data arrays as disposable metadata. The explicit full-mode
+    comparison protects the default output contract while the 105-entry graph detects a hidden display cap.
     """
     root, index_path, expected_modules, expected_callers = wide_reverse_graph
     env = _supported_codemap_env()
@@ -270,9 +264,8 @@ def test_compact_reverse_queries_only_reduce_metadata_not_result_arrays(
 def test_compact_stale_query_keeps_the_incompleteness_reason(stale_git_project: tuple[Path, Path]) -> None:
     """Compact metadata must retain the stale veto rather than imply a complete result.
 
-    Prevents the opt-in diet from dropping the one field that explains why a
-    frozen answer is incomplete. This is a distinct behavior from the complete
-    reverse-result test above, so it uses one stale graph and one command.
+    Prevents the opt-in diet from dropping the one field that explains why a frozen answer is incomplete. This is a
+    distinct behavior from the complete reverse-result test above, so it uses one stale graph and one command.
     """
     root, index_path = stale_git_project
     env = {**_supported_codemap_env(), "SCAN_NO_AUTOBUILD": "1"}

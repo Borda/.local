@@ -47,7 +47,7 @@ def is_within_root(candidate: str, root: str) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns the exit code.
+    """Check whether an output path stays within its allowed root.
 
     No doctest — argv-dependent; covered by pytest.
 

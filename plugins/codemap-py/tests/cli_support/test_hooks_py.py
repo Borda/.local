@@ -98,8 +98,8 @@ def _write_index(idx_dir: Path, proj: str, *, git_sha: str, modules: int = 2) ->
 def _fake_plugin_root(root: Path, *, with_scan_bin: bool, marker: Path) -> Path:
     """Create a fake CLAUDE_PLUGIN_ROOT.
 
-    When *with_scan_bin* is True, ``bin/scan-index`` is a runnable platform-native
-    stub that touches *marker* on spawn — the observable proof the hook launched a refresh.
+    When *with_scan_bin* is True, ``bin/scan-index`` is a runnable platform-native stub that touches *marker* on spawn —
+    the observable proof the hook launched a refresh.
     """
     plugin_root = root / "plugin"
     bin_dir = plugin_root / "bin"
@@ -165,12 +165,11 @@ def _session_marker(repo: Path, runtime: str = "claude") -> Path:
 def _await_marker(marker: Path, timeout_s: float = 8.0) -> bool:
     """Poll until *marker* appears or *timeout_s* elapses; return whether it appeared.
 
-    The stale-index refresh is a detached, fire-and-forget spawn, so the stub's marker
-    write races the assertion and must be awaited. The budget is generous because on
-    Windows the stub runs through a fresh ``python`` interpreter whose cold start (a
-    new, Defender-scanned ``CreateProcess``) can take several seconds under CI load —
-    far longer than the near-instant POSIX ``/bin/sh`` stub. Returns as soon as the
-    marker exists, so a fast platform pays only the real spawn latency, not the ceiling.
+    The stale-index refresh is a detached, fire-and-forget spawn, so the stub's marker write races the assertion and
+    must be awaited. The budget is generous because on Windows the stub runs through a fresh ``python`` interpreter
+    whose cold start (a new, Defender-scanned ``CreateProcess``) can take several seconds under CI load — far longer
+    than the near-instant POSIX ``/bin/sh`` stub. Returns as soon as the marker exists, so a fast platform pays only the
+    real spawn latency, not the ceiling.
     """
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
@@ -191,8 +190,8 @@ def _run_inject_with_event(
 ) -> subprocess.CompletedProcess:
     """Drive inject-preamble.py piping a full UserPromptSubmit *event* dict on stdin.
 
-    Mirrors :func:`_run_inject` but lets a test control the whole event (e.g. supply
-    ``session_id``) rather than only the prompt string.
+    Mirrors :func:`_run_inject` but lets a test control the whole event (e.g. supply ``session_id``) rather than only
+    the prompt string.
     """
     env = {
         **os.environ,
@@ -306,7 +305,7 @@ class TestInjectPreambleCurrency:
 
 
 class TestInjectPreambleHeaderFields:
-    """``header_fields`` reads identity out of a bounded index prefix, never the whole file.
+    """Read identity out of a bounded index prefix, never the whole file.
 
     The bound is the point: this runs on every prompt, and real indexes reach hundreds of MB
     (well past ``MAX_PARSE_BYTES``), so a whole-file ``json.loads`` here would either stall the
@@ -520,12 +519,11 @@ class TestInjectPreambleRefreshLock:
 class TestInjectPreambleSessionMarker:
     """The runtime-sharded repository session marker written every invocation.
 
-    scan-query reads this marker to correlate queries with the session that triggered
-    a refresh (the coverage-diet dedup). The hook must write it UNCONDITIONALLY after
-    resolving the project root — before the no-index early exit, before the current-
-    path session-flag dedup exit — so the marker's ts advances on every prompt even
-    when the preamble itself is suppressed. It carries single-line JSON
-    ``{"session_id","ts"}`` + trailing newline, and fails open (never throws).
+    scan-query reads this marker to correlate queries with the session that triggered a refresh (the coverage-diet
+    dedup). The hook must write it UNCONDITIONALLY after resolving the project root — before the no-index early exit,
+    before the early return for a current-path session flag — so the marker's ts advances on every prompt even when the
+    preamble itself is suppressed. It carries single-line JSON ``{"session_id","ts"}`` + trailing newline, and fails
+    open (never throws).
     """
 
     def test_marker_written_with_session_id_and_ts(self, tmp_path: Path) -> None:
@@ -666,8 +664,8 @@ class TestInjectPreambleStaleCollapse:
     """The once-per-session full stale notice collapses to a single line thereafter.
 
     A separate sentinel (``codemap-stale-<proj>``, distinct from the preamble flag)
-    tracks the stale-reminder dedup: the first still-stale prompt emits the full two-
-    line notice and writes the sentinel; every later still-stale prompt within
+    tracks the stale-reminder dedup: the first still-stale prompt emits the full notice on two lines and writes the
+    sentinel; every later still-stale prompt within
     SESSION_TTL_MS collapses to one line ``[codemap] index stale<refreshNote>`` and
     exits before the module-count parse. Currency paths other than stale are untouched.
     """
@@ -719,10 +717,9 @@ class TestInjectPreambleStaleCollapse:
     def test_collapsed_line_refresh_pending_when_no_note(self, tmp_path: Path) -> None:
         """When neither spawn nor lock produced a note, the collapsed line reads 'refresh pending'.
 
-        A stale-but-non-git currency cannot occur here, so drive the note-less path by
-        pre-seeding the stale sentinel while removing the scan bin AND holding no lock —
-        the hook takes the lock, finds no scan bin, releases it, and emits no note. The
-        collapsed reminder then supplies its own ' · refresh pending' default.
+        A stale-but-non-git currency cannot occur here, so drive the note-less path by pre-seeding the stale sentinel
+        while removing the scan bin AND holding no lock — the hook takes the lock, finds no scan bin, releases it, and
+        emits no note. The collapsed reminder then supplies its own ' · refresh pending' default.
         """
         repo, idx_dir, proj = self._stale_repo(tmp_path)
         marker = tmp_path / "spawned.marker"
@@ -820,9 +817,9 @@ class TestGuardRedundantScan:
     def test_near_miss_module_not_denied(self, command: str, tmp_path: Path) -> None:
         """A near-miss module (name contains an exhausted module as a substring) must not be denied.
 
-        The guard uses a word-boundary matcher (guard-redundant-scan.js matchesModule), so a
-        grep for ``mypackage.auth2`` or ``notmypackage.auth`` — whose names merely *contain*
-        the exhausted ``mypackage.auth`` — stays allowed rather than being falsely blocked.
+        The guard uses a word-boundary matcher (guard-redundant-scan.js matchesModule), so a grep for
+        ``mypackage.auth2`` or ``notmypackage.auth`` — whose names merely *contain* the exhausted ``mypackage.auth`` —
+        stays allowed rather than being falsely blocked.
         """
         session = "sess-nearmiss"
         _seed_sentinel(tmp_path, session, ["mypackage.auth", "mypackage/auth"])
@@ -865,10 +862,9 @@ class TestGuardRedundantScan:
 class TestGuardCommandAnchoring:
     """Only a real search command may be denied.
 
-    The pattern this pins replaces an unanchored ``\\bimport\\b.*-r`` alternative that
-    named no search tool at all, so any command pairing the word "import" with a ``-r``
-    flag — a Python one-liner next to an ``rm -r``, most damagingly — was denied while
-    naming an exhausted module.
+    The pattern this pins replaces an unanchored ``\\bimport\\b.*-r`` alternative that named no search tool at all, so
+    any command pairing the word "import" with a ``-r`` flag — a Python one-liner next to an ``rm -r``, most damagingly
+    — was denied while naming an exhausted module.
     """
 
     _SESSION = "sess-anchor"
@@ -910,9 +906,9 @@ class TestGuardCommandAnchoring:
 class TestGuardSentinelExpiry:
     """A recorded caller set stops denying once its authority can no longer be trusted.
 
-    ``record-exhausted.py`` drops the sentinel on every Claude source edit; the TTL here
-    bounds the mutation that hook never sees (a checkout, an external editor, a sibling
-    agent), which previously left a deny armed for the rest of the session.
+    ``record-exhausted.py`` drops the sentinel on every Claude source edit; the TTL here bounds the mutation that hook
+    never sees (a checkout, an external editor, a sibling agent), which previously left a deny armed for the rest of the
+    session.
     """
 
     _SESSION = "sess-ttl"
@@ -1097,7 +1093,7 @@ def _skill_records(cwd: Path) -> list[dict]:
 
 
 class TestLogSkillStart:
-    """PreToolUse(Skill) logging of codemap:* skill invocations."""
+    """Record structural-query skill invocations from the pre-tool hook."""
 
     def test_codemap_skill_logged(self, tmp_path: Path) -> None:
         """A codemap:* Skill call appends one start record carrying skill + intent."""

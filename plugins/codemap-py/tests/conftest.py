@@ -17,7 +17,7 @@ if str(_BIN_DIR) not in sys.path:
 
 _SRC_DIR = Path(__file__).parent.parent / "src"
 # src/ on sys.path so `from codemap_py import ...` collects under isolated runs
-# (the full suite gets src/ via --doctest-modules; a lone gate run would not).
+# (the full suite gets src/ via ``--doctest-modules``; a lone gate run would not).
 if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 
@@ -40,11 +40,9 @@ def corpus_pyi_dir() -> Path:
 def _telemetry_off(monkeypatch):
     """Keep the suite out of the real telemetry stream.
 
-    The 2026-07 usage audit found 4.5K pytest-run records in the dev repo's live
-    cli.jsonl (fixture errors, 30–126s suite timings) drowning organic usage.
-    Tests exercising the logging path re-enable it explicitly
-    (``monkeypatch.delenv``/``setenv`` as in test_telemetry.py) or pass their own
-    ``log_dir``/``CODEMAP_LOG_DIR``.
+    The 2026-07 usage audit found 4.5K pytest-run records in the dev repo's live cli.jsonl (fixture errors, 30–126s
+    suite timings) drowning organic usage. Tests exercising the logging path re-enable it explicitly
+    (``monkeypatch.delenv``/``setenv`` as in test_telemetry.py) or pass their own ``log_dir``/``CODEMAP_LOG_DIR``.
     """
     monkeypatch.setenv("CODEMAP_LOGGING", "false")
 
@@ -64,44 +62,25 @@ def scan_query() -> Path:
 @pytest.fixture(scope="session")
 def gamma_src() -> str:
     """Source for gamma module — leaf, no imports."""
-    return """\
-def func_gamma(x):
-    return x + 1
-"""
+    return "def func_gamma(x):\n    return x + 1\n"
 
 
 @pytest.fixture(scope="session")
 def beta_src() -> str:
     """Source for beta module — imports gamma."""
-    return """\
-import gamma
-
-def func_beta(x):
-    return gamma.func_gamma(x) * 2
-"""
+    return "import gamma\n\ndef func_beta(x):\n    return gamma.func_gamma(x) * 2\n"
 
 
 @pytest.fixture(scope="session")
 def alpha_src() -> str:
     """Source for alpha module — imports beta and gamma."""
-    return """\
-import beta
-import gamma
-
-def func_alpha(x):
-    return beta.func_beta(x) + gamma.func_gamma(x)
-"""
+    return "import beta\nimport gamma\n\ndef func_alpha(x):\n    return beta.func_beta(x) + gamma.func_gamma(x)\n"
 
 
 @pytest.fixture(scope="session")
 def delta_src() -> str:
     """Source for delta module — imports alpha."""
-    return """\
-import alpha
-
-def func_delta(x):
-    return alpha.func_alpha(x)
-"""
+    return "import alpha\n\ndef func_delta(x):\n    return alpha.func_alpha(x)\n"
 
 
 @pytest.fixture(scope="module")
@@ -240,7 +219,7 @@ def _materialize_polluted_tree(root: Path, *, with_collision: bool) -> None:
 
 @pytest.fixture
 def polluted_repo(tmp_path: Path, scan_index: Path) -> Callable[..., tuple[Path, Path]]:
-    """Factory building the polluted git repo, scanning it, and returning (root, index_path).
+    """Provide a factory that builds and scans a polluted repository.
 
     Call the returned callable once per test. It initialises a git repo, materialises
     the tree, commits it, runs an initial full scan, and returns the project root and

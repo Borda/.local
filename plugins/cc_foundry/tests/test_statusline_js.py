@@ -1,16 +1,12 @@
 """Subprocess tests for ``hooks/statusline.js``.
 
-The hook is a status-line renderer: it consumes a JSON payload on stdin
-and writes a two-line ANSI string to stdout. State for the segments
-lives under ``<hook temp base>/claude-state-<session_id>/`` and is written by
-``task-log.js`` at runtime. These tests seed that state directly, then
-assert against ``statusline.js`` stdout.
+The hook is a status-line renderer: it consumes a JSON payload on stdin and writes a two-line ANSI string to stdout.
+State for the segments lives under ``<hook temp base>/claude-state-<session_id>/`` and is written by ``task-log.js`` at
+runtime. These tests seed that state directly, then assert against ``statusline.js`` stdout.
 
-Line 2 format: ``⚡ <skills> │ 🤖 <agents> │ 🛠️ <tools>``.
-Agents (including codex:* types) appear in the ``🤖`` segment.
-Assertions strip ANSI escape sequences before substring matching so
-the rendered marker and label co-occurrence is testable irrespective
-of color wrapping.
+Line 2 format: ``⚡ <skills> │ 🤖 <agents> │ 🛠️ <tools>``. Agents (including codex:* types) appear in the ``🤖`` segment.
+Assertions strip ANSI escape sequences before substring matching so the rendered marker and label co-occurrence is
+testable irrespective of color wrapping.
 """
 
 from __future__ import annotations
@@ -40,8 +36,8 @@ def _strip_ansi(s: str) -> str:
 def sid(tmp_path: Path) -> Iterator[str]:
     """Yield a unique session id; clean its ``claude-state-<id>`` dir on teardown.
 
-    Base resolved via ``hook_tmp_base()`` so teardown targets the same directory the
-    hook's ``getSentinelDir()`` writes on this platform.
+    Base resolved via ``hook_tmp_base()`` so teardown targets the same directory the hook's ``getSentinelDir()`` writes
+    on this platform.
     """
     s = f"pytest-{tmp_path.name}"
     yield s
@@ -83,8 +79,8 @@ def _write_agent(
 ) -> None:
     """Write an agents/<id>.json file under the per-session state dir.
 
-    ``last_active`` is included only when provided so tests can exercise both the
-    legacy (since-only) records and the refreshed (last_active-bearing) ones.
+    ``last_active`` is included only when provided so tests can exercise both the legacy (since-only) records and the
+    refreshed (last_active-bearing) ones.
     """
     d = hook_tmp_base() / f"claude-state-{sid}" / "agents"
     d.mkdir(parents=True, exist_ok=True)
@@ -159,10 +155,10 @@ class TestAgentDisplay:
     def test_non_worktree_agent_past_10_min_stays_visible(self, sid: str, tmp_home: Path, run_hook) -> None:
         """A non-worktree agent (since-only, no ``last_active``) past the old 10-min cutoff stays visible.
 
-        Non-worktree agents (plain ``Agent()`` calls, the common case) get no per-agent liveness
-        signal — CC's tool-event payload carries no agent_id, so ``last_active`` is never refreshed
-        for them. They use the longer 60-min backstop instead of the worktree-only 10-min one, so a
-        genuinely still-working 20-min background task (e.g. a multi-file refactor) is not hidden.
+        Non-worktree agents (plain ``Agent()`` calls, the common case) get no per-agent liveness signal — the tool event
+        payload carries no agent_id, so ``last_active`` is never refreshed for them. They use the longer 60-minute
+        backstop instead of the worktree-only 10-min one, so a genuinely still-working 20-min background task (e.g. a
+        multi-file refactor) is not hidden.
         """
         stale = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
         _write_agent(sid, "a-longrun", since=stale)
@@ -231,7 +227,7 @@ class TestCodexDisplay:
         assert "🤖 none" in rendered
 
     def test_active_codex_agent_shows_type_label(self, sid: str, tmp_home: Path, run_hook) -> None:
-        """codex:rescue agent in agents/ renders its short type label in the 🤖 segment."""
+        """Codex:rescue agent in agents/ renders its short type label in the 🤖 segment."""
         _write_agent(sid, "tu-cdx-1", since=datetime.now(timezone.utc).isoformat(), agent_type="codex:rescue")
 
         result = run_hook("statusline.js", _payload(sid), home=tmp_home)
@@ -242,7 +238,7 @@ class TestCodexDisplay:
         assert "rescue" in rendered
 
     def test_active_codex_dir_agent_shows_label(self, sid: str, tmp_home: Path, run_hook) -> None:
-        """codex agent tracked in the codex/ dir (not agents/) still renders in the 🤖 segment."""
+        """Codex agent tracked in the codex/ dir (not agents/) still renders in the 🤖 segment."""
         _write_codex(sid, "tu-cdx-dir", since=datetime.now(timezone.utc).isoformat())
 
         result = run_hook("statusline.js", _payload(sid), home=tmp_home)
@@ -254,7 +250,7 @@ class TestCodexDisplay:
         assert "🤖 none" not in rendered
 
     def test_stale_codex_dir_agent_dropped(self, sid: str, tmp_home: Path, run_hook) -> None:
-        """codex/ entry (non-worktree, since-only) older than the 60-min backstop is dropped → ``🤖 none`` rendered."""
+        """Codex/ entry (non-worktree, since-only) older than the 60-min backstop is dropped → ``🤖 none`` rendered."""
         stale = (datetime.now(timezone.utc) - timedelta(minutes=70)).isoformat()
         _write_codex(sid, "tu-cdx-stale", since=stale)
 

@@ -101,7 +101,7 @@ def _add_member(package: Path, relative: str, data: bytes) -> None:
 
 @pytest.fixture()
 def valid_package(tmp_path: Path) -> Path:
-    """A freshly materialized, well-formed package directory."""
+    """Create a well-formed package directory."""
     package = tmp_path / "pkg"
     package.mkdir()
     _write_valid_package(package)
@@ -209,7 +209,7 @@ def test_symlink_flagged(valid_package: Path) -> None:
     assert any(item.startswith("symlink in package:") for item in validate_findings(valid_package))
 
 
-# --- declared-component closure (R5) ---------------------------------------
+# --- declared-component closure ---------------------------------------
 
 
 def test_missing_referenced_hook_helper_flagged(valid_package: Path) -> None:
@@ -278,12 +278,12 @@ def test_rostered_codex_skill_missing_skillmd_flagged(valid_package: Path) -> No
 
 
 def test_codex_roster_mismatch_flagged(valid_package: Path) -> None:
-    """A Codex roster that diverges from the Claude roster violates plan §8.2 parity."""
+    """Flag a Codex roster that diverges from the corresponding Claude roster."""
     _mutate_manifest(valid_package, lambda m: m["skills"].__setitem__("codex", []))
     assert any(item.startswith("codex roster [] != claude roster") for item in validate_findings(valid_package))
 
 
-# --- executable-mode drift (R6) --------------------------------------------
+# --- executable-mode drift --------------------------------------------
 
 
 @pytest.mark.skipif(os.name != "posix", reason="executable bit is unreliable off POSIX")

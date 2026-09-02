@@ -135,7 +135,7 @@ def resolve_install_path(registry_path: Path, marketplace: str, plugin_name: str
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns process exit code."""
+    """Resolve and print an installed plugin path."""
     parser = argparse.ArgumentParser(
         prog="get_plugin_install_path",
         description="Resolve a plugin's current installPath from Claude Code's installed_plugins.json.",
@@ -158,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.registry:
-        # Canonicalise --registry: must resolve under the user's ``.claude``
+        # Canonicalise ``--registry``: must resolve under the user's ``.claude``
         # tree, the project working directory, or the OS temp dir.  The temp-dir
         # exception covers pytest's ``tmp_path`` fixture and tooling that
         # vendors a throw-away registry copy.  Anything else is rejected (CWE-22).

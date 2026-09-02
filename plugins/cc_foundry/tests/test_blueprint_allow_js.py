@@ -113,7 +113,7 @@ def seeded() -> bytes:
 
 
 def _is_allowed(result: dict) -> bool:
-    """True when the hook emitted a permissionDecision allow."""
+    """Check whether the hook allowed the requested operation."""
     try:
         return result["hookSpecificOutput"]["permissionDecision"] == "allow"
     except (KeyError, TypeError):
@@ -139,8 +139,8 @@ class TestVerbatimAllow:
     def test_whole_block_entry(self, run_blueprint: Callable[..., dict], seeded: bytes) -> None:
         """A multi-line block sent verbatim matches its whole-block entry.
 
-        The block's own lines are NOT in the manifest here, so an allow proves the
-        whole-block digest path fired rather than the per-command fallback.
+        The block's own lines are NOT in the manifest here, so an allow proves the whole-block digest path fired rather
+        than the per-command fallback.
         """
         result = run_blueprint(BLOCK, manifest=seeded)
         assert _is_allowed(result), f"block should be allowed, got: {result}"
@@ -148,9 +148,9 @@ class TestVerbatimAllow:
     def test_trailing_comment_variant(self, run_blueprint: Callable[..., dict], seeded: bytes) -> None:
         """A blueprint command sent with an extra trailing comment still hash-matches.
 
-        Comment stripping runs before hashing, so the model appending an explanatory
-        ``# ...`` to blueprint text does not cost the allow. The comment is benign —
-        it carries no separator, which would split a new segment for the danger check.
+        Comment stripping runs before hashing, so the model appending an explanatory ``# ...`` to blueprint text does
+        not cost the allow. The comment is benign — it carries no separator, which would split a new segment for the
+        danger check.
         """
         result = run_blueprint(f"{SINGLE}  # resolve the run dir", manifest=seeded)
         assert _is_allowed(result), f"comment variant should be allowed, got: {result}"
@@ -168,8 +168,8 @@ class TestVerbatimAllow:
     def test_crlf_variant(self, run_blueprint: Callable[..., dict], seeded: bytes) -> None:
         """A block arriving with CRLF line endings normalizes to the committed digest.
 
-        The manifest is generated on whichever host ran pre-commit; a Windows-side
-        command must still match, which is what the CRLF step of the pipeline buys.
+        The manifest is generated on whichever host ran pre-commit; a Windows-side command must still match, which is
+        what the CRLF step of the pipeline buys.
         """
         result = run_blueprint(BLOCK.replace("\n", "\r\n"), manifest=seeded)
         assert _is_allowed(result), f"CRLF variant should be allowed, got: {result}"
@@ -177,8 +177,8 @@ class TestVerbatimAllow:
     def test_every_logical_command_hits(self, run_blueprint: Callable[..., dict]) -> None:
         """A multi-line command is allowed when each of its logical commands is an entry.
 
-        Nothing matches the combined text, so only the composition path can allow it —
-        and it may only do so with full, not partial, coverage.
+        Nothing matches the combined text, so only the composition path can allow it — and it may only do so with full,
+        not partial, coverage.
         """
         manifest = _manifest_bytes({"a.md:1": bbm.normalize(SINGLE), "b.md:2": bbm.normalize(OTHER)})
         result = run_blueprint(f"{SINGLE}\n{OTHER}", manifest=manifest)
@@ -294,9 +294,8 @@ class TestTamperedManifestRefused:
     def test_generator_would_never_emit_the_tampered_entry(self) -> None:
         """The hand-crafted tamper case is genuinely one the generator rejects.
 
-        Without this the defence-in-depth test could be passing for the wrong reason —
-        a case the generator drops anyway is only interesting if the manifest COULD
-        hold it, so the test proves the entry is synthetic, not reachable.
+        Without this the defence-in-depth test could be passing for the wrong reason — a case the generator drops anyway
+        is only interesting if the manifest COULD hold it, so the test proves the entry is synthetic, not reachable.
         """
         entries, dropped = bbm.block_entries(bbm.normalize('BUILD=$(rm -rf "$HOME/build")'), "f.md:1")
         assert entries == {}
@@ -324,7 +323,7 @@ class TestSharedVectors:
 
     @pytest.mark.parametrize("vector", vector_params("normalize"))
     def test_normalize(self, vector: dict) -> None:
-        """``normalize`` in JS returns exactly what the fixture (and Python) specifies.
+        """Match JavaScript normalization with the shared fixture and Python implementation.
 
         Asymmetry here is the one real bug class of this design: a hook that
         normalizes more aggressively than the generator lets a crafted command
@@ -334,30 +333,29 @@ class TestSharedVectors:
 
     @pytest.mark.parametrize("vector", vector_params("needs_bailout"))
     def test_needs_bailout(self, vector: dict) -> None:
-        """``needsBailout`` in JS agrees with the generator on heredocs and open quotes."""
+        """Match JavaScript bailout decisions with the generator."""
         assert _node_eval(f"h.needsBailout({json.dumps(vector['input'])})") is vector["expected"]
 
     @pytest.mark.parametrize("vector", vector_params("split_logical_commands"))
     def test_split_logical_commands(self, vector: dict) -> None:
-        """``splitLogicalCommands`` in JS splits identically to the generator."""
+        """Match JavaScript command splitting with the generator."""
         assert _node_eval(f"h.splitLogicalCommands({json.dumps(vector['input'])})") == vector["expected"]
 
     @pytest.mark.parametrize("vector", vector_params("is_dangerous"))
     def test_is_dangerous(self, vector: dict) -> None:
-        """``isDangerous`` in JS classifies every shared vector exactly as the generator does.
+        """Match JavaScript risk classification with the generator.
 
-        This is the asymmetry that matters most. The generator's filter decides what
-        reaches the manifest and the hook's decides what a digest hit is still allowed to
-        do; a command only one side calls dangerous means the defence-in-depth layer is
-        no longer independent of the layer it exists to backstop.
+        This is the asymmetry that matters most. The generator's filter decides what reaches the manifest and the hook's
+        decides what a digest hit is still allowed to do; a command only one side calls dangerous means the secondary
+        defense is no longer independent of the layer it exists to backstop.
         """
         assert _node_eval(f"h.isDangerous({json.dumps(vector['input'])})") is vector["expected"]
 
     def test_digests_agree_across_languages(self) -> None:
         """Python and JS produce the same digest for the same normalized text.
 
-        The hash is the actual join between generator and hook; equal normalization
-        with a different encoding assumption would still miss every entry.
+        The hash is the actual join between generator and hook; equal normalization with a different encoding assumption
+        would still miss every entry.
         """
         text = bbm.normalize(BLOCK)
         assert _node_eval(f"h.sha256Text({json.dumps(text)})") == bbm.sha256_text(text)
@@ -369,9 +367,9 @@ PLUGIN_DIR = HOOK.parent.parent
 def _committed_block() -> tuple[str, str]:
     """Return (raw block text, normalized text) for a real committed manifest entry.
 
-    Picks the first shipped bash block whose RAW text differs from its normalized form
-    — i.e. one carrying comments or blank lines — so exercising it proves the whole
-    comment-strip pipeline, not just a digest lookup of already-clean text.
+    Picks the first shipped bash block whose RAW text differs from its normalized form — i.e. one carrying comments or
+    blank lines — so exercising it proves the whole comment-strip pipeline, not just a digest lookup of already-clean
+    text.
     """
     entries = json.loads((PLUGIN_DIR / bbm.MANIFEST_NAME).read_text(encoding="utf-8"))["entries"]
     for filepath in bbm.collect_md_files(PLUGIN_DIR):

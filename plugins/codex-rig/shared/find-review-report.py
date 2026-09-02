@@ -3,27 +3,40 @@
 
 ## Purpose
 
-Let remediation locate an assessed prior review report that matches the canonical PR URL rather than guessing from timestamps alone. This prevents code-remediate from applying findings from a different pull request, a review that never reached an assessed verdict, or a terminal close disposition.
+Let remediation locate an assessed prior review report that matches the canonical PR URL rather than guessing from
+timestamps alone. This prevents code-remediate from applying findings from a different pull request, a review that never
+reached an assessed verdict, or a terminal close disposition.
 
 ## Scope
 
-It scans local report directories and JSON identity files; it does not query GitHub, validate findings beyond classifying terminal results, or change report content. Matching accepts a PR number, ``#number``, or exact normalized URL and checks both ``pr.json`` identity and result metadata.
+It scans local report directories and JSON identity files; it does not query GitHub, validate findings beyond
+classifying terminal results, or change report content. Matching accepts a PR number, ``#number``, or exact normalized
+URL and checks both ``pr.json`` identity and result metadata.
 
 ## Usage
 
-Run ``python find-review-report.py --target <pr-url-or-number>`` to select an assessed report, or ``python find-review-report.py --result <path>`` to reject a supplied unavailable, closed, or unpromoted candidate result. The target search covers canonical ``pr-<number>/run-<NNN>`` directories, timestamped flat reports, and, for the default current root, the legacy ``.reports/codex/review`` root.
+Run ``python find-review-report.py --target <pr-url-or-number>`` to select an assessed report. Alternatively, run the
+same script with ``--result <path>`` to reject a supplied unavailable, closed, or unpromoted candidate result. The
+target search covers canonical ``pr-<number>/run-<NNN>`` directories, timestamped flat reports, and, for the default
+current root, the legacy ``.reports/codex/review`` root.
 
 ## Used by
 
-The ``code-remediate #<PR> +review`` workflow and review-report lookup tests use this selector. Remediation is the consumer of the assessed/unavailable distinction because it must rerun code-review when no trustworthy prior assessment exists.
+The ``code-remediate #<PR> +review`` workflow and review-report lookup tests use this selector. Remediation is the
+consumer of the assessed/unavailable distinction because it must rerun code-review when no trustworthy prior assessment
+exists.
 
 ## Outputs
 
-It prints one matching assessed local review-artifact path, choosing the numerically highest PR-scoped run before any compatible timestamped artifact across canonical and legacy report roots. Compatibility requires ``metadata.scope == "pr"`` and a recognized ``metadata.review_decision.recommendation`` in addition to PR identity.
+It prints one matching assessed local review-artifact path, choosing the numerically highest PR-scoped run before any
+compatible timestamped artifact across canonical and legacy report roots. Compatibility requires PR scope and a
+recognized ``metadata.review_decision.recommendation`` in addition to PR identity.
 
 ## Failure
 
-Absent PR identity, malformed report JSON, a current terminal close, a newer unpromoted candidate, only unavailable diagnostics, or no matching artifact returns a non-zero status so remediation cannot consume unassessed findings. Terminal messages distinguish unavailable, closed, unpromoted, missing, and invalid candidates.
+Absent PR identity, malformed report JSON, a current terminal close, a newer unpromoted candidate, only unavailable
+diagnostics, or no matching artifact returns a non-zero status so remediation cannot consume unassessed findings.
+Terminal messages distinguish unavailable, closed, unpromoted, missing, and invalid candidates.
 """
 
 from __future__ import annotations

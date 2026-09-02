@@ -1,17 +1,15 @@
 """Make ``_bench_common`` importable and generate the manifests collection depends on.
 
-``--doctest-modules`` (repo-root ``pyproject.toml``) imports every module under
-``benchmarks/`` during collection, and ``--import-mode=importlib`` deliberately does
-not put a module's parent directory on ``sys.path`` — so ``from _bench_common import
-presentation`` fails for any module collected outside ``benchmarks/tests/``, whose own
-conftest inserts the directory only for that subtree. This parent-level conftest runs
-first for the whole ``benchmarks/`` tree and applies the same insert once.
+``--doctest-modules`` (repo-root ``pyproject.toml``) imports every module under ``benchmarks/`` during collection, and
+``--import-mode=importlib`` deliberately does not put a module's parent directory on ``sys.path``. Consequently, the
+benchmark support import fails for modules collected outside ``benchmarks/tests/``, whose own conftest inserts the
+directory only for that subtree. This parent-level conftest runs first for the whole ``benchmarks/`` tree and applies
+the same insert once.
 
-The manifest session hooks live here rather than in ``benchmarks/tests/conftest.py``
-because ``ini_options.testpaths`` starts at ``benchmarks/``: only conftests for the
-initial collection roots load before ``pytest_sessionstart``, so a hook one level down
-never ran, and every module reading a gitignored manifest at import time — the runners
-collected as doctest modules included — failed collection on a fresh clone.
+The manifest session hooks live here rather than in ``benchmarks/tests/conftest.py`` because ``ini_options.testpaths``
+starts at ``benchmarks/``: only conftests for the initial collection roots load before ``pytest_sessionstart``, so a
+hook one level down never ran, and every module reading a gitignored manifest at import time — the runners collected as
+doctest modules included — failed collection on a fresh clone.
 """
 
 from __future__ import annotations

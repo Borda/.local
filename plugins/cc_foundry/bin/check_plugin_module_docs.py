@@ -8,8 +8,8 @@ Purpose:
 Scope:
     Walk shipped Python modules below each directory in ``--scan-dir``, excluding
     tests, caches, and generated report evidence. Every module needs a top-level
-    docstring. Codex Rig additionally keeps its published six-section maintainer-
-    documentation contract, which its package validation and author guidance
+    docstring. Codex Rig additionally keeps its published six-section documentation contract for maintainers, which its
+    package validation and author guidance
     already define.
 
 Usage:

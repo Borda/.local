@@ -1,15 +1,13 @@
 """Tests for ``bin/symlink_with_guard.py``.
 
-Doctests cover the pure helpers (``_is_foundry_managed``, ``_is_current``,
-``_owns``, ``_cache_lineage``, ``_conflict_label``). This file exercises the
-end-to-end behaviours of ``cleanup`` and ``scan`` against a real temporary
+Doctests cover the pure helpers (``_is_foundry_managed``, ``_is_current``, ``_owns``, ``_cache_lineage``,
+``_conflict_label``). This file exercises the end-to-end behaviours of ``cleanup`` and ``scan`` against a real temporary
 filesystem so the symlink-handling logic is verified without mocks.
 
-Rules install as ``~/.claude/rules/foundry-<source>.md``. Every mutation there is
-gated on the ownership proof in ``_owns`` — the target must resolve under the
-current plugin root or the same installed-cache lineage. The "foreign target"
-cases below exist because an earlier implementation used a path substring
-instead and deleted a user's ``dotfiles/plugins/cc_foundry/rules/…`` link.
+Rules install as ``~/.claude/rules/foundry-<source>.md``. Every mutation there is gated on the ownership proof in
+``_owns`` — the target must resolve under the current plugin root or the same installed-cache lineage. The "foreign
+target" cases below exist because an earlier implementation used a path substring instead and deleted a user's
+``dotfiles/plugins/cc_foundry/rules/…`` link.
 """
 
 from __future__ import annotations
@@ -135,7 +133,7 @@ class TestExtendedPathPrefix:
         assert symlink_with_guard._strip_extended_prefix(raw) == expected
 
     def test_readlink_strips_prefix_at_the_boundary(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``_readlink`` normalises, so no downstream consumer ever sees the prefixed spelling."""
+        """Normalize, so no downstream consumer ever sees the prefixed spelling."""
         link = tmp_path / "link.md"
         _ln("target.md", link)
         monkeypatch.setattr(symlink_with_guard.os, "readlink", lambda _p: r"\\?\C:\cache\foundry\rules\a.md")
@@ -163,7 +161,7 @@ class TestMarkerSeparators:
 
 
 class TestCleanup:
-    """cleanup: removes only foundry-managed symlinks whose source vanished."""
+    """Cleanup: removes only foundry-managed symlinks whose source vanished."""
 
     def test_removes_obsolete_foundry_rule_link(self, env: tuple[Path, Path]) -> None:
         """Stale same-lineage symlink whose source no longer exists is removed."""
@@ -320,10 +318,9 @@ class TestCleanup:
     def test_removes_current_version_skill_link(self, marked_env: tuple[Path, Path]) -> None:
         """Skill symlink pointing into the CURRENT plugin root is removed too.
 
-        Deliberately opposite to ``test_keeps_current_version_agent_symlink``: a
-        current-root skill link is not a signal to investigate, it is the defect
-        itself — it registers the dir as a user-level skill that shadows Claude
-        Code's bundled skill of the same name. Do not align these two tests.
+        Deliberately opposite to ``test_keeps_current_version_agent_symlink``: a current-root skill link is not a signal
+        to investigate, it is the defect itself — it registers the dir as a user-level skill that shadows Claude Code's
+        bundled skill of the same name. Do not align these two tests.
         """
         plugin, home = marked_env
         link = home / ".claude" / "skills" / "curator"
@@ -335,7 +332,7 @@ class TestCleanup:
         assert "removed user-level skill link: curator" in log
 
     def test_removes_shared_support_dir_link(self, marked_env: tuple[Path, Path]) -> None:
-        """``_shared`` gets no exemption — no plugin may rely on a global _shared path."""
+        """Deny exemptions for global shared-plugin paths."""
         plugin, home = marked_env
         link = home / ".claude" / "skills" / "_shared"
         _ln(str(plugin / "skills" / "_shared"), link)
@@ -398,9 +395,8 @@ class TestCleanup:
     def test_keeps_current_version_agent_symlink(self, env: tuple[Path, Path]) -> None:
         """Agent symlink pointing into the current plugin root is left alone.
 
-        Init never re-creates these, so any link pointing at the current root
-        was placed by something external; leaving it intact gives the operator
-        a clear signal to investigate without silently destroying state.
+        Init never re-creates these, so any link pointing at the current root was placed by something external; leaving
+        it intact gives the operator a clear signal to investigate without silently destroying state.
         """
         plugin, home = env
         link = home / ".claude" / "agents" / "sw-engineer.md"
@@ -423,7 +419,7 @@ class TestCleanup:
 
 
 class TestScan:
-    """scan: surfaces only conflicts requiring user confirmation."""
+    """Scan: surfaces only conflicts requiring user confirmation."""
 
     def test_skips_current_foundry_link(self, env: tuple[Path, Path]) -> None:
         """Current namespaced symlink is not a conflict."""
@@ -506,14 +502,14 @@ class TestScan:
 
 
 class TestMain:
-    """main: CLI surface — stdout, stderr, exit codes."""
+    """Main: CLI surface — stdout, stderr, exit codes."""
 
     def test_cleanup_prints_log_lines_indented(
         self,
         env: tuple[Path, Path],
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """cleanup mode emits ``  removed obsolete: ...`` lines (two-space indent)."""
+        """Cleanup mode emits ``  removed obsolete: ...`` lines (two-space indent)."""
         plugin, home = env
         _ln(
             str(_stale_root(plugin) / "rules" / "another.md"),
@@ -533,7 +529,7 @@ class TestMain:
         env: tuple[Path, Path],
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """scan mode emits the bash-array-ready format on stdout."""
+        """Scan mode emits the bash-array-ready format on stdout."""
         plugin, home = env
         _ln("/elsewhere/foo.md", home / ".claude" / "rules" / "foundry-current.md")
 
@@ -558,11 +554,10 @@ class TestMain:
         env: tuple[Path, Path],
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--marker override changes the substring used to purge the skills scope.
+        """Use a custom ownership marker when purging skill links.
 
-        The rules and TEAM_PROTOCOL scopes ignore the marker entirely — they are
-        destinations foundry writes, so they demand the stricter path-lineage
-        proof instead.
+        The rules and TEAM_PROTOCOL scopes ignore the marker entirely — they are destinations foundry writes, so they
+        demand the stricter path-lineage proof instead.
         """
         plugin, home = env
         _ln(
@@ -732,7 +727,7 @@ class TestCreateLink:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`create` without --src → returns 2 with explanatory stderr."""
+        """Reject create mode without a source path."""
         home = tmp_path / "home"
         home.mkdir()
         rc = main(["create", "--dest", str(tmp_path / "x"), "--home", str(home)])
@@ -744,7 +739,7 @@ class TestCreateLink:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`create` without --dest → returns 2 with explanatory stderr."""
+        """Reject create mode without a destination path."""
         home = tmp_path / "home"
         home.mkdir()
         rc = main(["create", "--src", str(tmp_path / "x"), "--home", str(home)])
@@ -784,8 +779,8 @@ class TestSkillPhase4Block:
     def test_block_creates_namespaced_links(self, env: tuple[Path, Path], tmp_path: Path) -> None:
         """Running the real block produces exactly the destinations ``_build_entries`` expects.
 
-        Capability-gated, not platform-gated: the block is the skill's own ``ln -sf`` loop, so a
-        host whose ``bash`` cannot link has nothing to assert about.
+        Capability-gated, not platform-gated: the block is the skill's own ``ln -sf`` loop, so a host whose ``bash``
+        cannot link has nothing to assert about.
         """
         plugin, home = env
         run_env = {

@@ -2,27 +2,35 @@
 
 ## Purpose
 
-Make a later shim mutation prove it acts on exactly the reviewed filesystem and roster state. The binding step turns read-only observations and a candidate operation list into approval bytes that cannot be silently substituted later.
+Make a later shim mutation prove it acts on exactly the reviewed filesystem and roster state. The binding step turns
+read-only observations and a candidate operation list into approval bytes that cannot be silently substituted later.
 
 ## Scope
 
-Validates and serializes approval data only; it neither reads the filesystem nor performs lifecycle writes. Its boundary keeps approval evidence independent from the code that observes paths or applies operations.
+Validates and serializes approval data only; it neither reads the filesystem nor performs lifecycle writes. Its boundary
+keeps approval evidence independent from the code that observes paths or applies operations.
 
 ## Usage
 
-Import ``build_convergence_approval`` after observation and planning have completed; do not expose it as a standalone CLI. Callers must supply the same observed roots, roster, runtime identities, and candidate plan that the manager will present for approval.
+Import ``build_convergence_approval`` after observation and planning have completed; do not expose it as a standalone
+CLI. Callers must supply the same observed roots, roster, runtime identities, and candidate plan that the manager will
+present for approval.
 
 ## Used by
 
-``manage_role_agents.py`` calls this module between its read-only diagnosis and explicitly approved transaction stages. The transaction layer consumes the resulting digest to reject plans that no longer match the approved evidence.
+``manage_role_agents.py`` calls this module between its read-only diagnosis and explicitly approved transaction stages.
+The transaction layer consumes the resulting digest to reject plans that no longer match the approved evidence.
 
 ## Outputs
 
-Returns a canonical ``ApprovalPlan`` and digest whose bytes bind the candidate plan to the exact observed identity and runtime state. The canonical bytes are suitable for display, user confirmation, and later byte-for-byte revalidation.
+Returns a canonical ``ApprovalPlan`` and digest whose bytes bind the candidate plan to the exact observed identity and
+runtime state. The canonical bytes are suitable for display, user confirmation, and later byte-for-byte revalidation.
 
 ## Failure
 
-Any digest, mode, path, roster, or lifecycle mismatch raises ``ApprovalBindingError`` and prevents the manager from entering mutation. Rejection is fail-closed, so callers must collect fresh evidence rather than treating a partial approval as executable.
+Any digest, mode, path, roster, or lifecycle mismatch raises ``ApprovalBindingError`` and prevents the manager from
+entering mutation. Rejection is fail-closed, so callers must collect fresh evidence rather than treating a partial
+approval as executable.
 """
 
 from __future__ import annotations
@@ -371,9 +379,8 @@ def build_convergence_approval(
 ) -> ApprovalPlan:
     """Build exact convergence approval bytes from complete read-only evidence.
 
-    The result is not mutation authority by itself. Apply must acquire the
-    approved fixed lock, rerun doctor and observation, rebuild these bytes, and
-    require byte and digest equality before any lifecycle write.
+    The result is not mutation authority by itself. Apply must acquire the approved fixed lock, rerun doctor and
+    observation, rebuild these bytes, and require byte and digest equality before any lifecycle write.
     """
     if not isinstance(candidate, CandidatePlan):
         _fail("candidate plan required")

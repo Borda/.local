@@ -2,7 +2,7 @@
 """commit_lint_fixes.py — stage all changed tracked files and commit with lint-fix message.
 
 No-ops when there are no changed files to stage. Extracted from oss:resolve
-lint-qa-gate Step 9 auto-fix commit block (LQ3).
+lint-qa-gate Step 9 auto-fix commit block.
 
 Usage:
     commit_lint_fixes.py
@@ -94,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     """Entry point — mirrors ``commit_lint_fixes.sh`` behaviour.
 
     Args:
-        argv: Optional argument list (defaults to ``sys.argv[1:]``); only -h/--help
+        argv: Optional argument list (defaults to ``sys.argv[1:]``); only ``-h/--help``
             is honoured, otherwise the script takes no positional arguments.
 
     Returns:
@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
     Examples:
         No doctest — requires subprocess; covered by pytest with monkeypatch.
     """
-    # Honour only -h/--help via argparse; the script otherwise takes no arguments and
+    # Honour only ``-h/--help`` via argparse; the script otherwise takes no arguments and
     # ignores argv entirely (legacy zero-arg contract — the sole call site passes none).
     # A broad parse_args would reject any stray token with exit 2; keep argv ignored.
     if list(sys.argv[1:] if argv is None else argv) in (["-h"], ["--help"]):

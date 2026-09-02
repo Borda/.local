@@ -1,9 +1,8 @@
 """Define provider-neutral contracts for mutable edit and patch benchmark stages.
 
-Provider adapters may transport a prompt and report execution facts, but they
-cannot change a task's oracle, score, exclusions, answer wire contract, or
-stage identity. This module does not create a worktree or execute a command;
-the mutation lifecycle is owned by the runner boundary in P0.4.
+Provider adapters may transport a prompt and report execution facts, but they cannot change a task's oracle, score,
+exclusions, answer wire contract, or stage identity. This module does not create a worktree or execute a command; the
+mutation lifecycle is owned by the runner boundary.
 """
 
 from __future__ import annotations
@@ -243,9 +242,8 @@ class FixMultiContract:
 class FixSingleContract:
     """Immutable single-file contract shared by provider transports.
 
-    The contract freezes the original task, the one permitted source path, and
-    the independent microexecution oracle. Provider-specific runners may only
-    transport this coordinate and report a captured patch.
+    The contract freezes the original task, the one permitted source path, and the independent microexecution oracle.
+    Provider-specific runners may only transport this coordinate and report a captured patch.
     """
 
     task_id: str
@@ -1037,9 +1035,8 @@ def _normalized_setup_environment_body_sha256(method: ast.FunctionDef, *, is_bas
 def build_edit_task_contract(task: Mapping[str, Any]) -> EditTaskContract:
     """Validate one mutable task and freeze its shared scientific fields.
 
-    A task must name its exact baseline commit, expected changed paths, one
-    targeted executable test, and any relevant safety-test commands. Keyword
-    and path recall remain diagnostics and are never the primary oracle.
+    A task must name its exact baseline commit, expected changed paths, one targeted executable test, and any relevant
+    safety-test commands. Keyword and path recall remain diagnostics and are never the primary oracle.
     """
     task_id = _required_string(task, "id")
     task_type = _required_string(task, "type")

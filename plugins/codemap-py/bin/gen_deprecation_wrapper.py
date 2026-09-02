@@ -2,7 +2,7 @@
 """Generate Python deprecation wrapper code for codemap:rename-refs.
 
 Given symbol type (function/method/class), old name, new name, and optional
-version strings, outputs the Python source code to stdout.  The caller inserts
+version strings, outputs the Python source code to stdout. The caller inserts
 this block immediately after the new definition in the source file.
 
 Requires pyDeprecate (``pip install pyDeprecate``).
@@ -44,9 +44,9 @@ from enum import Enum
 class SymbolType(str, Enum):
     """Kind of symbol the generated wrapper deprecates.
 
-    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``.
-    Declared locally rather than imported from ``codemap_py.schema``: this script is a
-    standalone codegen entry point with no package import path of its own.
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``. Declared locally rather than
+    imported from ``codemap_py.schema``: this script is a standalone codegen entry point with no package import path of
+    its own.
     """
 
     FUNCTION = "function"
@@ -148,7 +148,7 @@ def gen_wrapper_from_decorator(decorator: str, old_name: str, removed_in: str = 
     Raises:
         ValueError: if *decorator* contains neither ``deprecated`` nor
             ``deprecated_class``, or if *decorator* contains any control
-            character (code injection, SEC-L1).
+            character, which would permit code injection.
 
     Examples:
         >>> code = gen_wrapper_from_decorator(
@@ -170,7 +170,7 @@ def gen_wrapper_from_decorator(decorator: str, old_name: str, removed_in: str = 
             ...
         ValueError: --decorator must not contain newlines or control characters
     """
-    # SEC-L1: the decorator is embedded verbatim in generated Python source; any
+    # The decorator is embedded verbatim in generated Python source; any
     # control character (newline, null byte, escape, etc.) would inject code.
     if any(ord(c) < 32 for c in decorator):
         raise ValueError("--decorator must not contain newlines or control characters")

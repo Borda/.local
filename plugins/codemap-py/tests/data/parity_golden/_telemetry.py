@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """_telemetry.py — shared cli.jsonl logging for codemap core CLI tools.
 
-Used by scan-query and scan-index (the two core CLI entry points). Each
-invocation appends one JSON record to ``.cache/codemap/logs/cli_<session>.jsonl``,
-falling back to ``cli.jsonl`` when no session id has been seeded. Per-session
-filenames keep concurrent sessions from interleaving appends into one file.
+Used by scan-query and scan-index (the two core CLI entry points). Each invocation appends one JSON record to
+``.cache/codemap/logs/cli_<session>.jsonl``, falling back to ``cli.jsonl`` when no session id has been seeded. Separate
+filenames for each session keep concurrent sessions from interleaving appends into one file.
 
-The session id is seeded once per Claude Code session by the SessionStart hook
-(seed-session.js) into ``$TMPDIR/codemap-<project>-session``; this module reads
-it back so CLI records carry the same join key as the skill layer.
+The session id is seeded once per Claude Code session by the SessionStart hook (seed-session.js) into
+``$TMPDIR/codemap-<project>-session``; this module reads it back so CLI records carry the same join key as the skill
+layer.
 """
 
 from __future__ import annotations
@@ -81,7 +80,10 @@ def _rotate(path: Path) -> None:
 
 
 def log_cli(cmd: str, argv: list[str], result: object, t0: float, *, log_dir: Path | None = None) -> None:
-    """Append one cli-layer telemetry record. Best-effort — never raises."""
+    """Append one cli-layer telemetry record.
+
+    Best-effort — never raises.
+    """
     if os.environ.get("CODEMAP_LOGGING", "true").lower() == "false":
         return
     try:

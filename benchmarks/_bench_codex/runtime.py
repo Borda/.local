@@ -153,16 +153,13 @@ def _redact_provider_error(value: Any) -> str:
 def _coerce_usage_int(value: Any) -> tuple[int, bool]:
     """Return one non-negative usage count plus whether the field was malformed.
 
-    The previous ``_as_int`` returned ``0`` for every non-``int`` value, so a
-    provider schema change that emitted ``"1234"`` or ``1234.0`` silently
-    degraded a paid turn into a free-looking run with no signal anywhere. A
-    numeric string or integral float is real usage and is coerced; anything that
-    cannot represent a non-negative token count is reported as malformed so the
-    caller can surface it instead of persisting a fabricated zero.
+    The previous ``_as_int`` returned ``0`` for every non-``int`` value, so a provider schema change that emitted
+    ``"1234"`` or ``1234.0`` silently degraded a paid turn into a free-looking run with no signal anywhere. A numeric
+    string or integral float is real usage and is coerced; anything that cannot represent a non-negative token count is
+    reported as malformed so the caller can surface it instead of persisting a fabricated zero.
 
-    An absent field is *not* malformed: most Codex usage events omit
-    ``reasoning_output_tokens``, and flagging those would make the counter
-    useless.
+    An absent field is *not* malformed: most Codex usage events omit ``reasoning_output_tokens``, and flagging those
+    would make the counter useless.
     """
     if value is None:
         return 0, False
@@ -233,12 +230,11 @@ def _command_text(item: Mapping[str, Any]) -> str:
 def _tool_use_command(block: Mapping[str, Any]) -> str:
     """Return the shell command carried by one legacy assistant ``tool_use`` block.
 
-    The previous code passed ``name + " " + _command_text(block)`` to the Codemap
-    predicate, which could never match: the predicate requires ``$CODEMAP_BIN`` in
-    first position, and both the prepended tool name *and* ``_command_text``'s own
-    ``name`` field pushed it out of that slot, so the whole legacy attribution
-    branch was unreachable-false. Stripping only the prefix is not enough — the
-    command has to be read out of the block's ``input`` payload directly.
+    The previous code passed ``name + " " + _command_text(block)`` to the Codemap predicate, which could never match:
+    the predicate requires ``$CODEMAP_BIN`` in first position, and both the prepended tool name *and*
+    ``_command_text``'s own ``name`` field pushed it out of that slot, so the whole legacy attribution branch was
+    unreachable-false. Stripping only the prefix is not enough — the command has to be read out of the block's ``input``
+    payload directly.
     """
     payload = block.get("input")
     if isinstance(payload, Mapping):

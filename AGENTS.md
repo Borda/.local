@@ -23,6 +23,10 @@ Simplicity and reliability come first. Understand the affected flow and root cau
 
 Verification is part of implementation. Work is not complete until relevant checks pass and failures, residual risks, and deliberately deferred scope are reported accurately.
 
+## Python Documentation Style
+
+- A docstring's opening line must state the documented object's purpose in plain English. Move formulas, assignments, configuration literals, function-call notation, and other code-shaped details into the following description or a relevant section.
+
 ## Multi-OS Executables
 
 Scripts, hooks, `bin/` entry points, and CI steps all run on Linux, macOS, and native Windows. A POSIX-only assumption is a defect to fix at the source, never a reason to skip the platform.

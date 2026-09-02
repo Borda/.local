@@ -15,8 +15,8 @@ setup block to enable reuse across resolve steps.
 
 Note: sentinel path is predictable by design for cross-process coordination
 with the pre-commit hook (Gate 1, see git-commit.md). On multi-user hosts,
-use $XDG_RUNTIME_DIR instead of /tmp for improved isolation (F-07 in
-security audit 2026-05-19). TOCTOU risk on single-user workstations
+use $XDG_RUNTIME_DIR instead of /tmp for improved isolation, as noted in
+the security audit. TOCTOU risk on single-user workstations
 accepted as low-severity.
 
 Exit codes:

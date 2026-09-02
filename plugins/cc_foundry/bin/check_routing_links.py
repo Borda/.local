@@ -61,7 +61,7 @@ from pathlib import Path
 
 
 class Severity(str, Enum):
-    """Finding severity. Only FAIL drives a non-zero exit code.
+    """Finding severity - only FAIL drives a non-zero exit code.
 
     Subclasses ``str`` rather than ``enum.StrEnum`` because ``requires-python`` is ``>=3.10``
     and ``StrEnum`` landed in 3.11. The ``str`` mixin keeps ``Severity.FAIL == "FAIL"`` true, so
@@ -1048,7 +1048,7 @@ def format_results(results: CheckResults, active_checks: set[str]) -> tuple[str,
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns process exit code."""
+    """Check routed script references for invalid targets."""
     parser = argparse.ArgumentParser(
         prog="check_routing_links",
         description="Validate computed file-path references in plugin SKILL.md and agent .md files.",

@@ -1199,7 +1199,7 @@ def test_fix_multi_changed_path_boundary_uses_unordered_set_semantics(
 
 
 def test_fix_stage_execution_is_controlled_only_by_dry_run(stage_fix: Any) -> None:
-    """The unified launcher must not leak a public --paid switch into a fix stage."""
+    """The unified launcher must not leak a public ``--paid`` switch into a fix stage."""
     parameters = inspect.signature(stage_fix.run_fix_stage).parameters
 
     assert "dry_run" in parameters
@@ -1267,10 +1267,10 @@ def _fm_row(stage_fix: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, exe
 def test_broken_regressions_remove_a_fix_cell_from_pooling(
     stage_fix: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """B-H4: a patch that fixes its target while breaking regressions is not pooled.
+    """A patch that fixes its target while breaking regressions is not pooled.
 
-    Mirrors the Patch stage, where regression safety enters through pooling
-    eligibility rather than through ``primary_correct``.
+    Mirrors the Patch stage, where regression safety enters through pooling eligibility rather than through
+    ``primary_correct``.
     """
     task = next(task for task in stage_fix.load_task_suite(stage_fix.FIX_MULTI_TASKS_PATH) if task["id"] == "FM-03")
     contract = stage_fix.build_fix_multi_contract(task)
@@ -1286,7 +1286,7 @@ def test_broken_regressions_remove_a_fix_cell_from_pooling(
 def test_passing_regressions_keep_a_fix_cell_poolable(
     stage_fix: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """B-H4: declared regressions that still pass leave the cell eligible."""
+    """Declared regressions that still pass leave the cell eligible."""
     task = next(task for task in stage_fix.load_task_suite(stage_fix.FIX_MULTI_TASKS_PATH) if task["id"] == "FM-03")
     contract = stage_fix.build_fix_multi_contract(task)
     execution = _fm_execution(contract, regression_test_passed=True)
@@ -1299,10 +1299,10 @@ def test_passing_regressions_keep_a_fix_cell_poolable(
 def test_a_contract_without_regression_commands_is_unaffected(
     stage_fix: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """B-H4: the new gate must move no score for the tasks that declare no commands.
+    """The new gate must move no score for the tasks that declare no commands.
 
-    Every current FS/FM task declares none, so the execution dict carries no
-    ``regression_test_passed`` key at all and the gate passes vacuously.
+    Every current FS/FM task declares none, so the execution dict carries no ``regression_test_passed`` key at all and
+    the gate passes vacuously.
     """
     task = next(task for task in stage_fix.load_task_suite(stage_fix.FIX_MULTI_TASKS_PATH) if task["id"] == "FM-03")
     contract = stage_fix.build_fix_multi_contract(task)
@@ -1314,10 +1314,10 @@ def test_a_contract_without_regression_commands_is_unaffected(
 
 
 def test_regression_commands_are_absent_from_an_undeclared_provider_binding(stage_fix: Any) -> None:
-    """B-H4: the locked binding gains a key only for a contract that declares commands.
+    """The locked binding gains a key only for a contract that declares commands.
 
-    ``provider_binding`` is persisted into result artifacts and compared byte-for-byte
-    on rescore, so an unconditional key would invalidate every historical row.
+    ``provider_binding`` is persisted into result artifacts and compared byte-for-byte on rescore, so an unconditional
+    key would invalidate every historical row.
     """
     task = next(task for task in stage_fix.load_task_suite(stage_fix.FIX_MULTI_TASKS_PATH) if task["id"] == "FM-03")
     contract = stage_fix.build_fix_multi_contract(task)
@@ -1326,7 +1326,7 @@ def test_regression_commands_are_absent_from_an_undeclared_provider_binding(stag
 
 
 def test_declared_regression_commands_are_locked_into_the_provider_binding(stage_fix: Any) -> None:
-    """B-H4: declared commands become a science-bearing coordinate."""
+    """Declared commands become a science-bearing coordinate."""
     task = next(task for task in stage_fix.load_task_suite(stage_fix.FIX_MULTI_TASKS_PATH) if task["id"] == "FM-03")
     contract = stage_fix.build_fix_multi_contract(task)
     declared = dataclasses.replace(contract, regression_test_commands=("pytest tests/test_a.py",))

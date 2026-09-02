@@ -22,9 +22,8 @@ class TestFixText:
     def test_clears_bare_hash_in_markdown_cell(self) -> None:
         """A lone ``#`` between markdown paragraphs becomes an empty line.
 
-        This is the exact shape jupytext emits for a blank line inside a
-        markdown cell — the gate must turn it back into a real blank line so
-        it renders as whitespace instead of an empty heading.
+        This is the exact shape jupytext emits for a blank line inside a markdown cell — the gate must turn it back into
+        a real blank line so it renders as whitespace instead of an empty heading.
         """
         text = "# %% [markdown]\n# Para one.\n#\n# Para two.\n"
         fixed, count = gate.fix_text(text)
@@ -43,9 +42,8 @@ class TestFixText:
     def test_clears_any_hash_only_spacer(self, spacer: str) -> None:
         """Any run of ``#`` with only whitespace after it counts as a spacer.
 
-        style-rules.md rule 13 covers not just a bare ``#`` but any hash-only
-        line, since ``##`` alone renders as an empty H2 just as ``#`` renders
-        as an empty H1.
+        style-rules.md rule 13 covers not just a bare ``#`` but any hash-only line, since ``##`` alone renders as an
+        empty H2 just as ``#`` renders as an empty H1.
         """
         text = f"# %% [markdown]\n# Para one.\n{spacer}\n# Para two.\n"
         _fixed, count = gate.fix_text(text)
@@ -54,9 +52,8 @@ class TestFixText:
     def test_leaves_bare_hash_in_code_cell_untouched(self) -> None:
         """A lone ``#`` inside a code cell is not a markdown-cell artifact.
 
-        The gate is scoped to markdown cells only — a stray ``#`` comment
-        line in a code cell has no heading-rendering consequence and must
-        survive unchanged.
+        The gate is scoped to markdown cells only — a stray ``#`` comment line in a code cell has no heading-rendering
+        consequence and must survive unchanged.
         """
         text = "# %%\nx = 1\n#\ny = 2\n"
         fixed, count = gate.fix_text(text)
@@ -66,8 +63,7 @@ class TestFixText:
     def test_leaves_real_content_lines_untouched(self) -> None:
         """Markdown lines carrying actual text are never modified.
 
-        Guards against an overly broad pattern that would also strip
-        legitimate ``# `` prefixed prose.
+        Guards against an overly broad pattern that would also strip legitimate ``# `` prefixed prose.
         """
         text = "# %% [markdown]\n# ## Heading\n# Some real sentence.\n"
         fixed, count = gate.fix_text(text)
@@ -77,9 +73,8 @@ class TestFixText:
     def test_second_pass_is_idempotent(self) -> None:
         """Running the gate twice finds nothing left to fix.
 
-        The Kaggle skill's Step 4 verify pass may run this gate more than
-        once across a session; a non-idempotent fixer would corrupt an
-        already-clean file on a repeat run.
+        The Kaggle skill's Step 4 verify pass may run this gate more than once across a session; a non-idempotent fixer
+        would corrupt an already-clean file on a repeat run.
         """
         text = "# %% [markdown]\n# Para one.\n#\n# Para two.\n"
         once, _ = gate.fix_text(text)
@@ -90,8 +85,8 @@ class TestFixText:
     def test_code_cell_after_markdown_cell_is_not_scoped(self) -> None:
         """Cell-marker tracking resets scope at the next ``# %%``.
 
-        A file with a markdown cell followed by a code cell must not keep
-        treating the code cell's bare ``#`` lines as markdown spacers.
+        A file with a markdown cell followed by a code cell must not keep treating the code cell's bare ``#`` lines as
+        markdown spacers.
         """
         text = "# %% [markdown]\n# Para.\n#\n\n# %%\n#\nz = 1\n"
         fixed, count = gate.fix_text(text)
@@ -101,7 +96,7 @@ class TestFixText:
 
 class TestMain:
     def test_writes_fixed_file_and_reports_count(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """Default mode writes the cleared file back to disk and prints the count."""
+        """Write the cleared file and report the replacement count in default mode."""
         target = tmp_path / "notebook.py"
         target.write_text("# %% [markdown]\n# Para one.\n#\n# Para two.\n", encoding="utf-8")
         rc = gate.main([str(target)])
@@ -120,7 +115,7 @@ class TestMain:
         assert captured.out == ""
 
     def test_check_mode_reports_without_writing(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """``--check`` reports violations, exits 1, and leaves the file untouched."""
+        """Report violations, exits 1, and leaves the file untouched."""
         original = "# %% [markdown]\n# Para one.\n#\n# Para two.\n"
         target = tmp_path / "notebook.py"
         target.write_text(original, encoding="utf-8")

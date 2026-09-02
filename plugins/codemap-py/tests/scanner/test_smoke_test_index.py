@@ -28,11 +28,11 @@ class TestComputeAgeHours:
         assert compute_age_hours(0.0, 8190.0) == 2.27
 
     def test_clamped_at_zero_when_mtime_in_future(self) -> None:
-        """mtime > now (future file) returns 0.0, never negative."""
+        """Mtime > now (future file) returns 0.0, never negative."""
         assert compute_age_hours(100.0, 50.0) == 0.0
 
     def test_zero_age(self) -> None:
-        """mtime == now returns 0.0."""
+        """Report zero age when the modification and current times match."""
         assert compute_age_hours(42.0, 42.0) == 0.0
 
 
@@ -137,7 +137,7 @@ class TestSmokeTestIndex:
 
 
 class TestMain:
-    """main(): exit codes and stdout JSON for CLI invocations."""
+    """Verify command-line exit codes and JSON output."""
 
     def test_ok_fresh_index_exits_zero(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch

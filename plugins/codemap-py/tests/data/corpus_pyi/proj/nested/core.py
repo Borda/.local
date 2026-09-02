@@ -1,4 +1,7 @@
-"""Authoritative nested module. Imports across packages produce real edges."""
+"""Authoritative nested module.
+
+Imports across packages produce real edges.
+"""
 
 from pkg.shadowed import impl
 

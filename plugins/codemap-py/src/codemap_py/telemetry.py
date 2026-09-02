@@ -71,12 +71,10 @@ def session_id() -> str:
 def runtime_id() -> str:
     """Return the explicit or host-detected runtime for this CLI invocation.
 
-    ``CODEMAP_RUNTIME`` is an explicit selection: an invalid non-empty value
-    deliberately falls back to ``direct`` rather than being replaced by host
-    detection, while an empty or whitespace-only value counts as unset (the hook
-    layer normalizes the same way, so both layers shard one session identically). Without
-    it, a Codex thread wins over any inherited Claude marker so one process cannot
-    append into the wrong runtime's shard.
+    ``CODEMAP_RUNTIME`` is an explicit selection: an invalid non-empty value deliberately falls back to ``direct``
+    rather than being replaced by host detection, while an empty or whitespace-only value counts as unset (the hook
+    layer normalizes the same way, so both layers shard one session identically). Without it, a Codex thread wins over
+    any inherited Claude marker so one process cannot append into the wrong runtime's shard.
     """
     explicit = (os.environ.get("CODEMAP_RUNTIME") or "").strip().lower()
     if explicit:
@@ -122,10 +120,9 @@ def _rotate(path: Path) -> None:
 def log_cli(cmd: str, argv: list[str], result: object, t0: float, *, log_dir: Path | None = None) -> None:
     """Append one CLI telemetry record; ``log_dir`` is a test-only final-dir seam.
 
-    Production callers must omit ``log_dir`` so :func:`log_dir_for` applies the
-    runtime component beneath the ``CODEMAP_LOG_DIR`` root. The only in-repository
-    callers that inject it are telemetry tests, where it intentionally denotes the
-    already-resolved final directory.
+    Production callers must omit ``log_dir`` so :func:`log_dir_for` applies the runtime component beneath the
+    ``CODEMAP_LOG_DIR`` root. The only in-repository callers that inject it are telemetry tests, where it intentionally
+    denotes the already-resolved final directory.
     """
     if os.environ.get("CODEMAP_LOGGING", "true").lower() == "false":
         return

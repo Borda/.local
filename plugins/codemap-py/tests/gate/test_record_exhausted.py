@@ -141,10 +141,9 @@ def test_codemap_hooks_read_stdin_by_fd_for_simulated_windows() -> None:
 class TestCompletenessScoping:
     """Completeness must come from the queried target's OWN result, never a text scan.
 
-    The hook used to regex a flattened dump of the entire ``tool_response`` for
-    ``"query_complete": true``. A combined response — one Bash call whose output carries
-    more than the rdeps result — therefore armed the deny for the queried module using a
-    completeness flag that belonged to some other sub-result.
+    The hook used to regex a flattened dump of the entire ``tool_response`` for ``"query_complete": true``. A combined
+    response — one Bash call whose output carries more than the rdeps result — therefore armed the deny for the queried
+    module using a completeness flag that belonged to some other sub-result.
     """
 
     _COMMAND = 'scan-query rdeps "mypackage.auth"'
@@ -252,9 +251,8 @@ class TestEditInvalidation:
 class TestMissingSessionKey:
     """A missing session_id must not collapse to one machine-global sentinel.
 
-    The literal ``"nosession"`` key this replaces lived in a shared temp directory, so two
-    projects running without a session id wrote to — and denied each other through — the
-    same file.
+    The literal ``"nosession"`` key this replaces lived in a shared temp directory, so two projects running without a
+    session id wrote to — and denied each other through — the same file.
     """
 
     _EVENT = {"tool_input": {"command": 'scan-query rdeps "mypackage.auth"'}, "tool_response": _EXHAUSTIVE_RESPONSE}

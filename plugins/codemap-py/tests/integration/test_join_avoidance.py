@@ -193,7 +193,7 @@ class TestMainCli:
 
     @staticmethod
     def _write_shards(log_dir: Path, cli_records: list[dict], tool_records: list[dict]) -> None:
-        """Write cli/tools shards under *log_dir* for the --logs resolution path."""
+        """Write cli/tools shards under *log_dir* for the ``--logs`` resolution path."""
         log_dir.mkdir(parents=True, exist_ok=True)
         (log_dir / "cli_s1.jsonl").write_text("".join(json.dumps(r) + "\n" for r in cli_records))
         (log_dir / "tools_s1.jsonl").write_text("".join(json.dumps(r) + "\n" for r in tool_records))
@@ -263,7 +263,10 @@ class TestMainCli:
         assert payload["per_runtime"]["codex"]["total_tool_events"] == 1
 
     def test_explicit_files_and_window_flag(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """--cli/--tools bypass shard resolution and --window-min tightens the join."""
+        """Verify command-line option behavior.
+
+        ``--cli``/``--tools`` bypass shard resolution and ``--window-min`` tightens the join.
+        """
         cli_path = tmp_path / "cli.jsonl"
         tools_path = tmp_path / "tools.jsonl"
         cli_path.write_text(json.dumps(_cli("pkg.auth", 0.0)) + "\n")
@@ -276,7 +279,7 @@ class TestMainCli:
         assert payload["avoidance_count"] == 0  # 8-min gap exceeds the 5-min window
 
     def test_missing_inputs_exit_2(self, capsys: pytest.CaptureFixture) -> None:
-        """Neither --logs nor --cli/--tools given is a usage error (exit 2)."""
+        """Neither ``--logs`` nor ``--cli``/``--tools`` given is a usage error (exit 2)."""
         assert ja.main([]) == _EXIT_USAGE
         assert "give --logs" in capsys.readouterr().err
 

@@ -1,14 +1,12 @@
 """codemap_py.graph — cross-module graph construction, coverage, and scan orchestration.
 
-Combines the flat per-file module entries produced by :mod:`codemap_py.scanner` into
-the full codemap index: reverse-dependency/call-graph metrics, import classification,
-fixture dependency graphs, coverage annotation, doc-xref reverse indexes, subprocess
-call reverse indexes, name-collision dedup across source roots, and the top-level
-``scan()``/``incremental_scan()`` pipeline that ``scan-index`` runs (full or
-incremental) before writing the index JSON atomically.
+Combines the flat per-file module entries produced by :mod:`codemap_py.scanner` into the full codemap index: metrics for
+reverse dependencies and call graphs, import classification, fixture dependency graphs, coverage annotation, doc-xref
+reverse indexes, subprocess call reverse indexes, name-collision dedup across source roots, and the top-level
+``scan()``/``incremental_scan()`` pipeline that ``scan-index`` runs (full or incremental) before writing the index JSON
+atomically.
 
-``bin/scan-index`` is a thin launcher that calls :func:`main` below over the
-same argv contract and exit codes.
+``bin/scan-index`` is a thin launcher that calls :func:`main` below over the same argv contract and exit codes.
 
 consumers: bin/scan-index (thin launcher calling main()), codemap_py.cli (via subprocess)
 """
@@ -269,7 +267,7 @@ def _read_coverage_data(coverage_path: Path) -> dict[str, dict] | None:
     for measured_file in data.measured_files():
         lines = data.lines(measured_file)
         if lines is None:
-            # File was tracked but no line data (arc-only mode without --branch line coverage).
+            # File was tracked but no line data (arc-only mode without ``--branch`` line coverage).
             measured_lines: frozenset[int] = frozenset()
         else:
             measured_lines = frozenset(lines)
@@ -362,7 +360,7 @@ def _compute_symbol_coverage(
     ctx_set: set[str] = set()
     for ln in in_range:
         for ctx in contexts.get(ln, []):
-            # Coverage records the empty string for the "no-context" sentinel when --cov-context
+            # Coverage records the empty string for the "no-context" sentinel when ``--cov-context``
             # is enabled but a line is hit outside any pytest test; drop these to avoid noise.
             if ctx:
                 ctx_set.add(ctx)
@@ -639,9 +637,8 @@ def _canonicalize_symbol_aliases(modules: list[dict]) -> dict[str, str]:
 def _resolve_import_submodule_edges(modules: list[dict]) -> None:
     """Add statically proven ``from package import submodule`` edges in-place.
 
-    The parser keeps every ``package.name`` candidate because a ``from`` import
-    may bind either a module or an attribute. Only candidates matching an
-    indexed module become import edges; this retains parent-package imports
+    The parser keeps every ``package.name`` candidate because a ``from`` import may bind either a module or an
+    attribute. Only candidates matching an indexed module become import edges; this retains parent-package imports
     without inventing reverse module edges for imported symbols.
     """
     indexed_names = {module["name"] for module in modules if module.get("status") == "ok"}
@@ -655,9 +652,8 @@ def _resolve_import_submodule_edges(modules: list[dict]) -> None:
 def _collect_symbol_alias_limitations(modules: list[dict]) -> list[dict[str, str]]:
     """Return sorted target-specific evidence for rejected alias paths.
 
-    These records do not alter call edges. They preserve why a scanner deliberately
-    omitted an otherwise recognizable alias so reverse-call queries can decline to
-    claim completeness for that exact canonical target.
+    These records do not alter call edges. They preserve why a scanner deliberately omitted an otherwise recognizable
+    alias so reverse-call queries can decline to claim completeness for that exact canonical target.
     """
     records: set[tuple[str, str, str]] = set()
     for module in modules:
@@ -970,7 +966,7 @@ def _stub_slot(path: str) -> tuple[str, str]:
 
 
 def _resolve_stub_shadowing(modules: list[dict]) -> tuple[list[dict], list[str], list[dict]]:
-    """Apply ``.py``/``.pyi`` sibling precedence before name dedup (plan §2.1).
+    """Apply ``.py``/``.pyi`` sibling precedence before name dedup.
 
     - Case-fold collision: two distinct paths equal under ``str.casefold`` cannot be
       resolved by walk/sort order, so both entries are dropped and recorded — identically
@@ -1058,11 +1054,10 @@ def _build_excluded_roots(exclusions: Exclusions, counts: dict[str, int]) -> lis
 class _SrcRootContext:
     """Resolved source-root context shared by full and incremental scans.
 
-    Bundles the effective source root(s) so both :func:`scan` and
-    :func:`incremental_scan` derive module names and rank collisions identically.
-    ``configured`` is the explicit monorepo ``[tool.codemap] src_roots`` list (empty
-    when unconfigured); ``default`` is the single-root ``detect_src_root`` fallback used
-    for any file not under a configured root — and the only root when none are configured.
+    Bundles the effective source root(s) so both :func:`scan` and :func:`incremental_scan` derive module names and rank
+    collisions identically. ``configured`` is the explicit monorepo ``[tool.codemap] src_roots`` list (empty when
+    unconfigured); ``default`` is the single-root ``detect_src_root`` fallback used for any file not under a configured
+    root — and the only root when none are configured.
     """
 
     configured: tuple[Path, ...]
@@ -1075,9 +1070,9 @@ class _SrcRootContext:
     def dedup_rels(self, root: Path) -> tuple[str, ...]:
         """Return source-root rels (posix, relative to *root*) in dedup-priority order.
 
-        Configured roots come first, in declaration order; the default root is appended
-        last so an in-``src`` path still beats a stray copy when no explicit roots match.
-        The project-root sentinel (``""``) is dropped by :func:`_src_root_rels`.
+        Configured roots come first, in declaration order; the default root is appended last so an in-``src`` path still
+        beats a stray copy when no explicit roots match. The project-root sentinel (``""``) is dropped by
+        :func:`_src_root_rels`.
         """
         ordered = [*self.configured, self.default]
         rels: list[str] = []
@@ -1092,9 +1087,9 @@ class _SrcRootContext:
     def meta(self, root: Path) -> list[str]:
         """Return the effective source roots as posix rels for the index meta.
 
-        Configured roots first (declaration order), then the default root when it is a
-        proper subdirectory of *root* — so single-``src`` layouts still record ``["src"]``.
-        The project root itself is omitted (represented by an empty list).
+        Configured roots first (declaration order), then the default root when it is a proper subdirectory of *root* —
+        so single-``src`` layouts still record ``["src"]``. The project root itself is omitted (represented by an empty
+        list).
         """
         return list(self.dedup_rels(root))
 
@@ -1166,7 +1161,7 @@ def scan(root: Path, coverage_path: Path | None = None) -> dict:
                     modules = list(pool.map(_parse_file_star, parse_args))
 
     src_root_rels = src_ctx.dedup_rels(root)
-    # .pyi precedence (plan §2.1) resolves before name dedup: shadowed stubs are removed
+    # .pyi precedence resolves before name dedup: shadowed stubs are removed
     # so they never reach name-collision dedup; lone stubs stay as stub_only modules.
     modules, shadowed_stubs, casefold_collisions = _resolve_stub_shadowing(modules)
     modules, collisions = _dedup_modules(modules, src_root_rels)
@@ -1231,9 +1226,9 @@ def scan(root: Path, coverage_path: Path | None = None) -> dict:
 def _apply_stub_keys(index: dict, shadowed_stubs: list[str], casefold_collisions: list[dict]) -> None:
     """Attach ``shadowed_stubs``/``casefold_collisions`` root keys only when non-empty.
 
-    Optional-when-empty mirrors the schema's "older indexes omit them" philosophy and keeps
-    a stub-free tree byte-identical to a pre-.pyi index. On an incremental re-scan a key that
-    became empty is removed so a stale value never lingers under ``{**old_index, ...}``.
+    Omitting empty values mirrors the schema's "older indexes omit them" philosophy and keeps a tree without stubs byte
+    identical to an index created before ``.pyi`` support. On an incremental re-scan a key that became empty is removed
+    so a stale value never lingers under ``{**old_index, ...}``.
     """
     for key, value in (("shadowed_stubs", shadowed_stubs), ("casefold_collisions", casefold_collisions)):
         if value:
@@ -1403,12 +1398,11 @@ def _die_gate(code: str, detail: str) -> None:
 
 
 def _gate_timeout_kwargs() -> dict[str, float]:
-    """Optional bounded gate timeout from ``CODEMAP_GATE_TIMEOUT`` (seconds).
+    """Return the optional bounded gate timeout.
 
-    Absent or non-positive leaves the gate's own default bound; a positive value
-    lets callers (and tests) shorten the wait before ``index_busy``. Mirrors the
-    query engine's reader-side handling of the same variable, so one setting bounds
-    both halves of the gate.
+    Absent or non-positive leaves the gate's own default bound; a positive value lets callers (and tests) shorten the
+    wait before ``index_busy``. Mirrors the query engine's reader-side handling of the same variable, so one setting
+    bounds both halves of the gate.
     """
     raw = os.environ.get("CODEMAP_GATE_TIMEOUT", "").strip()
     try:
@@ -1444,9 +1438,8 @@ def _build_and_publish(args: argparse.Namespace, root: Path, out_path: Path) -> 
 def _refresh_result(args: argparse.Namespace) -> dict[str, str | int | bool | None]:
     """Return bounded refresh provenance for the successful index telemetry record.
 
-    Background and self-heal callers set only facts they observed before spawning
-    this process. A raw CLI invocation has no such probe, so its stale state and
-    changed count remain ``None`` rather than being inferred after the fact.
+    Background and self-heal callers set only facts they observed before spawning this process. A raw CLI invocation has
+    no such probe, so its stale state and changed count remain ``None`` rather than being inferred after the fact.
     """
     changed_raw = os.environ.get("CODEMAP_REFRESH_CHANGED_COUNT", "")
     try:

@@ -1,6 +1,6 @@
 """Cross-runtime index identity, delegation reuse, and no-rebuild guarantees.
 
-Proves the shared-index delegation contract (plan §4.4):
+Proves the shared-index delegation contract:
 
 - one canonical resolver maps different working directories in the same repo, and
   either runtime, to the same index path/identity — runtime never in the path;
@@ -136,11 +136,10 @@ def test_identity_same_path_from_repo_subdir(project: Path) -> None:
 
 
 def test_override_flat_layout(tmp_path: Path) -> None:
-    """Under an override the index is flat ``<override>/<project>.json`` (C-H1).
+    """Under an override the index is flat ``<override>/<project>.json``.
 
-    The resolver previously root-keyed this path while every writer stayed flat, so
-    the gate coordinated a file nobody read. root_key survives as a path-free identity
-    for reporting; it is no longer a directory component.
+    The resolver previously root-keyed this path while every writer stayed flat, so the gate coordinated a file nobody
+    read. root_key survives as a path-free identity for reporting; it is no longer a directory component.
     """
     root = tmp_path / "proj"
     root.mkdir()
@@ -155,10 +154,9 @@ def test_override_flat_layout(tmp_path: Path) -> None:
 def test_equal_basename_under_one_override_collides_and_is_diagnosed(tmp_path: Path) -> None:
     """Equal-basename projects sharing one override resolve to ONE file — detected, not silent.
 
-    Behaviour change from the root-keyed layout (C-H1): two ``proj`` directories under a
-    single ``CODEMAP_INDEX_DIR`` no longer get independent indexes. The flat convention is
-    what every writer already used, so the alternative was a resolver pointing somewhere
-    nothing was ever written. The collision is surfaced as ``index_root_collision`` instead
+    Behaviour change from the root-keyed layout: two ``proj`` directories under a single ``CODEMAP_INDEX_DIR`` no
+    longer get independent indexes. The flat convention is what every writer already used, so the alternative was a
+    resolver pointing somewhere nothing was ever written. The collision is surfaced as ``index_root_collision`` instead
     of silently serving another project's index; the fix is one override dir per project.
     """
     a = tmp_path / "a" / "proj"
@@ -196,8 +194,8 @@ def test_symlink_alias_same_identity(tmp_path: Path) -> None:
 def test_flat_index_matching_root_resolves_clean(tmp_path: Path) -> None:
     """An existing flat index built for this same root is the target, with no diagnostic.
 
-    Formerly this file was a read-only "legacy candidate" beside a distinct root-keyed
-    target. Flat is now the only layout, so a matching occupant is simply the index.
+    Formerly this file was a read-only "legacy candidate" beside a distinct root-keyed target. Flat is now the only
+    layout, so a matching occupant is simply the index.
     """
     root = tmp_path / "proj"
     root.mkdir()
@@ -279,7 +277,7 @@ def test_reuse_across_cwd_and_runtime_no_rebuild(
 
 # ── stale index: concurrent writers are serialized by the engine's own lease ──
 def test_concurrent_scans_are_serialized_and_publish_a_valid_index(project: Path, shim: Path, tmp_path: Path) -> None:
-    """Two processes racing a stale index both succeed and leave one valid index (C-H3).
+    """Two processes racing a stale index both succeed and leave one valid index.
 
     This is the contention test the gate exists for. Before engine-level leasing, both
     scanners walked the AST simultaneously and the loser's ``os.replace`` won by

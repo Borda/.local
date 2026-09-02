@@ -2,27 +2,38 @@
 
 ## Purpose
 
-Confine shim writes to identity-checked descriptors with private modes, bounded content, and recoverable cleanup behavior. These primitives make filesystem mutation explicit and let the transaction layer detect replacement races at descriptor boundaries.
+Confine shim writes to identity-checked descriptors with private modes, bounded content, and recoverable cleanup
+behavior. These primitives make filesystem mutation explicit and let the transaction layer detect replacement races at
+descriptor boundaries.
 
 ## Scope
 
-Implements low-level POSIX operations only; planning, approval, lifecycle classification, and transaction sequencing remain separate. It does not choose targets or interpret journal intent, which keeps platform safety checks reusable by the transaction flow.
+Implements low-level POSIX operations only; planning, approval, lifecycle classification, and transaction sequencing
+remain separate. It does not choose targets or interpret journal intent, which keeps platform safety checks reusable by
+the transaction flow.
 
 ## Usage
 
-Import descriptor-based primitives from the transaction layer; this is intentionally not a user-facing command. Callers must pass already validated names and roots and must preserve returned descriptors until the associated operation is verified.
+Import descriptor-based primitives from the transaction layer; this is intentionally not a user-facing command. Callers
+must pass already validated names and roots and must preserve returned descriptors until the associated operation is
+verified.
 
 ## Used by
 
-``_agent_shim_transaction.py`` and POSIX-specific shim safety tests call these primitives. The transaction module combines their operations with journal checkpoints and rollback decisions.
+``_agent_shim_transaction.py`` and POSIX-specific shim safety tests call these primitives. The transaction module
+combines their operations with journal checkpoints and rollback decisions.
 
 ## Outputs
 
-Returns checked descriptors, identities, and created-path records that let the transaction detect replacement or cleanup races. Results describe what was opened or created, allowing callers to close, verify, quarantine, or remove objects without following a newly substituted path.
+Returns checked descriptors, identities, and created-path records that let the transaction detect replacement or cleanup
+races. Results describe what was opened or created, allowing callers to close, verify, quarantine, or remove objects
+without following a newly substituted path.
 
 ## Failure
 
-Link traversal, unsafe names, non-private modes, oversized content, lock contention, or inode changes raise typed POSIX primitive errors. The transaction layer must convert these failures into rollback or recovery evidence rather than retrying an unchecked write.
+Link traversal, unsafe names, non-private modes, oversized content, lock contention, or inode changes raise typed POSIX
+primitive errors. The transaction layer must convert these failures into rollback or recovery evidence rather than
+retrying an unchecked write.
 """
 
 from __future__ import annotations

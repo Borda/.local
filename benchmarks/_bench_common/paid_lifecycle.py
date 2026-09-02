@@ -1,8 +1,7 @@
 """Run one provider-neutral paid benchmark stage with immutable artifacts.
 
-This module deliberately owns the one generic task-by-arm lifecycle used by
-provider runners.  Provider-specific modules retain transport, prompt parsing,
-and terminal formatting through callbacks; they do not own a competing loop.
+This module deliberately owns the one generic task-by-arm lifecycle used by provider runners.  Provider-specific modules
+retain transport, prompt parsing, and terminal formatting through callbacks; they do not own a competing loop.
 """
 
 from __future__ import annotations
@@ -25,9 +24,8 @@ _SCOPE_SHA256_RE = re.compile(r"[0-9a-f]{64}")
 def paid_approval_token(scope_sha256: str) -> str:
     """Return the canonical short token for one complete immutable scope hash.
 
-    The token is a copy/paste guard, not a secret or cryptographic credential.
-    Full SHA-256 remains stored in scope metadata; sixteen hexadecimal characters
-    provide a 64-bit stale-scope discriminator for the single current scope.
+    The token is a copy/paste guard, not a secret or cryptographic credential. Full SHA-256 remains stored in scope
+    metadata; sixteen hexadecimal characters provide a 64-bit stale-scope discriminator for the single current scope.
     """
     if _SCOPE_SHA256_RE.fullmatch(scope_sha256) is None:
         raise ValueError("scope SHA-256 must contain 64 lowercase hexadecimal characters")
@@ -46,10 +44,9 @@ def paid_approval_matches(received: str | None, scope_sha256: str) -> bool:
 class PaidStageCallbacks(Generic[Task, Arm]):
     """Stage-specific work and presentation hooks for one paid lifecycle.
 
-    ``prepare_run`` creates stage-local durable inputs after the exclusive run
-    directory exists. ``emit_lifecycle`` receives plain structured events that
-    a stage may append to its run log and print. ``emit_row`` owns row
-    formatting and may forward the rendered row to the shared terminal renderer.
+    ``prepare_run`` creates stage-local durable inputs after the exclusive run directory exists. ``emit_lifecycle``
+    receives plain structured events that a stage may append to its run log and print. ``emit_row`` owns row formatting
+    and may forward the rendered row to the shared terminal renderer.
     """
 
     run_cell: Callable[[Task, Arm], Mapping[str, Any]]
@@ -107,10 +104,9 @@ def run_paid_stage(
 ) -> Path:
     """Run, persist, and finalize one exclusive paid stage in task-by-arm order.
 
-    Every successful cell is written and flushed before its metadata progress
-    record and presentation callback. Failures retain preceding cells, persist
-    a final error status, refresh checksums, close the adapter, and then
-    propagate the original exception.
+    Every successful cell is written and flushed before its metadata progress record and presentation callback. Failures
+    retain preceding cells, persist a final error status, refresh checksums, close the adapter, and then propagate the
+    original exception.
     """
     run_dir = Path(run_dir)
     lifecycle_metadata = dict(metadata)

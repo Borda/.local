@@ -2,13 +2,13 @@
 
 Each test pins one audit finding's failure mode:
 
-* E-H1 — the index directory defaulted to a CWD-relative ``.cache/codemap``, so a skill
+* The index directory defaulted to a CWD-relative ``.cache/codemap``, so a skill
   invoked from a repository subdirectory reported a false ``no_index``.
-* E-H3 — the project name was ASCII-sanitized, so any repository directory containing a
+* The project name was ASCII-sanitized, so any repository directory containing a
   space, ``+`` or a non-ASCII character resolved to a filename the scanner never writes.
-* E-M2 — the currency probe ran untimed, twice per gate, and discarded every ``stale``
+* The currency probe ran untimed, twice per gate, and discarded every ``stale``
   verdict because it gated on the exit code that *carries* that verdict.
-* E-M1 / E-L1 / E-L2 — one canonical resolver, byte-identical across plugins, with a
+*  /  / One canonical resolver, byte-identical across plugins, with a
   single ``codemap-py`` label and no plugin-specific sentinel name baked in.
 
 The module is loaded by explicit path rather than imported by name: both cc_develop and
@@ -62,12 +62,12 @@ def _write_index(root: Path, project: str) -> Path:
 
 
 # --------------------------------------------------------------------------------------
-# E-H1 — index directory anchored to the git toplevel, not the CWD
+# Index directory anchored to the git toplevel, not the CWD
 # --------------------------------------------------------------------------------------
 
 
 def test_index_is_found_from_a_repository_subdirectory(tmp_path, monkeypatch):
-    """E-H1: a skill run from a subdir must resolve the root's index, not a CWD-relative miss."""
+    """A skill run from a subdir must resolve the root's index, not a CWD-relative miss."""
     root = _git_repo(tmp_path, "proj")
     index = _write_index(root, "proj")
     monkeypatch.delenv("CODEMAP_INDEX_DIR", raising=False)
@@ -103,13 +103,13 @@ def test_canonical_root_falls_back_to_cwd_outside_a_repository(tmp_path, monkeyp
 
 
 # --------------------------------------------------------------------------------------
-# E-H3 — raw basename, no sanitization
+# Raw basename, no sanitization
 # --------------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("name", ["café", "my+proj", "two words", "ünïcode+dir name"])
 def test_project_name_is_the_raw_basename(tmp_path, monkeypatch, name):
-    """E-H3: the scanner writes the directory basename verbatim; stripping chars = false no_index."""
+    """The scanner writes the directory basename verbatim; stripping chars = false no_index."""
     root = _git_repo(tmp_path, name)
     index = _write_index(root, name)
     monkeypatch.delenv("CODEMAP_INDEX_DIR", raising=False)
@@ -123,12 +123,12 @@ def test_project_name_is_the_raw_basename(tmp_path, monkeypatch, name):
 
 
 # --------------------------------------------------------------------------------------
-# E-M2 — one timed currency call, verdict read from stdout not the exit code
+# One timed currency call, verdict read from stdout not the exit code
 # --------------------------------------------------------------------------------------
 
 
 def test_stale_verdict_survives_the_nonzero_exit_code(tmp_path):
-    """E-M2: check-index-currency exits 1 *because* the index is stale — that is not a failure."""
+    """Check-index-currency exits 1 *because* the index is stale — that is not a failure."""
     fake = tmp_path / "fake_cic.py"
     fake.write_text("import json, sys\nprint(json.dumps({'status': 'stale', 'reason': 'HEAD changed'}))\nsys.exit(1)\n")
 
@@ -144,7 +144,7 @@ def test_no_index_verdict_survives_exit_code_two(tmp_path):
 
 
 def test_currency_probe_makes_one_bounded_call(monkeypatch, tmp_path):
-    """E-M2: a single timed subprocess yields both fields; --field spawned two, untimed."""
+    """A single timed subprocess yields both fields; ``--field`` spawned two, untimed."""
     calls: list[tuple[list[str], dict]] = []
 
     def fake_run(cmd, **kwargs):
@@ -186,24 +186,24 @@ def test_stale_index_is_recorded_and_warned(tmp_path, monkeypatch, capsys):
 
 
 # --------------------------------------------------------------------------------------
-# E-M1 / E-L1 / E-L2 — one canonical file, one label, no baked-in sentinel name
+# One canonical file, one label, and no baked-in sentinel name
 # --------------------------------------------------------------------------------------
 
 
 def test_resolver_copies_are_byte_identical():
-    """E-M1: cc_develop is canonical; cc_research must equal it byte-for-byte."""
+    """Cc_develop is canonical; cc_research must equal it byte-for-byte."""
     assert _DEV_RESOLVER.read_bytes() == _RESEARCH_RESOLVER.read_bytes()
 
 
 def test_shared_resolver_hardcodes_no_plugin_sentinel_name():
-    """E-M1: the per-plugin delta must arrive as an argument, never as an edit to this file."""
+    """The per-plugin delta must arrive as an argument, never as an edit to this file."""
     text = _DEV_RESOLVER.read_text(encoding="utf-8")
     assert "dev-codemap-currency" not in text
     assert "research-codemap-currency" not in text
 
 
 def test_single_tool_label_and_no_unused_query_label():
-    """E-L1/E-L2: QUERY_LABEL was dead in this copy; TOOL_LABEL had drifted to the retired name."""
+    """/QUERY_LABEL was dead in this copy; TOOL_LABEL had drifted to the retired name."""
     assert resolver.TOOL_LABEL == "codemap-py"
     assert not hasattr(resolver, "QUERY_LABEL")
 

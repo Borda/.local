@@ -3,27 +3,38 @@
 
 ## Purpose
 
-Provide portable local Codex plugin synchronization while preserving explicit action selection and bounded command output. It refreshes the canonical Git marketplace registration and clean-installs the managed plugin set so local Codex state can be restored predictably.
+Provide portable local Codex plugin synchronization while preserving explicit action selection and bounded command
+output. It refreshes the canonical Git marketplace registration and clean-installs the managed plugin set so local Codex
+state can be restored predictably.
 
 ## Scope
 
-Manages the configured local plugin set only; it neither edits GitHub state nor substitutes for a marketplace publication workflow. The script may invoke native local Codex commands, but it does not decide release contents or alter remote repositories.
+Manages the configured local plugin set only; it neither edits GitHub state nor substitutes for a marketplace
+publication workflow. The script may invoke native local Codex commands, but it does not decide release contents or
+alter remote repositories.
 
 ## Usage
 
-Invoke from the ``sync`` skill with one selected action, or call ``sync_codex`` in its focused tests. The default action removes and reinstalls the managed set after marketplace refresh; ``--no-clean`` retains installed plugins but never suppresses marketplace refresh. The clear action removes local managed state according to the command contract.
+Invoke from the ``sync`` skill with one selected action, or call ``sync_codex`` in its focused tests. The default action
+removes and reinstalls the managed set after marketplace refresh; ``--no-clean`` retains installed plugins but never
+suppresses marketplace refresh. The clear action removes local managed state according to the command contract.
 
 ## Used by
 
-Codex Rig's sync workflow and cross-platform synchronization tests call this synchronizer. The workflow consumes the structured result to report marketplace/ref state and to distinguish optional cleanup from required command failures.
+Codex Rig's sync workflow and cross-platform synchronization tests call this synchronizer. The workflow consumes the
+structured result to report marketplace/ref state and to distinguish optional cleanup from required command failures.
 
 ## Outputs
 
-Writes bounded human-readable status describing the resolved marketplace/package state and local Codex command results. The output retains command outcomes and configured references so callers can explain what changed without exposing unbounded subprocess output.
+Writes bounded human-readable status describing the resolved marketplace/package state and local Codex command results.
+The output retains command outcomes and configured references so callers can explain what changed without exposing
+unbounded subprocess output.
 
 ## Failure
 
-Malformed registry data, unavailable executable, unsafe Windows command shape, or failed required subprocess returns a typed sync failure. Required failures stop the action and are not converted into partial success, while explicitly optional cleanup may be represented as a bounded non-success result.
+Malformed registry data, unavailable executable, unsafe Windows command shape, or failed required subprocess returns a
+typed sync failure. Required failures stop the action and are not converted into partial success, while explicitly
+optional cleanup may be represented as a bounded non-success result.
 """
 
 from __future__ import annotations

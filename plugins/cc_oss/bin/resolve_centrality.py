@@ -1,7 +1,6 @@
 #!/usr/bin/env python
-"""resolve_centrality.py — turn ``codemap-py query central`` output into a centrality map
-plus a file→canonical-module resolver for oss:resolve Step 8 Phase 3 and for the
-oss:review / oss:resolve structural-context pre-flight.
+"""resolve_centrality.py — turn ``codemap-py query central`` output into a centrality map plus a file→canonical-module
+resolver for oss:resolve Step 8 Phase 3 and for the oss:review / oss:resolve structural-context pre-flight.
 
 Phase 3 orders whole worktree groups most-central-first (see
 ``merge_specialist_batch.order_plan``). That needs two things keyed the **same** way:
@@ -85,8 +84,8 @@ def build_maps(central: dict[str, object], files: list[str]) -> dict[str, object
     """Build the centrality map and the file→module resolution from a central payload.
 
     Args:
-        central: Parsed ``codemap-py query central`` output — ``{"central": [{"name",
-            "rdep_count", "path"}, ...]}``.
+        central: Parsed ``codemap-py query central`` output containing entries with
+            ``name``, ``rdep_count``, and ``path`` fields.
         files: Repo-relative file paths to resolve to module names.
 
     Returns:

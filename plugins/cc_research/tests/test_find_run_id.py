@@ -55,7 +55,7 @@ def _make_run(
 
 
 class TestFindRunIdNoFilter:
-    """``find_run_id()`` behaviour without ``--match-program``."""
+    """Verify run discovery without a program filter."""
 
     def test_returns_latest_completed(self, tmp_path: Path) -> None:
         """Latest completed run wins by mtime even when older runs also completed."""
@@ -72,7 +72,7 @@ class TestFindRunIdNoFilter:
         assert find_run_id(tmp_path) == "old-completed"
 
     def test_accepts_goal_achieved_status(self, tmp_path: Path) -> None:
-        """``goal-achieved`` is treated as completed."""
+        """Treat a goal-achieved run as completed."""
         _make_run(tmp_path, "winner", "goal-achieved")
         assert find_run_id(tmp_path) == "winner"
 
@@ -101,11 +101,11 @@ class TestFindRunIdNoFilter:
         assert find_run_id(tmp_path) == "good-run"
 
     def test_safe_mtime_returns_neg_inf_on_missing_dir(self, tmp_path: Path) -> None:
-        """The sort-key helper degrades a vanished dir to -inf instead of raising (M1)."""
+        """The sort-key helper degrades a vanished dir to -inf instead of raising."""
         assert _mod._safe_mtime(tmp_path / "gone") == float("-inf")
 
     def test_dir_vanishing_during_sort_does_not_crash(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """A dir removed after is_dir() but before the sort's stat must not raise (M1).
+        """A dir removed after is_dir() but before the sort's stat must not raise.
 
         Faithfully models the race: is_dir() during enumeration succeeds (dir present),
         then the sort key's stat raises FileNotFoundError for the vanished dir.
@@ -128,10 +128,10 @@ class TestFindRunIdNoFilter:
 
 
 class TestFindRunIdProgramFilter:
-    """``find_run_id()`` with ``--match-program`` filter."""
+    """Filter completed runs by program identity."""
 
     def test_returns_run_matching_program(self, tmp_path: Path) -> None:
-        """Returns the latest completed run whose program_file matches."""
+        """Return the latest completed run whose program_file matches."""
         now = time.time()
         _make_run(tmp_path, "older-other", "completed", program_file="other.md", mtime=now - 50)
         _make_run(tmp_path, "match", "completed", program_file="target.md", mtime=now - 25)
@@ -150,7 +150,7 @@ class TestFindRunIdProgramFilter:
         assert find_run_id(tmp_path, match_program="target.md") is None
 
     def test_program_filter_matches_goal_achieved(self, tmp_path: Path) -> None:
-        """``goal-achieved`` status is accepted under the program filter too."""
+        """Accept completed goals when filtering by program."""
         _make_run(tmp_path, "r1", "goal-achieved", program_file="target.md")
         assert find_run_id(tmp_path, match_program="target.md") == "r1"
 
@@ -172,12 +172,15 @@ class TestMain:
         assert capsys.readouterr().out == ""
 
     def test_exit_two_on_missing_arg(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """argparse rejects missing positional with exit 2."""
+        """Argparse rejects missing positional with exit 2."""
         rc = main([])
         assert rc == 2
 
     def test_program_filter_via_cli(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """--match-program filters by program_file."""
+        """Verify command-line option behavior.
+
+        ``--match-program`` filters by program_file.
+        """
         _make_run(tmp_path, "wrong", "completed", program_file="other.md")
         _make_run(tmp_path, "right", "completed", program_file="target.md")
         rc = main([str(tmp_path), "--match-program", "target.md"])
@@ -185,7 +188,7 @@ class TestMain:
         assert capsys.readouterr().out.strip() == "right"
 
     def test_output_has_no_crlf(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """stdout must use LF only (Windows text-mode regression guard)."""
+        """Stdout must use LF only (Windows text-mode regression guard)."""
         _make_run(tmp_path, "winner", "completed")
         main([str(tmp_path)])
         assert "\r" not in capsys.readouterr().out

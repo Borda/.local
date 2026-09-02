@@ -25,7 +25,7 @@ Usage:
 
 Exit codes:
     0 — success (including "no avoidance events" and "no logs found")
-    2 — bad arguments (neither --logs nor a --cli/--tools pair given)
+    2 — bad arguments (neither ``--logs`` nor a ``--cli``/``--tools`` pair given)
 """
 
 from __future__ import annotations
@@ -198,7 +198,7 @@ def _module_from_cli_result(record: dict) -> str:
     argv = record.get("argv")
     if isinstance(argv, list):
         positionals = [a for a in argv[1:] if isinstance(a, str) and not a.startswith("-")]
-        # A flag value (e.g. "5" after "--top") is a false positional; a module name
+        # A flag value (e.g. "5" after ``--top``) is a false positional; a module name
         # carries a "." or "/" separator, so require one rather than trust position.
         for token in reversed(positionals):
             if "." in token or "/" in token:
@@ -519,9 +519,8 @@ def _path_runtime(log_dir: Path, path: Path) -> str | None:
 def _collect(paths: list[Path], log_dir: Path | None = None) -> list[dict]:
     """Read paths and attach only their directory-derived runtime scope.
 
-    Any ``_RUNTIME_KEY`` already present in a record on disk is discarded first —
-    runtime scope is trusted only when derived from the shard's directory, never
-    from record content.
+    Any ``_RUNTIME_KEY`` already present in a record on disk is discarded first — runtime scope is trusted only when
+    derived from the shard's directory, never from record content.
     """
     records: list[dict] = []
     for path in paths:

@@ -3,27 +3,39 @@
 
 ## Purpose
 
-Reject incomplete, contradictory, or confidence-unsupported workflow output before it can be presented as a completed result. Validation ties the candidate result to the gates, required notes, and skill-specific evidence that justify its status and confidence.
+Reject incomplete, contradictory, or confidence-unsupported workflow output before it can be presented as a completed
+result. Validation ties the candidate result to the gates, required notes, and skill-specific evidence that justify its
+status and confidence.
 
 ## Scope
 
-It reads local artifact files, gate records, and result JSON; it does not execute gates, review code, or mutate source data. Requirements vary by skill, with PR remediation additionally checking review intake, scope selection, workplan, resolution tables, identity, and merge evidence.
+It reads local artifact files, gate records, and result JSON; it does not execute gates, review code, or mutate source
+data. Requirements vary by skill, with PR remediation additionally checking review intake, scope selection, workplan,
+resolution tables, identity, and merge evidence.
 
 ## Usage
 
-Run ``python validate-artifacts.py --skill <id> --out <directory> --result <candidate.json>`` before promoting a result. The result path may be a candidate or final JSON, but the output directory must contain the canonical gate and section artifacts required for the selected skill.
+Run ``python validate-artifacts.py --skill <id> --out <directory> --result <candidate.json>`` before promoting a result.
+The result path may be a candidate or final JSON, but the output directory must contain the canonical gate and section
+artifacts required for the selected skill.
 
 ## Used by
 
-Implement, remediate, and review artifact workflows plus artifact-contract acceptance tests use this validator. The validator is the final local contract check before a workflow reports completion, not a substitute for running the checks whose records it validates.
+Implement, remediate, and review artifact workflows plus artifact-contract acceptance tests use this validator. The
+validator is the final local contract check before a workflow reports completion, not a substitute for running the
+checks whose records it validates.
 
 ## Outputs
 
-It prints a passed validation confirmation or raises a precise contract error that names the missing or contradictory evidence. Errors use stable prefixes such as ``missing-gates-json``, ``gate-check-id-set-mismatch``, and skill-specific ``code-remediate-*`` codes so callers can route recovery.
+It prints a passed validation confirmation or raises a precise contract error that names the missing or contradictory
+evidence. Errors use stable prefixes such as ``missing-gates-json``, ``gate-check-id-set-mismatch``, and skill-specific
+``code-remediate-*`` codes so callers can route recovery.
 
 ## Failure
 
-Malformed JSON, absent required notes/gates, inconsistent confidence metadata, or outcome/gate disagreement exits non-zero and prevents promotion. A structurally valid but incomplete artifact is therefore still rejected; validation does not silently downgrade missing evidence to a warning.
+Malformed JSON, absent required notes/gates, inconsistent confidence metadata, or outcome/gate disagreement produces a
+nonzero exit and prevents promotion. A structurally valid but incomplete artifact is therefore still rejected;
+validation does not silently downgrade missing evidence to a warning.
 """
 
 from __future__ import annotations

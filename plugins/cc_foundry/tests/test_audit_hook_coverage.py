@@ -1,9 +1,8 @@
 """Tests for audit_hook_coverage.py — transcript parsing, verdict attribution, filters.
 
-The measurement this tool produces is only trustworthy if two properties hold: it
-unions every installed manifest (probing one plugin's copy under-reports, because a
-block owned by one plugin is passed through by the others) and it can exclude sessions
-that predate a hook. Both are pinned here, alongside the parsing that feeds them.
+The measurement this tool produces is only trustworthy if two properties hold: it unions every installed manifest
+(probing one plugin's copy under-reports, because a block owned by one plugin is passed through by the others) and it
+can exclude sessions that predate a hook. Both are pinned here, alongside the parsing that feeds them.
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ def write_transcript(path: Path, records: list[dict]) -> Path:
 
 
 def bash_record(command: str) -> dict:
-    """A transcript record carrying one Bash tool_use."""
+    """Build a transcript record containing one Bash tool invocation."""
     return {"message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": command}}]}}
 
 
@@ -80,8 +79,8 @@ class TestRate:
     def test_empty_denominator_is_not_an_error(self):
         """Zero examined calls yields `n/a` rather than raising.
 
-        Filters can legitimately match no transcript at all (a project substring that
-        hits nothing); the summary must still print instead of dying on ZeroDivision.
+        Filters can legitimately match no transcript at all (a project substring that hits nothing); the summary must
+        still print instead of dying on ZeroDivision.
         """
         assert ahc.rate(0, 0) == "n/a"
 
@@ -92,8 +91,8 @@ class TestParseSince:
     def test_rejects_non_iso_text(self):
         """A malformed date fails loudly instead of silently disabling the filter.
 
-        Silently ignoring it would include pre-hook sessions and quietly deflate the
-        measured rate — the exact contamination `--since` exists to remove.
+        Silently ignoring it would include pre-hook sessions and quietly deflate the measured rate — the exact
+        contamination ``--since`` exists to remove.
         """
         with pytest.raises(ValueError):
             ahc.parse_since("last tuesday")
@@ -111,8 +110,8 @@ class TestReadTranscript:
     def test_ignores_other_tools(self, tmp_path):
         """Only Bash calls count toward the denominator.
 
-        Read/Edit/Grep calls never face the Bash permission gate, so counting them
-        would inflate the denominator with calls no hook could ever allow.
+        Read/Edit/Grep calls never face the Bash permission gate, so counting them would inflate the denominator with
+        calls no hook could ever allow.
         """
         other = {"message": {"content": [{"type": "tool_use", "name": "Read", "input": {"file_path": "a"}}]}}
         path = write_transcript(tmp_path / "s.jsonl", [other, bash_record("ls")])
@@ -122,8 +121,7 @@ class TestReadTranscript:
     def test_survives_malformed_lines(self, tmp_path):
         """A truncated or non-JSON line is skipped, not fatal.
 
-        Transcripts of live sessions are appended to while being read, so the final
-        line is routinely a partial write.
+        Transcripts of live sessions are appended to while being read, so the final line is routinely a partial write.
         """
         path = tmp_path / "s.jsonl"
         path.write_text(json.dumps(bash_record("ls")) + "\n{not json\n", encoding="utf-8")
@@ -143,9 +141,9 @@ class TestLoadDigests:
     def test_unions_every_plugin(self, tmp_path, monkeypatch):
         """Digests from all installed plugins are merged into one lookup.
 
-        A block committed in `foundry` is allowed by foundry's hook copy and passed
-        through by every other plugin's copy; since all copies run on each Bash call,
-        the effective set is the union. Probing one plugin under-reports coverage.
+        A block committed in `foundry` is allowed by foundry's hook copy and passed through by every other plugin's
+        copy; since all copies run on each Bash call, the effective set is the union. Probing one plugin under-reports
+        coverage.
         """
         monkeypatch.setattr(
             ahc, "PLUGIN_CACHE", fake_cache(tmp_path, {"oss": {"1.0.0": ["aa"]}, "foundry": {"1.0.0": ["bb"]}})
@@ -155,8 +153,8 @@ class TestLoadDigests:
     def test_uses_newest_version_only(self, tmp_path, monkeypatch):
         """Only the newest installed version of a plugin contributes digests.
 
-        Stale versions linger in the cache; counting them would credit coverage to
-        manifest text that is no longer what runs.
+        Stale versions linger in the cache; counting them would credit coverage to manifest text that is no longer what
+        runs.
         """
         monkeypatch.setattr(ahc, "PLUGIN_CACHE", fake_cache(tmp_path, {"oss": {"0.9.0": ["old"], "0.10.0": ["new"]}}))
         assert ahc.load_digests() == {"new": "oss"}
@@ -164,9 +162,8 @@ class TestLoadDigests:
     def test_version_selection_holds_for_nested_paths(self, tmp_path, monkeypatch):
         """Version ranking uses the directory under the plugin, not the file's parent.
 
-        The shape hook sits at `<plugin>/<version>/hooks/<file>`, so keying on the
-        immediate parent would compare the literal string `hooks` for every candidate
-        and fall back to glob order.
+        The shape hook sits at `<plugin>/<version>/hooks/<file>`, so keying on the immediate parent would compare the
+        literal string `hooks` for every candidate and fall back to glob order.
         """
         for version in ("0.9.0", "0.10.0"):
             hooks = tmp_path / "foundry" / version / "hooks"
@@ -183,8 +180,8 @@ class TestClassifier:
     def test_manifest_hit_skips_the_shape_probe(self, monkeypatch):
         """A manifest match never spawns the shape hook subprocess.
 
-        Every distinct command otherwise costs a node process; short-circuiting on the
-        cheaper in-process check is what keeps a full-history scan tractable.
+        Every distinct command otherwise costs a node process; short-circuiting on the cheaper in-process check is what
+        keeps a full-history scan tractable.
         """
         probed: list[str] = []
         classifier = ahc.Classifier({ahc.sha256_text(ahc.normalize("ls -la")): "oss"}, Path("unused.js"))
@@ -195,8 +192,8 @@ class TestClassifier:
     def test_memoizes_by_exact_text(self, monkeypatch):
         """Repeat commands are classified once.
 
-        Sessions re-run identical commands constantly; without the cache the scan cost
-        scales with call count rather than distinct-command count.
+        Sessions re-run identical commands constantly; without the cache the scan cost scales with call count rather
+        than distinct-command count.
         """
         calls: list[str] = []
         classifier = ahc.Classifier({}, Path("unused.js"))
@@ -208,8 +205,7 @@ class TestClassifier:
     def test_missing_shape_hook_degrades_to_manifest_only(self):
         """With no installed shape hook, commands fall through to `none`.
 
-        A partial install must still produce a manifest-only number instead of crashing
-        on a missing path.
+        A partial install must still produce a manifest-only number instead of crashing on a missing path.
         """
         assert ahc.Classifier({}, None).verdict("pwd") == "none"
 
@@ -256,29 +252,29 @@ class TestCollect:
         return root
 
     def test_project_filter_selects_by_substring(self, transcripts):
-        """`--project` narrows to matching project directories."""
+        """Narrow to matching project directories."""
         _, sessions = ahc.collect(make_args(project="beta"), ahc.Classifier({}, None))
         assert [row["project"] for row in sessions] == ["proj-beta"]
 
     def test_skills_only_drops_ad_hoc_sessions(self, transcripts):
-        """`--skills-only` keeps sessions that invoked a plugin skill.
+        """Keep sessions that invoked a plugin skill.
 
-        Ad-hoc engineering sessions run almost no blueprint text, so mixing them in
-        dilutes the rate toward zero and hides what skill runs actually achieve.
+        Ad-hoc engineering sessions run almost no blueprint text, so mixing them in dilutes the rate toward zero and
+        hides what skill runs actually achieve.
         """
         _, sessions = ahc.collect(make_args(skills_only=True), ahc.Classifier({}, None))
         assert [row["session"] for row in sessions] == ["b"]
 
     def test_since_excludes_older_transcripts(self, transcripts):
-        """`--since` drops transcripts last modified before the cutoff."""
+        """Exclude transcripts last modified before the requested cutoff."""
         _, sessions = ahc.collect(make_args(since="2099-01-01"), ahc.Classifier({}, None))
         assert sessions == []
 
     def test_vanished_transcript_is_skipped(self, transcripts, monkeypatch):
         """A transcript deleted between glob and read does not abort the scan.
 
-        Live sessions rotate their logs while the scan walks the tree; an unhandled
-        FileNotFoundError there loses every result gathered so far.
+        Live sessions rotate their logs while the scan walks the tree; an unhandled FileNotFoundError there loses every
+        result gathered so far.
         """
         original = ahc.read_transcript
 

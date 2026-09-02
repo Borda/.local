@@ -172,8 +172,8 @@ def classify(batch_output: dict) -> dict:
     """Classify every symbol in a ``codemap-py query batch`` output.
 
     Args:
-        batch_output: Parsed ``codemap-py query batch`` JSON — ``{batch: [...],
-            index: {...}}``.
+        batch_output: Parsed ``codemap-py query batch`` JSON with ``batch`` and
+            ``index`` fields.
 
     Returns:
         A dict with ``breaking``, ``internal``, ``migration_lines`` lists and a

@@ -497,9 +497,8 @@ def test_installed_skill_binding_credits_compact_query_without_manual_skill_read
 ) -> None:
     """A C treatment is productive when its installed Skill binding guides one exact compact query.
 
-    Manual ``cat "$CODEMAP_SKILL_FILE"`` reads are audit diagnostics, not a
-    prerequisite for counting a query made through the immutable installed-Skill
-    treatment. Requiring that extra read would measure benchmark ceremony rather
+    Manual ``cat "$CODEMAP_SKILL_FILE"`` reads are audit diagnostics, not a prerequisite for counting a query made
+    through the immutable installed-Skill treatment. Requiring that extra read would measure benchmark ceremony rather
     than normal integration use.
     """
     skill_path = tmp_path / "codex-skills" / "query-code" / "SKILL.md"
@@ -934,9 +933,8 @@ def test_historical_conditional_launcher_alias_replay_is_not_canonical_C_complia
 ) -> None:
     """Record the observed C command as historical replay incompatibility.
 
-    The prospective C contract is the standalone ``$CODEMAP_BIN query`` form.
-    This conditional alias remains corpus evidence for interpreting historical
-    rows, not a second command grammar eligible for future compliance credit.
+    The prospective C contract is the standalone ``$CODEMAP_BIN query`` form. This conditional alias remains corpus
+    evidence for interpreting historical rows, not a second command grammar eligible for future compliance credit.
     """
     skill_path = tmp_path / "codex-skills" / "query-code" / "SKILL.md"
     skill_path.parent.mkdir(parents=True)
@@ -1138,8 +1136,8 @@ def test_conditional_launcher_alias_rejects_unproven_forms(
 ) -> None:
     """Keep conditional alias credit limited to one immutable two-branch form.
 
-    Each case could execute a launcher-like command, so a recognizer that only
-    matches ``CODEMAP_LAUNCHER query`` would incorrectly satisfy C compliance.
+    Each case could execute a launcher-like command, so a recognizer that only matches ``CODEMAP_LAUNCHER query`` would
+    incorrectly satisfy C compliance.
     """
     skill_path = tmp_path / "codex-skills" / "query-code" / "SKILL.md"
     skill_path.parent.mkdir(parents=True)

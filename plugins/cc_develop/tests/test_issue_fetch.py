@@ -1,9 +1,8 @@
 """Tests for ``bin/issue_fetch.py``.
 
-The script strips a leading ``#`` from the issue number, validates digits-only, then
-delegates to ``gh issue view <num> --comments``. ``subprocess.run`` is monkeypatched
-throughout — no actual ``gh`` invocation. ``shutil.which`` is patched to return a
-fake path so ``_resolve`` succeeds even when ``gh`` is not installed.
+The script strips a leading ``#`` from the issue number, validates digits-only, then delegates to ``gh issue view`` with
+``--comments``. ``subprocess.run`` is monkeypatched throughout — no actual ``gh`` invocation. ``shutil.which`` is
+patched to return a fake path so ``_resolve`` succeeds even when ``gh`` is not installed.
 """
 
 from __future__ import annotations
@@ -79,7 +78,7 @@ def test_rejects_empty_input(
 
 
 def test_passes_through_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``gh`` exits 3 → ``main`` returns 3 unchanged."""
+    """Preserve a delegated command's exit status."""
 
     def _fake_run(_cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
         return _FakeCompleted(returncode=3)
@@ -90,7 +89,7 @@ def test_passes_through_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_resolve_raises_when_gh_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``_resolve`` propagates ``FileNotFoundError`` when ``gh`` not on PATH."""
+    """Propagate ``FileNotFoundError`` when ``gh`` not on PATH."""
 
     def _no_run(*_args: Any, **_kwargs: Any) -> _FakeCompleted:  # pragma: no cover
         raise AssertionError("subprocess.run should not be called when gh is missing")
@@ -102,7 +101,7 @@ def test_resolve_raises_when_gh_missing(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
-    """``--help`` prints usage and exits 0 (argparse) before any gh call."""
+    """Print usage and exit 0 (argparse) before any gh call."""
     with pytest.raises(SystemExit) as exc:
         issue_fetch.main(["--help"])
     assert exc.value.code == 0
@@ -117,8 +116,8 @@ def test_golden_invocation_with_repo(captured_argv: list[list[str]]) -> None:
 
 
 def test_blob_with_dash_tokens_reaches_extraction_unmangled(captured_argv: list[list[str]]) -> None:
-    """A blob whose first token is the issue number but which also carries ``--``-shaped
-    tokens still yields the correct issue number — the blob is never handed to argparse."""
+    """A blob whose first token is the issue number but which also carries ``--``-shaped tokens still yields the correct
+    issue number — the blob is never handed to argparse."""
     rc = issue_fetch.main(["#7 --repo evil/repo --foo bar"])
     assert rc == 0
     # Only the first token (#7 → 7) is used; embedded --repo inside the blob is ignored,

@@ -74,7 +74,7 @@ class TestTier0EnvHit:
     def test_main_tier0_prints_path_no_stderr(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """``main()`` tier-0 hit: stdout has path, stderr is empty."""
+        """Report only the resolved path for a highest-priority match."""
         root = tmp_path / "plugin_install"
         (root / "skills" / "_shared").mkdir(parents=True)
         monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(root))
@@ -142,7 +142,7 @@ class TestTier3SourceFallback:
     def test_main_tier3_warns_and_exits_0(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """``main()`` tier-3: stdout has path, stderr has warning, exit 0."""
+        """Warn while returning a successful source-tree fallback."""
         source = tmp_path / "plugins" / "cc_foundry" / "skills" / "_shared"
         source.mkdir(parents=True)
         monkeypatch.chdir(tmp_path)
@@ -185,9 +185,9 @@ class TestVersionKey:
         ],
     )
     def test_version_key_extracts_digit_runs(self, name: str, expected: list[int]) -> None:
-        """``_version_key`` extracts contiguous digit runs as ints."""
+        """Extract contiguous version digits as integers."""
         assert resolve_shared_path._version_key(name) == expected
 
     def test_version_key_orders_semver_correctly(self) -> None:
-        """``0.20.0`` sorts above ``0.9.9`` (digit-run aware, not lexical)."""
+        """Sort above ``0.9.9`` (digit-run aware, not lexical)."""
         assert resolve_shared_path._version_key("0.9.9") < resolve_shared_path._version_key("0.20.0")

@@ -100,7 +100,7 @@ def compute_from_payload(payload: dict[str, Any]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Reads JSON from stdin, prints effect size to stdout.
+    """Read a Wilcoxon result from stdin and print its effect size.
 
     Args:
         argv: Optional argv override (defaults to ``sys.argv[1:]``); only ``-h/--help`` is honored.

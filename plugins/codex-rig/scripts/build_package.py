@@ -3,27 +3,37 @@
 
 ## Purpose
 
-Enumerate the complete shipped payload, record stable hashes/modes, and reject package drift before installation or release. The generated manifest is the deterministic inventory consumed by package validation and installed-helper identity checks.
+Enumerate the complete shipped payload, record stable hashes/modes, and reject package drift before installation or
+release. The generated manifest is the deterministic inventory consumed by package validation and installed-helper
+identity checks.
 
 ## Scope
 
-Creates or checks local manifest data for this plugin; it neither publishes a release nor changes a remote marketplace. Its writes are limited to the repository's canonical ``package-manifest.json`` when the explicit update action is selected.
+Creates or checks local manifest data for this plugin; it neither publishes a release nor changes a remote marketplace.
+Its writes are limited to the repository's canonical ``package-manifest.json`` when the explicit update action is
+selected.
 
 ## Usage
 
-Run ``python scripts/build_package.py --update`` after shipped-file changes, then ``--check`` before delivery. Use ``--check`` in automated gates so a stale manifest fails without modifying the working tree.
+Run ``python scripts/build_package.py --update`` after shipped-file changes, then ``--check`` before delivery. Use
+``--check`` in automated gates so a stale manifest fails without modifying the working tree.
 
 ## Used by
 
-Package validation, release verification, and Codex Rig packaging tests call this builder. These callers use the manifest as a reproducible package boundary rather than reconstructing file lists independently.
+Package validation, release verification, and Codex Rig packaging tests call this builder. These callers use the
+manifest as a reproducible package boundary rather than reconstructing file lists independently.
 
 ## Outputs
 
-Prints whether the manifest is current and, with ``--update``, writes the canonical ``package-manifest.json`` bytes. The check result identifies drift through a non-zero exit so release automation can stop before shipping inconsistent assets.
+Prints whether the manifest is current and, with ``--update``, writes the canonical ``package-manifest.json`` bytes. The
+check result identifies drift through a non-zero exit so release automation can stop before shipping inconsistent
+assets.
 
 ## Failure
 
-Missing role/skill metadata, invalid manifest structure, unsafe payload object, or a stale manifest produces a non-zero error and names the local cause. The script does not silently regenerate during a check, which keeps accidental source changes visible to the maintainer.
+Missing role/skill metadata, invalid manifest structure, unsafe payload object, or a stale manifest produces a non-zero
+error and names the local cause. The script does not silently regenerate during a check, which keeps accidental source
+changes visible to the maintainer.
 """
 
 from __future__ import annotations

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""bin/_index_identity.py — compatibility shim for :mod:`codemap_py.index_paths` (Phase 3 slice 1).
+"""Compatibility shim forwarding legacy index-identity imports to :mod:`codemap_py.index_paths`.
 
-Every prior consumer imports the bare ``_index_identity`` name after inserting
-``bin/`` onto its own ``sys.path``; this shim prepends ``<plugin-root>/src`` to
-the process import path, then replaces its own entry in ``sys.modules`` with
-the real package module so every attribute access — including private
-internals a test monkeypatches — reaches the one authoritative implementation.
+Every prior consumer imports the bare ``_index_identity`` name after inserting ``bin/`` onto its own ``sys.path``; this
+shim prepends ``<plugin-root>/src`` to the process import path, then replaces its own entry in ``sys.modules`` with the
+real package module so every attribute access — including private internals a test monkeypatches — reaches the one
+authoritative implementation.
 
-consumers: bin/_runtime_log.py (indirectly, via the codemap_py package), tests — imported as bare ``_index_identity``; not a standalone executable
+consumers: bin/_runtime_log.py (indirectly, via the codemap_py package), tests — imported as bare ``_index_identity``;
+not a standalone executable
 """
 
 from __future__ import annotations

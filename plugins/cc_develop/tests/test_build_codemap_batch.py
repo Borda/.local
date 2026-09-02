@@ -20,7 +20,7 @@ import build_codemap_batch as bcb
 
 
 class TestBuildBatchRequest:
-    """``build_batch_request`` assembles the ordered codemap-py query batch array."""
+    """Assemble the ordered codemap-py query batch array."""
 
     def test_central_always_first_and_alone_when_no_modules(self):
         """Empty module list yields exactly the central query."""
@@ -69,7 +69,7 @@ class TestBuildBatchRequest:
 
 
 class TestMain:
-    """``main`` writes the request file and prints derived modules."""
+    """Write a query request and report its derived modules."""
 
     def test_writes_json_and_prints_modules(self, tmp_path, monkeypatch, capsys):
         """Monkeypatched diff yields modules → JSON on disk + stdout list, exit 0."""
@@ -96,17 +96,17 @@ class TestMain:
         assert "usage" in capsys.readouterr().err
 
     def test_help_exits_zero(self, capsys):
-        """``--help`` prints usage to stdout and exits 0 (argparse default)."""
+        """Print usage to stdout and exit 0 (argparse default)."""
         with pytest.raises(SystemExit) as exc:
             bcb.main(["--help"])
         assert exc.value.code == 0
         assert "usage" in capsys.readouterr().out.lower()
 
     def test_modules_override_skips_diff_derivation(self, tmp_path, monkeypatch, capsys):
-        """``--modules`` uses the caller's module list and never touches git.
+        """Honor the caller's module list without inspecting Git state.
 
-        The refactor skill already holds AFFECTED_MODULES; deriving from the
-        diff here would silently swap its explicit scope for unrelated files.
+        The refactor skill already holds AFFECTED_MODULES; deriving from the diff here would silently swap its explicit
+        scope for unrelated files.
         """
         monkeypatch.setattr(bcb, "_git_diff_files", lambda: pytest.fail("diff derivation must be skipped"))
         out = tmp_path / "batch.json"
@@ -117,10 +117,10 @@ class TestMain:
         assert len(req) == 11
 
     def test_queries_filter_omits_central(self, tmp_path, monkeypatch):
-        """``--queries rdeps`` emits only per-module rdeps items, no central baseline.
+        """Emit only per-module rdeps items, no central baseline.
 
-        A caller naming exact query families asked for exactly those — an
-        implicit central item would re-bill baseline context it never reads.
+        A caller naming exact query families asked for exactly those — an implicit central item would re-bill baseline
+        context it never reads.
         """
         monkeypatch.setattr(bcb, "_git_diff_files", lambda: [])
         out = tmp_path / "batch.json"
@@ -134,8 +134,8 @@ class TestMain:
     def test_unknown_query_family_exits_1(self, tmp_path, capsys):
         """An unknown ``--queries`` name exits 1 with the offending name on stderr.
 
-        A typo'd family silently dropped would produce an empty batch that
-        reads as "no callers found" — fail loudly instead.
+        A typo'd family silently dropped would produce an empty batch that reads as "no callers found" — fail loudly
+        instead.
         """
         out = tmp_path / "batch.json"
         assert bcb.main([str(out), "--modules", "pkg.a", "--queries", "bogus"]) == 1

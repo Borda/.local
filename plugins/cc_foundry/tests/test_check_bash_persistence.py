@@ -1,7 +1,7 @@
 """Tests for check_bash_persistence bin script.
 
-Covers block extraction, assignment/reference detection, cross-block violation
-detection, env-var filtering, and CLI integration.
+Covers block extraction, assignment/reference detection, cross-block violation detection, env-var filtering, and CLI
+integration.
 """
 
 from __future__ import annotations
@@ -53,11 +53,11 @@ class TestAssignedVars:
         assert "FOO" in cbp.assigned_vars("FOO=bar\n")
 
     def test_export_prefix(self) -> None:
-        """export VAR=value is detected."""
+        """Export VAR=value is detected."""
         assert "FOO" in cbp.assigned_vars("export FOO=bar\n")
 
     def test_local_prefix(self) -> None:
-        """local VAR=value is detected."""
+        """Local VAR=value is detected."""
         assert "FOO" in cbp.assigned_vars("local FOO=bar\n")
 
     def test_comment_line_skipped(self) -> None:
@@ -69,7 +69,7 @@ class TestAssignedVars:
         assert "FOO" in cbp.assigned_vars("  FOO=bar\n")
 
     def test_subshell_assignment(self) -> None:
-        """FOO=$(cmd) is detected."""
+        """Detect assignments made through command substitution."""
         assert "FOO" in cbp.assigned_vars("FOO=$(date)\n")
 
     @pytest.mark.parametrize("line", ["echo $FOO\n", '[ "$FOO" = "x" ]\n'])
@@ -201,15 +201,18 @@ class TestReloadsBeforeRef:
     """Covers reloads_before_ref() state-reload detection (suppression rule 1)."""
 
     def test_eval_reload_before_reference(self) -> None:
-        """eval "$(...)" before the reference re-derives the value."""
+        """Eval "$(...)" before the reference re-derives the value."""
         assert cbp.reloads_before_ref('eval "$(git_slugs.sh)"\nrm -f "$SENTINEL"\n', "SENTINEL") is True
 
     def test_source_reload_before_reference(self) -> None:
-        """source of a state file before the reference re-derives the value."""
+        """Source of a state file before the reference re-derives the value."""
         assert cbp.reloads_before_ref('source ./state.sh\necho "$VARX"\n', "VARX") is True
 
     def test_dot_reload_quoted_path(self) -> None:
-        """A quoted dot-source path (. "$FILE") is recognized as a reload."""
+        """A quoted dot-source path (.
+
+        "$FILE") is recognized as a reload.
+        """
         assert cbp.reloads_before_ref('. "${TMPDIR:-/tmp}/state-${CSID}"\necho "$VARX"\n', "VARX") is True
 
     def test_reload_after_reference_not_suppressed(self) -> None:
@@ -225,7 +228,7 @@ class TestRefsAllDefended:
     """Covers refs_all_defended() empty-var defence detection (suppression rule 2)."""
 
     def test_strip_assignment_with_guard(self) -> None:
-        """VAR2=${VAR%x} followed by a [ -z "$VAR2" ] guard defends the reference."""
+        """Treat a derived variable with an empty-value guard as defended."""
         block = '_SKILLS="${_SHARED%/_shared}"\n[ -z "$_SKILLS" ] && _SKILLS="fallback"\n'
         assert cbp.refs_all_defended(block, "_SHARED") is True
 
@@ -247,7 +250,7 @@ class TestSuppressionEndToEnd:
     """Covers check_file() suppression of the three FP classes plus real-loss preservation."""
 
     def test_reload_suppresses_finding(self, tmp_path: Path) -> None:
-        """eval reload of a state file in the referencing block suppresses C41."""
+        """Eval reload of a state file in the referencing block suppresses C41."""
         content = '```bash\nSENTINEL=/tmp/x\n```\n```bash\neval "$(gen_slugs)"\nrm -f "$SENTINEL"\n```\n'
         assert cbp.check_file(_skill(tmp_path, content)) == []
 
@@ -304,6 +307,9 @@ class TestMain:
         assert cbp.main([str(f)]) == 1
 
     def test_timeout_arg_accepted(self, tmp_path: Path) -> None:
-        """--timeout flag is accepted without error."""
+        """Verify command-line option behavior.
+
+        --timeout flag is accepted without error.
+        """
         _skill(tmp_path, "```bash\nFOO=1\necho $FOO\n```\n")
         assert cbp.main(["--scan-dir", str(tmp_path), "--timeout", "15"]) == 0

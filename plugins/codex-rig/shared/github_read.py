@@ -3,27 +3,41 @@
 
 ## Purpose
 
-Centralize strict GitHub read-only command validation, safe failure classification, and a final unauthenticated public REST fallback. A single boundary lets collectors share the same no-mutation and credential-opaque guarantees instead of implementing separate command filters.
+Centralize strict GitHub read-only command validation, safe failure classification, and a final unauthenticated public
+REST fallback. A single boundary lets collectors share the same no-mutation and credential-opaque guarantees instead of
+implementing separate command filters.
 
 ## Scope
 
-It permits audited built-in views, REST GET, and GraphQL queries only; it never inspects credentials, calls ``gh auth``, or permits remote mutation. The fallback is restricted to ``https://api.github.com`` public endpoints and is considered only for classified authentication, network, or rate-limit failures.
+Permit audited built-in views, REST GET, and GraphQL queries only; never inspect credentials, call ``gh auth``, or
+permit remote mutation. The fallback is restricted to public
+``https://api.github.com``
+endpoints and is considered
+only for classified authentication, network, or rate-limit failures.
 
 ## Usage
 
-Invoke ``python github_read.py --out <file> -- gh <allowed-read-command>`` or import its validators from a resource-specific collector. A caller may supply ``--fallback-url`` for a public REST GET, but the primary command still has to pass read-only validation before execution.
+Invoke ``python github_read.py --out <file> -- gh <allowed-read-command>`` or import its validators from a
+resource-specific collector. A caller may supply ``--fallback-url`` for a public REST GET, but the primary command
+still has to pass read-only validation before execution.
 
 ## Used by
 
-PR collection, issue/release/repository research instructions, and GitHub-boundary regression tests use this boundary; Discussions use an explicit GraphQL query. Resource-specific code receives response bytes and does not need to handle credentials or transport fallback policy itself.
+PR collection, issue/release/repository research instructions, and GitHub-boundary regression tests use this boundary;
+Discussions use an explicit GraphQL query. Resource-specific code receives response bytes and does not need to handle
+credentials or transport fallback policy itself.
 
 ## Outputs
 
-It writes requested response bytes on success or emits only a classified, credential-opaque failure with command label and exit metadata. The CLI writes the successful bytes exactly to ``--out`` and reports failure codes on stderr without including tokens or command output that could expose credentials.
+Write requested response bytes on success or emit only a classified, credential-opaque failure with command label and
+exit metadata. The CLI writes the successful bytes exactly to ``--out`` and reports failure codes on stderr without
+including tokens or command output that could expose credentials.
 
 ## Failure
 
-Unsafe argv, mutation-like input, browser flag, auth/network/rate-limit error, private fallback request, or malformed public URL fails closed. Read-command failures are surfaced as ``GitHubReadError`` classifications, and the CLI returns ``2`` so collectors can record terminal evidence rather than treating an unsafe request as an empty response.
+Unsafe argv, mutation-like input, browser flag, auth/network/rate-limit error, private fallback request, or malformed
+public URL fails closed. Read-command failures are surfaced as ``GitHubReadError`` classifications, and the CLI returns
+``2`` so collectors can record terminal evidence rather than treating an unsafe request as an empty response.
 """
 
 from __future__ import annotations

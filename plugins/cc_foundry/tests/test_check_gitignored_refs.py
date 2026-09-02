@@ -1,7 +1,7 @@
 """Tests for check_gitignored_refs bin script.
 
-Covers token extraction, existence/ignore classification against a real
-temporary git checkout, the waiver marker, and CLI exit codes.
+Covers token extraction, existence/ignore classification against a real temporary git checkout, the waiver marker, and
+CLI exit codes.
 """
 
 from __future__ import annotations
@@ -112,8 +112,8 @@ class TestScanFile:
     def test_illustrative_nonexistent_path_passes(self, repo: Path) -> None:
         """A documentation example naming a file that does not exist here passes.
 
-        Plugins teach *target projects* to use these folders; example paths in
-        READMEs resolve to nothing in this checkout and must not be flagged.
+        Plugins teach *target projects* to use these folders; example paths in READMEs resolve to nothing in this
+        checkout and must not be flagged.
         """
         source = repo / "README.md"
         source.write_text("--plan .plans/active/plan_add-streaming-support.md\n", encoding="utf-8")

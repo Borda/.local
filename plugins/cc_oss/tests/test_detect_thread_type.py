@@ -1,8 +1,7 @@
 """Tests for ``bin/detect_thread_type.py``.
 
-Arg-parsing, URL extraction, and drift-computation tests run without any
-subprocess calls. Subprocess-dependent paths monkeypatch ``subprocess.run``
-and ``which`` so no real ``gh`` invocation occurs.
+Arg-parsing, URL extraction, and drift-computation tests run without any subprocess calls. Subprocess-dependent paths
+monkeypatch ``subprocess.run`` and ``which`` so no real ``gh`` invocation occurs.
 """
 
 from __future__ import annotations
@@ -88,7 +87,7 @@ def test_parse_iso_to_epoch_returns_none_on_failure(iso: str) -> None:
 
 
 def test_compute_drift_no_mtime_returns_false() -> None:
-    """Drift check skipped (mtime=None) → False — caller passes mtime only when --report-mtime set."""
+    """Drift check skipped (mtime=None) → False — caller passes mtime only when ``--report-mtime`` is set."""
     assert dtt.compute_drift("2024-01-01T00:00:00Z", None) is False
 
 
@@ -127,7 +126,10 @@ def test_compute_drift_parse_failure_is_conservative(iso: str) -> None:
 
 
 def test_missing_number_exits_nonzero(capsys: pytest.CaptureFixture[str]) -> None:
-    """--number is required."""
+    """Verify command-line option behavior.
+
+    ``--number`` is required.
+    """
     rc = dtt.main([])
     assert rc != 0
 
@@ -146,7 +148,7 @@ def test_unparseable_number_emits_unknown(tmp_path: Path, monkeypatch: pytest.Mo
 def test_missing_gh_emits_unknown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """gh binary absent → graceful unknown output to temp file, error on stderr."""
+    """Gh binary absent → graceful unknown output to temp file, error on stderr."""
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.setattr(dtt, "which", lambda _: None)
     rc = dtt.main(["--number", "123"])
@@ -271,7 +273,10 @@ def test_malformed_success_payloads_emit_conservative_results(
 
 
 def test_drift_true_when_thread_newer_than_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """--report-mtime older than updatedAt → DRIFT=true."""
+    """Verify command-line option behavior.
+
+    ``--report-mtime`` older than updatedAt → DRIFT=true.
+    """
     issue_payload = json.dumps({"number": 1, "updated_at": "2024-01-01T00:00:00Z"})
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.setattr(dtt, "which", lambda _: "/fake/gh")
@@ -287,7 +292,10 @@ def test_drift_true_when_thread_newer_than_report(tmp_path: Path, monkeypatch: p
 
 
 def test_drift_false_when_report_newer_than_thread(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """--report-mtime later than updatedAt → DRIFT=false (cached report still valid)."""
+    """Verify command-line option behavior.
+
+    ``--report-mtime`` later than updatedAt → DRIFT=false (cached report still valid).
+    """
     issue_payload = json.dumps({"number": 1, "updated_at": "2024-01-01T00:00:00Z"})
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.setattr(dtt, "which", lambda _: "/fake/gh")
@@ -302,7 +310,7 @@ def test_drift_false_when_report_newer_than_thread(tmp_path: Path, monkeypatch: 
 
 
 def test_url_input_normalised_before_detection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """URL passed as --number → number extracted, detection proceeds normally."""
+    """URL passed as ``--number`` → number extracted, detection proceeds normally."""
     issue_payload = json.dumps({"number": 7, "updated_at": "2024-01-01T00:00:00Z"})
     captured_cmds: list[list[str]] = []
 

@@ -3,27 +3,39 @@
 
 ## Purpose
 
-Execute configured lint, format, type, test, and review checks while preserving per-gate evidence and timeout classification. The gate runner turns each command into a named record that result validation can reconcile with the workflow verdict.
+Execute configured lint, format, type, test, and review checks while preserving per-gate evidence and timeout
+classification. The gate runner turns each command into a named record that result validation can reconcile with the
+workflow verdict.
 
 ## Scope
 
-It runs local commands supplied by a workflow and writes gate records; it does not decide release readiness or hide failed output. Each gate must have either a command or an explicit skip reason, and commands are executed independently with a per-gate timeout.
+It runs local commands supplied by a workflow and writes gate records; it does not decide release readiness or hide
+failed output. Each gate must have either a command or an explicit skip reason, and commands are executed independently
+with a per-gate timeout.
 
 ## Usage
 
-Run ``python run_gates.py --out <directory>`` with explicit commands or documented skip reasons for each applicable gate. Commands can come from the gate flags or matching environment variables such as ``LINT_CMD``; ``--timeout-seconds`` applies separately to every gate.
+Run ``python run_gates.py --out <directory>`` with explicit commands or documented skip reasons for each applicable
+gate. Commands can come from the gate flags or matching environment variables such as ``LINT_CMD``. Each gate applies
+the value supplied through ``--timeout-seconds`` separately.
 
 ## Used by
 
-Implement and related artifact workflows, result validation, and portable-gate acceptance tests use this runner. The five canonical IDs are fixed as ``lint``, ``format``, ``types``, ``tests``, and ``review``, so consumers can compare records without interpreting arbitrary gate names.
+Implement and related artifact workflows, result validation, and portable-gate acceptance tests use this runner. The
+five canonical IDs are fixed as ``lint``, ``format``, ``types``, ``tests``, and ``review``, so consumers can compare
+records without interpreting arbitrary gate names.
 
 ## Outputs
 
-It writes ``gates.json``, ``gates.txt``, ``failed.txt``, ``gates.checks.jsonl``, and per-gate command/stdout/stderr files. Records distinguish pass, fail, timeout, missing command, and ``not-applicable`` states, while captured output is bounded to protect artifact size.
+It writes ``gates.json``, ``gates.txt``, ``failed.txt``, ``gates.checks.jsonl``, and per-gate command/stdout/stderr
+files. Records distinguish pass, fail, timeout, missing command, and ``not-applicable`` states, while captured output is
+bounded to protect artifact size.
 
 ## Failure
 
-A missing command, non-zero command result, timeout, malformed requested gate, or unwritable artifact directory is retained as explicit gate evidence. The CLI returns ``1`` for failed gates, ``124`` for a timeout, and ``2`` for invalid input such as a newline in a skip reason, allowing callers to classify the run without parsing prose.
+A missing command, non-zero command result, timeout, malformed requested gate, or unwritable artifact directory is
+retained as explicit gate evidence. The CLI returns ``1`` for failed gates, ``124`` for a timeout, and ``2`` for invalid
+input such as a newline in a skip reason, allowing callers to classify the run without parsing prose.
 """
 
 from __future__ import annotations

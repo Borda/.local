@@ -1,7 +1,5 @@
-"""Unit tests for ``hooks/report-header-table.js``, the table-format detector
-shared by all six ``enforce-*-header.js`` hooks (see propagate_shared.py
-MANIFEST — canonical here, byte-identical copies in cc_oss, cc_develop,
-cc_research).
+"""Unit tests for ``hooks/report-header-table.js``, the table-format detector shared by all six ``enforce-*-header.js``
+hooks (see propagate_shared.py MANIFEST — canonical here, byte-identical copies in cc_oss, cc_develop, cc_research).
 
 Covers the three exports in isolation, independent of any single hook's
 sentinel/report-dir wiring:
@@ -121,7 +119,8 @@ def test_tool_result_row_is_not_a_turn_boundary(tmp_path: Path) -> None:
 
 
 def test_non_turn_rows_are_skipped(tmp_path: Path) -> None:
-    """queue-operation / attachment / mode rows are not user or assistant rows and must not be mistaken for a boundary."""
+    """Queue-operation / attachment / mode rows are not user or assistant rows and must not be mistaken for a
+    boundary."""
     rows = [
         {"type": "user", "message": {"content": [{"type": "text", "text": "go"}]}},
         {"type": "queue-operation", "operation": "noop"},

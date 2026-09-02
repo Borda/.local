@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Deny redundant import greps after an exhaustive reverse-dependency query.
 
-The sentinel this hook reads is written — and invalidated — by ``record-exhausted.py``;
-the two files must derive the same path from the same event, which
-``tests/cli_support/test_hooks_py.py`` pins by running both and comparing.
+The sentinel this hook reads is written — and invalidated — by ``record-exhausted.py``; the two files must derive the
+same path from the same event, which ``tests/cli_support/test_hooks_py.py`` pins by running both and comparing.
 """
 
 from __future__ import annotations

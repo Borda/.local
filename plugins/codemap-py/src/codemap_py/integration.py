@@ -106,14 +106,14 @@ CONSUMER_MANAGED_FILE: dict[str, str] = {
 
 # Read-only inspection contract for Codex Rig's own authenticated global-instructions block
 # (plugins/codex-rig/scripts/install_global_agents.py BEGIN_PREFIX/END_MARKER). Never imported
-# from codex-rig (plan §8.5 gate) — the byte format is treated as a stable, independently
+# from codex-rig — the byte format is treated as a stable, independently
 # verifiable contract, not a Python API.
 _CODEX_RIG_AGENTS_BEGIN_RE = re.compile(rb"<!-- codex-rig:global-agents begin sha256=([0-9a-f]{64}) -->\n")
 _CODEX_RIG_AGENTS_END = b"<!-- codex-rig:global-agents end -->\n"
 
 
 class IntegrationError(Exception):
-    """Bounded, structured integration failure (plan §7.5 — never a bare traceback).
+    """Bounded, structured integration failure.
 
     Attributes:
         code: Stable machine-readable error slug.
@@ -136,7 +136,7 @@ class RefusalError(IntegrationError):
 
 
 class ApprovalError(IntegrationError):
-    """``--approve`` does not authorize the requested mutation (exit ``2``)."""
+    """Do not authorize the requested mutation (exit ``2``)."""
 
     def __init__(self, code: str, message: str, *, detail: dict | None = None) -> None:
         super().__init__(code, message, exit_code=_EXIT_USAGE, detail=detail)
@@ -145,9 +145,9 @@ class ApprovalError(IntegrationError):
 class Runtime(str, Enum):
     """Host runtime a target belongs to, plus the ``BOTH`` selector.
 
-    Inherits ``str`` (not ``enum.StrEnum`` — ``requires-python`` is ``>=3.10``) so members
-    serialise into plan/report JSON as plain strings. ``BOTH`` is a CLI selector only: it
-    never appears on a :class:`ConsumerTarget`, and :func:`_runtimes_of` expands it.
+    Inherits ``str`` (not ``enum.StrEnum`` — ``requires-python`` is ``>=3.10``) so members serialise into plan/report
+    JSON as plain strings. ``BOTH`` is a CLI selector only: it never appears on a :class:`ConsumerTarget`, and
+    :func:`_runtimes_of` expands it.
     """
 
     CLAUDE = "claude"
@@ -156,7 +156,7 @@ class Runtime(str, Enum):
 
 
 class Source(str, Enum):
-    """Which marketplace source a ``sync`` refreshes from (plan §8.3 two source modes)."""
+    """Which marketplace source a ``sync`` refreshes from."""
 
     LOCAL_CANDIDATE = "local-candidate"
     RELEASE = "release"
@@ -164,7 +164,7 @@ class Source(str, Enum):
 
 @dataclass(frozen=True)
 class ConsumerTarget:
-    """One closed-set integration target (plan §8.3 "closed integration/reinstall set").
+    """One closed-set integration target.
 
     Attributes:
         runtime: ``Runtime.CLAUDE`` or ``Runtime.CODEX`` — never ``Runtime.BOTH``.
@@ -304,8 +304,7 @@ def _utc_stamp() -> str:
 def _report_dir(root: Path) -> Path:
     """Return (and create) a fresh task-specific integration report directory.
 
-    Never inside a plugin cache (plan §8.3: "journal and before-images ... never written
-    inside a plugin cache").
+    Never inside a plugin cache.
     """
     path = root / ".reports" / "integrate" / _utc_stamp()
     path.mkdir(parents=True, exist_ok=True)
@@ -330,7 +329,7 @@ def _manifest_for(target: ConsumerTarget, root: Path) -> dict | None:
 
 
 # --------------------------------------------------------------------------------------
-# Native command execution — Windows-safe argv quoting (plan §8.3 "win_quoting").
+# Native command execution — Windows-safe argv quoting.
 # --------------------------------------------------------------------------------------
 
 
@@ -579,7 +578,7 @@ def _marketplace_entry(runtime: Runtime | str) -> dict | None:
 
 
 # --------------------------------------------------------------------------------------
-# Codex-Rig global-instructions status — read-only bytes, never an import (plan §8.5).
+# Codex-Rig global-instructions status — read-only bytes, never an import.
 # --------------------------------------------------------------------------------------
 
 
@@ -595,7 +594,7 @@ def codex_rig_global_status(environ: Mapping[str, str] | None = None) -> str:
     ``install_global_agents.py`` and never writes the file. ``stale`` is reportable only
     through a versioned, Codex-Rig-owned read-only status contract — which does not exist yet
     — so staleness is always ``unavailable`` to callers of this function, never guessed from
-    these bytes alone (plan §8.3).
+    these bytes alone.
 
     Args:
         environ: Environment mapping to resolve ``CODEX_HOME`` from (defaults to
@@ -630,7 +629,7 @@ def codex_rig_global_status(environ: Mapping[str, str] | None = None) -> str:
 def _render_managed_block(body: str) -> str:
     """Wrap *body* in an authenticated, version-stamped, sha256-stamped managed block.
 
-    Canonical shape (plan §8.3 apply contract, in-file managed-block model):
+    Canonical shape:
     ``<!-- codemap-py:integration:begin v<schema> sha256=<64hex> -->`` ... enclosed body ...
     ``<!-- codemap-py:integration:end -->``.
 
@@ -1533,11 +1532,10 @@ def cmd_audit(ns: argparse.Namespace, plugin_root: Path) -> int:
 def _source_write_op(index: int, target: ConsumerTarget, root: Path) -> dict:
     """Build one in-file managed-block ``source_write`` op for *target*.
 
-    The target file is an allowlisted, existing-or-creatable path from
-    :data:`CONSUMER_MANAGED_FILE`. Whether this op inserts
-    (no sentinel present, including an absent file) or replaces (sentinel already present) is
-    decided here, at plan time, from the file's current content — :func:`_classify_mutation`
-    re-derives the same decision at apply time and refuses on any disagreement (drift).
+    The target file is an allowlisted, existing-or-creatable path from :data:`CONSUMER_MANAGED_FILE`. Whether this op
+    inserts (no sentinel present, including an absent file) or replaces (sentinel already present) is decided here, at
+    plan time, from the file's current content — :func:`_classify_mutation` re-derives the same decision at apply time
+    and refuses on any disagreement (drift).
     """
     rel_path = f"{target.plugin_dir}/{CONSUMER_MANAGED_FILE[target.consumer]}"
     abs_path = root / rel_path
@@ -1565,7 +1563,7 @@ def _source_write_op(index: int, target: ConsumerTarget, root: Path) -> dict:
 
 
 def _marketplace_source(source: Source, root: Path) -> str:
-    """Return the marketplace ``add`` source string for *source* (plan §8.3 two source modes)."""
+    """Return the marketplace ``add`` source string for *source*."""
     return str(root) if source == Source.LOCAL_CANDIDATE else MARKETPLACE_REMOTE
 
 
@@ -1601,8 +1599,8 @@ def _plugin_sync_op(index: int, runtime: Runtime, name: str, installed_state: ob
             else [cli, "plugin", "install", f"{name}@{MARKETPLACE_NAME}", "--scope", "user"]
         )
     else:
-        # No `codex plugin update` verb is assumed unless a tested CLI actually exposes one
-        # (plan §8.3); `add` is idempotent add-or-refresh for the currently probed codex-cli.
+        # No `codex plugin update` verb is assumed unless a tested CLI actually exposes one;
+        # `add` is idempotent add-or-refresh for the currently probed codex-cli.
         argv = [cli, "plugin", "add", f"{name}@{MARKETPLACE_NAME}"]
     rollback = (
         {"kind": "reinstall_previous", "identity": current_version}
@@ -1638,7 +1636,7 @@ def _runtime_sync_ops(
 def build_plan(
     runtime: Runtime | str, consumers: Sequence[str] | None, source: Source | str | None, plugin_root: Path
 ) -> dict:
-    """Build the unsigned integration plan for *runtime* (plan §8.3 "plan" contract).
+    """Build the unsigned integration plan for *runtime*.
 
     When *source* is given, the plan also carries ``runtime_sync`` ops (native plugin-manager
     argv, provider-then-consumer order per runtime); omitting it produces a source-only plan
@@ -1689,16 +1687,15 @@ def cmd_plan(ns: argparse.Namespace, plugin_root: Path) -> int:
 
 
 # --------------------------------------------------------------------------------------
-# Journal — append-only per-run record + before-images (plan §8.3 state machine).
+# Journal — append-only per-run record + before-images.
 # --------------------------------------------------------------------------------------
 
 
 class Journal:
     """Append-only per-run journal and before-image store.
 
-    Lives under a task-specific ``.reports/integrate/<ts>/`` directory — never inside a
-    plugin cache — and is the durable record consulted when a mutation stops partway
-    (state ``recovery-required``).
+    Lives under a task-specific ``.reports/integrate/<ts>/`` directory — never inside a plugin cache — and is the
+    durable record consulted when a mutation stops partway (state ``recovery-required``).
     """
 
     def __init__(self, directory: Path) -> None:
@@ -1751,7 +1748,7 @@ def verify_approval(plan: dict, approve: str) -> None:
 
 
 # --------------------------------------------------------------------------------------
-# apply — source_write ops only (refusal matrix, plan §8.3 "apply" contract).
+# apply — source_write ops only (refusal matrix, "apply" contract).
 # --------------------------------------------------------------------------------------
 
 
@@ -1919,7 +1916,7 @@ def _recovery_commands_source(applied: list[dict], journal: Journal) -> list[str
 
 
 def _handle_apply_failure(op: dict, applied: list[dict], root: Path, journal: Journal, exc: IntegrationError) -> None:
-    """Stop, roll back any already-applied targets, and re-raise a bounded error. Never returns."""
+    """Stop, roll back any already-applied targets, and re-raise a bounded error."""
     journal.record("stopped", index=op["index"], detail={"code": exc.code, "message": str(exc)})
     if not applied:
         raise exc
@@ -1939,7 +1936,7 @@ def _handle_apply_failure(op: dict, applied: list[dict], root: Path, journal: Jo
 
 
 def apply_plan(plan: dict, approve: str, plugin_root: Path, journal_dir: Path | None = None) -> dict:
-    """Execute every ``source_write`` op in *plan* (plan §8.3 "apply" contract).
+    """Execute every ``source_write`` op in *plan*.
 
     Args:
         plan: A plan artifact as returned by :func:`load_plan` / :func:`build_plan`.
@@ -1982,7 +1979,7 @@ def cmd_apply(ns: argparse.Namespace, plugin_root: Path) -> int:
 
 
 # --------------------------------------------------------------------------------------
-# sync — runtime_sync ops only; native CLI only, never consumer source (plan §8.3 "sync").
+# sync — runtime_sync ops only; native CLI only, never consumer source.
 # --------------------------------------------------------------------------------------
 
 
@@ -2037,7 +2034,7 @@ def _recovery_commands_sync(applied: list[dict]) -> list[str]:
 
 
 def _handle_sync_failure(op: dict, applied: list[dict], journal: Journal, exc: IntegrationError) -> None:
-    """Stop, best-effort roll back already-synced targets, and re-raise. Never returns."""
+    """Stop, best-effort roll back already-synced targets, and re-raise."""
     journal.record("stopped", index=op["index"], detail={"code": exc.code, "message": str(exc)})
     if not applied:
         raise exc
@@ -2057,7 +2054,7 @@ def _handle_sync_failure(op: dict, applied: list[dict], journal: Journal, exc: I
 
 
 def sync_plan(plan: dict, approve: str, source: str, plugin_root: Path, journal_dir: Path | None = None) -> dict:
-    """Execute every ``runtime_sync`` op in *plan* (plan §8.3 "sync" contract).
+    """Execute every ``runtime_sync`` op in *plan*.
 
     Never mutates consumer source or global instructions — only the ordered native
     plugin-manager argv the plan already recorded.
@@ -2124,10 +2121,10 @@ def _demo_query(identity: index_paths.IndexIdentity) -> dict:
 
 
 def run_demo(runtime: Runtime | str, plugin_root: Path) -> dict:
-    """Run ``audit`` plus one representative structural-context query (plan §8.3 "demo").
+    """Run ``audit`` plus one representative structural-context query.
 
-    Disposable evidence only — writes its JSON result under a fresh
-    ``.reports/integrate/<ts>/`` directory and never mutates plan/approval state.
+    Disposable evidence only — writes its JSON result under a fresh ``.reports/integrate/<ts>/`` directory and never
+    mutates plan/approval state.
     """
     root = index_paths.canonical_root()
     identity = index_paths.resolve_index(root=root)
@@ -2152,7 +2149,7 @@ def cmd_demo(ns: argparse.Namespace, plugin_root: Path) -> int:
 
 
 # --------------------------------------------------------------------------------------
-# CLI boundary — argparse dispatch, exit codes per plan §7.5.
+# CLI boundary — argparse dispatch and exit codes.
 # --------------------------------------------------------------------------------------
 
 
@@ -2208,7 +2205,7 @@ def _add_demo_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="codemap-py integrate", description="Manage codemap-py's cross-runtime integration state (plan §8.3)."
+        prog="codemap-py integrate", description="Manage codemap-py's cross-runtime integration state."
     )
     subparsers = parser.add_subparsers(dest="mode", required=True)
     _add_audit_parser(subparsers)
@@ -2237,7 +2234,7 @@ def _emit_bounded_error(exc: IntegrationError) -> int:
 
 
 def run(argv: Sequence[str], plugin_root: Path) -> int:
-    """Dispatch ``codemap-py integrate <mode>`` (plan §8.3; exit codes per plan §7.5).
+    """Dispatch ``codemap-py integrate <mode>``.
 
     Sole CLI boundary for the integration engine: argparse usage errors already exit ``2``
     with their own bounded stderr message; every other failure is caught here and turned

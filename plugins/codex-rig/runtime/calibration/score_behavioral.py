@@ -3,33 +3,39 @@
 
 ## Purpose
 
-measure recall, precision, route correctness, and confidence calibration without conflating scoring with model invocation.
-It turns recorded finding selections and paired live metadata into deterministic metrics that can be compared across calibration runs.
+Measure recall, precision, route correctness, and confidence calibration without conflating scoring with model
+invocation. It turns recorded finding selections and paired live metadata into deterministic metrics that can be
+compared across calibration runs.
 
 ## Scope
 
-reads recorded case and observation data and produces deterministic summaries; it never launches a model or alters source fixtures.
-The validator checks fixture and live provenance, prompt and task hashes, pairing completeness, and normalized token-cost evidence before scoring.
+Read recorded case and observation data and produce deterministic summaries without launching a model or altering
+source fixtures. The validator checks fixture and live provenance, prompt and task hashes, pairing completeness, and
+normalized token-cost evidence before scoring.
 
 ## Usage
 
-call the CLI from a calibration workflow after observations exist, or import its pure metric helpers in focused tests.
-Supply the case set, observation JSONL, route policy, task manifest, and output path required by the CLI so the score is grounded in the same contracts used for collection.
+Call the CLI from a calibration workflow after observations exist, or import its pure metric helpers in focused tests.
+Supply the case set, observation JSONL, route policy, task manifest, and output path required by the CLI so the score
+is grounded in the same contracts used for collection.
 
 ## Used by
 
-``run.py`` calibration checks, live-campaign follow-up analysis, and behavioral-calibration regression tests.
-Release and routing decisions can use its explicit threshold results, while tests use the small metric helpers to exercise edge cases such as zero denominators.
+The ``run.py`` calibration checks, live-campaign follow-up analysis, and behavioral-calibration regression tests use
+this module. Release and routing decisions can use its explicit threshold results, while tests use the small metric
+helpers to exercise edge cases such as zero denominators.
 
 ## Outputs
 
-emits rounded aggregate and per-route metrics, including explicit fixture-versus-live observation separation and threshold failures.
-The output also records campaign completeness, route evidence, and confidence details so a high score cannot hide missing or substituted live data.
+Emit rounded aggregate and per-route metrics, including explicit fixture-versus-live observation separation and
+threshold failures. The output also records campaign completeness, route evidence, and confidence details so a high
+score cannot hide missing or substituted live data.
 
 ## Failure
 
-malformed observations, stale live evidence, missing case IDs, or impossible usage metadata raise a validation error instead of skewing the score.
-Hash mismatches, incomplete pairs, unsupported route metadata, and policy violations are rejected before aggregate metrics are accepted.
+Malformed observations, stale live evidence, missing case IDs, or impossible usage metadata raise a validation error
+instead of skewing the score. Hash mismatches, incomplete pairs, unsupported route metadata, and policy violations are
+rejected before aggregate metrics are accepted.
 
 Example:
     >>> _round3(2 / 3)

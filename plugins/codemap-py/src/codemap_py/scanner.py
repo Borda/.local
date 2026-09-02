@@ -322,8 +322,8 @@ def is_excluded(rel_posix: str, exclusions: Exclusions) -> bool:
 class CallEdge:
     """Single outgoing call edge from a function or method.
 
-    Dataclass (not TypedDict): named construction and attribute access; converted to dict
-    by as_dict() at the _parse_file boundary before JSON serialisation.
+    Dataclass (not TypedDict): named construction and attribute access; converted to dict by as_dict() at the
+    _parse_file boundary before JSON serialisation.
     """
 
     target: str  # "pkg.db::fetch_user" (module::symbol) or raw chain if unresolved
@@ -411,9 +411,9 @@ _EXAMPLES_PATH_RE = re.compile(r"(^|/)examples?/")
 
 
 def _is_python_source(filename: str) -> bool:
-    """True for a discoverable Python source: an implementation ``.py`` or a ``.pyi`` stub.
+    """Check whether a filename identifies a discoverable Python source.
 
-    ``.pyi`` type stubs join discovery per plan §2.1; ``.pyx``/``.pyc`` and other
+    ``.pyi`` type stubs join discovery; ``.pyx``/``.pyc`` and other
     ``.py``-prefixed names are excluded because ``str.endswith`` matches the full suffix.
 
     Examples:
@@ -517,7 +517,7 @@ def _classify_entity(rel_path: Path, name: str) -> tuple[EntityType, str]:
 
 
 _GIT_TIMEOUT_S = 10  # max seconds to wait for any git subprocess (H78: hung process guard)
-_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB per file — guard against auto-generated files causing OOM (S3)
+_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB per file — guard against auto-generated files causing OOM
 
 
 def find_root() -> Path:
@@ -557,7 +557,7 @@ def _git_file_hashes(root: Path, exclusions: Exclusions) -> dict[str, str]:
 
     Hashes Python sources (implementation ``.py`` and ``.pyi`` stubs) plus documentation
     files that participate in v4.5 xref scanning. ``.pyi`` joins the hash set so a stub
-    edit invalidates the index like any source change (plan §2.1). Markdown files outside
+    edit invalidates the index like any source change. Markdown files outside
     ``docs/`` are excluded — README.md and other top-level notes do not feed mkdocstrings
     autorefs, so adding them would cause spurious incremental rebuilds.
 
@@ -656,10 +656,10 @@ def _detect_src_root_from_config(root: Path) -> Path | None:
 
 
 def _is_package_dir(directory: Path) -> bool:
-    """True when *directory* is a Python package — an ``__init__.py`` or ``__init__.pyi``.
+    """Check whether a directory is a Python package.
 
-    A stub-only package (``__init__.pyi`` with no ``__init__.py``) is a real package for
-    name resolution (plan §2.1), so both markers count when detecting source roots.
+    A stub-only package (``__init__.pyi`` with no ``__init__.py``) is a real package for name resolution, so both
+    markers count when detecting source roots.
     """
     return (directory / "__init__.py").exists() or (directory / "__init__.pyi").exists()
 
@@ -846,7 +846,7 @@ def _process_ast_import(node: ast.Import, name_map: dict[str, str], module_map: 
 
 
 def _resolve_import_from_base(node: ast.ImportFrom, package: str) -> str:
-    """Resolve the fully-qualified base module for a ``from ... import`` statement.
+    """Resolve the fully qualified base module for a relative import statement.
 
     Args:
         node: the ImportFrom AST node to resolve.
@@ -869,7 +869,7 @@ def _process_ast_import_from(
     name_map: dict[str, str],
     star_imports: list[str],
 ) -> None:
-    """Populate name_map and star_imports from a ``from ... import ...`` statement.
+    """Populate import maps from a relative import statement.
 
     Args:
         node: the ImportFrom AST node to process.
@@ -952,9 +952,8 @@ def _extract_imports_and_scope(
 def _drop_top_level_rebindings(tree: ast.Module, name_map: dict[str, str], module_map: dict[str, str]) -> None:
     """Drop direct import names overwritten later in module scope.
 
-    The general import scope intentionally includes function-local imports for
-    call extraction. This narrow post-pass only corrects a module-level import
-    that is replaced by a later module-level binding; treating that call as the
+    The general import scope intentionally includes function-local imports for call extraction. This narrow post-pass
+    only corrects a module-level import that is replaced by a later module-level binding; treating that call as the
     original import would create a false reverse edge.
     """
     imported_at: dict[str, int] = {}
@@ -1400,10 +1399,9 @@ def path_to_module(filepath: Path, src_root: Path) -> str:
 def _package_src_root(filepath: Path, root: Path) -> Path:
     """Return the parent of the outermost regular package containing ``filepath``.
 
-    A file outside the configured or detected source root can still belong to a
-    regular package. Its dotted name must start at that package, not at an
-    arbitrary non-package directory such as ``tests/``. Files outside a regular
-    package retain the repository-root fallback used by older indexes.
+    A file outside the configured or detected source root can still belong to a regular package. Its dotted name must
+    start at that package, not at an arbitrary non-package directory such as ``tests/``. Files outside a regular package
+    retain the repository-root fallback used by older indexes.
     """
     package_dir = filepath.parent
     if not _is_package_dir(package_dir):
@@ -1570,9 +1568,8 @@ def _patch_string_arg(node: ast.Call) -> str | None:
 def _is_patch_call(call: ast.Call) -> str | None:
     """Identify ``patch(...)``, ``mock.patch(...)``, or ``mocker.patch(...)`` calls.
 
-    Returns the form label (``"mocker"`` when the receiver is ``mocker``,
-    ``"call"`` otherwise) when *call* is a string-target patch invocation,
-    or ``None`` otherwise.
+    Returns the form label (``"mocker"`` when the receiver is ``mocker``, ``"call"`` otherwise) when *call* invokes
+    ``patch`` with a string target, or ``None`` otherwise.
     """
     func = call.func
     # mocker.patch('...') or mock.patch('...')
@@ -1590,7 +1587,7 @@ def _is_patch_call(call: ast.Call) -> str | None:
 
 
 def _is_patch_object_call(call: ast.Call) -> bool:
-    """True when *call* is ``patch.object(...)`` or ``mock.patch.object(...)``."""
+    """Check whether a call invokes a supported object-patching function."""
     func = call.func
     if not isinstance(func, ast.Attribute) or func.attr != "object":
         return False
@@ -2156,11 +2153,10 @@ def _extract_path_file_parent_dir(arg: ast.expr, conftest_dir: Path) -> Path | N
 
 
 def _is_syspath_insert_call(call: ast.Call) -> bool:
-    """True when *call* matches ``sys.path.insert(N, arg)`` exactly.
+    """Check whether a call inserts an entry into the Python import path.
 
-    Two positional args required; receiver must be the literal ``sys.path``
-    attribute chain. ``sys.path.append`` and slice assignment are not detected
-    here (treated as unsupported and skipped silently at the walk level).
+    Two positional args required; receiver must be the literal ``sys.path`` attribute chain. ``sys.path.append`` and
+    slice assignment are not detected here (treated as unsupported and skipped silently at the walk level).
     """
     func = call.func
     if not (isinstance(func, ast.Attribute) and func.attr == "insert"):
@@ -2337,7 +2333,7 @@ def _resolve_path_file_parent_script(arg: ast.expr, caller_dir: Path) -> Path | 
 
 
 def _is_python_token(node: ast.expr) -> bool:
-    """True when *node* is either ``Constant("python"|"python3")`` or ``sys.executable``."""
+    """Check whether an expression identifies a supported Python executable."""
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value in _SUBPROCESS_PY_TOKENS
     if isinstance(node, ast.Attribute) and node.attr == "executable":
@@ -2370,7 +2366,7 @@ def _subprocess_script_arg(args_list: ast.List, caller_dir: Path) -> str | None:
 
 
 def _is_subprocess_run_or_popen(call: ast.Call) -> bool:
-    """True when *call* is ``subprocess.run(...)`` or ``subprocess.Popen(...)``."""
+    """Check whether a call starts a subprocess through a supported API."""
     func = call.func
     if not (isinstance(func, ast.Attribute) and func.attr in ("run", "Popen")):
         return False
@@ -2378,7 +2374,7 @@ def _is_subprocess_run_or_popen(call: ast.Call) -> bool:
 
 
 def _is_os_system(call: ast.Call) -> bool:
-    """True when *call* is ``os.system(...)``."""
+    """Check whether a call invokes a command through the operating system."""
     func = call.func
     if not (isinstance(func, ast.Attribute) and func.attr == "system"):
         return False
@@ -2388,9 +2384,8 @@ def _is_os_system(call: ast.Call) -> bool:
 def _os_system_script(call: ast.Call) -> str | None:
     """Extract the script name from ``os.system("python <script>")``.
 
-    Returns the script token directly following ``python``/``python3`` after a
-    whitespace split, or ``None`` when the form is unsupported (non-constant
-    arg, no Python invocation token, no token after the interpreter).
+    Returns the script token directly following ``python``/``python3`` after a whitespace split, or ``None`` when the
+    form is unsupported (non-constant arg, no Python invocation token, no token after the interpreter).
     """
     if not call.args:
         return None
@@ -2745,8 +2740,13 @@ def extract_fixture_uses(
         >>> import ast
         >>> src = "def test_a(tmp_path, my_fix):\\n    pass\\n"
         >>> tree = ast.parse(src)
-        >>> extract_fixture_uses(tree, {}, {"my_fix": {"scope": "session", "defined_in": "conftest"}})
-        [{'name': 'my_fix', 'scope': 'session', 'defined_in': 'conftest'}, {'name': 'tmp_path', 'scope': None, 'defined_in': None}]
+        >>> uses = extract_fixture_uses(
+        ...     tree, {}, {"my_fix": {"scope": "session", "defined_in": "conftest"}}
+        ... )
+        >>> uses[0]
+        {'name': 'my_fix', 'scope': 'session', 'defined_in': 'conftest'}
+        >>> uses[1]
+        {'name': 'tmp_path', 'scope': None, 'defined_in': None}
     """
     seen: dict[str, dict] = {}
 
@@ -2800,7 +2800,7 @@ def _parse_file_star(args: tuple[Path, Path, Path]) -> dict:
 
 
 def _strip_stub_call_edges(symbol_dicts: list[dict]) -> None:
-    """Clear outgoing call edges from a ``.pyi`` stub's symbols (plan §2.1).
+    """Clear outgoing call edges from a ``.pyi`` stub's symbols.
 
     A stub declares signatures with ``...`` bodies, so it contributes declarations and
     imports but no executable-body call edges. Empty bodies yield none anyway; this also

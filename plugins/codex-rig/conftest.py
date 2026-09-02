@@ -2,33 +2,39 @@
 
 ## Purpose
 
-make standalone helpers importable during doctest and pytest collection without packaging them as one Python distribution.
-This lets the plugin tests exercise installed-style scripts directly while keeping the repository root out of their import contract.
+make standalone helpers importable during doctest and pytest collection without packaging them as one Python
+distribution. This lets the plugin tests exercise installed-style scripts directly while keeping the repository root out
+of their import contract.
 
 ## Scope
 
-adjusts only test-process ``sys.path`` and skips platform-inapplicable acceptance modules; it never changes plugin runtime behavior.
-It also clears canonical script modules around each test so classes loaded from different paths cannot leak state into later collection or assertions.
+adjusts only test-process ``sys.path`` and skips platform-inapplicable acceptance modules; it never changes plugin
+runtime behavior. It also clears canonical script modules around each test so classes loaded from different paths cannot
+leak state into later collection or assertions.
 
 ## Usage
 
-pytest discovers this file automatically; it is not a supported command-line tool.
-Run the plugin's pytest suite normally from the repository or plugin directory and pytest will apply these collection and isolation rules automatically.
+pytest discovers this file automatically; it is not a supported command-line tool. Run the plugin's pytest suite
+normally from the repository or plugin directory and pytest will apply these collection and isolation rules
+automatically.
 
 ## Used by
 
-the Codex Rig test suite, especially tests that load scripts directly from their installed-style paths.
-Tests for Windows-incompatible shim lifecycle modules rely on its platform-specific collection list instead of carrying skip logic in every test module.
+the Codex Rig test suite, especially tests that load scripts directly from their installed-style paths. Tests for
+Windows-incompatible shim lifecycle modules rely on its platform-specific collection list instead of carrying skip logic
+in every test module.
 
 ## Outputs
 
-pytest receives deterministic import paths and platform-aware collection behavior; no artifact or package file is produced.
-The module-level setup changes only the current pytest process, and the autouse fixture restores previously loaded modules after each test.
+pytest receives deterministic import paths and platform-aware collection behavior; no artifact or package file is
+produced. The module-level setup changes only the current pytest process, and the autouse fixture restores previously
+loaded modules after each test.
 
 ## Failure
 
-an invalid fixture path or an unsupported-platform regression surfaces as a normal collection/test failure instead of being suppressed.
-If module isolation cannot be maintained, the affected test fails with its import or assertion error, preserving evidence for diagnosis.
+an invalid fixture path or an unsupported-platform regression surfaces as a normal collection/test failure instead of
+being suppressed. If module isolation cannot be maintained, the affected test fails with its import or assertion error,
+preserving evidence for diagnosis.
 """
 
 from __future__ import annotations

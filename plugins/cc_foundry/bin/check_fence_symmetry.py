@@ -12,14 +12,14 @@ for their own pattern, and readme-drift's two read different sources (plugin.jso
 the bin/ listing). Here both modes are projections of ONE stack parse — a nesting
 violation still pushes its malformed opener (see below), so it cascades into unclosed
 findings for the same file. Verified: a file with one nesting violation emits that
-violation PLUS two unclosed findings. Offering `--check unclosed` alone would show
+violation PLUS two unclosed findings. Offering ``--check unclosed`` alone would show
 those two findings with their actual cause filtered out of view.
 
 Usage:
     python "${CLAUDE_PLUGIN_ROOT}/bin/check_fence_symmetry.py" [files...] [--timeout SECS]
 
 Output (stdout):
-    One finding line per violation prefixed "! fence:", or a single pass line.
+    One finding line per violation prefixed "! C14b:", or a single pass line.
 
 Exit codes:
     0   all files pass

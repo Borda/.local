@@ -1,16 +1,14 @@
 """Shared test configuration for foundry plugin tests.
 
-Auto-loads all ``bin/`` Python scripts as importable modules so tests can
-``from find_polluter import main`` directly.
+Auto-loads all ``bin/`` Python scripts as importable modules so tests can ``from find_polluter import main`` directly.
 
-JS hook helpers ``run_hook`` and ``state_dir`` are exposed as pytest fixtures
-so test methods receive them as parameters — no explicit imports required.
+JS hook helpers ``run_hook`` and ``state_dir`` are exposed as pytest fixtures so test methods receive them as parameters
+— no explicit imports required.
 
-Non-fixture host-capability helpers (``hook_tmp_base``, ``bash_runs_posix_script``)
-live in ``_hook_env.py``, NOT here. Nothing may import this module by the bare name
-``conftest``: ``ini_options.testpaths`` spans ``benchmarks`` and ``plugins``, every
-tree has its own ``conftest.py``, and under ``--import-mode=importlib`` the bare name
-resolves to whichever one loaded first — ``benchmarks/conftest.py`` in a full run.
+Non-fixture host-capability helpers (``hook_tmp_base``, ``bash_runs_posix_script``) live in ``_hook_env.py``, NOT here.
+Nothing may import this module by the bare name ``conftest``: ``ini_options.testpaths`` spans ``benchmarks`` and
+``plugins``, every tree has its own ``conftest.py``, and under ``--import-mode=importlib`` the bare name resolves to
+whichever one loaded first — ``benchmarks/conftest.py`` in a full run.
 """
 
 from __future__ import annotations
@@ -54,8 +52,8 @@ _load_bin_modules()
 def run_hook() -> Callable[..., subprocess.CompletedProcess]:
     """Return callable that spawns a foundry hook via ``node``.
 
-    Strips ``OPENAI_API_KEY`` and ``ANTHROPIC_API_KEY`` so ``agent-router.js``
-    falls through to tier-3 fallback without live API calls.
+    Strips ``OPENAI_API_KEY`` and ``ANTHROPIC_API_KEY`` so ``agent-router.js`` falls through to tier-3 fallback without
+    live API calls.
     """
 
     def _run(
@@ -93,10 +91,9 @@ def run_hook() -> Callable[..., subprocess.CompletedProcess]:
 def state_dir() -> Callable[[str], Path]:
     """Return callable that maps a session id to its ``claude-state-<sid>`` path.
 
-    Base comes from :func:`hook_tmp_base`, so the path tracks the hook's own
-    ``getSentinelDir()`` on every platform instead of assuming ``/tmp``.
+    Base comes from :func:`hook_tmp_base`, so the path tracks the hook's own ``getSentinelDir()`` on every platform
+    instead of assuming ``/tmp``.
     """
-
     from _hook_env import hook_tmp_base  # local: _TESTS_DIR is on sys.path only after this module loads
 
     def _state_dir(sid: str) -> Path:

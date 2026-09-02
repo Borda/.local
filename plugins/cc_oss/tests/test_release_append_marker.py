@@ -1,14 +1,12 @@
 """Tests for ``bin/release_append_marker.py``.
 
-``_is_valid_commit``/``_tag_advanced_past`` mock ``subprocess.run``/``which`` —
-no real ``git`` invocations. ``_marker_path``/``_read_marker`` are exercised
-against ``tmp_path`` via the ``--marker-dir`` override so no test touches a
-real ``.temp/`` directory.
+``_is_valid_commit``/``_tag_advanced_past`` mock ``subprocess.run``/``which`` — no real ``git`` invocations.
+``_marker_path``/``_read_marker`` are exercised against ``tmp_path`` via the ``--marker-dir`` override so no test
+touches a real ``.temp/`` directory.
 
-Two-subprocess-call sequencing: ``resolve``/``is-valid`` call
-``_is_valid_commit`` then (only when it's True) ``_tag_advanced_past`` — tests
-covering that combined path use an iterator side effect to give each call its
-own return code rather than one blanket value.
+Two-subprocess-call sequencing: ``resolve``/``is-valid`` call ``_is_valid_commit`` then (only when it's True)
+``_tag_advanced_past`` — tests covering that combined path use an iterator side effect to give each call its own return
+code rather than one blanket value.
 """
 
 from __future__ import annotations
@@ -41,7 +39,7 @@ def _sequenced_run(monkeypatch: pytest.MonkeyPatch, *returncodes: int) -> None:
 
 
 def test_marker_path_joins_branch_into_filename(tmp_path: Path) -> None:
-    """``_marker_path`` builds ``<dir>/release-last-processed-<branch>``."""
+    """Build ``<dir>/release-last-processed-<branch>``."""
     path = ram._marker_path("main", str(tmp_path))
     assert path == tmp_path / "release-last-processed-main"
 
@@ -83,7 +81,7 @@ def test_is_valid_commit_git_missing_is_false(monkeypatch: pytest.MonkeyPatch) -
 def test_is_valid_commit_reflects_ancestor_check(
     monkeypatch: pytest.MonkeyPatch, returncode: int, expected: bool
 ) -> None:
-    """``_is_valid_commit`` mirrors ``git merge-base --is-ancestor``'s exit code."""
+    """Mirror ``git merge-base --is-ancestor``'s exit code."""
     monkeypatch.setattr(ram, "which", lambda _: "/fake/git")
     monkeypatch.setattr(ram.subprocess, "run", lambda *_a, **_k: _FakeCompleted(returncode=returncode))
     assert ram._is_valid_commit("deadbeef") is expected
@@ -92,10 +90,9 @@ def test_is_valid_commit_reflects_ancestor_check(
 def test_is_valid_commit_uses_merge_base_is_ancestor_not_cat_file(monkeypatch: pytest.MonkeyPatch) -> None:
     """Regression: must call ``merge-base --is-ancestor``, not ``cat-file -e`` (dangling-commit bug).
 
-    ``cat-file -e`` only tests object-database existence — a commit orphaned
-    by rebase/force-push stays reflog-protected (~90 days) and would still
-    report "exists" under that check, silently treating a stale marker as
-    valid. ``merge-base --is-ancestor`` tests reachability from HEAD instead.
+    ``cat-file -e`` only tests object-database existence — a commit orphaned by rebase/force-push stays reflog-protected
+    (~90 days) and would still report "exists" under that check, silently treating a stale marker as valid. Git's
+    ancestor check tests reachability from HEAD instead.
     """
     recorded: list[list[str]] = []
 
@@ -130,7 +127,7 @@ def test_tag_advanced_past_empty_inputs_are_false() -> None:
 def test_tag_advanced_past_reflects_ancestor_check(
     monkeypatch: pytest.MonkeyPatch, returncode: int, expected: bool
 ) -> None:
-    """``_tag_advanced_past`` mirrors whether the marker is an ancestor of the tag."""
+    """Mirror whether the marker is an ancestor of the tag."""
     monkeypatch.setattr(ram, "which", lambda _: "/fake/git")
     monkeypatch.setattr(ram.subprocess, "run", lambda *_a, **_k: _FakeCompleted(returncode=returncode))
     assert ram._tag_advanced_past("deadbeef", "v2.0.0") is expected
@@ -156,7 +153,7 @@ def test_tag_advanced_past_records_git_command(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_write_persists_sha_creating_parent_dirs(tmp_path: Path) -> None:
-    """``write`` creates the marker dir and stores the sha with a trailing newline."""
+    """Create the marker dir and stores the sha with a trailing newline."""
     marker_dir = tmp_path / "nested" / ".temp"
     rc = ram.main(["write", "--branch", "main", "--sha", "abc123", "--marker-dir", str(marker_dir)])
     assert rc == 0
@@ -262,7 +259,7 @@ def test_resolve_marker_valid_but_superseded_by_later_tag_falls_back(
 
 
 def test_resolve_records_git_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Records both checks: ``merge-base --is-ancestor <marker> HEAD`` then ``... <marker> <last_tag>``."""
+    """Record reachability checks against both ``HEAD`` and the latest tag."""
     recorded: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:

@@ -48,7 +48,7 @@ def test_cache_hit_uses_semver_ordering(tmp_path: Path, older_version: str, newe
 
 
 def test_orphaned_version_skipped(tmp_path: Path) -> None:
-    """``.orphaned_at`` marker on newest version → next-best wins."""
+    """Skip an orphaned newest version in favor of the next candidate."""
     base = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "research"
     orphaned = base / "0.20.0"
     (orphaned / "skills" / "_shared").mkdir(parents=True)
@@ -70,7 +70,7 @@ def test_source_tree_fallback(tmp_path: Path) -> None:
 def test_main_cache_hit_no_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``main()`` cache hit: stdout has path, stderr empty."""
+    """Report only the resolved path for a cache hit."""
     cache = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "research" / "0.5.2" / "skills" / "_shared"
     cache.mkdir(parents=True)
     monkeypatch.setattr(resolve_shared.Path, "home", classmethod(lambda _cls: tmp_path))
@@ -84,7 +84,7 @@ def test_main_cache_hit_no_warning(
 def test_main_fallback_warns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``main()`` no cache: stdout has fallback, stderr has warning, exit 0."""
+    """Warn while returning a successful fallback without a cache."""
     monkeypatch.setattr(resolve_shared.Path, "home", classmethod(lambda _cls: tmp_path))
     rc = resolve_shared.main([])
     captured = capsys.readouterr()

@@ -150,7 +150,7 @@ def test_compound_commands_are_never_rewritten(command: str) -> None:
 
 
 def test_git_branch_create_passthrough() -> None:
-    """`git branch <name>` creates a branch (mutation) — never rewritten."""
+    """Create a branch (mutation) — never rewritten."""
     assert _run("git branch newfeature") == {}
 
 
@@ -167,7 +167,7 @@ def test_git_branch_create_passthrough() -> None:
     ],
 )
 def test_excluded_commands_passthrough(command: str) -> None:
-    """diff (result corruption) and curl/wget/psql (unprovable intent) passthrough."""
+    """Diff (result corruption) and curl/wget/psql (unprovable intent) passthrough."""
     result = _run(command)
     assert result == {}, f"{command!r} should passthrough, got: {result}"
 

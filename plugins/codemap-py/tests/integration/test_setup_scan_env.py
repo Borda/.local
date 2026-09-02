@@ -128,7 +128,7 @@ class TestArgumentValidation:
         assert "unknown argument" in r.stderr
 
     def test_arguments_without_value(self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path) -> None:
-        """``--arguments`` without a following token exits 3."""
+        """Reject an arguments option without a following value."""
         r = run_setup(
             launcher,
             "--arguments",
@@ -139,7 +139,7 @@ class TestArgumentValidation:
         assert "needs a value" in r.stderr
 
     def test_arguments_equals_form(self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path) -> None:
-        """``--arguments=<value>`` is accepted alongside the space-separated form."""
+        """Accept the equals form of the arguments option."""
         r = run_setup(
             launcher,
             "--arguments=--incremental",
@@ -245,9 +245,8 @@ class TestHappyPath:
     ) -> None:
         """Per-PROJ_SLUG tmpfiles exist with content matching the sourceable state.
 
-        ``CSID`` env var is unset in the test invocation (only inherited by real
-        ``export CSID=...`` callers), so the script's ``"shared"`` fallback applies —
-        every written filename carries a terminal ``-shared``.
+        ``CSID`` env var is unset in the test invocation (only inherited by real ``export CSID=...`` callers), so the
+        script's ``"shared"`` fallback applies — every written filename carries a terminal ``-shared``.
         """
         state = self._run_minimal(launcher, fake_repo, isolated_tmpdir)
         slug = state["PROJ_SLUG"]
@@ -259,7 +258,7 @@ class TestHappyPath:
     def test_minimal_invocation_does_not_create_incremental_sentinel(
         self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path
     ) -> None:
-        """No --incremental request leaves the fallback sentinel absent."""
+        """No ``--incremental`` request leaves the fallback sentinel absent."""
         state = self._run_minimal(launcher, fake_repo, isolated_tmpdir)
         slug = state["PROJ_SLUG"]
         assert not (isolated_tmpdir / f"codemap-incremental-noop-{slug}-shared").exists()
@@ -267,7 +266,7 @@ class TestHappyPath:
     def test_root_flag_overrides_proj_name(
         self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path, tmp_path: Path
     ) -> None:
-        """``--root /some/other`` ⇒ PROJ_NAME = basename(other), not repo basename."""
+        """Derive the project name from an explicitly selected root."""
         other = tmp_path / "alt-project"
         other.mkdir()
         r = run_setup(
@@ -302,7 +301,7 @@ class TestHappyPath:
         assert str(other) in state["SCAN_ARGS_RAW"]
 
     def test_root_dot_keeps_repo_basename(self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path) -> None:
-        """``--root .`` resolves like an absent --root — basename('.') would be empty."""
+        """Resolve like an absent ``--root`` — basename('.') would be empty."""
         r = run_setup(
             launcher,
             "--arguments",
@@ -315,17 +314,17 @@ class TestHappyPath:
 
 
 # ---------------------------------------------------------------------------
-# --incremental sentinel behaviour
+# ``--incremental`` sentinel behaviour
 # ---------------------------------------------------------------------------
 
 
 class TestIncrementalSentinel:
-    """``--incremental`` flag interacts with the prior-index check."""
+    """Combine incremental mode with prior-index detection."""
 
     def test_sentinel_created_when_no_prior_index(
         self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path
     ) -> None:
-        """``--incremental`` with no ``.cache/codemap/<proj>.json`` writes the sentinel."""
+        """Write the incremental sentinel when no prior index exists."""
         r = run_setup(
             launcher,
             "--arguments",
@@ -345,7 +344,7 @@ class TestIncrementalSentinel:
     def test_sentinel_absent_when_prior_index_exists(
         self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path
     ) -> None:
-        """``--incremental`` with an existing prior index ⇒ no sentinel, no stderr notice."""
+        """Skip the incremental sentinel when a prior index exists."""
         cache_dir = fake_repo / ".cache" / "codemap"
         cache_dir.mkdir(parents=True)
         (cache_dir / f"{fake_repo.name}.json").write_text("{}")
@@ -367,7 +366,7 @@ class TestIncrementalSentinel:
     def test_sentinel_absent_for_prefixed_lookalike_flag(
         self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path
     ) -> None:
-        """``--incremental-foo`` is not the ``--incremental`` token — no sentinel, no notice."""
+        """Ignore an option that only resembles the incremental flag."""
         r = run_setup(
             launcher,
             "--arguments",
@@ -403,13 +402,13 @@ def _tmpfile_shapes(tmpdir: Path) -> list[str]:
 
 
 class TestShimDelegation:
-    """``setup_scan_env.sh`` must be a transparent pass-through to the port."""
+    """Require the shell wrapper to pass arguments transparently to the Python port."""
 
     def test_shim_matches_port(self, fake_repo: Path, tmp_path: Path) -> None:
         """Same invocation through both entry points yields the same exit code and state.
 
-        The state-file *path* differs by construction (``mkstemp`` picks a fresh
-        name each run), so equality is asserted on the sourced fields instead.
+        The state-file *path* differs by construction (``mkstemp`` picks a fresh name each run), so equality is asserted
+        on the sourced fields instead.
         """
         py_tmp, sh_tmp = tmp_path / "py-tmp", tmp_path / "sh-tmp"
         py_tmp.mkdir()

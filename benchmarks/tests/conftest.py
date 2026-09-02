@@ -1,8 +1,7 @@
 """Shared fixtures for benchmarks test suite.
 
-Generated-manifest session hooks live in the parent ``benchmarks/conftest.py``: only
-conftests for the ``testpaths`` collection roots load before ``pytest_sessionstart``,
-so hooks placed here never ran on a fresh clone.
+Generated-manifest session hooks live in the parent ``benchmarks/conftest.py``: only conftests for the ``testpaths``
+collection roots load before ``pytest_sessionstart``, so hooks placed here never ran on a fresh clone.
 """
 
 from __future__ import annotations
@@ -80,19 +79,19 @@ def script_run_bench():
 
 @pytest.fixture(scope="session")
 def script_run_cli():
-    """Loaded Codemap CLI module."""
+    """Provide the loaded Codemap CLI module."""
     return _load_module("run_cli", "run-codemap-cli.py")
 
 
 @pytest.fixture(scope="session")
 def script_gen_bench():
-    """Loaded generate-tasks-bench module."""
+    """Provide the loaded benchmark-task generator module."""
     return _load_module("generate_tasks_bench", "generate-tasks-bench.py")
 
 
 @pytest.fixture(scope="session")
 def script_gen_real_issues():
-    """Loaded generate-tasks-real-issues module."""
+    """Provide the loaded real-issue task generator module."""
     return _load_module("generate_tasks_real_issues", "generate-tasks-real-issues.py")
 
 

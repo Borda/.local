@@ -1,4 +1,4 @@
-"""Authoritative exec-mode map contract for ``build_package`` (review MEDIUM finding closure).
+"""Authoritative executable-mode map contract for ``build_package``.
 
 Falsifies the defect the disposable install probes previously carried silently: a
 copy's freshly synthesized git index (``git init`` + ``git add -A``) is not the mode
@@ -14,7 +14,7 @@ builder code path (not just raw git commands):
 3. a shipped payload path missing from the effective mode map raises, both from the
    Python API and the CLI (nonzero exit), never silently defaulting to non-executable;
    and
-4. (codex-p3-review Round 1 MEDIUM) payload MEMBERSHIP under an include dir now draws
+4. Payload membership under an included directory draws
    from the SAME map as modes — an untracked file there (e.g. a concurrent wave's WIP)
    is invisible to the payload rather than a hard build failure, so the two sources of
    truth can no longer diverge.
@@ -46,8 +46,8 @@ def _git(args: list[str], cwd: Path) -> None:
 def _make_fixture_repo(root: Path, name: str) -> Path:
     """Create a minimal committed git repo shaped like a buildable ``build_package`` source.
 
-    Holds one executable (``bin/launcher``, ``100755``) and one plain (``bin/lib.py``,
-    ``100644``) tracked file, plus the required top-level documents and Claude manifest.
+    Holds one executable (``bin/launcher``, ``100755``) and one plain (``bin/lib.py``, ``100644``) tracked file, plus
+    the required top-level documents and Claude manifest.
     """
     repo = root / name
     (repo / "bin").mkdir(parents=True)
@@ -70,10 +70,9 @@ def _make_fixture_repo(root: Path, name: str) -> Path:
 def _copy_and_synthesize_index(real_repo: Path, dest: Path, *, filemode_false: bool) -> Path:
     """Copytree ``real_repo`` into ``dest`` and re-init a fresh git index over the copy.
 
-    Mirrors ``_probe_runtime.stage_disposable_source``: ``copy2`` preserves the on-disk
-    executable bit, then ``git init`` + ``git add -A`` synthesizes a throwaway index. When
-    ``filemode_false`` the copy's config sets ``core.filemode false`` before adding —
-    simulating a build host where this is the default (e.g. Windows).
+    Mirrors ``_probe_runtime.stage_disposable_source``: ``copy2`` preserves the on-disk executable bit, then Git
+    commands synthesize a throwaway index. When ``filemode_false`` the copy's config sets     ``core.filemode false``
+    before adding — simulating a build host where this is the default (e.g. Windows).
     """
     shutil.copytree(real_repo / "bin", dest / "bin")
     for doc in ("README.md", "LICENSE", "NOTICE", "CHANGELOG.md"):
@@ -151,11 +150,10 @@ def test_build_with_real_mode_map_preserves_executable_bit_despite_degraded_copy
 def test_build_raises_on_payload_path_missing_from_mode_map(tmp_path: Path) -> None:
     """A required top-level document absent from the effective mode map raises, not defaults.
 
-    Since the MEDIUM fix below, an ``_INCLUDE_DIRS`` file can never reach this raise
-    (membership is now pre-filtered to the map's own keys) — an empty map here excludes
-    ``bin/launcher``/``bin/lib.py`` from the payload entirely and the raise instead fires
-    on the first required top-level document (e.g. ``README.md``), which is still admitted
-    by filesystem presence rather than map membership.
+    Since the MEDIUM fix below, an ``_INCLUDE_DIRS`` file can never reach this raise (membership is now pre-filtered to
+    the map's own keys) — an empty map here excludes ``bin/launcher``/``bin/lib.py`` from the payload entirely and the
+    raise instead fires on the first required top-level document (e.g. ``README.md``), which is still admitted by
+    filesystem presence rather than map membership.
     """
     real_repo = _make_fixture_repo(tmp_path, "real")
 
@@ -181,8 +179,7 @@ def test_cli_exits_nonzero_on_missing_mode_map_entry(tmp_path: Path) -> None:
 
 
 # --- (4) untracked include-dir file is excluded, not a build failure --------
-# (codex-p3-review Round 1 MEDIUM: payload membership now shares the mode map's
-# authority, so it can no longer diverge from it.)
+# Payload membership shares the mode map's authority, so it can no longer diverge from it.
 
 
 def test_untracked_file_under_include_dir_is_excluded_not_raised(tmp_path: Path) -> None:
@@ -204,7 +201,7 @@ def test_untracked_file_under_include_dir_is_excluded_not_raised(tmp_path: Path)
 
 
 def test_check_succeeds_with_untracked_file_under_include_dir(tmp_path: Path) -> None:
-    """``_run_check`` (the ``--check`` engine) tolerates an untracked include-dir file."""
+    """Allow untracked files inside an included directory during package checks."""
     real_repo = _make_fixture_repo(tmp_path, "real")
     untracked = real_repo / "src" / "codemap_py" / "wip.py"
     untracked.parent.mkdir(parents=True)
@@ -265,18 +262,16 @@ def test_load_mode_map_missing_file_raises(tmp_path: Path) -> None:
         builder._load_mode_map(tmp_path / "absent.json")
 
 
-# --- CLI --mode-map integration against the real tracked tree ---------------
+# --- CLI ``--mode-map`` integration against the real tracked tree ---------------
 
 
 def test_cli_mode_map_matches_default_git_derived_build(tmp_path: Path) -> None:
-    """``--mode-map`` fed the real tree's own map reproduces the default git-derived build.
+    """Reproduce the default build from an explicit mode map.
 
-    (codex-p3-review Round 1 LOW, resolved by the MEDIUM fix above): this builds against
-    the live ``SOURCE_ROOT``, so it previously flaked whenever an untracked file sat under
-    an include dir (e.g. concurrent Wave 2 WIP under ``src/``) — the old filesystem-walk
-    membership would admit it into one build's candidate set but not the other's derivation
-    path consistently, and the missing-mode-map-entry raise would fire. Now that membership
-    is git-tracked-only for both invocations, an untracked file is excluded identically from
+    This builds against the live ``SOURCE_ROOT``, so it previously flaked whenever an untracked file sat under an
+    include dir (e.g. concurrent Wave 2 WIP under ``src/``) — the old filesystem-walk membership would admit it into one
+    build's candidate set but not the other's derivation path consistently, and the missing-mode-map-entry raise would
+    fire. Now that membership is git-tracked-only for both invocations, an untracked file is excluded identically from
     both, so this test is hermetic to tree cleanliness without needing a fixture rewrite.
     """
     real_modes = builder._git_exec_modes(builder.SOURCE_ROOT)

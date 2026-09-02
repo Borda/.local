@@ -62,7 +62,7 @@ def run_guard() -> Callable[..., dict]:
 
 
 def _asks(result: dict) -> bool:
-    """True when the hook emitted a permissionDecision ask."""
+    """Check whether the hook requested user confirmation."""
     try:
         return result["hookSpecificOutput"]["permissionDecision"] == "ask"
     except (KeyError, TypeError):
@@ -104,18 +104,17 @@ class TestProtectedPaths:
     def test_absolute_path(self, run_guard: Callable[..., dict]) -> None:
         """An absolute path matches the same as a repository-relative one.
 
-        Tools may hand over either form depending on how the model addressed the
-        file; a guard matching only relative paths would be trivially sidestepped
-        by an absolute one.
+        Tools may hand over either form depending on how the model addressed the file; a guard matching only relative
+        paths would be trivially sidestepped by an absolute one.
         """
         assert _asks(run_guard("/abs/repo/.github/workflows/x.yml"))
 
     def test_simulated_windows_separators(self, run_guard: Callable[..., dict]) -> None:
         """A Windows-style path with backslashes still matches.
 
-        Patterns are written for ``/`` and the input is normalized first. Without
-        that step the entire guard would silently disappear on one OS while every
-        macOS and Linux test stayed green — the project's recurrent defect class.
+        Patterns are written for ``/`` and the input is normalized first. Without that step the entire guard would
+        silently disappear on one OS while every macOS and Linux test stayed green — the project's recurrent defect
+        class.
         """
         assert _asks(run_guard("C:\\repo\\.github\\workflows\\x.yml"))
 
@@ -131,11 +130,10 @@ class TestProtectedPaths:
     def test_case_variants(self, run_guard: Callable[..., dict], path: str) -> None:
         """Case variants of a protected name still ask.
 
-        macOS and Windows filesystems are case-folding, so a write addressed as
-        ``changelog.md`` lands in the real ``CHANGELOG.md``. Under case-sensitive
-        matching that path classifies as unprotected — and passthrough means
-        auto-approved whenever the hook is paired with ``acceptEdits``, which is
-        the configuration it exists for. This is the bypass, not a nicety.
+        macOS and Windows filesystems are case-folding, so a write addressed as ``changelog.md`` lands in the real
+        ``CHANGELOG.md``. Under case-sensitive matching that path classifies as unprotected — and passthrough means
+        auto-approved whenever the hook is paired with ``acceptEdits``, which is the configuration it exists for. This
+        is the bypass, not a nicety.
         """
         assert _asks(run_guard(path)), f"{path!r} should ask — case-folding bypass"
 
@@ -147,11 +145,10 @@ class TestProtectedPaths:
         ],
     )
     def test_other_guarded_tools(self, run_guard: Callable[..., dict], tool_name: str, key: str) -> None:
-        """``Write`` and ``NotebookEdit`` are guarded alongside ``Edit``.
+        """Guard every supported file-editing operation consistently.
 
-        ``Edit`` and ``Write`` are distinct matchers, so guarding only ``Edit`` would
-        leave whole-file replacement open. ``NotebookEdit`` names its target
-        ``notebook_path`` rather than ``file_path``; reading only the latter would
+        ``Edit`` and ``Write`` are distinct matchers, so guarding only ``Edit`` would leave whole-file replacement open.
+        ``NotebookEdit`` names its target ``notebook_path`` rather than ``file_path``; reading only the latter would
         ship that matcher registered but permanently inert.
         """
         assert _asks(run_guard("CHANGELOG.md", tool_name=tool_name, key=key))
@@ -174,8 +171,8 @@ class TestPassthrough:
     def test_routine_work(self, run_guard: Callable[..., dict], path: str) -> None:
         """Source and test files are deliberately unprotected — that is the routine work.
 
-        Protecting them would reintroduce exactly the prompt-per-edit friction this
-        hook exists to let ``acceptEdits`` remove.
+        Protecting them would reintroduce exactly the prompt-per-edit friction this hook exists to let ``acceptEdits``
+        remove.
         """
         assert run_guard(path) == {}
 
@@ -190,8 +187,8 @@ class TestPassthrough:
     def test_near_misses(self, run_guard: Callable[..., dict], path: str) -> None:
         """A path merely containing a protected name is not protected.
 
-        Substring matching would catch all three of these. Patterns are anchored on
-        a path-separator boundary so the guard stays narrow enough to keep.
+        Substring matching would catch all three of these. Patterns are anchored on a path-separator boundary so the
+        guard stays narrow enough to keep.
         """
         assert run_guard(path) == {}, f"{path!r} asked — guard is too broad"
 
@@ -206,8 +203,8 @@ class TestPassthrough:
     def test_unguarded_tools(self, run_guard: Callable[..., dict], tool_name: str) -> None:
         """Non-writing tools are ignored even when the path would match.
 
-        Reading ``CLAUDE.md`` costs nothing; only a write does. Gating reads would
-        make the guard fire constantly and teach the user to click through it.
+        Reading ``CLAUDE.md`` costs nothing; only a write does. Gating reads would make the guard fire constantly and
+        teach the user to click through it.
         """
         assert run_guard("CLAUDE.md", tool_name=tool_name) == {}
 
@@ -218,8 +215,8 @@ class TestPassthrough:
     def test_malformed_stdin(self) -> None:
         """Malformed stdin never crashes or blocks.
 
-        A hook that exits non-zero or throws on unexpected input would break every
-        write in the session, which is a far worse failure than missing a guard.
+        A hook that exits non-zero or throws on unexpected input would break every write in the session, which is a far
+        worse failure than missing a guard.
         """
         proc = subprocess.run(
             ["node", str(HOOK)],
@@ -241,10 +238,9 @@ class TestDecisionShape:
     def test_never_emits_allow(self, run_guard: Callable[..., dict]) -> None:
         """The hook has no allow path — an Edit carries no provenance to justify one.
 
-        This is the design inversion against ``blueprint-allow.js``, which may allow
-        because its input is verbatim text from a reviewed versioned file. Guarding
-        the constant here keeps a later "just allow src/**" convenience patch from
-        silently turning this into a grant.
+        This is the design inversion against ``blueprint-allow.js``, which may allow because its input is verbatim text
+        from a reviewed versioned file. Guarding the constant here keeps a later "just allow src/**" convenience patch
+        from silently turning this into a grant.
         """
         source = HOOK.read_text(encoding="utf-8")
         decisions = re.findall(r'permissionDecision:\s*"(\w+)"', source)

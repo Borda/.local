@@ -1,7 +1,7 @@
 """Tests for ``bin/extract_json_field.py``.
 
-Verifies JSON object recovery from mixed-prose text and field extraction
-(happy path, whole-object aliases, absent field, no JSON, stdin, usage error).
+Verifies JSON object recovery from mixed-prose text and field extraction (happy path, whole-object aliases, absent
+field, no JSON, stdin, usage error).
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ class TestRecoverJsonObject:
         assert result == {"ok": True}
 
     def test_nested_object(self) -> None:
-        """Returns outermost object when nested objects are present."""
+        """Return outermost object when nested objects are present."""
         result = recover_json_object('{"nested":{"k":1}} trailing')
         assert result == {"nested": {"k": 1}}
 
@@ -61,11 +61,11 @@ class TestRecoverJsonObject:
         assert recover_json_object(text) == expected
 
     def test_no_json_returns_none(self) -> None:
-        """Returns None when no JSON object is present."""
+        """Return None when no JSON object is present."""
         assert recover_json_object("no json here at all") is None
 
     def test_empty_string_returns_none(self) -> None:
-        """Returns None for empty input."""
+        """Return None for empty input."""
         assert recover_json_object("") is None
 
     @pytest.mark.parametrize(
@@ -111,14 +111,14 @@ class TestMain:
     """Integration tests for :func:`main` (CLI entry point)."""
 
     def test_extract_string_field(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """Extracts a string field and prints it raw (no quotes)."""
+        """Extract and print a string field without JSON quotes."""
         rc = extract_json_field.main(["status", '{"status":"done","n":3}'])
         out, _ = capsys.readouterr()
         assert rc == 0
         assert out.strip() == "done"
 
     def test_extract_int_field(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """Extracts an integer field and prints it as JSON."""
+        """Extract and print an integer field as JSON."""
         rc = extract_json_field.main(["files_changed", '{"status":"ok","files_changed":2}'])
         out, _ = capsys.readouterr()
         assert rc == 0
@@ -141,17 +141,17 @@ class TestMain:
         assert parsed == {"a": 1, "b": 2}
 
     def test_field_absent_returns_exit_2(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """Returns exit code 2 when the requested field is not in the object."""
+        """Return exit code 2 when the requested field is not in the object."""
         rc = extract_json_field.main(["missing", '{"other":"val"}'])
         assert rc == 2
 
     def test_no_json_returns_exit_1(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """Returns exit code 1 when no JSON object is recoverable."""
+        """Return exit code 1 when no JSON object is recoverable."""
         rc = extract_json_field.main(["field", "just plain text"])
         assert rc == 1
 
     def test_no_args_returns_exit_3(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """Returns exit code 3 (usage error) when no arguments provided."""
+        """Return exit code 3 (usage error) when no arguments provided."""
         rc = extract_json_field.main([])
         assert rc == 3
 
@@ -180,7 +180,7 @@ class TestMain:
         assert out.strip() == "5"
 
     def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """``--help`` prints usage to stdout and exits 0 (argparse default)."""
+        """Print usage to stdout and exit 0 (argparse default)."""
         with pytest.raises(SystemExit) as exc:
             extract_json_field.main(["--help"])
         assert exc.value.code == 0
@@ -189,9 +189,8 @@ class TestMain:
     def test_dash_leading_text_blob_handled_opaquely(self, capsys: pytest.CaptureFixture[str]) -> None:
         """A ``<json-or-text>`` blob beginning with ``--`` is captured, not parsed as an option.
 
-        argparse would reject a ``--``-leading second positional as an unknown option (exit 2).
-        The script hands positionals through directly, so the recovery scan still finds the
-        embedded object and prints the field.
+        argparse would reject a ``--``-leading second positional as an unknown option (exit 2). The script hands
+        positionals through directly, so the recovery scan still finds the embedded object and prints the field.
         """
         rc = extract_json_field.main(["ok", '--flag noise {"ok":true} trailing'])
         out, _ = capsys.readouterr()

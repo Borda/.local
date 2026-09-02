@@ -1,10 +1,9 @@
 """Seeded-defect benchmark for ``bin/audit_static.py`` (Phase-5 Layer 1).
 
-Plants a known mechanical defect for each scope-aware deterministic checker in a
-disposable plugin tree, then asserts the driver's Layer-1 pass catches every one
-(100% recall on mechanical classes). The whole-repo checks (routing-links,
-orphaned-bin, shared-drift) walk the real repo rather than the scope, so they are
-not part of the seeded-recall assertion — only the scope-aware checks are.
+Plants a known mechanical defect for each scope-aware deterministic checker in a disposable plugin tree, then asserts
+the driver's Layer-1 pass catches every one (100% recall on mechanical classes). The whole-repo checks (routing-links,
+orphaned-bin, shared-drift) walk the real repo rather than the scope, so they are not part of the seeded-recall
+assertion — only the scope-aware checks are.
 """
 
 from __future__ import annotations
@@ -111,7 +110,10 @@ def test_clean_scope_passes_scope_aware_checks(tmp_path: Path) -> None:
 
 
 def test_jsonl_output_written(tmp_path: Path) -> None:
-    """--jsonl writes one parseable JSON object per check."""
+    """Verify command-line option behavior.
+
+    --jsonl writes one parseable JSON object per check.
+    """
     plugins = _seed_defective_plugin(tmp_path)
     out = tmp_path / "static.jsonl"
     aud.main(["--scan-dir", str(plugins), "--jsonl", str(out)])

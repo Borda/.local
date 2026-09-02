@@ -79,7 +79,7 @@ class TestMainValidation:
         self, tmp_path: Path, slug: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Invalid skill-slug → exit 2 with SKILL_SLUG error on stderr."""
-        # Use a relative base-dir from inside tmp_path — SEC-R-4 requires base_dir
+        # Use a relative base-dir from inside tmp_path — the path-validation contract requires base_dir
         # to be strictly relative; chdir into tmp_path so the relative ``runs``
         # path resolves to a writable sandbox location.
         monkeypatch.chdir(tmp_path)
@@ -106,9 +106,8 @@ class TestMainHappyPath:
     ) -> None:
         """Valid args → exit 0.
 
-        SEC-R-4 mandates a strictly relative ``base_dir`` (no leading ``/``,
-        ``os.path.isabs()`` rejected); chdir into ``tmp_path`` so a relative
-        ``runs`` base resolves to a writable sandbox location.
+        The path-validation contract mandates a strictly relative ``base_dir`` (no leading ``/``, ``os.path.isabs()``
+        rejected); chdir into ``tmp_path`` so a relative ``runs`` base resolves to a writable sandbox location.
         """
         monkeypatch.chdir(tmp_path)
         rc = main(["myskill", "runs"])
@@ -127,7 +126,7 @@ class TestMainHappyPath:
     def test_output_has_no_crlf(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """stdout must not contain CRLF (Windows text-mode regression guard)."""
+        """Stdout must not contain CRLF (Windows text-mode regression guard)."""
         monkeypatch.chdir(tmp_path)
         main(["myskill", "runs"])
         out = capsys.readouterr().out
@@ -138,13 +137,16 @@ class TestArgparseCLI:
     """Argparse-surface tests: ``--help`` and the golden 2-positional invocation."""
 
     def test_help_exits_zero(self) -> None:
-        """``--help`` prints usage and exits 0 (argparse contract)."""
+        """Print usage and exit 0 (argparse contract)."""
         result = subprocess.run([sys.executable, str(_SCRIPT), "--help"], capture_output=True, text=True)
         assert result.returncode == 0
         assert "usage" in result.stdout.lower()
 
     def test_golden_invocation_two_positional(self, tmp_path: Path) -> None:
-        """Golden regression: SKILL call shape ``<skill-slug> <base-dir>`` (2 positional) exits 0 and prints a run dir."""
+        """Preserve the positional skill invocation contract and report the created run directory.
+
+        dir.
+        """
         result = subprocess.run(
             [sys.executable, str(_SCRIPT), "myskill", "runs"],
             cwd=tmp_path,

@@ -94,9 +94,9 @@ def test_prepare_index_rewrites_only_environment_metadata_to_exact_locked_bytes(
 def _rooted_payload(root: Path) -> dict[str, object]:
     """Return one scan payload whose every embedded path is spelled natively under *root*.
 
-    Both roots' payloads are built from ``Path`` joins rather than by relocating one
-    payload's JSON text: ``json.dumps(...).replace(str(root), ...)`` cannot match a
-    Windows root, because the JSON text escapes each separator as ``\\\\``.
+    Both roots' payloads are built from ``Path`` joins rather than by relocating one payload's JSON text:
+    ``json.dumps(...).replace(str(root), ...)`` cannot match a Windows root, because the JSON text escapes each
+    separator as ``\\\\``.
     """
     return {
         "scan_version": 13,
@@ -330,10 +330,9 @@ def test_replace_root_rewrites_path_prefixes_without_touching_content(tmp_path: 
 def test_replace_root_relocates_a_simulated_windows_spelled_scan_under_either_separator() -> None:
     """A Windows-rooted scan relocates on any host, whichever separator spells its children.
 
-    Windows accepts both separators, so a scan taken there may carry either below the same
-    root; both must therefore delimit the tree, while a sibling that merely extends the root
-    name and prose that only mentions the checkout stay verbatim. Inputs are built with
-    ``PureWindowsPath`` so the Windows contract is exercised on every platform.
+    Windows accepts both separators, so a scan taken there may carry either below the same root; both must therefore
+    delimit the tree, while a sibling that merely extends the root name and prose that only mentions the checkout stay
+    verbatim. Inputs are built with ``PureWindowsPath`` so the Windows contract is exercised on every platform.
     """
     module = _load_script()
     root = str(PureWindowsPath("C:/scan/repo"))
@@ -388,8 +387,8 @@ def test_patch_index_locks_accept_a_canonical_root_recorded_on_either_platform(
 ) -> None:
     """A lock is portable data: its canonical root is judged by both path flavours, not the host.
 
-    A run reads a lock recorded on the other OS — a POSIX root on Windows, a drive or UNC root
-    off Windows — and single-flavour validation rejected the foreign spelling as relative.
+    A run reads a lock recorded on the other OS — a POSIX root on Windows, a drive or UNC root off Windows — and
+    validation based on only the native path flavour rejected the foreign spelling as relative.
     """
     module = _load_script()
     locks = _write_patch_locks(

@@ -43,9 +43,8 @@ from shutil import which
 class ThreadType(str, Enum):
     """Kind of GitHub thread behind a number/URL.
 
-    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is
-    ``>=3.10``. ``UNKNOWN`` is the conservative result when neither the issues
-    API nor the discussions GraphQL query returns a record.
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``. ``UNKNOWN`` is the conservative
+    result when neither the issues API nor the discussions GraphQL query returns a record.
     """
 
     ISSUE = "issue"

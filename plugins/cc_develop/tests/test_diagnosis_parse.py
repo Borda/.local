@@ -1,9 +1,8 @@
 """Tests for ``bin/diagnosis_parse.py``.
 
-The script extracts the ``--diagnosis`` value from a single ``$ARGUMENTS`` string
-(accepting both ``--diagnosis=<path>`` and ``--diagnosis <path>`` forms) and prints
-the resolved path to stdout. Missing files trigger exit 1 with a ``! BREAKING``
-stderr block. No subprocess involvement — pure string parsing.
+The script extracts the ``--diagnosis`` value from a single ``$ARGUMENTS`` string (accepting both ``--diagnosis=<path>``
+and ``--diagnosis <path>`` forms) and prints the resolved path to stdout. Missing files trigger exit 1 with the
+documented breaking diagnostic on stderr. No subprocess involvement — pure string parsing.
 """
 
 from __future__ import annotations
@@ -32,8 +31,8 @@ def test_valid_diagnosis_forms(
 ) -> None:
     """Supported diagnosis forms under cwd print the parsed path and exit 0.
 
-    Cwd is pointed at ``tmp_path`` so the containment check passes (the script
-    rejects paths outside ``Path.cwd()`` to close the path-existence oracle).
+    Cwd is pointed at ``tmp_path`` so the containment check passes (the script rejects paths outside ``Path.cwd()`` to
+    close the path-existence oracle).
     """
     monkeypatch.chdir(tmp_path)
     diag = tmp_path / ("relative path/diag.md" if "relative path" in arguments else "relative/diag.md")
@@ -69,7 +68,10 @@ def test_no_argv_at_all(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_file_not_found(capsys: pytest.CaptureFixture[str]) -> None:
-    """``--diagnosis`` given but file missing → exit 1 with ``! BREAKING`` stderr block."""
+    """Reject a missing diagnosis file with the documented diagnostic.
+
+    The stderr block begins with ``! BREAKING``.
+    """
     rc = diagnosis_parse.main(["--diagnosis /nonexistent/diag/path.md"])
     assert rc == 1
     err = capsys.readouterr().err
@@ -79,7 +81,7 @@ def test_file_not_found(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_next_flag_not_treated_as_value(capsys: pytest.CaptureFixture[str]) -> None:
-    """``--diagnosis --other-flag`` → next token starts with ``--`` → no value consumed."""
+    """Avoid consuming another option as the diagnosis value."""
     rc = diagnosis_parse.main(["--diagnosis --other-flag"])
     assert rc == 0
     assert capsys.readouterr().out.strip() == ""
@@ -88,7 +90,7 @@ def test_next_flag_not_treated_as_value(capsys: pytest.CaptureFixture[str]) -> N
 def test_combined_with_other_flags(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``--mode fix --diagnosis=<path> --team`` → correct path extracted (containment-safe)."""
+    """Extract an inline diagnosis path without consuming surrounding options."""
     monkeypatch.chdir(tmp_path)
     diag = tmp_path / "d.md"
     diag.write_text("x")
@@ -103,9 +105,8 @@ def test_rejects_path_outside_cwd(
 ) -> None:
     """Existing file outside cwd → exit 1 with ``! BREAKING`` (closes path-existence oracle).
 
-    Without containment, ``--diagnosis /etc/passwd`` would exit 0 and echo the absolute path,
-    leaking which system files exist. The containment check rejects any resolved path that
-    does not live under ``Path.cwd()``.
+    Without containment, ``--diagnosis /etc/passwd`` would exit 0 and echo the absolute path, leaking which system files
+    exist. The containment check rejects any resolved path that does not live under ``Path.cwd()``.
     """
     # Build an isolated cwd; the diag file lives in a sibling dir, deliberately outside cwd.
     cwd_dir = tmp_path / "project"
@@ -141,7 +142,7 @@ def test_rejects_symlink_inside_cwd_pointing_outside(
 
 
 def test_equals_form_missing_file_exits_1(capsys: pytest.CaptureFixture[str]) -> None:
-    """``--diagnosis=<nonexistent>`` also triggers exit 1, not only space form."""
+    """Reject a nonexistent inline diagnosis path."""
     rc = diagnosis_parse.main(["--diagnosis=/no/such/file.md"])
     assert rc == 1
     err = capsys.readouterr().err
@@ -150,7 +151,7 @@ def test_equals_form_missing_file_exits_1(capsys: pytest.CaptureFixture[str]) ->
 
 
 def test_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
-    """``--help`` prints usage to stdout and exits 0 (argparse default)."""
+    """Print usage to stdout and exit 0 (argparse default)."""
     with pytest.raises(SystemExit) as exc:
         diagnosis_parse.main(["--help"])
     assert exc.value.code == 0
@@ -168,9 +169,9 @@ def test_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
 def test_blob_dash_tokens_reach_inner_parser_unmangled(blob: str, capsys: pytest.CaptureFixture[str]) -> None:
     """A blob whose tokens are ``--``-shaped is passed opaquely to parse_diagnosis, not argparse.
 
-    argparse would reject a bare ``--``-prefixed token as an unknown option (exit 2). The
-    script must instead hand the whole blob to the inner scanner, which finds no diagnosis
-    value and exits 0 with empty stdout — proving the blob was never fed to argparse.
+    argparse would reject a bare ``--``-prefixed token as an unknown option (exit 2). The script must instead hand the
+    whole blob to the inner scanner, which finds no diagnosis value and exits 0 with empty stdout — proving the blob was
+    never fed to argparse.
     """
     rc = diagnosis_parse.main([blob])
     assert rc == 0

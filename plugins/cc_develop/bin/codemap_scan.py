@@ -176,9 +176,8 @@ def _git_diff_files(timeout: int = 15) -> list[str]:
 def _git_root(timeout: int = 15) -> Path:
     """Return the git toplevel, falling back to the current directory.
 
-    Mirrors ``codemap_py.index_paths.canonical_root``: the index the scanner writes lives
-    under the repository root, so a consumer that anchored on the process CWD reported a
-    false ``no_index`` whenever a skill ran from a subdirectory.
+    Mirrors ``codemap_py.index_paths.canonical_root``: the index the scanner writes lives under the repository root, so
+    a consumer that anchored on the process CWD reported a false ``no_index`` whenever a skill ran from a subdirectory.
     """
     try:
         out = subprocess.check_output(  # noqa: S603 — fixed argv, no shell.
@@ -197,8 +196,8 @@ def _git_root(timeout: int = 15) -> Path:
 def _index_path(root: Path) -> Path:
     """Return the index file for *root*, honouring the flat ``CODEMAP_INDEX_DIR`` override.
 
-    The project name is the raw directory basename — the scanner writes it verbatim, so any
-    sanitization here would seek a filename that is never written.
+    The project name is the raw directory basename — the scanner writes it verbatim, so any sanitization here would seek
+    a filename that is never written.
     """
     override = os.environ.get("CODEMAP_INDEX_DIR")
     index_dir = Path(override).expanduser().resolve() if override else root / ".cache" / "codemap"

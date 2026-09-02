@@ -33,8 +33,8 @@ from _hook_env import hook_tmp_base
 def sid(tmp_path: Path) -> Iterator[str]:
     """Yield a unique session id; clean its ``claude-state-<id>`` dir on teardown.
 
-    Base resolved via ``hook_tmp_base()`` so teardown targets the same directory the
-    hook's ``getSentinelDir()`` writes on this platform.
+    Base resolved via ``hook_tmp_base()`` so teardown targets the same directory the hook's ``getSentinelDir()`` writes
+    on this platform.
     """
     s = f"pytest-{tmp_path.name}"
     yield s

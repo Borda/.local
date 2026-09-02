@@ -2,13 +2,13 @@
 
 The hook is a ``PreToolUse`` gate on ``AskUserQuestion``. Its contract:
 
-* **Scoped to in-flight reviews** — it acts only when the Step-2 sentinel
+* **Scoped to in-flight reviews** — it acts only when the review-state sentinel
   ``${TMPDIR:-/tmp}/dev-review-report-dir-<CSID>`` exists; without it every
   ``AskUserQuestion`` passes through untouched (empty stdout, exit 0).
 * **Denies a missing report** — sentinel present but
-  ``$REPORT_DIR/review-report.md`` absent or empty means Step 5 (consolidate) /
-  Step 5b (print report header) never happened, so the call is denied with an
-  actionable reason.
+  ``$REPORT_DIR/review-report.md`` absent or empty means the findings were not
+  consolidated and the report header was not printed, so the call is denied
+  with an actionable reason.
 * **Fails open** — stale sentinel, implausible sentinel content, vanished report
   dir, unparsable payload: every can't-tell case allows the call.
 """
@@ -187,7 +187,7 @@ def test_report_written_unreadable_transcript_has_no_reminder(tmp_path: Path, re
 
 
 def test_trailing_slash_tmpdir_resolves_sentinel(tmp_path: Path, review_run: tuple[Path, Path]) -> None:
-    """macOS exports TMPDIR with a trailing slash — the sentinel must still resolve."""
+    """MacOS exports TMPDIR with a trailing slash — the sentinel must still resolve."""
     assert _denial_reason(_run(tmp_path, _ask_payload(), tmpdir_suffix="/")) is not None
 
 

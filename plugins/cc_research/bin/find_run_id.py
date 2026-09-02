@@ -133,13 +133,15 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Prints the matching run id to stdout; returns the exit code.
+    """Find the latest completed run and return the process status.
+
+    Prints the matching run ID to stdout.
 
     Args:
         argv: Optional argv list (for testing); defaults to ``sys.argv[1:]``.
 
     Returns:
-        ``0`` when a match is printed, ``1`` when no match is found, ``2`` on
+        ``0`` when a match is printed, ``1`` when no match is found, or ``2`` on
         argument error.
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")

@@ -279,8 +279,8 @@ def resolve(skill: str, subdir: str, *, local: bool, home: Path | None = None) -
     if home is None:
         home = Path(os.path.expanduser("~"))
 
-    # Tier 1: local source tree, when --local opted in. Must precede the
-    # CLAUDE_PLUGIN_ROOT tier below — otherwise --local is a no-op whenever
+    # Tier 1: local source tree, when ``--local`` opted in. Must precede the
+    # CLAUDE_PLUGIN_ROOT tier below — otherwise ``--local`` is a no-op whenever
     # CLAUDE_PLUGIN_ROOT is set (the common case, since it's always set inside
     # an installed plugin run), because that tier would win first.
     if local:
@@ -303,7 +303,7 @@ def resolve(skill: str, subdir: str, *, local: bool, home: Path | None = None) -
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns process exit code."""
+    """Resolve and print the selected skill subdirectory."""
     parser = argparse.ArgumentParser(
         prog="resolve_skill_subdir",
         description="Resolve a plugin skill subdirectory via three-tier cascade.",

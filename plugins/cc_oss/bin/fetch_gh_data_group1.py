@@ -350,7 +350,7 @@ def main(argv: list[str] | None = None) -> int:
         No doctest — subprocess-dependent; covered by pytest.
     """
     args = list(sys.argv[1:] if argv is None else argv)
-    # Honour only -h/--help via argparse; every other flag flows through the manual
+    # Honour only ``-h/--help`` via argparse; every other flag flows through the manual
     # loop below, which is already reject-strict (unknown arg → exit 1) and enforces
     # required --repo/--output-dir plus owner/repo regex. A broad parse_args would
     # replace that exit-1 contract with argparse's exit-2 — keep the manual parser.

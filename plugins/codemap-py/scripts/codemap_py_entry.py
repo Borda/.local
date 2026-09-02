@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""codemap-py source-tree bootstrap (plan §7.2).
+"""Codemap-py source-tree bootstrap.
 
 Single Python entrypoint shared by POSIX launchers, Windows launchers, an
 editable developer install, and runtime skills. It resolves the real plugin
@@ -7,7 +7,7 @@ root, validates the running interpreter, prepends ``<plugin-root>/src`` to its
 own process import path, and hands control to :mod:`codemap_py.cli` without
 remapping arguments.
 
-Phase 3 slice 1 (plan §12) moved the dispatcher into the importable
+The dispatcher now lives in the importable
 ``codemap_py`` package; the entry now imports ``codemap_py.cli`` directly
 instead of the transitional ``scripts/``-relative ``codemap_py_cli`` shim. It
 performs no install, download, cache mutation, or dependency setup.
@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 # Interpreter bound is duplicated (not imported) so the gate runs *before* any
-# codemap import, honouring plan §7.1 "validated before importing codemap_py".
+# codemap import, honouring  "validated before importing codemap_py".
 _MAJOR = 3
 _MIN_MINOR = 11
 _MAX_MINOR_EXCLUSIVE = 15
@@ -51,7 +51,7 @@ def main() -> int:
     Returns:
         The dispatcher exit code, or ``127`` when the running interpreter is not
         an eligible CPython. On rejection stdout stays empty and a single
-        actionable diagnostic is written to stderr (plan §7.5).
+        actionable diagnostic is written to stderr.
 
     Examples:
         >>> isinstance(main, object)

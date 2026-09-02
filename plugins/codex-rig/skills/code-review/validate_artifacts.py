@@ -3,33 +3,39 @@
 
 ## Purpose
 
-ensure a review recommendation is traceable to scope, specialist routing, gates, findings, and the required action table.
-It gives the code-review workflow a mechanical final check that connects the decision to the evidence files and specialist outputs it claims to use.
+ensure a review recommendation is traceable to scope, specialist routing, gates, findings, and the required action
+table. It gives the code-review workflow a mechanical final check that connects the decision to the evidence files and
+specialist outputs it claims to use.
 
 ## Scope
 
-reads a completed local review artifact and rejects contract violations; it neither collects GitHub data nor performs a source-code review itself.
-Validation covers normal reviewed results, explicitly unavailable-review results, and proposal-level close results, including path containment and provenance checks for referenced files.
+reads a completed local review artifact and rejects contract violations; it neither collects GitHub data nor performs a
+source-code review itself. Validation covers normal reviewed results, explicitly unavailable-review results, and
+proposal-level close results, including path containment and provenance checks for referenced files.
 
 ## Usage
 
-run this validator from the code-review workflow after all evidence and draft result files have been written.
-Provide the review output directory and candidate ``result.json`` through the CLI. ``--project-root`` remains accepted for command-line compatibility, but role policy comes only from installed role cards.
+run this validator from the code-review workflow after all evidence and draft result files have been written. Provide
+the review output directory and candidate ``result.json`` through the CLI. ``--project-root`` remains accepted for
+command-line compatibility, but role policy comes only from installed role cards.
 
 ## Used by
 
-the ``code-review`` skill's terminal validation gate and review-artifact contract tests.
-Maintainers can also run it while diagnosing an incomplete artifact, but it is not a replacement for collecting the diff, remote review data, or specialist analysis.
+the ``code-review`` skill's terminal validation gate and review-artifact contract tests. Maintainers can also run it
+while diagnosing an incomplete artifact, but it is not a replacement for collecting the diff, remote review data, or
+specialist analysis.
 
 ## Outputs
 
-accepts a coherent review artifact or emits an explicit contract failure for missing routing, source evidence, close evidence, decision rationale, or action-table cells.
-Successful validation returns a zero exit status, while failures identify the violated contract so the workflow can stop before presenting a merge recommendation.
+accepts a coherent review artifact or emits an explicit contract failure for missing routing, source evidence, close
+evidence, decision rationale, or action-table cells. Successful validation returns a zero exit status, while failures
+identify the violated contract so the workflow can stop before presenting a merge recommendation.
 
 ## Failure
 
-untriaged specialist output, unsupported recommendation, inconsistent PR evidence, an invalid close disposition, or a non-accept decision without merge blocks exits non-zero.
-It also rejects artifacts that reference files outside the review output directory or claim a terminal result while retaining forbidden detailed-review artifacts.
+untriaged specialist output, unsupported recommendation, inconsistent PR evidence, an invalid close disposition, or a
+non-accept decision without merge blocks exits non-zero. It also rejects artifacts that reference files outside the
+review output directory or claim a terminal result while retaining forbidden detailed-review artifacts.
 """
 
 from __future__ import annotations

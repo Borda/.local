@@ -198,7 +198,7 @@ def test_counter_suffixed_report_name_is_gated(tmp_path: Path) -> None:
 
 
 def test_trailing_slash_tmpdir_resolves_sentinel(tmp_path: Path, topic_run: tuple[Path, Path]) -> None:
-    """macOS exports TMPDIR with a trailing slash — the sentinel must still resolve."""
+    """MacOS exports TMPDIR with a trailing slash — the sentinel must still resolve."""
     assert _denial_reason(_run(tmp_path, _ask_payload(), tmpdir_suffix="/")) is not None
 
 
@@ -245,7 +245,7 @@ def test_stale_sentinel_passes_through(tmp_path: Path, topic_run: tuple[Path, Pa
 
 
 def test_missing_report_dir_passes_through(tmp_path: Path, topic_run: tuple[Path, Path]) -> None:
-    """`.reports/research/` gone (worktree removed, TTL cleanup) → hook cannot judge, allows."""
+    """Allow writes when expired research evidence is no longer available."""
     report_file, _ = topic_run
     report_file.parent.rmdir()
 

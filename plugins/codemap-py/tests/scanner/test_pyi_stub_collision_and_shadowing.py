@@ -1,9 +1,8 @@
-"""`.pyi` stub discovery, shadowing, and stub-only indexing (plan §2.1).
+"""Test type-stub discovery, shadowing, and stub-only indexing.
 
-Drives ``codemap_py.graph.scan`` over the committed ``tests/corpus_pyi/proj`` fixture
-(scenario map in that dir's ``README.md``) and asserts the module-collision matrix:
-a sibling ``.py`` is authoritative and its ``.pyi`` becomes a ``shadowed_stub``; a lone
-``.pyi`` is indexed once as ``stub_only`` with declarations/imports but no call edges;
+Drives ``codemap_py.graph.scan`` over the committed ``tests/corpus_pyi/proj`` fixture (scenario map in that dir's
+``README.md``) and asserts the module-collision matrix: a sibling ``.py`` is authoritative and its ``.pyi`` becomes a
+``shadowed_stub``; a lone ``.pyi`` is indexed once as ``stub_only`` with declarations/imports but no call edges;
 ``__init__.py`` shadows ``__init__.pyi``; and case-fold collisions fail closed.
 """
 
@@ -53,7 +52,7 @@ def _symbol_names(module: dict) -> set[str]:
 
 
 def test_shadowed_module_not_indexed_as_second_module(index: dict) -> None:
-    """``pkg/shadowed.pyi`` is not a module; ``pkg.shadowed`` comes from the ``.py``."""
+    """Prefer an implementation module over its shadowed type stub."""
     assert _by_path(index, "pkg/shadowed.pyi") is None
     assert _module(index, "pkg.shadowed")["path"] == "pkg/shadowed.py"
 
@@ -71,7 +70,7 @@ def test_authoritative_modules_flagged_has_stub(index: dict) -> None:
 
 
 def test_init_py_precedence_over_init_pyi(index: dict) -> None:
-    """``pkg/__init__.py`` is authoritative; ``pkg/__init__.pyi`` is a shadowed stub."""
+    """Prefer a package implementation initializer over its type stub."""
     assert _module(index, "pkg")["path"] == "pkg/__init__.py"
     assert "pkg/__init__.pyi" in index.get("shadowed_stubs", [])
 

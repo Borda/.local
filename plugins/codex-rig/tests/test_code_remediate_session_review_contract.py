@@ -12,10 +12,8 @@ CODE_REMEDIATE_SKILL = PLUGIN_ROOT / "skills" / "code-remediate" / "SKILL.md"
 def test_session_review_shortcut_reuses_local_review_without_pr_refresh() -> None:
     """Keep session-local remediation independent from fresh PR collection.
 
-    A user who has just completed code review may deliberately remediate its
-    artifact before checking online comments again. The shortcut must therefore
-    select that assessed artifact in report mode and state its fail-closed
-    boundary.
+    A user who has just completed code review may deliberately remediate its artifact before checking online comments
+    again. The shortcut must therefore select that assessed artifact in report mode and state its fail-closed boundary.
     """
     skill = CODE_REMEDIATE_SKILL.read_text(encoding="utf-8")
     assert "$code-remediate review" in skill
@@ -30,8 +28,8 @@ def test_session_review_shortcut_reuses_local_review_without_pr_refresh() -> Non
 def test_final_summary_includes_all_ingested_items_with_outcomes() -> None:
     """Keep the final chat recap usable without reopening its artifact.
 
-    A user needs to see the disposition of every review item, including rows
-    skipped by their selection rather than only the unresolved work.
+    A user needs to see the disposition of every review item, including rows skipped by their selection rather than only
+    the unresolved work.
     """
     skill = CODE_REMEDIATE_SKILL.read_text(encoding="utf-8")
     assert "Final Outcome Table" in skill

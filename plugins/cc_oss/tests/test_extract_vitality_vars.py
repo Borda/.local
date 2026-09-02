@@ -138,8 +138,8 @@ class TestMain:
     def test_golden_invocation_stdout_is_eval_safe(self, tmp_path: Path, capsys) -> None:
         """Documented call site ``extract_vitality_vars.py SCORES_FILE`` — stdout is ONLY VAR=value lines.
 
-        The caller runs ``eval "$(... extract_vitality_vars.py "$SCORES_FILE")"`` so any
-        stray argparse banner on stdout would corrupt the eval; every line must be an assignment.
+        The caller runs ``eval "$(... extract_vitality_vars.py "$SCORES_FILE")"`` so any stray argparse banner on stdout
+        would corrupt the eval; every line must be an assignment.
         """
         f = tmp_path / "scores.json"
         f.write_text(json.dumps(_scores()))

@@ -146,7 +146,7 @@ def resolve_shared_path(home: Path | None = None) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns process exit code (0 always)."""
+    """Resolve and print the shared document path."""
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     parser = argparse.ArgumentParser(
         prog="dev_shared_resolve",

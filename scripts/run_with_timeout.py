@@ -2,17 +2,24 @@
 """Run one subprocess behind a portable hard timeout.
 
 Purpose:
-    Prevent a networked or third-party command from blocking repository maintenance indefinitely, while preserving its normal output and exit status.
+    Prevent a networked or third-party command from blocking repository maintenance indefinitely while preserving its
+    normal output and exit status.
 Scope:
-    Launch exactly the argv supplied after ``--``. The helper does not use a shell, retry commands, inspect credentials, or interpret command output. On timeout it terminates the spawned process tree on POSIX and Windows.
+    Launch exactly the argv supplied after ``--``. The helper does not use a shell, retry commands, inspect
+    credentials, or interpret command output. On timeout it terminates the spawned process tree on POSIX and Windows.
 Usage:
     ``python3 scripts/run_with_timeout.py --timeout-seconds 120 --label "external plugin update" -- command arg``.
 Outputs:
-    Inherits stdin, stdout, and stderr during normal execution. Timeout and launch failures add one concise diagnostic to stderr. Successful and ordinary failing commands keep their original exit status; timeout returns ``124`` and launch failure returns ``127``.
+    Inherit stdin, stdout, and stderr during normal execution. Timeout and launch failures add one concise diagnostic
+    to stderr. Successful and ordinary failing commands keep their original exit status; timeout returns ``124`` and
+    launch failure returns ``127``.
 Failure:
-    A missing command or non-finite/non-positive timeout is rejected before launch with exit ``2``. Cleanup attempts are bounded and fall back to killing the direct child when process-tree facilities are unavailable.
+    Reject a missing command or non-finite/non-positive timeout before launch with exit ``2``. Cleanup attempts are
+    bounded and fall back to killing the direct child when process-tree facilities are unavailable.
 Used by:
-    The root ``Makefile`` wraps every external-plugin marketplace and installation command with this helper. Tests invoke it directly to prove successful transparency, failure propagation, timeout behavior, and descendant cleanup without contacting a marketplace.
+    The root ``Makefile`` wraps every external-plugin marketplace and installation command with this helper. Tests
+    invoke it directly to prove successful transparency, failure propagation, timeout behavior, and descendant cleanup
+    without contacting a marketplace.
 """
 
 from __future__ import annotations

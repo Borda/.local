@@ -4,7 +4,7 @@
 Creates RELEASE_DIR (including parents), force-symlinks CHANGELOG_FILE
 into it as ``CHANGELOG.md``, then backs up any pre-existing release
 artifact files to ``.bak`` before overwrite. Extracted from oss:release
-prepare Phase 3 setup block (P2).
+prepare Phase 3 setup block.
 
 Re-running prepare for the same version is legitimate (post-audit-fix
 retry); silently overwriting hand-edited notes is destructive, hence
@@ -34,9 +34,8 @@ _ARTIFACTS: tuple[str, ...] = ("HIGHLIGHTS.md", "DRAFT.md", "SUMMARY.md", "MIGRA
 def _allowed_abs_roots() -> tuple[Path, ...]:
     """Return the allowlist of absolute-path roots, computed at call time.
 
-    Computed lazily rather than at import time so test runs that ``chdir`` after
-    import still see the up-to-date project root.  ``tempfile.gettempdir()`` is
-    included to support pytest's ``tmp_path`` fixture and other sandboxed runs.
+    Computed lazily rather than at import time so test runs that ``chdir`` after import still see the up-to-date project
+    root.  ``tempfile.gettempdir()`` is included to support pytest's ``tmp_path`` fixture and other sandboxed runs.
     """
     return (
         Path.cwd().resolve(),

@@ -1,8 +1,7 @@
 """Tests for ``bin/resolve-quality-gates.sh`` quality-gates.md path resolver.
 
-The script resolves foundry's ``quality-gates.md`` by checking the project-local
-``.claude/rules/`` directory first, then the foundry plugin cache. Exits 0 with
-the resolved path on stdout when found, or exit 1 with a stderr warning when
+The script resolves foundry's ``quality-gates.md`` by checking the project-local ``.claude/rules/`` directory first,
+then the foundry plugin cache. Exits 0 with the resolved path on stdout when found, or exit 1 with a stderr warning when
 neither location yields a hit.
 """
 
@@ -78,7 +77,7 @@ def test_neither_location_exits_nonzero(tmp_path: Path) -> None:
 
 
 def test_git_root_env_override(tmp_path: Path) -> None:
-    """``GIT_ROOT`` env var overrides ``git rev-parse`` for local lookup."""
+    """Prefer an explicit repository root over Git discovery."""
     explicit_root = tmp_path / "explicit"
     rules = explicit_root / ".claude" / "rules"
     rules.mkdir(parents=True)

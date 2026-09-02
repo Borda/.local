@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Codex agentic provider-parity runner for the locked shared agentic suite.
 
-This module runs every manifest-locked agentic task in the A_plain, B_auto, and
-C_strict treatments. It reuses the provider-neutral answer-contract scorer
-and the shared Codex native JSONL parser instead of copying either implementation.
+This module runs every manifest-locked agentic task in the A_plain, B_auto, and C_strict treatments. It reuses the
+provider-neutral answer-contract scorer and the shared Codex native JSONL parser instead of copying either
+implementation.
 
-``--dry-run`` validates the locked shared provenance and prints the
-deterministic task × arm cell plan without reading credentials, invoking a model, or
-creating result files. Paid execution is separately admitted only by the agentic
-manifest and exact SHA approval; the structural manifest remains an isolated
-runtime adapter, never the agentic study definition.
+``--dry-run`` validates the locked shared provenance and prints the deterministic task × arm cell plan without reading
+credentials, invoking a model, or creating result files. Paid execution is separately admitted only by the agentic
+manifest and exact SHA approval; the structural manifest remains an isolated runtime adapter, never the agentic study
+definition.
 """
 
 from __future__ import annotations
@@ -148,9 +147,8 @@ class AgenticRun:
 def probe_arm(arm: str) -> ArmProbe:
     """Return pure isolated-home policy evidence for one supported treatment.
 
-    Actual homes are created only by the future paid runner after agentic admission;
-    this pure preflight cannot touch credentials, plugin installation, or model
-    state.  The availability assertions are still explicit and fail closed.
+    Actual homes are created only by the future paid runner after agentic admission; this pure preflight cannot touch
+    credentials, plugin installation, or model state.  The availability assertions are still explicit and fail closed.
     """
     if arm not in AGENTIC_ARMS:
         raise ValueError(f"unsupported Codex agentic arm {arm!r}")
@@ -162,10 +160,9 @@ def probe_arm(arm: str) -> ArmProbe:
 def prepare_isolated_home(arm: str, **kwargs: Any) -> Any:
     """Create the structural runner's disposable home for a future paid cell.
 
-    The underlying A/B/C homes already prevent host-plugin and credential
-    inheritance.  B_auto maps to the direct-Codemap availability home only;
-    optional use remains an agentic admission rule, not a home capability.
-    No-model dry runs probe the policy without creating a disposable home.
+    The underlying A/B/C homes already prevent host-plugin and credential inheritance. B_auto maps only to the home with
+    direct Codemap availability; optional use remains an agentic admission rule, not a home capability. No-model dry
+    runs probe the policy without creating a disposable home.
     """
     if arm not in AGENTIC_ARMS:
         raise ValueError(f"unsupported Codex agentic arm {arm!r}")
@@ -243,9 +240,8 @@ def parse_agentic_stream(
 ) -> AgenticRun:
     """Normalize one native stream and score it with the shared Claude oracle.
 
-    B_auto has optional Codemap use.  C_strict preserves a completed no-call
-    row but records compliance/adherence false; aggregation must exclude that
-    coordinate rather than erasing its raw evidence.
+    B_auto has optional Codemap use.  C_strict preserves a completed no-call row but records compliance/adherence false;
+    aggregation must exclude that coordinate rather than erasing its raw evidence.
     """
     if arm not in AGENTIC_ARMS:
         raise ValueError(f"unsupported Codex agentic arm {arm!r}")
@@ -364,9 +360,8 @@ def resolve_agentic_scope(
 ) -> dict[str, Any]:
     """Resolve and hash one manifest-bound Codex agentic coordinate scope.
 
-    The manifest is the immutable source lock. A caller may explicitly narrow
-    its ordered task set or increase positive repetitions, but the derived
-    scope hash binds every resulting coordinate and its per-cell timeout.
+    The manifest is the immutable source lock. A caller may explicitly narrow its ordered task set or increase positive
+    repetitions, but the derived scope hash binds every resulting coordinate and its per-cell timeout.
     """
     manifest_path = Path(manifest_path)
     manifest = _read_agentic_manifest(manifest_path)
@@ -481,9 +476,9 @@ def _agentic_envelope(arm: str, task: Mapping[str, Any]) -> str:
 class AgenticCodexRunner:
     """Execute agentic cells through the structural runner's isolated native homes.
 
-    The dedicated agentic manifest controls agentic semantics and admission.  The
-    structural manifest named in its ``runtime_isolation`` section is used only
-    to obtain the existing disposable permissions, plugin, and credential path.
+    The dedicated agentic manifest controls agentic semantics and admission.  The structural manifest named in its
+    ``runtime_isolation`` section is used only to obtain the existing disposable permissions, plugin, and credential
+    path.
     """
 
     def __init__(
@@ -1054,9 +1049,8 @@ def run_paid(
 ) -> Path:
     """Execute one admitted shared-task scope with immutable partial evidence.
 
-    Test fixtures may inject ``runner_factory``; production always uses the
-    structural adapter for credential lifecycle, permissions, and native Codex
-    transport.  The function never records the auth path or credential bytes.
+    Test fixtures may inject ``runner_factory``; production always uses the structural adapter for credential lifecycle,
+    permissions, and native Codex transport.  The function never records the auth path or credential bytes.
     """
     if not auth_source:
         raise ValueError("paid Codex agentic execution requires an auth source")

@@ -38,7 +38,7 @@ Usage:
 
 Exit codes:
     0   success (report printed, or apply completed)
-    1   irrecoverable error (cache dir missing, --expect-count mismatch)
+    1   irrecoverable error (cache dir missing, ``--expect-count`` mismatch)
     2   argument error (bad marketplace token, negative age)
 """
 

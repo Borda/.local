@@ -1,9 +1,8 @@
 """Tests for ``bin/search_downstream_consumers.py``.
 
-The script queries GitHub code search via ``gh`` for Python imports of changed
-symbols. ``subprocess.run`` and ``shutil.which`` are monkeypatched throughout
-— no actual ``gh`` invocation. Stdin-based symbol input tested via monkeypatching
-``sys.stdin``.
+The script queries GitHub code search via ``gh`` for Python imports of changed symbols. ``subprocess.run`` and
+``shutil.which`` are monkeypatched throughout — no actual ``gh`` invocation. Stdin-based symbol input tested via
+monkeypatching ``sys.stdin``.
 """
 
 from __future__ import annotations
@@ -26,7 +25,10 @@ class _FakeCompleted:
 
 @pytest.fixture
 def fake_gh(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
-    """Patch subprocess.run and which; record command lists. Default: succeeds with empty output."""
+    """Patch subprocess.run and which; record command lists.
+
+    Default: succeeds with empty output.
+    """
     recorded: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
@@ -39,7 +41,7 @@ def fake_gh(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
 
 
 def test_missing_package_exits_1(fake_gh: list[list[str]], capsys: pytest.CaptureFixture[str]) -> None:
-    """No --package → exit 1, stderr message."""
+    """No ``--package`` → exit 1, stderr message."""
     rc = sdc.main(["SomeSymbol"])
     assert rc == 1
     assert "--package required" in capsys.readouterr().err
@@ -51,7 +53,10 @@ def test_no_symbols_exits_1(
     fake_gh: list[list[str]],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """--package present, empty stdin, no argv symbols → exit 1."""
+    """Verify command-line option behavior.
+
+    --package present, empty stdin, no argv symbols → exit 1.
+    """
     monkeypatch.setattr(sdc.sys, "stdin", io.StringIO(""))
     rc = sdc.main(["--package", "mylib"])
     assert rc == 1
@@ -124,7 +129,7 @@ def test_deduplicates_repos(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Capt
 
 
 def test_gh_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``which`` returns None → FileNotFoundError propagates."""
+    """Return None → FileNotFoundError propagates."""
     monkeypatch.setattr(sdc, "which", lambda _: None)
     with pytest.raises(FileNotFoundError, match="gh"):
         sdc.main(["--package", "pkg", "Sym"])

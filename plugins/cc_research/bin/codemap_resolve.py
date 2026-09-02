@@ -103,14 +103,13 @@ def _index_path(root: Path) -> Path:
 def _currency(cic: str, index: Path) -> tuple[str, str]:
     """Return ``(status, reason)`` from a single, timed ``check-index-currency`` run.
 
-    ``check-index-currency`` signals the verdict through its **exit code** (0 current,
-    1 stale, 2 no_index) while always printing the full JSON result to stdout. Gating on
-    ``returncode == 0`` therefore discarded every stale verdict and substituted the
-    "current" fallback, so the stale gate could never fire. The verdict is read from
-    stdout and the exit code is deliberately ignored.
+    ``check-index-currency`` signals the verdict through its **exit code** (0 current, 1 stale, 2 no_index) while always
+    printing the full JSON result to stdout. Gating on ``returncode == 0`` therefore discarded every stale verdict and
+    substituted the "current" fallback, so the stale gate could never fire. The verdict is read from stdout and the exit
+    code is deliberately ignored.
 
-    One run yields both fields; querying ``--field status`` and ``--field reason``
-    separately spawned two interpreters, and neither call was time-bounded.
+    One run yields both fields; querying ``--field status`` and ``--field reason`` separately spawned two interpreters,
+    and neither call was time-bounded.
     """
     try:
         out = subprocess.run(

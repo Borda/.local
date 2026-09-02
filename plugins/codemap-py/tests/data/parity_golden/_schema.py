@@ -1,7 +1,6 @@
 """Index data contract shared between scan-index (writer) and scan-query (reader).
 
-Both scripts import via sys.path.insert on __file__'s directory — this file must
-live alongside them in bin/.
+Both scripts import via sys.path.insert on __file__'s directory — this file must live alongside them in bin/.
 
 consumers: bin/scan-index, bin/scan-query — imported as Python module; not a standalone executable
 """
@@ -108,7 +107,10 @@ def validate_index(index: object) -> str | None:
 
 
 class Resolution(str, Enum):
-    """Resolution kind for a call edge. Inherits str so json.dump serialises values as plain strings."""
+    """Resolution kind for a call edge.
+
+    Inherits str so json.dump serialises values as plain strings.
+    """
 
     IMPORT = "import"
     LOCAL = "local"

@@ -32,9 +32,8 @@ TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$")
 class TestMakeRunDir:
     """Unit tests for ``make_run_dir()``.
 
-    SEC-F-4 requires absolute ``base_dir`` values to resolve under the current
-    working directory or ``~/.claude``; chdir into ``tmp_path`` so the relative
-    ``runs`` base resolves to a writable sandbox location.
+    The path-validation contract requires absolute ``base_dir`` values to resolve under the current working directory or
+    ``~/.claude``; chdir into ``tmp_path`` so the relative ``runs`` base resolves to a writable sandbox location.
     """
 
     def test_creates_directory(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,7 +94,7 @@ class TestMain:
         assert Path(out).is_dir()
 
     def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """``--help`` prints usage to stdout and exits 0 (argparse contract)."""
+        """Print usage to stdout and exit 0 (argparse contract)."""
         with pytest.raises(SystemExit) as exc:
             main(["--help"])
         assert exc.value.code == 0
@@ -118,7 +117,7 @@ class TestMain:
     def test_output_has_no_crlf(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """stdout must not contain CRLF (Windows text-mode regression guard)."""
+        """Stdout must not contain CRLF (Windows text-mode regression guard)."""
         monkeypatch.chdir(tmp_path)
         main(["runs"])
         out = capsys.readouterr().out
@@ -126,10 +125,10 @@ class TestMain:
 
 
 class TestSecurity:
-    """SEC-F-4 path-validation tests."""
+    """Path-validation tests."""
 
     def test_rejects_traversal(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """``..`` in path → exit 2 with explanatory error."""
+        """Reject parent-directory traversal with an explanatory error."""
         rc = main(["../escape"])
         assert rc == 2
         assert "make_run_dir:" in capsys.readouterr().err

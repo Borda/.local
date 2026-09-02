@@ -31,7 +31,7 @@ SUITE = Path(__file__).resolve().parent.parent / "suites" / "tasks-bench.json"
 
 @pytest.fixture()
 def mini_repo(tmp_path: Path) -> Path:
-    """A tiny 3-module repo + one test module for oracle unit tests.
+    """Create a small repository for oracle unit tests.
 
     Graph: c imports b imports a; b.caller calls a.target; tests/test_a.py imports+calls a.
     """
@@ -48,7 +48,7 @@ def mini_repo(tmp_path: Path) -> Path:
 
 @pytest.fixture()
 def git_repo(tmp_path: Path) -> Path:
-    """A committed git repo with one source file, for stage/revert tests."""
+    """Create a committed repository for staging and restoration tests."""
     repo = tmp_path / "gitrepo"
     repo.mkdir()
     (repo / "src.py").write_text("def widely_used():\n    return 1\n")
@@ -223,10 +223,10 @@ class TestGraphValidators:
 class TestImportGraphPrimitives:
     """AST import-graph oracle primitives — GT-critical, must mirror scan-index semantics.
 
-    ``_module_imports`` and ``_build_import_graph`` feed every graph_central / graph_path /
-    graph_fn_blast ground truth. They intentionally reproduce scan-index ``extract_imports``
-    (scanner.py:723) rather than resolve relatives properly, so the AST oracle agrees with what
-    scan-query returns for the same repo. These lock that contract before any refactor.
+    ``_module_imports`` and ``_build_import_graph`` feed every graph_central / graph_path / graph_fn_blast ground truth.
+    They intentionally reproduce scan-index ``extract_imports`` (scanner.py:723) rather than resolve relatives properly,
+    so the AST oracle agrees with what scan-query returns for the same repo. These lock that contract before any
+    refactor.
     """
 
     @pytest.mark.parametrize(
@@ -250,8 +250,8 @@ class TestImportGraphPrimitives:
     ) -> None:
         """Guard: the shared helper resolves relatives and so DROPS multi-dot targets the oracle keeps.
 
-        Pins why _module_imports cannot be replaced by python_source.extract_import_targets — swapping
-        would silently diverge the AST oracle from scan-index on any multi-dot relative import.
+        Pins why _module_imports cannot be replaced by python_source.extract_import_targets — swapping would silently
+        diverge the AST oracle from scan-index on any multi-dot relative import.
         """
         tree = ast.parse("from ..pkg import x\n")
         assert script_gen_bench._module_imports(tree) == {"pkg"}
@@ -277,7 +277,7 @@ class TestImportGraphPrimitives:
         assert graph["m"] == {"a"}
 
     def test_build_import_graph_include_tests(self, script_gen_bench: Any, mini_repo: Path) -> None:
-        """exclude_tests=False keeps test modules as graph nodes."""
+        """Keep test modules as graph nodes when test exclusion is disabled."""
         graph = script_gen_bench._build_import_graph(mini_repo, exclude_tests=False)
         assert any("test_a" in key for key in graph)
 
@@ -687,7 +687,7 @@ class TestDevelopBrTailRecall:
         assert q.scoring_detail["threshold"] == 0.70
 
     def test_scoring_detail_serialises_via_asdict(self, script_run_bench: Any) -> None:
-        """matched/missed lists survive asdict serialisation into the JSONL result line."""
+        """Matched/missed lists survive asdict serialisation into the JSONL result line."""
         from dataclasses import asdict
 
         out = "## Callers\nlightning.a::Foo.bar\n"

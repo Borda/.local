@@ -13,7 +13,7 @@ Exit codes:
     0 — success
     1 — target file missing
     2 — jq subprocess error (non-zero exit or jq not on PATH)
-    3 — bad args (odd number of --arg trailing tokens, or no target/filter)
+    3 — bad args (odd number of ``--arg`` trailing tokens, or no target/filter)
     4 — target outside allowed write roots (cwd or TMPDIR)
 """
 
@@ -36,11 +36,10 @@ _JQ_MEMORY_LIMIT_BYTES = 256 * 1024 * 1024
 
 
 def _jq_preexec() -> None:  # pragma: no cover — runs in subprocess fork
-    """``preexec_fn`` that caps the jq child's address space.
+    """Build a subprocess initializer that caps the child address space.
 
-    Unix-only (``resource`` module unavailable on Windows); on platforms where
-    ``RLIMIT_AS`` is unsupported, the import is wrapped so the failure mode is
-    "no limit applied" rather than "no jq spawned at all".
+    Unix-only (``resource`` module unavailable on Windows); on platforms where ``RLIMIT_AS`` is unsupported, the import
+    is wrapped so the failure mode is "no limit applied" rather than "no jq spawned at all".
     """
     try:
         import resource  # imported here so non-POSIX platforms aren't penalised at module load
@@ -185,7 +184,7 @@ def run_jq_write(target: Path, jq_filter: str, extras: list[str]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns exit code.
+    """Apply a bounded jq update and return the process status.
 
     Args:
         argv: Optional argv override (defaults to ``sys.argv[1:]``).
@@ -203,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Atomically apply a jq filter to a JSON file via temp-file + rename.",
     )
     # nargs="?" keeps the legacy exit-3-on-missing-arg contract; REMAINDER hands
-    # the trailing --arg/--argjson/--indent triplets straight through to jq
+    # the trailing ``--arg``/``--argjson``/``--indent`` triplets straight through to jq
     # untouched (argparse must not parse them — validated by _parse_jq_args).
     parser.add_argument("target", nargs="?", help="JSON file to rewrite in place.")
     parser.add_argument("jq_filter", nargs="?", help="jq program string to apply.")

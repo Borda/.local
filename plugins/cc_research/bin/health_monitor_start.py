@@ -35,14 +35,14 @@ _SKILL_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 def _sentinel_dir() -> Path:
     """Return ``/tmp`` on POSIX or ``tempfile.gettempdir()`` on Windows.
 
-    Mirrors JS ``getSentinelDir()`` so sentinel paths match hook expectations
-    on all platforms while preserving the existing ``/tmp`` path on POSIX.
+    Mirrors JS ``getSentinelDir()`` so sentinel paths match hook expectations on all platforms while preserving the
+    existing ``/tmp`` path on POSIX.
     """
     return Path(tempfile.gettempdir()) if sys.platform == "win32" else Path("/tmp")
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Create sentinel file and print LAUNCH_AT + SENTINEL; return exit code.
+    """Create a health sentinel and print its launch metadata.
 
     Args:
         argv: Optional argument list (defaults to ``sys.argv[1:]``).

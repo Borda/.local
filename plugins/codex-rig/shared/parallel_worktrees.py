@@ -1,22 +1,39 @@
 """Manage approval-bound generated-fixture and remediation worktree lifecycles.
 
 ## Purpose
-Preserve the narrow generated-fixture lifecycle and enforce the frozen code-remediate-local production-write boundary without promoting generic parallel writes.
+
+Preserve the narrow generated-fixture lifecycle and enforce the frozen code-remediate-local production-write boundary
+without promoting generic parallel writes.
 
 ## Scope
-Validate exact frozen plan and approval bytes, create detached sibling child worktrees, verify parent-joined handovers against observed Git changes, derive hash-bound patches, integrate them deterministically, apply one checked source bundle, and remove only successful worktrees after durable evidence exists. The module rejects source dirt, plan drift, child commits, untracked or undeclared paths, symlink traversal, mutable integration drift, partial joins, and ambiguous rollback.
+
+Validate exact frozen plan and approval bytes, create detached sibling child worktrees, verify parent-joined handovers
+against observed Git changes, derive hash-bound patches, integrate them deterministically, apply one checked source
+bundle, and remove only successful worktrees after durable evidence exists. The module rejects source dirt, plan drift,
+child commits, untracked or undeclared paths, symlink traversal, mutable integration drift, partial joins, and ambiguous
+rollback.
 
 ## Usage
-Generated-fixture callers use the existing Python functions. Code-remediate invokes the explicit ``prepare``, ``create-handover``, ``join``, ``collect``, ``integrate``, ``apply-source``, and ``cleanup`` subcommands after a consumer-specific plan digest is approved.
+
+Generated-fixture callers use the existing Python functions. Code-remediate invokes explicit lifecycle subcommands after
+a consumer-specific plan digest is approved.
 
 ## Outputs
-Private JSON lifecycle state, source-local child and integration evidence, parent-derived forward and rollback patches, and JSON CLI results. Successful cleanup removes managed worktrees without force; failure evidence stays available for inspection.
+
+Private JSON lifecycle state, source-local child and integration evidence, parent-derived forward and rollback patches,
+and JSON CLI results. Successful cleanup removes managed worktrees without force; failure evidence stays available for
+inspection.
 
 ## Failure
-``PilotError`` stops dispatch, integration, source application, cleanup, or promotion. Failed, conflicted, cancelled, drifted, or cleanup-uncertain worktrees remain for explicit resolution. Operational path and postcondition containment does not claim per-child capability isolation or global atomicity.
+
+``PilotError`` stops dispatch, integration, source application, cleanup, or promotion. Failed, conflicted, cancelled,
+drifted, or cleanup-uncertain worktrees remain for explicit resolution. Operational path and postcondition containment
+does not claim per-child capability isolation or global atomicity.
 
 ## Used by
-Codex Rig's generated-fixture acceptance proof, code-remediate production boundary, artifact validation, and focused installed-package tests. This module is not a scheduler, general worktree manager, or independent authority source.
+
+Codex Rig's generated-fixture acceptance proof, code-remediate production boundary, artifact validation, and focused
+installed-package tests. This module is not a scheduler, general worktree manager, or independent authority source.
 """
 
 from __future__ import annotations
@@ -992,7 +1009,7 @@ def cleanup_write_pilot(*, state_path: Path) -> dict[str, object]:
         records.append(record)
         _persist(state_path, state)
         try:
-            # Patches are already durable; restore only the exact generated bucket paths so non-force removal can succeed.
+            # Patches are durable; restore only the generated bucket paths so non-force removal can succeed.
             _require_authority_unchanged(state, workspace, state_path)
             _git(worktree, "restore", "--staged", "--worktree", "--source=HEAD", "--", *owned_paths)
             _git(repository, "worktree", "remove", str(worktree))

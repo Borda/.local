@@ -109,13 +109,13 @@ _console = _Console()
 # TASKS_FILE and RESULTS_DIR come from benchmark_paths (shared across runners).
 PATCH_TASKS_FILE = Path(__file__).parent / "suites" / "tasks-patch.json"
 
-# Synthetic task type assigned to tasks loaded via --tasks-file that carry a `skill`
+# Synthetic task type assigned to tasks loaded via ``--tasks-file`` that carry a `skill`
 # field instead of a `type` field (e.g. tasks-code.json). No evaluator is registered for
 # this type; tasks of this type are forced scoreable=False and contribute token-ratio and
 # tool-count data only — never accuracy.
 _EXTERNAL_TASK_TYPE = "develop_skill"
 
-# Diff-impact tasks (review DI) stage a scripted change around BOTH arms, then revert (DiffImpactStager).
+# Diff-impact tasks stage a scripted change around both arms, then ``DiffImpactStager`` reverts it.
 _DIFF_IMPACT_TYPE = "diff_impact"
 
 # real_issue (RI) series reproduces + locates files for a real GitHub issue; those runs routinely
@@ -216,13 +216,13 @@ def _arm_orders_by_task(
     }
 
 
-# --setting-sources project,local excludes USER-level config from the benchmark subprocess:
+# ``--setting-sources project,local`` excludes USER-level config from the benchmark subprocess:
 # the caveman plugin, the foundry Re:Anchor rules (box header + ▓ footer), user CLAUDE.md, and
 # user hooks. Those shaped the agent's output (markdown/backtick decoration, footer prose) and
 # inflated tokens equally on both arms — noise, not signal. scan-query still reaches the codemap
 # arm via PATH (_subprocess_env), and the plain arm needs no plugins, so both arms run clean.
 # Subscription auth is unaffected (auth is not a setting source). Applied to both arms identically.
-# --no-session-persistence makes every cell non-resumable, preventing conversational state reuse.
+# ``--no-session-persistence`` makes every cell non-resumable, preventing conversational state reuse.
 _CMD = [
     "claude",
     "-p",
@@ -303,8 +303,7 @@ _PYTEST_EXIT_MEANINGS = {
 def _pin_pytest_interpreter(argv: list[str]) -> list[str]:
     """Rewrite a leading bare ``pytest`` to ``sys.executable -m pytest``.
 
-    Leaves any other command untouched, including an argv that already names an
-    interpreter explicitly.
+    Leaves any other command untouched, including an argv that already names an interpreter explicitly.
     """
     if argv and Path(argv[0]).name in {"pytest", "py.test"}:
         return [sys.executable, "-m", "pytest", *argv[1:]]
@@ -330,9 +329,11 @@ class BenchQuality:
         correct: True when the primary metric matches ground truth within tolerance.
         metric_expected: Ground-truth value of the primary metric.
         metric_got: Value extracted from model output; None when extraction failed.
-        recall: Optional evaluator-specific recall metric; set by develop_br, rv (symbol tasks), debug, feature, and real_issue evaluators. None for count-based evaluators (symbol_extraction, code_quality).
-        caller_count_gt: Ground-truth unique caller count; used by caller-list evaluators for both fn_call_graph and develop_blast_radius.
-        extraction_degraded: True when structured-block scoring (review H-1) could not find a
+        recall: Optional evaluator-specific recall metric; set by develop_br, rv (symbol tasks), debug, feature, and
+            real_issue evaluators. None for count-based evaluators (symbol_extraction, code_quality).
+        caller_count_gt: Ground-truth unique caller count; used by caller-list evaluators for both fn_call_graph and
+            develop_blast_radius.
+        extraction_degraded: True when structured-block scoring could not find a
             labeled answer block (e.g. ``## Files`` / ``## Callers``) and fell back to matching
             against the full output text. Diagnostic only — a degraded match still counts, but the
             flag surfaces that the stricter block-scoped match was unavailable for the run.
@@ -431,9 +432,7 @@ class BenchRun:
     bash_calls: int = 0
     read_calls: int = 0
     scan_query_calls: int = 0
-    contamination_hits: int = (
-        0  # plain arm only: full-string reads/execs touching the codemap index or binary (review H-2)
-    )
+    contamination_hits: int = 0  # plain arm only: full-string reads/execs touching the codemap index or binary
     scan_query_subcommands: dict[str, int] = field(default_factory=dict)
     used_batch: bool = False  # codemap arm invoked scan-query `batch` (JSON-array multi-query form) at least once
     turn_count: int = 0
@@ -462,7 +461,7 @@ class BenchRun:
     oracle_class: str = "unknown"
     headline_eligible_v1: bool = False
     scoreable: bool = False
-    resumed: bool = False  # True when this line was reused from a prior results file via --resume (not re-executed)
+    resumed: bool = False  # True when this line was reused from a prior results file via ``--resume`` (not re-executed)
 
 
 # ---------------------------------------------------------------------------
@@ -535,7 +534,7 @@ def _build_system_prompt(arm: str, repo_name: str, repo_path: str, index_path: s
     output-format requirements; only the tool-availability section differs. The plain arm's
     section forbids scan-query; the codemap arm's section documents scan-query syntax and
     subcommands. Keeping every non-tool sentence identical prevents prompt asymmetry from
-    confounding the token-ratio headline (review C-1).
+    confounding the token-ratio headline.
 
     Args:
         arm: Legacy ``plain``/``codemap`` or canonical A/B/C arm label.
@@ -574,7 +573,7 @@ def _resolve_index(repo_path: Path, explicit: Path | None = None) -> Path:
 
     Args:
         repo_path: Root of the cloned repository.
-        explicit: Explicit --index-path argument; validated and returned when provided.
+        explicit: Explicit ``--index-path`` argument; validated and returned when provided.
 
     Returns:
         Path to the index JSON file.
@@ -586,7 +585,7 @@ def _resolve_index(repo_path: Path, explicit: Path | None = None) -> Path:
 
 
 def _normalize_external_task(task: dict) -> dict:
-    """Normalize one task from a --tasks-file into the harness task schema.
+    """Normalize one task from a ``--tasks-file`` into the harness task schema.
 
     External task files use a different schema from tasks-bench.json: ``queries``
     instead of ``expected_queries``, a ``skill`` field instead of ``type``, and
@@ -599,7 +598,7 @@ def _normalize_external_task(task: dict) -> dict:
     The original task dict is not mutated; a shallow copy is returned.
 
     Args:
-        task: Raw task dict loaded from a --tasks-file.
+        task: Raw task dict loaded from a ``--tasks-file``.
 
     Returns:
         A new task dict with ``expected_queries``, ``type``, and ``scoreable``
@@ -637,7 +636,7 @@ def _normalize_external_task(task: dict) -> dict:
 
 
 def _load_tasks_file(path: Path) -> list[dict]:
-    """Load and normalize an additional task file passed via --tasks-file.
+    """Load and normalize an additional task file passed via ``--tasks-file``.
 
     Accepts either a bare JSON list of tasks or a ``{"repo": ..., "tasks": [...]}``
     object (the tasks-bench.json shape). Every loaded task is run through
@@ -669,7 +668,7 @@ def _load_tasks_file(path: Path) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Provenance + resume cache (cost lever: --resume)
+# Provenance + resume cache (cost lever: ``--resume``)
 # ---------------------------------------------------------------------------
 
 # Result-line fields that identify one (task, arm, model) execution against a specific tree + index +
@@ -911,7 +910,7 @@ def _run_from_cached(line: dict) -> BenchRun:
 
 
 # ---------------------------------------------------------------------------
-# Cost profiles + tiered protocol (cost levers: --profile, --tiered)
+# Cost profiles + tiered protocol (cost levers: ``--profile``, ``--tiered``)
 # ---------------------------------------------------------------------------
 
 
@@ -1071,7 +1070,7 @@ class TaskSelection:
     """Inputs that determine which tasks run, bundled to keep helper signatures small.
 
     Attributes:
-        all_tasks: Every loaded task (bench + any --tasks-file + patch).
+        all_tasks: Every loaded task (bench + any ``--tasks-file`` + patch).
         ids: Explicit ``--tasks`` id set, or None.
         task_type: Explicit ``--task-type`` filter, or None.
         run_all: True when ``--all`` was passed.
@@ -1162,7 +1161,7 @@ def _subprocess_env(index_path: Path) -> dict[str, str]:
     return env
 
 
-# review H-2 — markers that betray plain-arm access to the codemap index or binary. Matched against
+# Markers that betray plain-arm access to the codemap index or binary. Matched against
 # the FULL untruncated tool input (Bash command / Read path) in _handle, not the truncated tool_log:
 # the prebuilt index at .cache/{codemap,scan}/*.json holds every structural answer, so a raw Read/cat
 # of it lets the control arm self-serve answers without ever calling scan-query.
@@ -1170,7 +1169,7 @@ _CONTAMINATION_MARKERS: tuple[str, ...] = ("scan-query", "codemap-py/bin", ".cac
 
 
 def _is_contaminating_access(text: str) -> bool:
-    """Return True when *text* touches the codemap index or binary (review H-2).
+    """Return True when *text* touches the codemap index or binary.
 
     Backslash path separators are normalised to forward slashes before matching, so a
     Windows-style ``.cache\\codemap\\proj.json`` path — how a real Read ``file_path``
@@ -1193,8 +1192,8 @@ def _is_contaminating_access(text: str) -> bool:
 
 
 # Subcommands recognised by scan-query (mirrors the _CODEMAP_TOOLS help block).
-# `central` / `path` / `fn-blast` back the graph series (review GR); `diff-impact` backs the
-# diff-impact series (review DI); `batch` is the JSON-array multi-query form (measured, not forced).
+# ``central``, ``path``, and ``fn-blast`` back the graph series; ``diff-impact`` backs the
+# diff-impact series; ``batch`` is the JSON-array multi-query form (measured, not forced).
 _SCAN_QUERY_SUBCOMMANDS: frozenset[str] = frozenset(
     {
         "symbol",
@@ -1282,7 +1281,7 @@ _BATCH_ARRAY_RE = re.compile(r"\[\s*\{.*\}\s*\]", re.DOTALL)
 
 
 def _parse_batch_subcommands(command: str) -> list[str]:
-    """Return the inner subcommand names of a scan-query ``batch`` invocation (review batch-mode).
+    """Return the inner subcommand names of a ``scan-query batch`` invocation.
 
     Batch mode reads a JSON array of ``{"cmd": <name>, "args": [...]}`` items. Each inner ``cmd`` is a
     real subcommand use that must be attributed to its own counter — a batched ``fn-rdeps`` counts as an
@@ -1411,15 +1410,15 @@ def _max_turns_for_task(task: dict) -> int:
 # Quality evaluators — extract key metric from model output text
 # ---------------------------------------------------------------------------
 
-_EVAL_VER_NAME_RECALL = "v5"  # _evaluate_develop_br (v5: drop .md file-dump M-10; precision-tighten fuzzy tiers M-11)
+_EVAL_VER_NAME_RECALL = "v5"  # _evaluate_develop_br (v5: drop .md file-dump; tighten precision for fuzzy tiers)
 _EVAL_VER_SYMBOL = "v2"  # _evaluate_symbol — accepts conventional source-location ranges
 _EVAL_VER_REVIEW = "v7"  # _evaluate_rv — natural direct-import and uncovered-count grammar
 _EVAL_VER_OSS = "v7"  # _evaluate_oss — explicit label-first count grammar for required AST components
-_EVAL_VER_DEBUG = "v2"  # _evaluate_debug — v2: structured-block + stem-blocklist matching (review H-1)
+_EVAL_VER_DEBUG = "v2"  # _evaluate_debug — v2: structured-block + stem-blocklist matching
 _EVAL_VER_FEATURE = "v4"  # _evaluate_feature — accepts one terminal sentence period after the exact entry point
-_EVAL_VER_REAL_ISSUE = "v2"  # _evaluate_real_issue — v2: path-with-parent matching in answer block (review H-1)
+_EVAL_VER_REAL_ISSUE = "v2"  # _evaluate_real_issue — v2: path-with-parent matching in answer block
 
-# review H-1 — substring-inflation guard. Common single-token file/symbol stems that saturate any
+# Substring-inflation guard. Common single-token file/symbol stems that saturate any
 # discussion of the target repo (a bare mention of `trainer` in prose is a free hit). These must
 # appear as a QUALIFIED reference — pathed (`.../trainer`), dotted (`x.trainer`), or with a `.py`
 # suffix — to count; a bare word never does. Applied symmetrically to both arms (scoring is arm-agnostic).
@@ -1441,7 +1440,7 @@ def _answer_region(output_text: str, labels: tuple[str, ...]) -> tuple[str, bool
     Locates the earliest line that is a bare answer heading — a markdown header (``## Files``) or a
     labelled line (``Files:`` / ``**Files**``) whose only content is one of *labels* — and returns
     everything from there to the end. When no such heading exists the full text is returned with a
-    ``degraded`` flag so callers can record that block-scoped matching was unavailable (review H-1).
+    ``degraded`` flag so callers can record that block-scoped matching was unavailable.
 
     Args:
         output_text: The agent's full response text.
@@ -1470,7 +1469,7 @@ def _answer_region(output_text: str, labels: tuple[str, ...]) -> tuple[str, bool
 
 
 def _stem_matches(stem: str, region: str) -> bool:
-    """Return True when *stem* is present in *region* as a countable reference (review H-1).
+    """Return True when *stem* is present in *region* as a countable reference.
 
     Blocklisted ultra-common stems (:data:`_STEM_BLOCKLIST`) count only as a qualified reference —
     preceded by ``/`` or ``.`` (a path or dotted name) or carrying a ``.py`` suffix — never as a bare
@@ -1501,7 +1500,7 @@ def _stem_matches(stem: str, region: str) -> bool:
 
 
 def _ri_file_matches(file_path: str, region: str) -> bool:
-    """Return True when *file_path* is referenced in *region* by a pathed form (review H-1).
+    """Return True when *file_path* is referenced in *region* by a pathed form.
 
     A real_issue file counts only via its full repository-relative path or a path-with-parent form
     (``connectors/logger_connector``) — never a bare basename stem, which for common names (``trainer``)
@@ -1670,10 +1669,9 @@ def _score_required_components(
 ) -> BenchQuality:
     """Score every required count or symbol answer and average their fitness.
 
-    A required count contributes bounded relative-error fitness while its documented
-    10% tolerance remains the binary correctness gate.
-    A required symbol set contributes its recall. A task is correct only when every
-    component meets its own gate; a missing component is an extraction failure.
+    A required count contributes bounded relative-error fitness while its documented 10% tolerance remains the binary
+    correctness gate. A required symbol set contributes its recall. A task is correct only when every component meets
+    its own gate; a missing component is an extraction failure.
     """
     components: dict[str, dict[str, Any]] = {}
     primary_expected: Any = None
@@ -2162,7 +2160,7 @@ def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
     return BenchQuality(scored=False)
 
 
-# review M-11 — generic method names that recur across many unrelated classes/modules. A bare
+# Generic method names that recur across many unrelated classes/modules. A bare
 # Class.method tail ending in one of these is too weak a signal to credit a specific caller via the
 # no-module fallback (Form 11): the same "Trainer.setup" / "Loop.run" tail can name a different
 # caller in a different module. Distinctive names (e.g. `_evaluation_step`) are not blocklisted, so
@@ -2196,7 +2194,7 @@ _COMMON_METHOD_NAMES: frozenset[str] = frozenset(
 
 
 def _module_compatible(gt_module: str, found_module: str) -> bool:
-    """Return True when *found_module* may denote the same module as *gt_module* (review M-11).
+    """Return True when *found_module* may denote the same module as *gt_module*.
 
     Modules match when they are equal or when one is a dotted suffix of the other — the latter allows
     the legitimate abbreviated-path form (``loops.evaluation_loop`` for
@@ -2301,10 +2299,10 @@ def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
 
 
 def _match_callers(output_text: str, expected_callers: list[str]) -> set[str]:
-    """Extract the ground-truth callers named anywhere in *output_text* (review M-10/M-11; reused by DI).
+    """Extract ground-truth callers named in *output_text* for caller and diff-impact scoring.
 
     The multi-form caller matcher shared by the develop_blast_radius / fn_call_graph evaluators and the
-    diff-impact evaluator (review DI). It recognises the eleven output shapes agents emit for caller
+    diff-impact evaluator. It recognises the eleven output shapes agents emit for caller
     lists — canonical ``module::Class.method``, multi-``::`` chains, file-path forms, grouped headers +
     bullets, markdown tables, bold-backtick + numbered lists, slash-paired abbreviations, a fully-dotted
     reverse lookup, an always-on underscore-insensitive fuzzy tier gated on module compatibility, and a
@@ -2336,7 +2334,7 @@ def _match_callers(output_text: str, expected_callers: list[str]) -> set[str]:
 def _extract_caller_raw_forms(output_text: str) -> list[str]:  # noqa: C901
     """Extract raw ``module::callee`` tokens from *output_text* across ten regex output shapes.
 
-    The first phase of :func:`_match_callers` (review M-10): scans the agent output for every caller
+    The first phase of :func:`_match_callers`: scans the agent output for every caller
     shape agents emit — canonical ``ns.x::Class.method``, multi-``::`` chains, ``.py:``/``src/`` file
     paths, grouped headers + bullets, markdown tables, section-header + rows, bold-backtick + numbered
     lists, and slash-paired abbreviations — and returns the raw tokens (pre-normalization). Kept as a
@@ -2457,7 +2455,7 @@ def _extract_caller_raw_forms(output_text: str) -> list[str]:  # noqa: C901
 def _normalize_caller_forms(found_raw: list[str], output_text: str, expected_callers: list[str]) -> set[str]:  # noqa: C901
     """Map raw caller tokens to canonical ``module::Class.method`` and match them to *expected_callers*.
 
-    The second phase of :func:`_match_callers` (review M-10/M-11): normalizes each raw token from
+    The second phase of :func:`_match_callers`: normalizes each raw token from
     :func:`_extract_caller_raw_forms` (default split, multi-``::`` split points, ``module.Class::method``
     reclassification, abbreviated-suffix match), adds the fully-dotted reverse lookup (Form 5), the
     always-on underscore-insensitive fuzzy tier (gated on :func:`_module_compatible`), and the bare
@@ -2531,7 +2529,7 @@ def _normalize_caller_forms(found_raw: list[str], output_text: str, expected_cal
     # Fuzzy tier (always-on): same method name exact, class name underscore-insensitive.
     # Catches format variants like "EvaluationLoop.method" when GT is "_EvaluationLoop.method" —
     # agent clearly identified the caller, just dropped the access-modifier underscore convention.
-    # review M-11 — the module is now compared too (via _module_compatible): matching on the
+    # The module is now compared too (via _module_compatible): matching on the
     # Class.method tail alone credited a wrong-module same-tail caller (a `Loop.run` in a different
     # module scored the GT caller). Requiring module compatibility keeps the underscore tolerance
     # while rejecting cross-module tail collisions.
@@ -2546,7 +2544,7 @@ def _normalize_caller_forms(found_raw: list[str], output_text: str, expected_cal
     # Form 11: bare Class.method fallback — fires ONLY when all other forms produced nothing.
     # Codemap arm sometimes outputs callers as "_EvaluationLoop._evaluation_step" without module
     # prefix; reverse-lookup against GT by matching the tail component of each expected caller.
-    # review M-11 — this tier carries NO module qualification, so a bare Class.method whose method is
+    # This tier carries NO module qualification, so a bare Class.method whose method is
     # a generic name (`Loop.run`, `Trainer.setup`) is rejected: the same tail can name a different
     # caller in a different module. Distinctive method tails (`_evaluation_step`) still credit.
     if not found_qualnames:
@@ -2592,7 +2590,7 @@ def _evaluate_debug(task: dict, output_text: str) -> BenchQuality:
     file_path: str = gt.get("file", "")
     file_stem = file_path.split("/")[-1].replace(".py", "")
 
-    # review H-1: score inside the structured answer block; require blocklisted file stems to appear
+    # Score inside the structured answer block; require blocklisted file stems to appear
     # as a qualified reference (`x.py` or a path), never as a bare prose word.
     region, degraded = _answer_region(output_text, _ANSWER_LABELS_FILES)
     fn_found = bool(fn_name) and bool(re.search(r"\b" + re.escape(fn_name) + r"\b", region, re.IGNORECASE))
@@ -2676,7 +2674,7 @@ def _evaluate_real_issue(task: dict, output_text: str) -> BenchQuality:
     """Evaluate real_issue task: file-set recall over ground_truth.files_changed.
 
     Recall = |GT files referenced by a pathed form in the answer block| / |GT files|.
-    A file counts only via its full relative path or a path-with-parent form (review H-1) — a bare
+    A file counts only via its full relative path or a path-with-parent form — a bare
     basename stem no longer scores. Correct when recall >= 0.70.
 
     Args:
@@ -2691,7 +2689,7 @@ def _evaluate_real_issue(task: dict, output_text: str) -> BenchQuality:
     if not gt_files:
         return BenchQuality(scored=False)
 
-    # review H-1: require a full relative path or path-with-parent inside the structured answer block —
+    # Require a full relative path or path-with-parent inside the structured answer block —
     # a bare basename stem (`trainer`) is a near-free hit and no longer counts.
     region, degraded = _answer_region(output_text, _ANSWER_LABELS_FILES)
     found = sum(1 for fp in gt_files if _ri_file_matches(fp, region))
@@ -2718,7 +2716,7 @@ def _evaluate_real_issue(task: dict, output_text: str) -> BenchQuality:
 
 
 # ---------------------------------------------------------------------------
-# Diff-impact / graph evaluators (review DI / GR)
+# Diff-impact and graph evaluators
 # ---------------------------------------------------------------------------
 
 _DI_RECALL_THRESHOLD = 0.70  # caller recall AND test-file recall must each clear this for DI correctness
@@ -2809,9 +2807,8 @@ def _set_recall(expected: list[str], predicate: Any) -> tuple[int, float]:
 def _explicit_h2_section(output_text: str, label: str) -> tuple[str, bool]:
     """Return one exact Markdown H2 answer section without cross-section fallback.
 
-    Diff-impact prompts require separate ``## Callers`` and ``## Tests`` lists.
-    Restricting their evaluators to these bounded sections keeps exploratory prose
-    and misplaced answers from becoming scoreable evidence.
+    Diff-impact prompts require separate ``## Callers`` and ``## Tests`` lists. Restricting their evaluators to these
+    bounded sections keeps exploratory prose and misplaced answers from becoming scoreable evidence.
     """
     pattern = rf"(?im)^##[ \t]+{re.escape(label)}[ \t]*$"
     match = re.search(pattern, output_text)
@@ -2896,7 +2893,7 @@ def _evaluate_diff_impact(task: dict, output_text: str) -> BenchQuality:
 
 
 def _evaluate_graph_central(task: dict, output_text: str) -> BenchQuality:
-    """Evaluate a ``graph_central`` task: set overlap with the top-N central modules ≥ 0.70 (review GR).
+    """Evaluate whether a ``graph_central`` result overlaps the top-N central modules by at least 0.70.
 
     The agent lists the most-imported modules; correctness is the fraction of ground-truth central
     modules named in the output (order-insensitive set overlap).
@@ -2931,7 +2928,7 @@ def _evaluate_graph_central(task: dict, output_text: str) -> BenchQuality:
 
 
 def _evaluate_graph_path(task: dict, output_text: str) -> BenchQuality:
-    """Evaluate a ``graph_path`` task: the reported chain equals the oracle path (review GR).
+    """Evaluate whether a ``graph_path`` result equals the oracle path.
 
     The ground-truth path is the unique shortest import chain. The agent's chain matches when every GT
     hop module is named in the output AND they appear in the GT order — a correct answer must trace the
@@ -2974,7 +2971,7 @@ def _evaluate_graph_path(task: dict, output_text: str) -> BenchQuality:
 
 
 def _module_first_pos(module: str, output_text: str) -> Optional[int]:
-    """Return the first character offset at which *module* is named, or None (review GR path order).
+    """Return the first character offset at which *module* is named, or ``None``.
 
     Uses the same exact/≥2-component-suffix matching as :func:`_module_mentioned`, returning the
     earliest match offset across all accepted forms so path-order can be checked.
@@ -3005,7 +3002,7 @@ def _module_first_pos(module: str, output_text: str) -> Optional[int]:
 
 
 def _evaluate_graph_fn_blast(task: dict, output_text: str) -> BenchQuality:
-    """Evaluate a ``graph_fn_blast`` task: transitive-caller recall ≥ 0.70 (review GR).
+    """Evaluate whether ``graph_fn_blast`` transitive-caller recall is at least 0.70.
 
     Reuses the develop_br multi-form caller matcher (:func:`_match_callers`) against the depth-N
     transitive caller closure.
@@ -3042,13 +3039,13 @@ def _evaluate_graph_fn_blast(task: dict, output_text: str) -> BenchQuality:
 
 
 def _evaluate_module_blast_radius(task: dict, output_text: str) -> BenchQuality:
-    """Evaluate a ``module_blast_radius`` task: importer (import fan-in) recall ≥ 0.70 (review MB).
+    """Evaluate whether ``module_blast_radius`` importer recall is at least 0.70.
 
     The reverse relation of the develop_br per-function caller recall, at module granularity: given a
     target module, the agent enumerates the modules that IMPORT it (its rdeps). Correctness is the
     fraction of ground-truth importers named in the output, matched by :func:`_module_mentioned` — an
-    exact dotted name or a ≥2-component dotted suffix, NEVER a bare single-component leaf. Extraction-
-    failure handling mirrors :func:`_evaluate_develop_br`: when not a single importer is named the run
+    exact dotted name or a ≥2-component dotted suffix, NEVER a bare single-component leaf. Handling of extraction
+    failures mirrors :func:`_evaluate_develop_br`: when not a single importer is named the run
     is flagged ``extraction_failed`` and excluded from the accuracy denominator upstream.
 
     Args:
@@ -3233,27 +3230,26 @@ def _arm_contract_hash(arm: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Diff-impact staging (review DI)
+# Diff-impact staging
 # ---------------------------------------------------------------------------
 
 
 class DirtyTreeError(Exception):
     """Raised when the target tree already has uncommitted changes at DI-series start.
 
-    A diff-impact task stages a synthetic change and reverts it with ``git checkout -- <paths>``.
-    That revert is only safe when the touched paths were clean beforehand — reverting a path the user
-    had already modified would silently destroy their edits. So the series refuses to run against a
-    dirty tree rather than risk clobbering pre-existing changes.
+    A diff-impact task stages a synthetic change and reverts it with ``git checkout -- <paths>``. That revert is only
+    safe when the touched paths were clean beforehand — reverting a path the user had already modified would silently
+    destroy their edits. So the series refuses to run against a dirty tree rather than risk clobbering pre-existing
+    changes.
     """
 
 
 class DiffImpactStager:
-    """Stage a scripted synthetic change in the target repo, then robustly revert it (review DI).
+    """Stage a scripted synthetic change in the target repository, then robustly revert it.
 
-    A diff-impact task ships a ``stage`` spec — a list of ``{"file": <rel-path>, "find": <str>,
-    "replace": <str>}`` or ``{"file": <rel-path>, "append": <str>}`` edits describing a widely-called
-    signature/body change. The stager applies every edit inside a ``with`` block and, on exit
-    (success OR exception), reverts every touched path with ``git checkout -- <path>`` — so the change
+    A diff-impact task ships a ``stage`` spec containing either a file/find/replace mapping or a file/append mapping for
+    each edit to a widely called signature or function body. The stager applies every edit inside a ``with`` block. On
+    exit, whether successful or exceptional, it reverts every touched path with ``git checkout -- <path>`` so the change
     is present for both arms of the task and gone afterwards. The tree is verified clean (via
     ``git status --porcelain`` scoped to the touched paths) before staging: a dirty path aborts the
     whole series with :class:`DirtyTreeError` rather than risk clobbering the user's own edits.
@@ -3456,10 +3452,9 @@ class PatchSandbox:
     def _test_argv(self) -> list[str]:
         """Build the pytest argv from the task's test_command or failing_test.
 
-        A bare ``pytest`` resolves against ``PATH`` and can select an interpreter other
-        than the one running the harness — three benchmark lanes were resolving pytest
-        three different ways while their results were compared as one measurement. The
-        binary is pinned to ``sys.executable -m pytest`` here, matching the codex lane.
+        A bare ``pytest`` resolves against ``PATH`` and can select an interpreter other than the one running the harness
+        — three benchmark lanes were resolving pytest three different ways while their results were compared as one
+        measurement. The binary is pinned to ``sys.executable -m pytest`` here, matching the codex lane.
         """
         cmd = self.task.get("test_command")
         if cmd:
@@ -3676,7 +3671,7 @@ class BenchRunner:
         self.task_policies = task_policies
         self.suite_hash = suite_hash
         self.suite_raw_hash = suite_raw_hash
-        # Provenance stamped on every run so results can be matched on a later --resume pass.
+        # Provenance stamped on every run so results can be matched on a later ``--resume`` pass.
         self.repo_sha = _repo_sha(repo_path)
         self.index_sha = _index_sha(index_path)
 
@@ -3839,7 +3834,7 @@ class BenchRunner:
             #    list — either invoked via python3 path instead of bare scan-query, or a raw
             #    Read/cat of .cache/{codemap,scan}/*.json (the full structural answer). The primary
             #    signal is result.contamination_hits, counted in _handle against the FULL untruncated
-            #    tool input (review H-2); the truncated tool_log scan is kept as a fallback.
+            #    tool input; the truncated tool_log scan is kept as a fallback.
             #  - either arm: detect reads of ground-truth answer files (tasks-bench.json,
             #    benchmark results) which would let the agent copy the expected answer.
             _ANSWER_MARKERS = ("tasks-bench", "benchmarks/results", "/benchmarks/")
@@ -3977,21 +3972,21 @@ class BenchRunner:
                 sub = _parse_scan_query_subcommand(cmd)
                 if sub is not None:
                     result.scan_query_subcommands[sub] = result.scan_query_subcommands.get(sub, 0) + 1
-                # Batch mode (review batch-mode): attribute each inner {cmd} to its own subcommand
+                # In batch mode, attribute each inner {cmd} to its own subcommand
                 # counter so a batched fn-rdeps counts as fn-rdeps, and flag used_batch for the run.
                 # The outer `batch` counter above is kept so total batch invocations stay visible.
                 if sub == _BATCH_SUBCOMMAND:
                     result.used_batch = True
                     for inner in _parse_batch_subcommands(cmd):
                         result.scan_query_subcommands[inner] = result.scan_query_subcommands.get(inner, 0) + 1
-            # review H-2: count index/binary access on the FULL command (plain arm only).
+            # Count index/binary access on the FULL command (plain arm only).
             if _transport_arm(result.arm) == "plain" and _is_contaminating_access(cmd):
                 result.contamination_hits += 1
             result.tool_log.append(f"Bash: {cmd[:80]}")
         elif name == "Read":
             result.read_calls += 1
             file_path = inp.get("file_path", "")
-            # review H-2: a plain-arm Read of the prebuilt index is contamination; check the FULL
+            # A plain-arm Read of the prebuilt index is contamination; check the FULL
             # untruncated path before it is clipped for the display log.
             if _transport_arm(result.arm) == "plain" and _is_contaminating_access(file_path):
                 result.contamination_hits += 1
@@ -4217,9 +4212,14 @@ def _workflow_type_of(run: BenchRun) -> str:
         The workflow grouping key (e.g. ``"query"``, ``"debug"``).
 
     Examples:
-        >>> _workflow_type_of(BenchRun(arm="plain", task_id="X", task_type="symbol_extraction", model="haiku", success=True, workflow_type="query"))
+        >>> run = BenchRun(
+        ...     arm="plain", task_id="X", task_type="symbol_extraction", model="haiku", success=True,
+        ...     workflow_type="query",
+        ... )
+        >>> _workflow_type_of(run)
         'query'
-        >>> _workflow_type_of(BenchRun(arm="plain", task_id="X", task_type="symbol_extraction", model="haiku", success=True))
+        >>> run = BenchRun(arm="plain", task_id="X", task_type="symbol_extraction", model="haiku", success=True)
+        >>> _workflow_type_of(run)
         'symbol_extraction'
     """
     return run.workflow_type or run.task_type
@@ -4281,7 +4281,7 @@ def _print_workflow_breakdown(runs: list[BenchRun]) -> None:
 
 
 def _arm_extracted(run: Optional[BenchRun]) -> bool:
-    """Return True when *run* produced a scored, extracted, completed metric (review M-8).
+    """Return True when *run* produced a scored, extracted, completed metric.
 
     A run counts as "extracted" only when it was scored, did not fail extraction, and was not cut
     off by the turn budget. Contaminated / answer-file-read runs carry ``scored=False`` and are
@@ -4317,7 +4317,7 @@ def _is_self_consistency(run: Optional[BenchRun]) -> bool:
 
 
 def _paired_accuracy(runs: list[BenchRun]) -> Optional[dict[str, int]]:
-    """Compute paired accuracy over tasks where BOTH arms extracted successfully (review M-8).
+    """Compute paired accuracy over tasks where BOTH arms extracted successfully.
 
     The per-arm accuracy printed elsewhere drops ``extraction_failed`` runs independently per arm, so
     the plain and codemap figures are computed over different task subsets and different n — an
@@ -4378,7 +4378,7 @@ def _print_self_consistency(runs: list[BenchRun]) -> None:
 
 
 def _print_paired_accuracy(runs: list[BenchRun]) -> None:
-    """Print the paired accuracy view (both arms extracted, shared denominator) — review M-8.
+    """Print the paired accuracy view (both arms extracted, shared denominator).
 
     Args:
         runs: All benchmark runs (both arms, all tasks).
@@ -4476,7 +4476,7 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
         )
 
     for arm in ("plain", "codemap"):
-        # Denominator matches canonical accuracy (L801) and _arm_extracted: scored, parsed, and
+        # Denominator matches canonical accuracy and _arm_extracted: scored, parsed, and
         # NOT budget-cut. Timeout-incomplete runs get scored on partial output but must be excluded
         # here too, else the per-arm % counts a run the headline verdict drops.
         arm_runs = [r for r in runs if r.arm == arm and _arm_extracted(r)]
@@ -4524,7 +4524,7 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
             if all_methods:
                 print(f"  codemap query methods used: {', '.join(all_methods)}")
 
-    # Paired accuracy: both arms scored over the SAME both-extracted task set (review M-8). The
+    # Paired accuracy: both arms scored over the SAME both-extracted task set. The
     # per-arm figures above use different denominators (each arm drops its own extraction failures),
     # so the paired view is the like-for-like headline comparison with its shared n stated.
     _print_paired_accuracy(runs)
@@ -4794,7 +4794,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     if profile is not None and profile not in _PROFILES:
         print(f"ERROR: --profile must be one of {_PROFILES}, got {profile!r}")
         sys.exit(1)
-    # The dev profile is a haiku-only fast signal — pin the model regardless of --model.
+    # The dev profile is a haiku-only fast signal — pin the model regardless of ``--model``.
     if profile == _PROFILE_DEV:
         model = _TIER_HAIKU
 
@@ -4827,7 +4827,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         _REPO_NAMESPACE = list(repo_meta["namespace"])
     _REPO_LOCAL_PATH = repo_meta.get("local_path")
 
-    # Append tasks from any --tasks-file; scoreable depends on whether ground_truth is present.
+    # Append tasks from any ``--tasks-file``; scoreable depends on whether ground_truth is present.
     external_ids: list[str] = []
     if tasks_file:
         for tf in tasks_file:
@@ -4846,7 +4846,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
             n_scored = sum(1 for t in extra if t.get("scoreable") is not False)
             print(f"Loaded {len(extra)} task(s) from {tf} ({n_scored} scoreable)")
 
-    # Append patch tasks (Tier E) when --patch is set. Unlike --tasks-file tasks,
+    # Append patch tasks (Tier E) when ``--patch`` is set. Unlike ``--tasks-file`` tasks,
     # patch tasks keep their own scoreable flag and are sandbox-executed in _run_combo.
     patch_ids: list[str] = []
     if patch:
@@ -4928,7 +4928,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     # Exclude tasks whose ground truth is still a placeholder (gt_pending): their stage anchors and
     # expected callers were authored without this target repo, so staging and scoring are unreliable
     # until `generate-tasks-bench.py --update` materialises them. The generator's validator already
-    # honours this flag; the runner must too, or a stale DI anchor derails the run (review: DI crash).
+    # honours this flag; the runner must too, or a stale DI anchor derails the run.
     pending = [t for t in task_list if gt_is_pending(t)]
     if pending:
         ids = ", ".join(t["id"] for t in pending)

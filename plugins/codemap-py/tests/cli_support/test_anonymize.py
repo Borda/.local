@@ -181,9 +181,8 @@ def test_not_covered_non_string_elements_survive() -> None:
 class TestCommandFieldLeak:
     """A ``target``/``intent`` value carries project data whether or not it has a dot.
 
-    The gate these tests replace pseudonymized the field only when the *whole* value
-    looked like a qualified name, so a dot-free search command was exported verbatim
-    while a path with any dot in it collapsed to one opaque token.
+    The gate these tests replace pseudonymized the field only when the *whole* value looked like a qualified name, so a
+    dot-free search command was exported verbatim while a path with any dot in it collapsed to one opaque token.
     """
 
     def test_dot_free_command_is_scrubbed(self) -> None:
@@ -348,13 +347,13 @@ def test_default_out_dir_is_export_not_salt_dir() -> None:
 
 
 def test_explicit_out_dir_used() -> None:
-    """An explicit --out-dir places the derived '-anon' file inside it."""
+    """An explicit ``--out-dir`` places the derived ``-anon`` file inside it."""
     resolved = anonymize._resolve_output(Path("logs/skills.jsonl"), "my-export", None)
     assert resolved == Path("my-export") / "skills-anon.jsonl"
 
 
 def test_explicit_output_wins() -> None:
-    """An explicit --output overrides --out-dir derivation."""
+    """An explicit ``--output`` overrides ``--out-dir`` derivation."""
     resolved = anonymize._resolve_output(Path("logs/cli.jsonl"), "ignored", "out/custom.jsonl")
     assert resolved == Path("out/custom.jsonl")
 
@@ -407,7 +406,7 @@ def test_refuse_when_out_dir_contains_salt(tmp_path: Path, capsys: pytest.Captur
 
 
 def test_refuse_when_explicit_output_dir_contains_salt(tmp_path: Path) -> None:
-    """The salt refusal also applies when an explicit --output targets a salt dir."""
+    """The salt refusal also applies when an explicit ``--output`` targets a salt dir."""
     src = tmp_path / "cli.jsonl"
     src.write_text('{"cmd":"rdeps"}\n')
     unsafe_dir = tmp_path / "logs"

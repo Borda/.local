@@ -21,8 +21,8 @@ docs) — a graceful reset, not data loss, so a git-tracked location (e.g.
 
 **Two invalidation checks, both required for "valid"**:
 
-1. **Reachability** (``_is_valid_commit``) — ``git merge-base --is-ancestor
-   <sha> HEAD``, not ``git cat-file -e``. The latter only tests object-database
+1. **Reachability** (``_is_valid_commit``) — the command
+   ``git merge-base --is-ancestor <sha> HEAD``, not ``git cat-file -e``. The latter only tests object-database
    existence; a commit orphaned by rebase/force-push stays reflog-protected
    (~90 days by default) and would still report "exists", silently
    re-including already-drafted rewritten-SHA commits in the "incremental"
@@ -37,7 +37,7 @@ Subcommands:
     is-valid  Print "true"/"false" — does a marker exist, resolve to a
               commit still an ancestor of HEAD, AND sit at/after ``--last-tag``
               (not superseded by a later release cut)?
-    resolve   Print the RANGE to use for --append (marker..HEAD when valid per
+    resolve   Print the RANGE to use for ``--append`` (marker..HEAD when valid per
               both checks above, else <last-tag>..HEAD); prints an info/warn
               note to stderr.
     write     Persist the current HEAD sha as the new marker (call after a
@@ -196,7 +196,7 @@ def cmd_is_valid(args: argparse.Namespace) -> int:
 
 
 def cmd_resolve(args: argparse.Namespace) -> int:
-    """Print the --append RANGE to stdout; print an info/warn note to stderr.
+    """Print the ``--append`` RANGE to stdout; print an info/warn note to stderr.
 
     Args:
         args: Namespace with ``branch``, ``last_tag``, ``marker_dir``.

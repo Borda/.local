@@ -1,9 +1,7 @@
 """Index data contract shared between scan-index (writer) and scan-query (reader).
 
-``bin/_schema.py`` is a compatibility shim that aliases this module in
-``sys.modules`` so ``scan-index``/``scan-query`` (which import the bare
-``_schema`` name from their own ``bin/`` ``sys.path`` insert) reach this one
-implementation.
+``bin/_schema.py`` is a compatibility shim that aliases this module in ``sys.modules`` so ``scan-index``/``scan-query``
+(which import the bare ``_schema`` name from their own ``bin/`` ``sys.path`` insert) reach this one implementation.
 
 consumers: bin/scan-index, bin/scan-query — imported as ``_schema`` via the bin/ shim; not a standalone executable
 """
@@ -29,7 +27,7 @@ DEAD_SYMBOL_MIN_VER: int = 6  # v4.6 — dead-symbol query; requires sphinx_xref
 MODULE_ALIASES_MIN_VER: int = 7  # v5.1 — module_aliases at index root
 SUBPROCESS_CALLS_MIN_VER: int = 8  # v5.2 — subprocess_calls per module, subprocess_rdep_count at root
 FIXTURE_GRAPH_MIN_VER: int = 9  # v5.3 — fixture_uses per test module, fixture_exports per conftest
-COVERAGE_MIN_VER: int = 10  # v5.4 — coverage_pct, covered_by per symbol (requires --with-coverage build)
+COVERAGE_MIN_VER: int = 10  # v5.4 — coverage_pct, covered_by per symbol (requires ``--with-coverage`` build)
 ENTITY_TYPE_MIN_VER: int = 11  # v5.5 — entity_type ("pkg"|"test"|"docs"|"example"), package (top-level name)
 SYMBOL_ALIASES_MIN_VER: int = 12  # v5.6 — alias-aware reverse-call graph
 
@@ -37,10 +35,10 @@ SYMBOL_ALIASES_MIN_VER: int = 12  # v5.6 — alias-aware reverse-call graph
 # for statically proven top-level ``from ... import ...`` aliases. It changes reverse-call
 # query semantics, so the persisted-index generation advances to v12 and old indexes rebuild.
 #
-# .pyi scope extension (plan §2.1) is additive at SCAN_VERSION 11 — no version bump: the
+# .pyi scope extension is additive at SCAN_VERSION 11 — no version bump: the
 # fields below are optional and absent on a stub-free tree, and the one-time post-migration
 # rebuild is driven by file_shas drift (``.pyi`` joins the git/MD5 hash set), not a version
-# gate (plan §4.3 "content/option drift, not a schema-generation break"). New fields:
+# gate. New fields:
 #   module ``stub_only``: bool — a ``.pyi`` with no ``.py`` sibling (declarations/imports,
 #     no outgoing call edges);
 #   module ``has_stub``: bool — an authoritative ``.py`` that shadows a sibling ``.pyi``;
@@ -127,7 +125,10 @@ def validate_index(index: object) -> str | None:
 
 
 class EntityType(str, Enum):
-    """Role a module plays in the project. Inherits str so json.dump serialises values as plain strings."""
+    """Role a module plays in the project.
+
+    Inherits str so json.dump serialises values as plain strings.
+    """
 
     PKG = "pkg"
     TEST = "test"
@@ -136,7 +137,10 @@ class EntityType(str, Enum):
 
 
 class SymbolType(str, Enum):
-    """Kind of extracted symbol. Inherits str so json.dump serialises values as plain strings."""
+    """Kind of extracted symbol.
+
+    Inherits str so json.dump serialises values as plain strings.
+    """
 
     CLASS = "class"
     FUNCTION = "function"
@@ -144,7 +148,10 @@ class SymbolType(str, Enum):
 
 
 class Resolution(str, Enum):
-    """Resolution kind for a call edge. Inherits str so json.dump serialises values as plain strings."""
+    """Resolution kind for a call edge.
+
+    Inherits str so json.dump serialises values as plain strings.
+    """
 
     IMPORT = "import"
     LOCAL = "local"
@@ -169,7 +176,5 @@ class Symbol(TypedDict, total=False):
     mock_rdep_count: int  # v4.1 — count of test files mocking this symbol via patch()
     has_docstring: bool  # v4.4 — True when ast.get_docstring(node) is not None
     docstring_first_line: str | None  # v4.4 — first non-empty line, stripped, ≤80 chars; None when absent
-    coverage_pct: (
-        float  # v5.4 — fraction of symbol's lines measured (0.0–1.0); absent when index built without --with-coverage
-    )
-    covered_by: list[str] | None  # v5.4 — test node IDs that executed this symbol; null when --cov-context not used
+    coverage_pct: float  # v5.4 — fraction of symbol's lines measured (0.0–1.0); absent when index built without ``--with-coverage``
+    covered_by: list[str] | None  # v5.4 — test node IDs that executed this symbol; null when ``--cov-context`` not used

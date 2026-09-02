@@ -57,11 +57,9 @@ def copied_package_root(tmp_path: Path) -> Path:
 def test_installed_package_runs_the_explicit_package_safe_selection(tmp_path: Path) -> None:
     """Prevent checkout-only tests from being mistaken for installed-package coverage.
 
-    The selected tests cover staged execution manifests, privacy-minimized telemetry,
-    the parallel-write lifecycle, the denial protocol/client, all seven network
-    approval briefs, the complete PR collector boundary, and calibration scoring. A
-    separate source-checkout suite retains the valid sync, CI-harness, and Git
-    metadata contracts.
+    The selected tests cover staged execution manifests, privacy-minimized telemetry, the parallel-write lifecycle, the
+    denial protocol/client, all seven network approval briefs, the complete PR collector boundary, and calibration
+    scoring. A separate source-checkout suite retains the valid sync, CI-harness, and Git metadata contracts.
     """
     installed_root = copied_package_root(tmp_path)
     payload_paths = set(package_payload_paths())

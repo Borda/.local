@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_MAX_AGE_HOURS = 24
-# DoS guard (SEC-M9), held at the query engine's ceiling (``query._MAX_INDEX_SIZE_BYTES``):
+# DoS guard, held at the query engine's ceiling (``query._MAX_INDEX_SIZE_BYTES``):
 # a helper that refuses an index the engine serves reports a healthy project as broken.
 MAX_INDEX_SIZE = 512 * 1024 * 1024
 
@@ -43,7 +43,7 @@ MAX_INDEX_SIZE = 512 * 1024 * 1024
 def _is_user_owned(path: Path) -> bool:
     """Return ``True`` iff ``path`` is owned by the current real user.
 
-    Used to gate world-writable temp directories (SEC-L7): on a multi-user system
+    Used to gate world-writable temp directories: on a multi-user system
     ``/tmp`` is shared, so another user could plant a file there. Requiring the
     file's owner to match the caller blocks that vector.
 
@@ -72,7 +72,7 @@ def _validate_index_path(raw: str) -> Path | None:
         pytest's ``tmp_path`` fixture and other sandboxed test runs.
 
     Paths resolving under the shared temp directory (``tempfile.gettempdir()`` or
-    ``/tmp``) are additionally required to be owned by the current user (SEC-L7),
+    ``/tmp``) are additionally required to be owned by the current user,
     since those directories are world-writable on multi-user systems.
 
     Args:
@@ -100,7 +100,7 @@ def _validate_index_path(raw: str) -> Path | None:
             candidate.relative_to(root)
         except ValueError:
             continue
-        # SEC-L7: shared temp dirs are world-writable — require current-user ownership.
+        # Shared temp dirs are world-writable — require current-user ownership.
         if root in ownership_gated_roots and not _is_user_owned(candidate):
             return None
         return candidate
@@ -193,7 +193,7 @@ def smoke_test_index(index_path: Path, max_age_hours: int, now: float | None = N
     if not index_path.exists() or not index_path.is_file():
         return SmokeResult(ok=False, stale=False, age_hours=None, path=abs_path, error="index file not found")
 
-    # DoS guard (SEC-M9): refuse oversized index files before json.load to avoid memory exhaustion.
+    # DoS guard: refuse oversized index files before json.load to avoid memory exhaustion.
     try:
         if index_path.stat().st_size > MAX_INDEX_SIZE:
             return SmokeResult(

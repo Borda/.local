@@ -44,8 +44,8 @@ from _hook_env import hook_tmp_base
 def sid(tmp_path: Path) -> Iterator[str]:
     """Yield a unique session id; clean its ``claude-state-<id>`` dir on teardown.
 
-    Base resolved via ``hook_tmp_base()`` so teardown targets the same directory the
-    hook's ``getSentinelDir()`` writes on this platform.
+    Base resolved via ``hook_tmp_base()`` so teardown targets the same directory the hook's ``getSentinelDir()`` writes
+    on this platform.
     """
     s = f"pytest-{tmp_path.name}"
     yield s
@@ -88,8 +88,8 @@ def _pre_agent(
 def _post_agent(sid: str, tool_use_id: str) -> dict:
     """Build a ``PostToolUse`` payload for an ``Agent()`` tool call.
 
-    Mirrors the live payload where PostToolUse's ``tool_input`` omits ``run_in_background`` —
-    the hook must recover background-ness from the ``pending/`` marker written at PreToolUse.
+    Mirrors the live payload where PostToolUse's ``tool_input`` omits ``run_in_background`` — the hook must recover
+    background-ness from the ``pending/`` marker written at PreToolUse.
     """
     return {
         "hook_event_name": "PostToolUse",
@@ -163,8 +163,8 @@ def _pre_bash(sid: str, tool_use_id: str) -> dict:
 def _pre_tool_with_cwd(sid: str, tool_use_id: str, cwd: str, tool_name: str = "Read") -> dict:
     """Build a PreToolUse payload carrying a ``cwd`` (a subagent's worktree working dir).
 
-    Mirrors the live CC hook contract where PreToolUse payloads include ``cwd`` but no
-    ``agent_id`` — the field ``touchAgentLastActive`` uses to attribute worktree activity.
+    Mirrors the live CC hook contract where PreToolUse payloads include ``cwd`` but no ``agent_id`` — the field
+    ``touchAgentLastActive`` uses to attribute worktree activity.
     """
     return {
         "hook_event_name": "PreToolUse",
@@ -237,9 +237,8 @@ class TestAgentLifecycle:
     def test_post_tool_use_deletes_agents_and_pending(self, sid: str, tmp_home: Path, run_hook, state_dir) -> None:
         """PostToolUse for Agent() deletes both agents/ and pending/ markers.
 
-        Both files must be removed so that a later SubagentStart (which fires
-        after PostToolUse for background agents) does not find a stale pending
-        entry and silently skip writing its own agents/<agent_id>.json.
+        Both files must be removed so that a later SubagentStart (which fires after PostToolUse for background agents)
+        does not find a stale pending entry and silently skip writing its own agents/<agent_id>.json.
         """
         tool_use_id = "tu-delete"
         run_hook("task-log.js", _pre_agent(sid, tool_use_id), home=tmp_home)
@@ -257,9 +256,9 @@ class TestAgentLifecycle:
     ) -> None:
         """Background agents are tracked even when PostToolUse fires before SubagentStart.
 
-        Regression test for the race condition where PostToolUse fires immediately
-        after launch (before the agent starts), leaving a stale pending/ marker.
-        SubagentStart must fall through to write a fresh agents/<agent_id>.json.
+        Regression test for the race condition where PostToolUse fires immediately after launch (before the agent
+        starts), leaving a stale pending/ marker. SubagentStart must fall through to write a fresh
+        agents/<agent_id>.json.
         """
         tool_use_id = "tu-bg"
         agent_id = "agent-bg"
@@ -299,9 +298,9 @@ class TestAgentLifecycle:
     ) -> None:
         """SubagentStart with a matching pending entry re-keys agents/<tool_use_id>.json to agents/<agent_id>.json.
 
-        Without the re-key, SubagentStop's later unlink (keyed by agent_id) can never find the
-        record — it stays keyed by tool_use_id forever, leaking until the statusline's staleness
-        backstop reaps it instead of being removed on actual completion.
+        Without the re-key, SubagentStop's later unlink (keyed by agent_id) can never find the record — it stays keyed
+        by tool_use_id forever, leaking until the statusline's staleness backstop reaps it instead of being removed on
+        actual completion.
         """
         tool_use_id = "tu-fg"
         agent_id = "agent-fg"
@@ -345,10 +344,9 @@ class TestAgentLifecycle:
     ) -> None:
         """SubagentStart payload omitting tool_use_id still re-keys via the agent_type pending scan.
 
-        Some SubagentStart payloads carry agent_type but not tool_use_id — the hook falls back to
-        scanning pending/ for the most recent entry matching agent_type. That fallback must re-key
-        the matched agents/<tool_use_id>.json to agents/<agent_id>.json too, the same as the direct
-        tool_use_id match path.
+        Some SubagentStart payloads carry agent_type but not tool_use_id — the hook falls back to scanning pending/ for
+        the most recent entry matching agent_type. That fallback must re-key the matched agents/<tool_use_id>.json to
+        agents/<agent_id>.json too, the same as the direct tool_use_id match path.
         """
         tool_use_id = "tu-typematch"
         agent_id = "agent-typematch"
@@ -499,8 +497,8 @@ class TestAgentLivenessRefresh:
     def test_non_worktree_cwd_does_not_stamp(self, sid: str, tmp_home: Path, run_hook, state_dir) -> None:
         """A tool event whose cwd is the project root (not a worktree) leaves last_active unset.
 
-        Non-worktree agents share the parent's cwd, so their activity can't be attributed to a
-        specific agent — the record must stay unchanged and rely on the staleness backstop.
+        Non-worktree agents share the parent's cwd, so their activity can't be attributed to a specific agent — the
+        record must stay unchanged and rely on the staleness backstop.
         """
         agent_id = "a0def456"
         _write_agent_file(state_dir, sid, agent_id)

@@ -1,8 +1,7 @@
 """Tests for ``bin/resolve_preflight.py``.
 
-``subprocess.run`` and ``which`` monkeypatched — no real tools invoked.
-``monkeypatch.chdir`` places the ``.temp/state/preflight/`` TTL cache
-under ``tmp_path`` (the script uses a relative path).
+``subprocess.run`` and ``which`` monkeypatched — no real tools invoked. ``monkeypatch.chdir`` places the
+``.temp/state/preflight/`` TTL cache under ``tmp_path`` (the script uses a relative path).
 """
 
 from __future__ import annotations
@@ -55,7 +54,7 @@ def test_gh_not_found_exits_1(
 def test_gh_unauthenticated_exits_1(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """gh found but auth fails → exit 1 with 'gh found but not authenticated'."""
+    """Gh found but auth fails → exit 1 with 'gh found but not authenticated'."""
     monkeypatch.setattr(rp, "which", lambda cmd: "/fake/" + cmd)
     monkeypatch.setattr(
         rp.subprocess,
@@ -79,6 +78,7 @@ def test_gh_ok_codex_absent_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     """Authenticated gh, codex absent → exit 0, CODEX_AVAILABLE file=false, GH_OK file=true."""
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.setattr(rp, "which", lambda cmd: "/fake/" + cmd)
+    monkeypatch.setattr(rp.Path, "home", classmethod(lambda _cls: tmp_path / "home"))
     monkeypatch.setattr(
         rp.subprocess,
         "run",
@@ -124,8 +124,8 @@ def _preflight_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, home: Path) 
 def test_gh_ok_bridge_enabled_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Authenticated gh, bridge installed and enabled → CODEX_AVAILABLE file=true.
 
-    Availability is resolved from the plugin registry through the shared detector rather
-    than from ``claude plugin list`` text, so the fixture is a registry, not a listing.
+    Availability is resolved from the plugin registry through the shared detector rather than from
+    ``claude plugin list`` text, so the fixture is a registry, not a listing.
     """
     home = tmp_path / "home"
     _install_bridge(home)
@@ -139,8 +139,8 @@ def test_gh_ok_bridge_enabled_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path:
 def test_gh_ok_bridge_disabled_is_unavailable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """A bridge the user opted out of must not be handed to callers as available.
 
-    The registry lists it as installed, so a presence-only check would report it usable
-    and every downstream dispatch would fail against a plugin the host refuses to load.
+    The registry lists it as installed, so a presence-only check would report it usable and every downstream dispatch
+    would fail against a plugin the host refuses to load.
     """
     home = tmp_path / "home"
     _install_bridge(home, enabled=False)
@@ -205,7 +205,7 @@ def test_remote_ahead_pulls(
 def test_pull_conflict_exits_1(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """git pull returns non-zero → exit 1 with conflict message."""
+    """Git pull returns non-zero → exit 1 with conflict message."""
     monkeypatch.setattr(rp, "which", lambda cmd: "/fake/" + cmd)
 
     def _conflict_run(cmd: list[str], **_: Any) -> _FakeCompleted:
@@ -251,10 +251,10 @@ def test_preflight_ok_fresh_returns_true(tmp_path: Path) -> None:
 
 
 def test_help_exits_0_no_subprocess(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """``--help`` prints usage and exits 0 WITHOUT running gh auth / git pull.
+    """Print usage and exit 0 WITHOUT running gh auth / git pull.
 
-    Regression guard for the pre-argparse hazard where the script executed its
-    full preflight (network + working-tree mutation) even when given ``--help``.
+    Regression guard for the pre-argparse hazard where the script executed its full preflight (network + working-tree
+    mutation) even when given ``--help``.
     """
 
     def _boom(*_a: Any, **_k: Any) -> None:

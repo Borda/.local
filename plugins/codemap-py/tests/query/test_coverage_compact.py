@@ -1,7 +1,7 @@
 """Reader-side edge cases for the scan-query session-scoped coverage diet.
 
-Complements the ``TestCoverageDiet`` cases in ``test_scan_query.py`` (first-full-then-
-compact, missing-marker fail-verbose, ``--verbose-coverage`` override) by pinning the
+Complements the ``TestCoverageDiet`` cases in ``test_scan_query.py`` (a full first response followed by compact ones,
+verbose failure for a missing marker, and the ``--verbose-coverage`` override) by pinning the
 two fail-verbose branches that block was missing and the compact block's honesty
 contract when a result is incomplete:
 

@@ -264,8 +264,12 @@ def build_invocation_pairs(invocations_path: Path) -> list[dict]:
     Examples:
         >>> import tempfile, json
         >>> with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
-        ...     _ = fh.write(json.dumps({"event":"started","tool":"Task","agent":"x","desc":"d","ts":"1970-01-01T00:00:00Z","project":"p"}) + "\\n")
-        ...     _ = fh.write(json.dumps({"event":"completed","tool":"Task","agent":"x","ts":"1970-01-01T00:00:10Z","project":"p"}) + "\\n")
+        ...     started = {"event": "started", "tool": "Task", "agent": "x", "desc": "d",
+        ...                "ts": "1970-01-01T00:00:00Z", "project": "p"}
+        ...     completed = {"event": "completed", "tool": "Task", "agent": "x",
+        ...                  "ts": "1970-01-01T00:00:10Z", "project": "p"}
+        ...     _ = fh.write(json.dumps(started) + "\\n")
+        ...     _ = fh.write(json.dumps(completed) + "\\n")
         ...     name = fh.name
         >>> pairs = build_invocation_pairs(Path(name))
         >>> pairs[0]["wall_ms"]
@@ -361,7 +365,7 @@ def _accumulate_row(
     top_n: int,
     counters: dict[str, int],
 ) -> None:
-    """Internal: fold one timings row into the running totals."""
+    """Fold one timing row into the running totals."""
     sid = row.get("session_id")
     ts_raw = row.get("ts")
     if not sid or not ts_raw:
@@ -444,7 +448,7 @@ def aggregate_sessions(
 
 
 def _fmt_hms(ms: int) -> str:
-    """ms → ``HH:MM:SS``."""
+    """Ms → ``HH:MM:SS``."""
     s = max(0, ms) // 1000
     h, r = divmod(s, 3600)
     m, sec = divmod(r, 60)
@@ -452,7 +456,7 @@ def _fmt_hms(ms: int) -> str:
 
 
 def _fmt_pct(part: int, whole: int) -> str:
-    """part/whole as percent, or 0.0% on zero whole."""
+    """Part/whole as percent, or 0.0% on zero whole."""
     return f"{(100 * part / whole):.1f}%" if whole else "0.0%"
 
 
@@ -646,13 +650,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry. Reads logs, writes report, prints ``→ <path>`` on stdout.
+    """Analyze timing logs and return the report path or process status.
+
+    Reads logs, writes the report, and prints ``→ <path>`` on stdout.
 
     Args:
-        argv: argument list (defaults to ``sys.argv[1:]``).
+        argv: Argument list (defaults to ``sys.argv[1:]``).
 
     Returns:
-        ``0`` on success, ``1`` when window contains no sessions.
+        ``0`` on success, ``1`` when the window contains no sessions.
     """
     args = _build_parser().parse_args(argv)
     timings = Path(args.timings).expanduser()

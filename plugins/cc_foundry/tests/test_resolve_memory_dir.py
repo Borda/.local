@@ -1,7 +1,7 @@
 """Tests for ``bin/resolve_memory_dir.py``.
 
-Pure ``slugify`` covered by doctest in the source module; this file exercises
-git-bound behaviour via ``monkeypatch`` and the CLI surface via ``capsys``.
+Pure ``slugify`` covered by doctest in the source module; this file exercises git-bound behaviour via ``monkeypatch``
+and the CLI surface via ``capsys``.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ def _patch_run(monkeypatch: pytest.MonkeyPatch, responder: Any) -> None:
 
 
 class TestSlugify:
-    """slugify: canonical lowercase + non-alnum squeeze + trailing strip."""
+    """Slugify: canonical lowercase + non-alnum squeeze + trailing strip."""
 
     @pytest.mark.parametrize(
         ("raw", "expected"),
@@ -77,7 +77,7 @@ class TestResolveMemoryDir:
         assert Path(result).as_posix() == "/home/test/.claude/projects/-users-x-project/memory"
 
     def test_git_fallback_no_repo(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """git fails (non-zero) → None."""
+        """Git fails (non-zero) → None."""
 
         def fake_run(_argv: Sequence[str], **_: Any) -> _FakeCompleted:
             return _FakeCompleted(stdout="", stderr="fatal: not a git repository\n", returncode=128)
@@ -86,7 +86,7 @@ class TestResolveMemoryDir:
         assert resolve_memory_dir.resolve_memory_dir(None) is None
 
     def test_git_missing_binary(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """git not on PATH → FileNotFoundError swallowed, returns None."""
+        """Git not on PATH → FileNotFoundError swallowed, returns None."""
 
         def fake_run(*_: Any, **__: Any) -> _FakeCompleted:
             raise FileNotFoundError("git")
@@ -110,7 +110,7 @@ class TestResolveMemoryDir:
 
 
 class TestMain:
-    """main: CLI surface — stdout + exit codes."""
+    """Main: CLI surface — stdout + exit codes."""
 
     def test_no_arg_with_git(
         self,

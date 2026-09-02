@@ -1,8 +1,7 @@
 """Tests for ``bin/resolve_skill_subdir.py``.
 
-Doctests in the source cover ``_validate_token`` and ``resolve``'s miss-path.
-This file covers the four-tier cascade against a real filesystem, plus the
-CLI surface (stdout, stderr, exit codes).
+Doctests in the source cover ``_validate_token`` and ``resolve``'s miss-path. This file covers the four-tier cascade
+against a real filesystem, plus the CLI surface (stdout, stderr, exit codes).
 """
 
 from __future__ import annotations
@@ -32,7 +31,7 @@ def cwd_with_local_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
 
 
 class TestResolveCascade:
-    """resolve: tier-1 (local) → tier-2 (plugin root) → tier-3 → tier-4 ordering."""
+    """Resolve: tier-1 (local) → tier-2 (plugin root) → tier-3 → tier-4 ordering."""
 
     def test_tier2_claude_plugin_root_wins_when_local_false(
         self,
@@ -72,7 +71,10 @@ class TestResolveCascade:
         monkeypatch: pytest.MonkeyPatch,
         fake_home: Path,
     ) -> None:
-        """--local flag pulls the source tree into the cascade ahead of CLAUDE_PLUGIN_ROOT."""
+        """Verify command-line option behavior.
+
+        --local flag pulls the source tree into the cascade ahead of CLAUDE_PLUGIN_ROOT.
+        """
         monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
         local = cwd_with_local_tree / "plugins" / "cc_foundry" / "skills" / "audit" / "templates"
         local.mkdir(parents=True)
@@ -90,10 +92,9 @@ class TestResolveCascade:
     ) -> None:
         """Regression: --local must override CLAUDE_PLUGIN_ROOT, not lose to it.
 
-        Prior tier order checked CLAUDE_PLUGIN_ROOT before the local-source tier,
-        so --local was a silent no-op whenever CLAUDE_PLUGIN_ROOT happened to be
-        set (the common case inside any installed-plugin run). Both candidates
-        exist here; the local source tree must win.
+        Prior tier order checked CLAUDE_PLUGIN_ROOT before the local-source tier, so --local was a silent no-op whenever
+        CLAUDE_PLUGIN_ROOT happened to be set (the common case inside any installed-plugin run). Both candidates exist
+        here; the local source tree must win.
         """
         installed = tmp_path / "installed"
         (installed / "skills" / "audit" / "templates").mkdir(parents=True)
@@ -111,7 +112,7 @@ class TestResolveCascade:
         monkeypatch: pytest.MonkeyPatch,
         fake_home: Path,
     ) -> None:
-        """``.claude/skills/`` override resolves when no higher tier matches."""
+        """Use the project skill override when no higher resolution tier matches."""
         monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
         override = cwd_with_local_tree / ".claude" / "skills" / "manage" / "templates"
         override.mkdir(parents=True)
@@ -148,7 +149,7 @@ class TestResolveCascade:
 
 
 class TestMain:
-    """main: CLI surface — exit codes, stdout, stderr."""
+    """Main: CLI surface — exit codes, stdout, stderr."""
 
     def test_success_prints_path_exit_0(
         self,
@@ -174,7 +175,10 @@ class TestMain:
         fake_home: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """Unresolvable → ! BREAKING line on stderr, exit 1."""
+        """Report an unresolvable directory and exit with status 1.
+
+        The stderr diagnostic begins with ``! BREAKING``.
+        """
         monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
 
         rc = main(["nope", "missing", "--home", str(fake_home)])
@@ -213,7 +217,10 @@ class TestMain:
         fake_home: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--local flag enables tier-2 resolution at the CLI surface."""
+        """Verify command-line option behavior.
+
+        --local flag enables tier-2 resolution at the CLI surface.
+        """
         monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
         (cwd_with_local_tree / "plugins" / "cc_foundry" / "skills" / "manage" / "templates").mkdir(parents=True)
 

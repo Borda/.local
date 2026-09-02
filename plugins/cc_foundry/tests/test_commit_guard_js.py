@@ -66,9 +66,9 @@ def git_repo(tmp_path: Path) -> Path:
 def push_sentinel() -> Iterator[Path]:
     """Yield the push sentinel path, removing any leftover before AND after each test.
 
-    Resolved through ``hook_tmp_base()`` rather than a module-level ``/tmp`` literal so
-    the path follows the hook's own ``getSentinelDir()`` on Windows too. Kept lazy —
-    the base is computed inside the fixture, after the module-level git skipif has run.
+    Resolved through ``hook_tmp_base()`` rather than a module-level ``/tmp`` literal so the path follows the hook's own
+    ``getSentinelDir()`` on Windows too. Kept lazy — the base is computed inside the fixture, after the module-level git
+    skipif has run.
     """
     path = hook_tmp_base() / _SENTINEL_NAME
     path.unlink(missing_ok=True)
@@ -115,7 +115,7 @@ class TestCommitGuard:
     """commit-guard.js: push-only sentinel gate; commit is prompt-discipline only."""
 
     def test_commit_always_passes_through(self, git_repo: Path, run_hook) -> None:
-        """git commit exits 0 unconditionally — the hook never inspects it, no sentinel involved."""
+        """Git commit exits 0 unconditionally — the hook never inspects it, no sentinel involved."""
         result = run_hook("commit-guard.js", _bash_commit(), cwd=git_repo)
 
         assert result.returncode == 0, result.stderr

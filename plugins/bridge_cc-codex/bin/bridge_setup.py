@@ -1,37 +1,25 @@
 """Plan and execute credential-free Bridge host setup operations.
 
-Purpose: Provide the narrow, deterministic process boundary behind the Claude
-and Codex ``bridge:setup`` skills. Scope: This module detects a supported
-installed host CLI, checks that its version meets the supported minimum,
-parses its plugin inventory and
-login-status probe, and plans one native plugin operation for a single peer
-host. It can execute that already-bound operation only after a digest approval
-and a repeated state probe. Provider authentication is deliberately separate:
-it starts only the native login command with the operator's streams inherited.
-Usage: Run ``bridge_setup.py --current-host codex --workspace <path>`` to emit
-a credential-free plan, then repeat its exact arguments with ``--approve
-<digest>`` to configure. ``--action authenticate`` and ``--action
-verify-live`` each emit a distinct plan and require their own action-bound
-approval; authentication launches only the native login command and live
-verification calls the existing bounded Bridge supervisor. Outputs: Stdout
-receives exactly one sanitized JSON result that
-contains the requested/resolved scope, operations, bound digest, evidence
-level, and remaining work; no raw CLI output is retained. Failure: Missing
-executables, unknown versions, malformed inventories, approval mismatch,
-state drift, or failed native commands fail closed without guessed repair or
-credential capture. Used by: The shipped Claude and Codex setup skills, their
-contract tests, and package validation. The code is Python 3.10+ standard
-library only and intentionally never accepts, reads, logs, pipes, stores, or
-validates tokens, access keys, browser/device codes, or transcripts. Approved
-mutations and approval consumption are recorded as opaque fingerprints under
-the platform-native per-user ``bridge-setup`` state root, rather than the
-workspace, so locking and replay protection cover every workspace for the
-same target and scope. Those records contain no raw output, provider content,
-or secret-bearing command material. On POSIX the signing key and its state
-directory are owner-only (0600/0700); on Windows the equivalent boundary is
-the current user's LOCALAPPDATA ACL. The HMAC binds a plan to state but does
-not itself prove human consent: the host skill or terminal approval remains
-the authority for an action.
+Purpose: Provide the narrow, deterministic process boundary behind the Claude and Codex ``bridge:setup`` skills. Scope:
+This module detects a supported installed host CLI, checks that its version meets the supported minimum, parses its
+plugin inventory and login-status probe, and plans one native plugin operation for a single peer host. It can execute
+that already-bound operation only after a digest approval and a repeated state probe. Provider authentication is
+deliberately separate: it starts only the native login command with the operator's streams inherited. Usage: Run
+``bridge_setup.py --current-host codex --workspace <path>`` to emit a credential-free plan, then repeat its exact
+arguments with ``--approve <digest>`` to configure. ``--action authenticate`` and ``--action verify-live`` each emit a
+distinct plan and require their own action-bound approval; authentication launches only the native login command and
+live verification calls the existing bounded Bridge supervisor. Outputs: Stdout receives exactly one sanitized JSON
+result that contains the requested/resolved scope, operations, bound digest, evidence level, and remaining work; no raw
+CLI output is retained. Failure: Missing executables, unknown versions, malformed inventories, approval mismatch, state
+drift, or failed native commands fail closed without guessed repair or credential capture. Used by: The shipped Claude
+and Codex setup skills, their contract tests, and package validation. The code is Python 3.10+ standard library only and
+intentionally never accepts, reads, logs, pipes, stores, or validates tokens, access keys, browser/device codes, or
+transcripts. Approved mutations and approval consumption are recorded as opaque fingerprints under the platform-native
+per-user ``bridge-setup`` state root, rather than the workspace, so locking and replay protection cover every workspace
+for the same target and scope. Those records contain no raw output, provider content, or secret-bearing command
+material. On POSIX the signing key and its state directory are owner-only (0600/0700); on Windows the equivalent
+boundary is the current user's LOCALAPPDATA ACL. The HMAC binds a plan to state but does not itself prove human consent:
+the host skill or terminal approval remains the authority for an action.
 """
 
 from __future__ import annotations
@@ -206,9 +194,8 @@ def _version_tuple(version: str) -> tuple[int, ...]:
 def _version(host: str) -> tuple[bool, str | None]:
     """Verify that a host reports at least the minimum supported CLI version.
 
-    Host CLIs self-update between bridge releases, so an exact pin would fail
-    every setup action the day after either CLI ships. The floor keeps the
-    known-incompatible past releases out while the flag-level baseline in
+    Host CLIs self-update between bridge releases, so an exact pin would fail every setup action the day after either
+    CLI ships. The floor keeps the known-incompatible past releases out while the flag-level baseline in
     ``bridge_diagnose`` guards against forward help-surface drift.
     """
     ok, stdout, _ = _capture([host, "--version"])
@@ -713,11 +700,9 @@ def _journal_has_failed_operation(
 ) -> bool:
     """Reject a recent repeat of the same recorded failed operation without raw-log retention.
 
-    The block expires after ``FAILED_OPERATION_TTL_SECONDS`` so the documented
-    "wait and retry" recovery path actually exists: a transient host fault
-    would otherwise lock the exact operation for the state's lifetime with no
-    cleanup command. A record without a readable timestamp blocks
-    indefinitely, keeping tampered or truncated journals fail-closed.
+    The block expires after ``FAILED_OPERATION_TTL_SECONDS`` so the documented "wait and retry" recovery path actually
+    exists: a transient host fault would otherwise lock the exact operation for the state's lifetime with no cleanup
+    command. A record without a readable timestamp blocks indefinitely, so tampered or truncated journals fail closed.
     """
     records = _read_records(journal)
     if records is None:

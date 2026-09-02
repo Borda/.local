@@ -1,9 +1,8 @@
 """Tests for ``bin/run_audit_checks.py``.
 
-``subprocess.run`` and ``which`` monkeypatched — no real tools invoked.
-``monkeypatch.chdir`` places filesystem scans (version/signal grep) under
-``tmp_path``. Tests cover arg parsing, tag injection guard, gh auth checks,
-check-banner emission, and pure-Python helper functions.
+``subprocess.run`` and ``which`` monkeypatched — no real tools invoked. ``monkeypatch.chdir`` places filesystem scans
+(version/signal grep) under ``tmp_path``. Tests cover arg parsing, tag injection guard, gh auth checks, check-banner
+emission, and pure-Python helper functions.
 """
 
 from __future__ import annotations
@@ -74,7 +73,7 @@ def test_unknown_arg_exits_1(
 
 
 def test_known_args_accepted(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """``--repo``, ``--tag``, ``--range`` accepted without error."""
+    """Accept repository, tag, and range options together."""
     monkeypatch.setattr(rac, "which", lambda cmd: "/fake/" + cmd)
     monkeypatch.setattr(rac.subprocess, "run", _happy_dispatch())
     monkeypatch.chdir(tmp_path)
@@ -110,7 +109,7 @@ def test_tag_injection_guard_exits_2(
 
 
 def test_gh_not_found_exits_2(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """gh not on PATH → exit 2."""
+    """Gh not on PATH → exit 2."""
     monkeypatch.setenv("LAST_TAG", "v1.0.0")
     monkeypatch.setattr(rac, "which", lambda cmd: None if cmd == "gh" else "/fake/" + cmd)
     monkeypatch.setattr(rac.subprocess, "run", _dispatch({"git describe": (0, "v1.0.0")}))
@@ -122,7 +121,7 @@ def test_gh_not_found_exits_2(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
 def test_gh_not_authenticated_exits_2(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """gh present but auth fails → exit 2."""
+    """Gh present but auth fails → exit 2."""
     monkeypatch.setattr(rac, "which", lambda cmd: "/fake/" + cmd)
     monkeypatch.setattr(
         rac.subprocess,
@@ -174,7 +173,7 @@ def test_happy_path_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
 def test_tag_arg_emitted_in_version_section(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``--tag`` value appears in version-consistency section output."""
+    """Include the requested tag in version-consistency output."""
     monkeypatch.setattr(rac, "which", lambda cmd: "/fake/" + cmd)
     monkeypatch.setattr(rac.subprocess, "run", _happy_dispatch())
     monkeypatch.chdir(tmp_path)
@@ -192,7 +191,7 @@ def test_tag_arg_emitted_in_version_section(
 def test_pip_audit_missing_emits_greppable_signal_line(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``pip-audit`` absent from PATH → machine-readable signal line printed, exit still 0."""
+    """Report a missing audit dependency without failing the overall command."""
     monkeypatch.setattr(rac, "which", lambda cmd: None if cmd == "pip-audit" else "/fake/" + cmd)
     monkeypatch.setattr(rac.subprocess, "run", _happy_dispatch())
     monkeypatch.chdir(tmp_path)
@@ -206,7 +205,7 @@ def test_pip_audit_missing_emits_greppable_signal_line(
 def test_pip_audit_present_does_not_emit_missing_signal(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``pip-audit`` on PATH → missing-tool signal absent from output."""
+    """Omit the missing-tool signal when the audit dependency is available."""
     monkeypatch.setattr(rac, "which", lambda cmd: "/fake/" + cmd)
     monkeypatch.setattr(rac.subprocess, "run", _happy_dispatch())
     monkeypatch.chdir(tmp_path)
@@ -277,7 +276,7 @@ def test_grep_code_signals_finds_fixme(monkeypatch: pytest.MonkeyPatch, tmp_path
 
 
 def test_grep_code_signals_finds_todo_release(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """``TODO.*release`` pattern matched."""
+    """Match release tasks through the configured pattern."""
     (tmp_path / "src.py").write_text("# TODO before release: update changelog\n")
     monkeypatch.chdir(tmp_path)
     results = rac._grep_code_signals()
@@ -338,7 +337,7 @@ def test_detect_trunk_fallback_main(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_detect_trunk_remote_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """git remote show fails → falls back to 'main'."""
+    """Git remote show fails → falls back to 'main'."""
     monkeypatch.setattr(
         rac.subprocess,
         "run",

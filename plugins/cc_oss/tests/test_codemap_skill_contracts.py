@@ -1,11 +1,10 @@
 """Contract tests for the codemap wiring embedded in cc_oss skill markdown.
 
-The codemap guard, the index-path convention and the per-module query list live in
-bash blocks inside ``skills/**/*.md``. Nothing executes them in CI, so every defect
-they carried was silent in production: a cwd-relative index dir reported ``no_index``
-from a subdirectory, a sanitized project name sought a file the scanner never wrote,
-and a ``rdeps`` call with no positional argument errored into ``2>/dev/null`` forever.
-These tests read the markdown and assert the invariants those bugs violated.
+The codemap guard, the index-path convention and the per-module query list live in bash blocks inside
+``skills/**/*.md``. Nothing executes them in CI, so every defect they carried was silent in production: a cwd-relative
+index dir reported ``no_index`` from a subdirectory, a sanitized project name sought a file the scanner never wrote, and
+a ``rdeps`` call with no positional argument errored into ``2>/dev/null`` forever. These tests read the markdown and
+assert the invariants those bugs violated.
 """
 
 from __future__ import annotations
@@ -64,11 +63,10 @@ class TestQueryInvocations:
     """Every `codemap-py query` call embedded in oss skill markdown."""
 
     def test_target_requiring_subcommand_gets_a_positional(self, path: Path) -> None:
-        """`rdeps` and friends are never invoked with flags alone (E-M11).
+        """Require a query target before any optional flags.
 
-        ``codemap-py query rdeps --top 10`` supplies no module, so argparse exits
-        before any lookup; with the error swallowed by ``2>/dev/null || true`` the
-        step produced nothing and reported nothing.
+        ``codemap-py query rdeps --top 10`` supplies no module, so argparse exits before any lookup; with the error
+        swallowed by ``2>/dev/null || true`` the step produced nothing and reported nothing.
         """
         offenders = [
             sub for sub, rest in _iter_calls(path.read_text(encoding="utf-8")) if sub in _TARGET_REQUIRED and not rest
@@ -80,18 +78,16 @@ class TestIndexPathConvention:
     """The index path every guard derives must match the provider's own resolver."""
 
     def test_no_cwd_relative_index_dir(self) -> None:
-        """Index dir defaults are anchored at the git root, never at the CWD (E-H1)."""
+        """Index dir defaults are anchored at the git root, never at the CWD."""
         offenders = [p.name for p in _SKILL_MD if "CODEMAP_INDEX_DIR:-.cache" in p.read_text(encoding="utf-8")]
         assert offenders == [], f"cwd-relative codemap index dir in: {offenders}"
 
     def test_no_project_name_sanitization(self) -> None:
-        """The project name is the raw basename — no `tr -cd` filtering (E-H3).
+        """The project name is the raw basename — no `tr -cd` filtering.
 
-        Scoped to lines that actually derive the *project name*: a bare ``tr -cd``
-        search also hits the comments explaining why the filter was removed, and
-        ``analyse/SKILL.md``'s ``_REPO_SLUG``, which sanitizes a GitHub
-        ``owner/name`` pair into a filename fragment and has nothing to do with the
-        index file the scanner writes.
+        Scoped to lines that actually derive the *project name*: a bare ``tr -cd`` search also hits the comments
+        explaining why the filter was removed, and ``analyse/SKILL.md``'s ``_REPO_SLUG``, which sanitizes a GitHub
+        ``owner/name`` pair into a filename fragment and has nothing to do with the index file the scanner writes.
         """
         offenders = [
             f"{p.name}:{n}"
@@ -102,21 +98,20 @@ class TestIndexPathConvention:
         assert offenders == [], f"project-name sanitization in: {offenders}"
 
     def test_no_dead_basename_fallback(self) -> None:
-        """Non-git fallback uses a `[ -n ]` test, not `||` after `basename` (E-M7).
+        """Non-git fallback uses a `[ -n ]` test, not `||` after `basename`.
 
-        ``basename ""`` exits 0, so ``PROJ=$(basename "$(git ...)") || PROJ=...``
-        never fired and a non-git project silently got an empty project name.
+        ``basename ""`` exits 0, so ``PROJ=$(basename "$(git ...)") || PROJ=...`` never fired and a non-git project
+        silently got an empty project name.
         """
         dead = re.compile(r'basename "\$\(git rev-parse[^\n]*\)"[^\n]*\)\s*\|\|')
         offenders = [p.name for p in _SKILL_MD if dead.search(p.read_text(encoding="utf-8"))]
         assert offenders == [], f"dead basename fallback in: {offenders}"
 
     def test_no_sed_module_derivation(self) -> None:
-        """Module names come from the index, never from a path-to-dotted sed (E-M8).
+        """Module names come from the index, never from a path-to-dotted sed.
 
-        codemap names ``pkg/__init__.py`` after the package (``pkg``); the sed
-        transform produced ``pkg.__init__``, which matches no index key and no cache
-        key, so package-init changes got no structural context at all.
+        codemap names ``pkg/__init__.py`` after the package (``pkg``); the sed transform produced ``pkg.__init__``,
+        which matches no index key and no cache key, so package-init changes got no structural context at all.
         """
         offenders = [p.name for p in _SKILL_MD if "s|^src/||" in p.read_text(encoding="utf-8")]
         assert offenders == [], f"sed module derivation in: {offenders}"
@@ -126,7 +121,7 @@ class TestPerModuleQueries:
     """codemap_cache.PER_MODULE_QUERIES against the review pre-flight that feeds it."""
 
     def test_matches_review_preflight_block(self) -> None:
-        """The cache's query list equals the per-module queries oss:review issues (E-M3).
+        """The cache's query list equals the per-module queries oss:review issues.
 
         The old comment claimed a reorder "is caught" by mirroring cc_develop's list.
         Nothing compared the two, they had already diverged (7 vs 5), and cc_develop is
@@ -146,21 +141,18 @@ class TestSkillPrefixes:
     """Plugin-prefixed skill references in oss prose."""
 
     def test_no_retired_codemap_prefix(self) -> None:
-        """The plugin is `codemap-py`; the bare `codemap:` prefix is retired (E-L2)."""
+        """The plugin is `codemap-py`; the bare `codemap:` prefix is retired."""
         retired = re.compile(r"codemap:[a-z]")
         offenders = [p.name for p in _SKILL_MD if retired.search(p.read_text(encoding="utf-8"))]
         assert offenders == [], f"retired `codemap:` skill prefix in: {offenders}"
 
     def test_build_path_is_the_gated_launcher(self) -> None:
-        """Gate wrappers name the gated binary and forbid model-invoking the skill (E-M5, E-M6).
+        """Gate wrappers name the gated binary and forbid model-invoking the skill.
 
-        E-N7 inverted the alias half of this check. The wrapper used to name ``scan-index`` on
-        purpose — the shipped contract still said it, so the wrapper had to bind the reader to
-        the gated launcher instead ("apply them verbatim, with one binding ... read it as
-        ``codemap-py index``"). The contract was corrected to name the launcher itself, which
-        makes that binding a claimed override of text that agrees, and leaves the retired alias
-        quoted in a wrapper that never invokes it. So the launcher assertion stays and the alias
-        is now asserted absent, not present.
+        The former contract named ``scan-index`` while consumers used the gated launcher, so the wrapper once had to
+        bind the reader to ``codemap-py index``. The contract now names the launcher itself; claiming a binding would
+        describe a disagreement that no longer exists. The launcher assertion stays and the retired alias is asserted
+        absent.
         """
         gates = _OSS_ROOT.joinpath("skills/_shared/codemap-gates.md").read_text(encoding="utf-8")
         assert "codemap-py index" in gates

@@ -1,8 +1,7 @@
 """Score labelled agentic answers against an independent AST oracle.
 
-The module deliberately contains the provider-neutral answer contract only.
-Provider runners own transport, JSON extraction, and legacy result rendering;
-they pass an already parsed answer mapping to :func:`score_answer`.
+The module deliberately contains the provider-neutral answer contract only. Provider runners own transport, JSON
+extraction, and legacy result rendering; they pass an already parsed answer mapping to :func:`score_answer`.
 """
 
 from __future__ import annotations
@@ -96,9 +95,8 @@ class AgenticOracle:
 class AnswerScore:
     """Deterministic semantic components plus raw-text evidence diagnostics.
 
-    Set and mapping components are F1 values. ``erec`` and ``rrec`` are
-    expected-importer recall in the exposure and report text, while ``deff``
-    is the unbounded exposure-hit count per command.
+    Set and mapping components are F1 values. ``erec`` and ``rrec`` are expected-importer recall in the exposure and
+    report text, while ``deff`` is the unbounded exposure-hit count per command.
     """
 
     scored: bool
@@ -137,9 +135,8 @@ class AnswerResponseAssessment:
 def validate_answer_contract(task: Mapping[str, Any]) -> Mapping[str, Any]:
     """Validate and return the closed answer contract embedded in one task.
 
-    The suite controls only a bounded list of output fields and their small
-    fixed parameter shapes. Unknown fields or knobs fail before a provider can
-    execute a differently scored experiment.
+    The suite controls only a bounded list of output fields and their small fixed parameter shapes. Unknown fields or
+    knobs fail before a provider can execute a differently scored experiment.
     """
     contract = task.get("answer_contract")
     if not isinstance(contract, Mapping):
@@ -200,9 +197,8 @@ def materialize_agentic_prompt(task: Mapping[str, Any]) -> str:
 def parse_labeled_answer(task: Mapping[str, Any], text: str) -> dict[str, Any]:
     """Parse the one exact labelled JSON answer required by a task contract.
 
-    The ``EMPTY`` marker is accepted only for collection fields and converted
-    to the corresponding explicit JSON collection. Missing or additional
-    labels fail closed, so a runner never scores partial prose as an answer.
+    The ``EMPTY`` marker is accepted only for collection fields and converted to the corresponding explicit JSON
+    collection. Missing or additional labels fail closed, so a runner never scores partial prose as an answer.
     """
     contract = validate_answer_contract(task)
     if not isinstance(text, str):
@@ -234,9 +230,8 @@ def parse_labeled_answer(task: Mapping[str, Any], text: str) -> dict[str, Any]:
 def assess_answer_response(task: Mapping[str, Any], text: str) -> AnswerResponseAssessment:
     """Keep strict envelope validity separate from recoverable diagnostic semantics.
 
-    Only one complete bare JSON object can recover semantic scoring after a
-    strict-envelope failure. Recovered answers are explicitly diagnostic-only
-    and cannot enter pooled treatment comparisons.
+    Only one complete bare JSON object can recover semantic scoring after a strict-envelope failure. Recovered answers
+    are explicitly diagnostic-only and cannot enter pooled treatment comparisons.
     """
     try:
         answer = parse_labeled_answer(task, text)
@@ -312,9 +307,8 @@ def _normalize_answer(contract: Mapping[str, Any], answer: Any) -> dict[str, Any
 def build_oracle(task: Mapping[str, Any], source_root: Path) -> AgenticOracle:
     """Build expected answer values from a source-only, provider-independent AST scan.
 
-    Parse failures and dynamic imports never enter the graph. Production direct
-    importers exclude test modules and the target module itself, while test
-    importers remain available for explicitly requested count fields.
+    Parse failures and dynamic imports never enter the graph. Production direct importers exclude test modules and the
+    target module itself, while test importers remain available for explicitly requested count fields.
     """
     contract = validate_answer_contract(task)
     task_id = task.get("id")
@@ -371,11 +365,9 @@ def score_answer(
 ) -> AnswerScore:
     """Score a parsed labelled answer with fixed component and tie rules.
 
-    Set and mapping fields use F1, rankings use position fraction, and
-    scalar/path fields require exact equality. ``erec`` and ``rrec`` remain
-    raw-text expected-importer recall; ``deff`` is unbounded exposure hits per
-    command. Empty expected collections receive credit only from an explicit
-    empty collection.
+    Set and mapping fields use F1, rankings use position fraction, and scalar/path fields require exact equality.
+    ``erec`` and ``rrec`` remain raw-text expected-importer recall; ``deff`` is unbounded exposure hits per command.
+    Empty expected collections receive credit only from an explicit empty collection.
     """
     if not isinstance(answer, Mapping):
         raise TypeError("answer must be a mapping parsed from the labelled JSON envelope")
@@ -420,9 +412,8 @@ def score_evidence_metrics(
 ) -> EvidenceMetrics:
     """Score raw-text importer evidence independently of answer-envelope validity.
 
-    ``deff`` is deliberately unbounded: it counts expected importer mentions in
-    exposure text per command, so it is diagnostic evidence rather than a
-    normalized efficiency or treatment-effect metric.
+    ``deff`` is deliberately unbounded: it counts expected importer mentions in exposure text per command, so it is
+    diagnostic evidence rather than a normalized efficiency or treatment-effect metric.
     """
     if not isinstance(exposure_text, str) or not isinstance(report_text, str):
         raise TypeError("exposure_text and report_text must be strings")
@@ -443,9 +434,8 @@ def score_evidence_metrics(
 def _module_mention_re(name: str) -> re.Pattern[str]:
     """Compile a whole-name matcher for one dotted module name.
 
-    The guards reject only characters that *continue* a dotted identifier, so a
-    module named at the end of a sentence still counts. A blanket ``(?![\\w.])``
-    would drop ``... imports pkg.core.`` purely for its full stop.
+    The guards reject only characters that *continue* a dotted identifier, so a module named at the end of a sentence
+    still counts. A blanket ``(?![\\w.])`` would drop ``... imports pkg.core.`` purely for its full stop.
     """
     escaped = re.escape(name)
     return re.compile(rf"(?<!\w)(?<!\w\.){escaped}(?!\w)(?!\.\w)")
@@ -711,13 +701,11 @@ def _is_test_path_part(part: str) -> bool:
 def _import_targets(tree: ast.Module, module: str, is_package: bool, all_names: set[str]) -> set[str]:
     """Resolve static import statements to known local module names only.
 
-    Delegates to the shared :func:`python_source.extract_import_targets` so the agentic
-    oracle credits imports under exactly the convention the MB/GR oracles use: a
-    ``from a.b import c`` statement credits the package ``a.b`` *and* the submodule
-    ``a.b.c`` whenever either is a known local module. Crediting only the concrete
-    submodule when one happens to resolve made package credit all-or-nothing, so a
-    single mixed statement (one submodule alias plus one plain symbol) silently
-    dropped the package importer the task existed to find.
+    Delegates to the shared :func:`python_source.extract_import_targets` so the agentic oracle credits imports under
+    exactly the convention the MB/GR oracles use: a ``from a.b import c`` statement credits the package ``a.b`` *and*
+    the submodule ``a.b.c`` whenever either is a known local module. Crediting only the concrete submodule when one
+    happens to resolve made package credit all-or-nothing, so a single mixed statement (one submodule alias plus one
+    plain symbol) silently dropped the package importer the task existed to find.
     """
     package = module if is_package else module.rpartition(".")[0]
     return extract_import_targets(tree, package=package, keep=all_names, credit_submodules=True)

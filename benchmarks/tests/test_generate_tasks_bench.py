@@ -1,8 +1,7 @@
 """Tests for benchmarks/generate-tasks-bench.py.
 
-Covers pure validation logic (validator functions, JSON parsing, ground-truth
-comparison, mode selection, task-type routing) with mocked scan-query subprocess
-calls.  No real scan-query binary or codemap index is needed.
+Covers pure validation logic (validator functions, JSON parsing, ground-truth comparison, mode selection, task-type
+routing) with mocked scan-query subprocess calls.  No real scan-query binary or codemap index is needed.
 """
 
 from __future__ import annotations
@@ -25,8 +24,8 @@ class TestTaskContractValidation:
     def test_every_execution_task_has_a_supported_structured_expected_query(self, script_gen_bench: Any) -> None:
         """Every benchmark coordinate has a machine-checkable Codemap query contract.
 
-        Prevents B/C preflight from discovering malformed or absent query
-        metadata only after a paid benchmark has started.
+        Prevents B/C preflight from discovering malformed or absent query metadata only after a paid benchmark has
+        started.
         """
         data = json.loads(script_gen_bench.TASKS_FILE.read_text(encoding="utf-8"))
         tasks = [task for task in data["tasks"] if task["type"] != "real_issue"]
@@ -37,9 +36,9 @@ class TestTaskContractValidation:
     def test_expected_query_commands_are_supported_by_scan_query(self, script_gen_bench: Any) -> None:
         """The benchmark's declared command allowlist stays within the live CLI surface.
 
-        The launcher runs through ``sys.executable`` rather than by direct execution, which is
-        how the script itself and the sibling lanes start it — so this contract is checked on
-        Windows too, where an extension-less shebang script cannot be launched directly.
+        The launcher runs through ``sys.executable`` rather than by direct execution, which is how the script itself and
+        the sibling lanes start it — so this contract is checked on Windows too, where an extension-less shebang script
+        cannot be launched directly.
         """
         launcher = script_gen_bench.git_toplevel() / "plugins" / "codemap-py" / "bin" / "scan-query"
         result = subprocess.run([sys.executable, str(launcher), "--help"], capture_output=True, text=True, check=True)
@@ -98,8 +97,8 @@ class TestTaskContractValidation:
     def test_every_diff_impact_task_requires_both_direct_query_components(self, script_gen_bench: Any) -> None:
         """Diff-impact compliance must prove callers and direct test importers.
 
-        A nearby module or a generic symbol search can look useful while
-        failing to establish the requested blast-radius evidence.
+        A nearby module or a generic symbol search can look useful while failing to establish the requested blast-radius
+        evidence.
         """
         tasks = json.loads(script_gen_bench.TASKS_FILE.read_text(encoding="utf-8"))["tasks"]
         for task in (task for task in tasks if task["type"] == "diff_impact"):
@@ -117,10 +116,10 @@ class TestTaskContractValidation:
 
 
 class TestFindCodemapBin:
-    """Contract: resolve binary by PATH lookup then plugin-dir fallback."""
+    """Resolve binary by PATH lookup then plugin-dir fallback."""
 
     def test_returns_none_when_not_found(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns None when binary absent from PATH and plugin root.
+        """Return None when binary absent from PATH and plugin root.
 
         Scenario: clean environment; binary not installed.
         """
@@ -129,7 +128,7 @@ class TestFindCodemapBin:
         assert result is None
 
     def test_returns_path_when_on_path(self, script_gen_bench: Any) -> None:
-        """Returns Path object when binary is found via shutil.which.
+        """Return Path object when binary is found via shutil.which.
 
         Scenario: binary installed globally; PATH lookup succeeds.
         """
@@ -152,7 +151,7 @@ class TestFindCodemapBin:
         assert result == binary
 
     def test_plugin_fallback_returns_none_when_file_absent(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns None when plugin dir exists but binary file is absent.
+        """Return None when plugin dir exists but binary file is absent.
 
         Scenario: partial plugin install; bin/ dir created but binary not
         present.
@@ -166,7 +165,7 @@ class TestFindCodemapBin:
         assert result is None
 
     def test_no_plugin_root_returns_none_without_which(self, script_gen_bench: Any) -> None:
-        """Returns None when plugin_root omitted and PATH lookup fails.
+        """Return None when plugin_root omitted and PATH lookup fails.
 
         Scenario: no plugin_root provided; which() returns None.
         """
@@ -196,12 +195,12 @@ class TestFindCodemapBin:
 
 
 class TestResolveIndexPath:
-    """Contract: return explicit arg as-is; otherwise discover index file."""
+    """Return explicit arg as-is; otherwise discover index file."""
 
     def test_returns_explicit_arg_unchanged(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns the explicit --index-path argument verbatim as a Path.
+        """Return the explicit ``--index-path`` argument verbatim as a Path.
 
-        Scenario: user passes --index-path; resolution must not alter it.
+        Scenario: user passes ``--index-path``; resolution must not alter it.
         """
         explicit = "/some/custom/index.json"
         result = script_gen_bench.resolve_index_path(explicit, tmp_path)
@@ -266,7 +265,7 @@ class TestResolveIndexPath:
         assert result == index_file
 
     def test_returns_fallback_path_when_no_index_found(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns a constructed path (that may not exist) when no index found.
+        """Return a constructed path (that may not exist) when no index found.
 
         Scenario: empty repo; no .cache/ directory; returns computed fallback.
         """
@@ -282,7 +281,7 @@ class TestResolveIndexPath:
 
 
 class TestRunScanQuery:
-    """Contract: subprocess wrapper returns parsed dict or None on failure."""
+    """Subprocess wrapper returns parsed dict or None on failure."""
 
     def _make_proc(self, returncode: int, stdout: str, stderr: str = "") -> MagicMock:
         """Build a MagicMock simulating subprocess.CompletedProcess."""
@@ -293,7 +292,7 @@ class TestRunScanQuery:
         return proc
 
     def test_returns_dict_on_success(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns parsed JSON dict when subprocess exits 0 with valid JSON.
+        """Return parsed JSON dict when subprocess exits 0 with valid JSON.
 
         Scenario: happy path; scan-query returns well-formed JSON.
         """
@@ -308,7 +307,7 @@ class TestRunScanQuery:
         assert result == payload
 
     def test_returns_none_on_nonzero_exit(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns None when subprocess exits non-zero.
+        """Return None when subprocess exits non-zero.
 
         Scenario: scan-query fails (e.g., index not found); caller gets None.
         """
@@ -322,7 +321,7 @@ class TestRunScanQuery:
         assert result is None
 
     def test_returns_none_on_json_decode_error(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns None when subprocess output is not valid JSON.
+        """Return None when subprocess output is not valid JSON.
 
         Scenario: scan-query prints human-readable error; JSON parse fails.
         """
@@ -336,7 +335,7 @@ class TestRunScanQuery:
         assert result is None
 
     def test_returns_none_on_timeout(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns None when subprocess times out.
+        """Return None when subprocess times out.
 
         Scenario: scan-query hangs; TimeoutExpired is caught and swallowed.
         """
@@ -349,7 +348,7 @@ class TestRunScanQuery:
         assert result is None
 
     def test_returns_none_on_os_error(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns None when the binary cannot be executed (OSError).
+        """Return None when the binary cannot be executed (OSError).
 
         Scenario: scan-query path does not exist or permissions denied.
         """
@@ -368,7 +367,7 @@ class TestRunScanQuery:
 
 
 class TestValidateSymbol:
-    """Contract: symbol_extraction validator compares scan-query output to gt."""
+    """Symbol_extraction validator compares scan-query output to gt."""
 
     def _task(self, module: str, qualified_name: str, start: int, end: int) -> dict:
         """Build a minimal symbol_extraction task dict."""
@@ -387,7 +386,7 @@ class TestValidateSymbol:
         return {"symbols": symbols}
 
     def test_passes_when_all_fields_match(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (True, live_gt, '') when scan-query result matches ground truth exactly.
+        """Return (True, live_gt, '') when scan-query result matches ground truth exactly.
 
         Scenario: symbol found with correct module, qname, start_line, end_line.
         """
@@ -405,7 +404,7 @@ class TestValidateSymbol:
         assert live_gt["end_line"] == 20
 
     def test_fails_when_start_line_differs(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (False, live_gt, reason) when start_line does not match ground truth.
+        """Return (False, live_gt, reason) when start_line does not match ground truth.
 
         Scenario: index rebuilt after refactor shifted function up one line.
         """
@@ -421,7 +420,7 @@ class TestValidateSymbol:
         assert "start_line" in reason
 
     def test_fails_when_symbol_not_found(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (False, None, reason) when symbol absent from scan-query results.
+        """Return (False, None, reason) when symbol absent from scan-query results.
 
         Scenario: symbol renamed; query returns empty symbols list.
         """
@@ -436,7 +435,7 @@ class TestValidateSymbol:
         assert "not found" in reason
 
     def test_returns_none_on_scan_query_failure(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (False, None, reason) when scan-query returns None.
+        """Report validation failure when the structural query fails.
 
         Scenario: binary error; subprocess call failed.
         """
@@ -512,7 +511,7 @@ class TestValidateSymbol:
 
 
 class TestValidateFn:
-    """Contract: fn_call_graph validator checks caller counts and sets."""
+    """Fn_call_graph validator checks caller counts and sets."""
 
     def _task(
         self,
@@ -561,7 +560,7 @@ class TestValidateFn:
             fpath.write_text(src)
 
     def test_passes_when_callers_match_exactly(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (True, live_gt, '') when the AST oracle's callers match ground truth.
+        """Return (True, live_gt, '') when the AST oracle's callers match ground truth.
 
         Scenario: unchanged codebase; the independent AST oracle (now authoritative) agrees
         with the stored caller set.
@@ -578,7 +577,7 @@ class TestValidateFn:
         assert reason == ""
 
     def test_fails_on_extra_caller(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns failure when the AST oracle finds a caller not in ground truth.
+        """Return failure when the AST oracle finds a caller not in ground truth.
 
         Scenario: new function added that calls target; GT is stale relative to the oracle.
         """
@@ -595,7 +594,7 @@ class TestValidateFn:
         assert "extra" in reason
 
     def test_fails_on_missing_caller(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns failure when a ground-truth caller is absent from the AST oracle.
+        """Return failure when a ground-truth caller is absent from the AST oracle.
 
         Scenario: caller refactored away; the oracle no longer sees it in source.
         """
@@ -612,7 +611,7 @@ class TestValidateFn:
         assert "missing" in reason
 
     def test_fails_on_count_mismatch(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns failure when unique_caller_count differs from ground truth.
+        """Return failure when unique_caller_count differs from ground truth.
 
         Scenario: count field diverges even if set comparison matches.
         """
@@ -627,7 +626,7 @@ class TestValidateFn:
         assert "unique_caller_count" in reason
 
     def test_returns_none_when_scan_query_fails(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (False, None, reason) when scan-query call fails.
+        """Return (False, None, reason) when scan-query call fails.
 
         Scenario: binary not available; subprocess returns None.
         """
@@ -640,7 +639,7 @@ class TestValidateFn:
         assert live_gt is None
 
     def test_excludes_tests_flag_added_to_args(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Appends --exclude-tests flag when ground_truth.exclude_tests is True.
+        """Appends the ``--exclude-tests`` flag when ground_truth.exclude_tests is True.
 
         Scenario: task configured to exclude test-file callers; flag must be
         forwarded to scan-query.
@@ -684,7 +683,7 @@ class TestValidateFn:
 
 
 class TestExtractRvValue:
-    """Contract: correct value extracted per (cmd, match_type) combination."""
+    """Correct value extracted per (cmd, match_type) combination."""
 
     @pytest.mark.parametrize(
         "cmd,data,expected",
@@ -699,7 +698,7 @@ class TestExtractRvValue:
         ],
     )
     def test_integer_extract(self, script_gen_bench: Any, cmd: str, data: dict, expected: int) -> None:
-        """Returns integer count from scan-query output for integer_extract match type.
+        """Return integer count from scan-query output for integer_extract match type.
 
         Scenario: each supported subcommand returns count from different keys;
         unknown cmd falls through to 0.
@@ -739,7 +738,7 @@ class TestExtractRvValue:
     def test_symbol_name_set(
         self, script_gen_bench: Any, cmd: str, data: dict, count_hint: int, expected: list
     ) -> None:
-        """Returns qualified_name list for symbol_name_set match type.
+        """Return qualified_name list for symbol_name_set match type.
 
         Scenario: undocumented and uncovered commands return symbol names;
         count_hint truncates the list; unknown cmd returns empty.
@@ -764,7 +763,7 @@ class TestExtractRvValue:
 
 
 class TestValidateRv:
-    """Contract: review_assistance validator checks sub-question ground truth."""
+    """Review_assistance validator checks sub-question ground truth."""
 
     def _task(self, sub_questions: list[dict], expected_queries: list[dict] | None = None) -> dict:
         """Build a minimal review_assistance task dict."""
@@ -778,7 +777,7 @@ class TestValidateRv:
         }
 
     def test_passes_when_integer_count_matches(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (True, live_gt, '') when integer sub-question count matches GT.
+        """Return (True, live_gt, '') when integer sub-question count matches GT.
 
         Scenario: fn-rdeps count matches stored expected count.
         """
@@ -799,8 +798,8 @@ class TestValidateRv:
     ) -> None:
         """The scan-query call receives its `Path`, never a sub-question ordinal.
 
-        Prevents the deterministic full-suite crash where `_validate_rv`
-        shadows its `index` parameter with `enumerate(..., start=1)`.
+        Prevents the deterministic full-suite crash where `_validate_rv` shadows its `index` parameter with
+        `enumerate(..., start=1)`.
         """
         index_path = tmp_path / "idx.json"
         task = self._task([{"id": "sq1", "match": "integer_extract", "ground_truth": {"count": 3}}])
@@ -817,7 +816,7 @@ class TestValidateRv:
         assert query.call_args.args[2] == index_path
 
     def test_fails_when_integer_count_differs(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns failure reason naming sub-question id when count differs.
+        """Return failure reason naming sub-question id when count differs.
 
         Scenario: refactor changed call graph; count in GT now stale.
         """
@@ -834,7 +833,7 @@ class TestValidateRv:
         assert "sq1" in reason
 
     def test_passes_when_symbol_set_matches(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (True, ...) when symbol_name_set sub-question matches GT.
+        """Return (True, ...) when symbol_name_set sub-question matches GT.
 
         Scenario: undocumented symbols match stored ground truth exactly.
         """
@@ -853,7 +852,7 @@ class TestValidateRv:
         assert ok is True
 
     def test_fails_when_symbol_set_has_missing(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns failure describing missing symbols from expected set.
+        """Return failure describing missing symbols from expected set.
 
         Scenario: GT expects ['A','B'] but live returns only ['A'].
         """
@@ -873,7 +872,7 @@ class TestValidateRv:
         assert "missing" in reason
 
     def test_fails_when_expected_queries_empty(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (False, None, reason) when expected_queries list is empty.
+        """Return (False, None, reason) when expected_queries list is empty.
 
         Scenario: malformed task; no query defined.
         """
@@ -954,7 +953,7 @@ class TestValidateRv:
 
 
 class TestValidateOss:
-    """Contract: code_quality validator routes by gt['check'] field."""
+    """Code_quality validator routes by gt['check'] field."""
 
     def _task_undocumented(self, count: int, syms: list[str]) -> dict:
         """Build a code_quality task with check='undocumented'."""
@@ -996,10 +995,9 @@ class TestValidateOss:
     def _task_coupled_ranking(self, ranking: list[dict[str, int | str]]) -> dict:
         """Build a CQ-03-style coupled task with its complete ordered oracle.
 
-        ``coupled`` ranks by ``internal_dep_count``.  The benchmark prompt asks
-        for all five displayed module names and their ``dep_count`` values, so
-        ground truth must retain every row rather than treating rank one as a
-        proxy for the requested ranking.
+        ``coupled`` ranks by ``internal_dep_count``.  The benchmark prompt asks for all five displayed module names and
+        their ``dep_count`` values, so ground truth must retain every row rather than treating rank one as a proxy for
+        the requested ranking.
         """
         first = ranking[0]
         return {
@@ -1039,14 +1037,14 @@ class TestValidateOss:
     def _write_undoc(self, repo: Path, names: list[str]) -> None:
         """Write a module whose public classes ``names`` all lack docstrings.
 
-        The AST undocumented oracle (now authoritative) then reports exactly ``names`` as the
-        undocumented public symbol set.
+        The AST undocumented oracle (now authoritative) then reports exactly ``names`` as the undocumented public symbol
+        set.
         """
         body = "\n\n".join(f"class {n}:\n    pass" for n in names) + "\n"
         (repo / "m.py").write_text(body)
 
     def test_undocumented_passes_on_match(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (True, ...) when the AST oracle's undocumented set matches GT.
+        """Return (True, ...) when the AST oracle's undocumented set matches GT.
 
         Scenario: check='undocumented'; the authoritative AST oracle agrees with stored GT.
         """
@@ -1061,7 +1059,7 @@ class TestValidateOss:
         assert reason == ""
 
     def test_undocumented_fails_on_count_mismatch(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns failure when the AST oracle's undocumented count differs from GT.
+        """Return failure when the AST oracle's undocumented count differs from GT.
 
         Scenario: symbols documented after GT was captured; the oracle now sees fewer.
         """
@@ -1081,8 +1079,8 @@ class TestValidateOss:
     def _write_uncovered(self, repo: Path, uncovered: list[str], covered: list[str]) -> None:
         """Write a source module of public functions; a test file references only ``covered``.
 
-        The AST uncovered oracle (now authoritative) then reports exactly ``uncovered`` — the public
-        functions no test module calls.
+        The AST uncovered oracle (now authoritative) then reports exactly ``uncovered`` — the public functions no test
+        module calls.
         """
         body = "\n\n".join(f"def {n}():\n    pass" for n in [*uncovered, *covered]) + "\n"
         (repo / "m.py").write_text(body)
@@ -1092,7 +1090,7 @@ class TestValidateOss:
         (tests / "test_m.py").write_text(f"def test_all():\n{calls}\n")
 
     def test_uncovered_passes_on_match(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (True, ...) when the AST oracle's uncovered set matches GT.
+        """Return (True, ...) when the AST oracle's uncovered set matches GT.
 
         Scenario: check='uncovered'; the authoritative AST test-reference oracle agrees with stored GT.
         """
@@ -1146,7 +1144,7 @@ class TestValidateOss:
         assert reason == "uncovered total conflicts with symbol count"
 
     def test_uncovered_fails_on_symbol_mismatch(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns failure when the AST oracle's uncovered set differs from GT.
+        """Return failure when the AST oracle's uncovered set differs from GT.
 
         Scenario: check='uncovered'; a symbol GT expected as uncovered is actually referenced by a test.
         """
@@ -1161,7 +1159,7 @@ class TestValidateOss:
         assert "uncovered" in reason
 
     def test_coupled_passes_on_match(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (True, ...) when top coupled module fields match GT.
+        """Return (True, ...) when top coupled module fields match GT.
 
         Scenario: check='coupled'; top entry matches GT top_module and counts.
         """
@@ -1174,7 +1172,7 @@ class TestValidateOss:
         assert ok is True
 
     def test_coupled_fails_on_top_module_mismatch(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns failure when top coupled module name differs from GT.
+        """Return failure when top coupled module name differs from GT.
 
         Scenario: codebase restructured; most-coupled module changed.
         """
@@ -1188,7 +1186,7 @@ class TestValidateOss:
         assert "top_module" in reason
 
     def test_coupled_fails_when_empty_result(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (False, None, reason) when coupled list is empty.
+        """Return (False, None, reason) when coupled list is empty.
 
         Scenario: scan-query coupled returns no results (unexpected).
         """
@@ -1240,9 +1238,8 @@ class TestValidateOss:
     ) -> None:
         """CQ-03 validation rejects every incorrect member of the five-row ranking.
 
-        Prevents a false-green benchmark refresh where rank one still matches
-        but the requested top-five answer is missing, substituted, reordered,
-        or has a stale ``internal_dep_count`` value.
+        Prevents a false-green benchmark refresh where rank one still matches but the requested top-five answer is
+        missing, substituted, reordered, or has a stale ``internal_dep_count`` value.
         """
         expected = self._coupled_ranking()
         task = self._task_coupled_ranking(expected)
@@ -1256,7 +1253,7 @@ class TestValidateOss:
         assert "top_modules" in reason
 
     def test_xrefs_passes_on_match(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (True, ...) when broken cross-reference count and targets match GT.
+        """Return (True, ...) when broken cross-reference count and targets match GT.
 
         Scenario: check='xrefs_broken'; live broken refs match GT exactly.
         """
@@ -1270,7 +1267,7 @@ class TestValidateOss:
         assert ok is True
 
     def test_xrefs_fails_on_broken_count_mismatch(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns failure when broken_count differs from GT.
+        """Return failure when broken_count differs from GT.
 
         Scenario: additional broken reference introduced; count changed.
         """
@@ -1284,7 +1281,7 @@ class TestValidateOss:
         assert "broken_count" in reason
 
     def test_fails_when_no_expected_queries(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (False, None, reason) for check='undocumented' with no queries.
+        """Return (False, None, reason) for check='undocumented' with no queries.
 
         Scenario: malformed task; expected_queries list absent.
         """
@@ -1300,7 +1297,7 @@ class TestValidateOss:
         assert live_gt is None
 
     def test_scan_query_failure_returns_none(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (False, None, reason) when scan-query call returns None.
+        """Report validation failure when the structural query fails.
 
         Scenario: binary error on any check type; cascade to failure.
         """
@@ -1409,7 +1406,7 @@ class TestValidateOss:
 
 
 class TestBuildUpdatedGroundTruth:
-    """Contract: merge live GT into existing GT correctly per task type."""
+    """Merge live GT into existing GT correctly per task type."""
 
     @pytest.mark.parametrize(
         "task_type",
@@ -1421,7 +1418,7 @@ class TestBuildUpdatedGroundTruth:
         ],
     )
     def test_merges_live_into_existing(self, script_gen_bench: Any, task_type: str) -> None:
-        """Returns merged dict with live values overriding existing for standard types.
+        """Return merged dict with live values overriding existing for standard types.
 
         Scenario: validator computed live_gt; _build must integrate it into
         existing GT while preserving unrelated fields.
@@ -1433,7 +1430,7 @@ class TestBuildUpdatedGroundTruth:
         assert result["preserved_field"] == "keep"  # existing preserved
 
     def test_review_assistance_returns_live_gt_only(self, script_gen_bench: Any) -> None:
-        """Returns live_gt unchanged for review_assistance (no merge with existing).
+        """Return live_gt unchanged for review_assistance (no merge with existing).
 
         Scenario: review_assistance stores per-sub_question entries; live_gt is
         the authoritative new structure; existing GT is discarded.
@@ -1453,7 +1450,7 @@ class TestBuildUpdatedGroundTruth:
 
 
 class TestTaskType:
-    """Contract: task types are a closed enum internally and plain strings in JSON."""
+    """Task types are a closed enum internally and plain strings in JSON."""
 
     def test_enum_members_match_authoritative_validator_keys(self, script_gen_bench: Any) -> None:
         """The enum and validator routing table declare exactly the same task types."""
@@ -1480,8 +1477,8 @@ class TestTaskType:
     ) -> None:
         """Task-type enum instances never cross the JSON write boundary.
 
-        A no-op full-file update must keep canonical JSON bytes unchanged, so
-        benchmark suite consumers continue to receive plain task-type strings.
+        A no-op full-file update must keep canonical JSON bytes unchanged, so benchmark suite consumers continue to
+        receive plain task-type strings.
         """
         payload = {
             "repo": {},
@@ -1540,7 +1537,7 @@ class TestTaskType:
 
 
 class TestValidatorsDict:
-    """Contract: VALIDATORS maps each documented task type to the right function."""
+    """Map each documented task type to its validator."""
 
     @pytest.mark.parametrize(
         "task_type,expected_fn_name",
@@ -1579,10 +1576,10 @@ class TestValidatorsDict:
 
 
 class TestCallFinderAst:
-    """Contract: _CallFinder records enclosing scope of matching call sites."""
+    """Record the enclosing scope of each matching call site."""
 
     def _parse_and_visit(self, script_gen_bench: Any, source: str, simple_name: str, rel_module: str) -> set:
-        """Helper: parse source, run _CallFinder, return caller set."""
+        """Parse source and return the callers found by the call visitor."""
         callers: set = set()
         tree = ast.parse(source)
         script_gen_bench._CallFinder(simple_name, rel_module, callers).visit(tree)
@@ -1635,7 +1632,7 @@ class TestCallFinderAst:
         assert callers == set()
 
     def test_callers_via_ast_empty_repo(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns empty caller set for repo with no Python files.
+        """Return empty caller set for repo with no Python files.
 
         Scenario: fresh empty repository; AST walker finds nothing.
         """
@@ -1679,12 +1676,12 @@ class TestCallFinderAst:
 
 
 # ===========================================================================
-# _QualifiedCallFinder / _walk_caller_sets (review N1)
+# _QualifiedCallFinder / _walk_caller_sets
 # ===========================================================================
 
 
 class TestQualifiedCallerOracle:
-    """Contract: authoritative caller set resolves receivers; loose set over-approximates (N1)."""
+    """Authoritative caller set resolves receivers; loose set over-approximates."""
 
     def test_same_named_method_in_unrelated_class_not_credited(self, script_gen_bench: Any, tmp_path: Path) -> None:
         """A `self.bar()` call in an unrelated class is NOT credited as a caller of Foo.bar.
@@ -1714,9 +1711,9 @@ class TestQualifiedCallerOracle:
     def test_module_function_attribute_call_uses_target_module(self, script_gen_bench: Any, tmp_path: Path) -> None:
         """A cross-module `foo.func()` is credited only when `foo` is the TARGET module, not the caller.
 
-        Scenario (N1 challenger fix): the module-level-function branch compares the receiver tail
-        against the target module (`pkg.foo`), never the caller file's own module — so `foo.func()`
-        from pkg.bar IS credited while a same-named `bar.func()` is NOT.
+        Scenario: the module-level-function branch compares the receiver tail against the target
+        module (`pkg.foo`), never the caller file's own module — so `foo.func()` from pkg.bar IS credited while
+        `bar.func()` with the same name is NOT.
         """
         pkg = tmp_path / "pkg"
         pkg.mkdir()
@@ -1791,10 +1788,8 @@ class TestQualifiedCallerOracle:
     ) -> None:
         """Credits a caller reached through two package re-export hops.
 
-        Prevents the AST oracle from silently omitting real production callers
-        when a public facade re-exports a symbol through an intermediate
-        package, as ``lightning.pytorch.utilities`` does for
-        ``move_data_to_device``.
+        Prevents the AST oracle from silently omitting real production callers when a public facade re-exports a symbol
+        through an intermediate package, as ``lightning.pytorch.utilities`` does for ``move_data_to_device``.
         """
         package = tmp_path / "pkg"
         package.mkdir()
@@ -1910,7 +1905,7 @@ class TestQualifiedCallerOracle:
 
 
 class TestValidateReviewAssistanceAst:
-    """Contract: supported review commands obtain ground truth from AST, not scan-query."""
+    """Supported review commands obtain ground truth from AST, not scan-query."""
 
     def _task(self, cmd: str, args: list[str], match: str, ground_truth: dict[str, Any]) -> dict[str, Any]:
         """Build one review task/sub-question for an AST oracle contract."""
@@ -2044,7 +2039,7 @@ class TestValidateReviewAssistanceAst:
 
 
 class TestValidateWorkflowTaskFamilies:
-    """Contract: debug, feature, and real-issue tasks have offline canonical validators."""
+    """Debug, feature, and real-issue tasks have offline canonical validators."""
 
     def test_debug_requires_exact_safe_path_qualified_symbol_and_line(
         self, script_gen_bench: Any, tmp_path: Path
@@ -2099,7 +2094,7 @@ class TestValidateWorkflowTaskFamilies:
     def test_debug_wrong_line_returns_independent_live_gt_for_update(
         self, script_gen_bench: Any, tmp_path: Path
     ) -> None:
-        """Returns the AST line so a target-version relock can refresh stale debug GT."""
+        """Return the AST line so a target-version relock can refresh stale debug GT."""
         source = tmp_path / "src" / "pkg" / "mod.py"
         source.parent.mkdir(parents=True)
         source.write_text("class Anchor:\n    def locate(self):\n        pass\n")
@@ -2214,7 +2209,7 @@ class TestValidateWorkflowTaskFamilies:
 
 
 class TestIsPublicQualname:
-    """Contract: public qualified name = no dotted component starts with underscore (C-2)."""
+    """Public qualified name = no dotted component starts with underscore."""
 
     @pytest.mark.parametrize(
         "name,expected",
@@ -2233,7 +2228,7 @@ class TestIsPublicQualname:
 
 
 class TestUndocumentedViaAst:
-    """Contract: independent AST oracle lists public symbols lacking a docstring (C-2)."""
+    """Independent AST oracle lists public symbols lacking a docstring."""
 
     def test_finds_public_undocumented(self, script_gen_bench: Any, tmp_path: Path) -> None:
         """Public class/function without a docstring is reported."""
@@ -2283,7 +2278,7 @@ class TestUndocumentedViaAst:
 
 
 class TestUncoveredViaAst:
-    """Contract: independent AST oracle lists public symbols no test references (C-2 remainder)."""
+    """Independent AST oracle lists public symbols with no test references."""
 
     def test_symbol_with_no_test_reference_is_uncovered(self, script_gen_bench: Any, tmp_path: Path) -> None:
         """A public symbol absent from every configured test-AST reference is uncovered."""
@@ -2364,7 +2359,7 @@ class TestUncoveredViaAst:
 
 
 class TestValidateFnAstAuthoritative:
-    """Contract: _validate_fn treats the AST oracle as authoritative, scan as diagnostic (C-2)."""
+    """Treat the independent syntax-tree oracle as authoritative during function validation."""
 
     def _task(self, primary_fn: str, callers: list[str]) -> dict:
         """Build an fn_call_graph task with the given expected callers."""
@@ -2375,7 +2370,7 @@ class TestValidateFnAstAuthoritative:
         }
 
     def test_scan_output_stored_as_diagnostic(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """scan-query callers are preserved under fn_callers_scan, not as the authoritative set."""
+        """Scan-query callers are preserved under fn_callers_scan, not as the authoritative set."""
         (tmp_path / "mod" / "a.py").parent.mkdir(parents=True)
         (tmp_path / "mod" / "a.py").write_text("def fn_a():\n    target()\n")
         task = self._task("mod::target", ["mod.a::fn_a"])
@@ -2402,7 +2397,7 @@ class TestValidateFnAstAuthoritative:
 
 
 class TestUpdateGating:
-    """Contract: circular (scan-derived) refresh is gated behind --update-from-tool (C-3)."""
+    """Circular (scan-derived) refresh is gated behind ``--update-from-tool``."""
 
     @pytest.mark.parametrize(
         "task,expected",
@@ -2418,11 +2413,11 @@ class TestUpdateGating:
         ],
     )
     def test_oracle_backed_classification(self, script_gen_bench: Any, task: dict, expected: bool) -> None:
-        """Only AST-oracle-backed types are safe to refresh under a plain --update."""
+        """Only AST-oracle-backed types are safe to refresh under a plain ``--update``."""
         assert script_gen_bench._update_is_oracle_backed(task) is expected
 
     def test_oracle_backed_type_refreshes_by_default(self, script_gen_bench: Any) -> None:
-        """An fn_call_graph task refreshes under plain --update (update_from_tool=False)."""
+        """An fn_call_graph task refreshes under plain ``--update`` (update_from_tool=False)."""
         task = {"type": "fn_call_graph", "ground_truth": {"fn_callers": []}}
         live = {"fn_callers": ["m::a"], "unique_caller_count": 1}
         stored, status = script_gen_bench._refresh_task_gt(task, live, update_from_tool=False)
@@ -2430,7 +2425,7 @@ class TestUpdateGating:
         assert stored["ground_truth"]["fn_callers"] == ["m::a"]
 
     def test_tool_derived_type_skipped_without_flag(self, script_gen_bench: Any) -> None:
-        """A scan-derived task (coupled) is NOT refreshed under plain --update; original preserved."""
+        """A scan-derived task (coupled) is NOT refreshed under plain ``--update``; original preserved."""
         task = {"type": "code_quality", "ground_truth": {"check": "coupled", "top_dep_count": 1}}
         live = {"check": "coupled", "top_dep_count": 99}
         stored, status = script_gen_bench._refresh_task_gt(task, live, update_from_tool=False)
@@ -2438,7 +2433,10 @@ class TestUpdateGating:
         assert stored["ground_truth"]["top_dep_count"] == 1  # unchanged
 
     def test_tool_derived_type_refreshes_with_flag_and_warns(self, script_gen_bench: Any, capsys: Any) -> None:
-        """--update-from-tool refreshes scan-derived (coupled) GT after a loud circularity warning."""
+        """Verify command-line option behavior.
+
+        ``--update-from-tool`` refreshes scan-derived (coupled) GT after a loud circularity warning.
+        """
         task = {"type": "code_quality", "ground_truth": {"check": "coupled", "top_dep_count": 1}}
         live = {"check": "coupled", "top_dep_count": 99}
         stored, status = script_gen_bench._refresh_task_gt(task, live, update_from_tool=True)
@@ -2482,7 +2480,7 @@ class TestMainUnitBehavior:
     def test_main_exits_when_tasks_file_unreadable(
         self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """main() prints error and calls sys.exit(1) when TASKS_FILE missing.
+        """Report a missing task manifest and stop task generation.
 
         Scenario: tasks-bench.json deleted; main must exit with code 1.
         """
@@ -2496,9 +2494,9 @@ class TestMainUnitBehavior:
     def test_main_exits_when_no_repo_path(
         self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
     ) -> None:
-        """main() exits 1 when no --repo-path and no local_path in tasks file.
+        """Exit 1 when no ``--repo-path`` and no local_path in tasks file.
 
-        Scenario: tasks file has no repo.local_path; user forgot --repo-path.
+        Scenario: tasks file has no repo.local_path; user forgot ``--repo-path``.
         """
         tasks_file = tmp_path / "tasks.json"
         tasks_file.write_text(json.dumps({"repo": {}, "tasks": []}))
@@ -2511,7 +2509,7 @@ class TestMainUnitBehavior:
     def test_main_exits_when_repo_path_not_dir(
         self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """main() exits 1 when --repo-path exists but is a file, not a directory.
+        """Exit 1 when ``--repo-path`` exists but is a file, not a directory.
 
         Scenario: user passes a file path by mistake.
         """
@@ -2529,7 +2527,7 @@ class TestMainUnitBehavior:
     def test_main_exits_when_scan_query_not_found(
         self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """main() exits 1 when scan-query binary cannot be found.
+        """Exit 1 when scan-query binary cannot be found.
 
         Scenario: no binary on PATH and no plugin directory fallback.
         """
@@ -2545,7 +2543,7 @@ class TestMainUnitBehavior:
     def test_main_exits_when_index_not_found(
         self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """main() exits 1 when resolved index path does not exist.
+        """Exit 1 when resolved index path does not exist.
 
         Scenario: scan-query found but codemap index JSON missing.
         """
@@ -2568,7 +2566,7 @@ class TestMainUnitBehavior:
     def test_main_fails_closed_on_unknown_task_type(
         self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
     ) -> None:
-        """main() prints SKIP and exits nonzero for an unrecognised type.
+        """Print SKIP and exit nonzero for an unrecognised type.
 
         Scenario: a missing validator must not produce a green canonical B0 run.
         """
@@ -2691,9 +2689,9 @@ class TestMainUnitBehavior:
     def test_main_filters_by_task_id(
         self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """main() runs only the task matching --task <id> when filter supplied.
+        """Run only the task matching ``--task <id>`` when filter supplied.
 
-        Scenario: user passes --task SE-01; only that task is validated.
+        Scenario: user passes ``--task SE-01``; only that task is validated.
         """
         tasks_file = tmp_path / "tasks.json"
         tasks_file.write_text(
@@ -2744,7 +2742,7 @@ class TestMainUnitBehavior:
     def test_main_exits_when_task_id_not_found(
         self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """main() exits 1 when --task <id> does not match any task in file.
+        """Exit 1 when ``--task <id>`` does not match any task in file.
 
         Scenario: user passes a non-existent task ID.
         """
@@ -2775,11 +2773,10 @@ class TestMainUnitBehavior:
     def test_main_full_file_update_writes_back(
         self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
     ) -> None:
-        """Regression: full-file --update (no --task) processes every task and writes GT back.
+        """Regression: full-file ``--update`` (no ``--task``) processes every task and writes GT back.
 
-        The loop variable must not shadow the ``task`` filter parameter; if it did, the
-        write-back guard ``if task is None`` would never fire and the file would never be
-        written despite --update.
+        The loop variable must not shadow the ``task`` filter parameter. If it did, the ``if task is None`` write-back
+        guard would never fire and the file would never be written despite ``--update``.
         """
         tasks_file = tmp_path / "tasks.json"
         tasks_file.write_text(

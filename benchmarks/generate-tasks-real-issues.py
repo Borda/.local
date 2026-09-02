@@ -30,7 +30,7 @@ Scoring (downstream harness contract):
     [0, 1] with higher being better. ``file_count`` equals ``len(GT)`` and drives
     the ``difficulty`` label (1 -> simple, 2-3 -> medium, 4-5 -> hard).
 
-Provenance fields (D2 / D5):
+Provenance fields:
     - ``type`` / ``source`` = "real_issue"  -> task derives from a real GH issue
     - ``scoreable`` = True                  -> has non-empty ground truth set
 """
@@ -262,7 +262,6 @@ def _pr_closes_issue(body: str, issue_number: int) -> bool:
     Returns:
         True when a closing keyword + issue reference is found.
     """
-
     pattern = rf"(?:closes|fixes|resolves|close|fix|resolve)\s*#\s*{issue_number}\b"
     return bool(re.search(pattern, body, re.IGNORECASE))
 
@@ -272,7 +271,7 @@ def resolve_merged_pr(
 ) -> PullRequestInfo | None:
     """Find the best merged PR matching the Python-file-count window.
 
-    Prefers a PR whose body explicitly closes *issue_number* (D3 provenance check).
+    Prefers a PR whose body explicitly closes *issue_number* as a provenance check.
     Falls back to any cross-referenced merged PR that meets the file-count window,
     with ``closes_issue=False`` recorded for downstream review.
 
@@ -444,7 +443,6 @@ def build_prompt(title: str, body: str) -> str:
 
     Returns:
         Title and truncated body joined by a blank line (two newlines).
-
     """
     truncated = body.strip()[:PROMPT_BODY_LIMIT]
     return f"{title.strip()}\n\n{truncated}"

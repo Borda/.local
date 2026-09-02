@@ -82,7 +82,7 @@ class TestComputeOverlap:
         assert vps.compute_overlap(train, test) == 2
 
     def test_custom_column_name(self, tmp_path: Path) -> None:
-        """``column`` argument selects a non-default identifier column."""
+        """Select a nondefault patient identifier column."""
         train = tmp_path / "train.csv"
         test = tmp_path / "test.csv"
         train.write_text("subject_id,label\nA,1\nB,2\n")
@@ -192,7 +192,7 @@ class TestMainCLI:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """``--column`` flag overrides default ``patient_id``."""
+        """Override the default patient identifier column from the command line."""
         train = tmp_path / "train.csv"
         test = tmp_path / "test.csv"
         train.write_text("subject_id\nA\nB\n")

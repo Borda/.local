@@ -57,8 +57,8 @@ def _corpus_files(corpus_dir: Path) -> list[Path]:
 def _running_grammar_rejects(source: str) -> bool:
     """Return True when the running interpreter cannot parse *source*.
 
-    Mirrors exactly what ``scan-index`` sees, because both this test and the
-    extractor subprocess run under the same ``sys.executable``.
+    Mirrors exactly what ``scan-index`` sees, because both this test and the extractor subprocess run under the same
+    ``sys.executable``.
     """
     try:
         ast.parse(source)
@@ -70,10 +70,9 @@ def _running_grammar_rejects(source: str) -> bool:
 def _make_corpus_tree(tmp_path: Path, corpus_dir: Path) -> Path:
     """Copy the corpus into a fresh, git-free source tree and return its path.
 
-    The tree carries no ``.git`` so ``git_sha`` resolves identically (None) on every
-    scan regardless of the host repository. A single tree is reused across the two
-    scans of a determinism test so ``scan_root`` — a legitimately path-dependent
-    field the spec keeps — is held constant.
+    The tree carries no ``.git`` so ``git_sha`` resolves identically (None) on every scan regardless of the host
+    repository. A single tree is reused across the two scans of a determinism test so ``scan_root`` — a legitimately
+    path-dependent field the spec keeps — is held constant.
     """
     src = tmp_path / "src"
     src.mkdir(parents=True)
@@ -125,10 +124,9 @@ def test_corpus_is_present_and_named(corpus_dir: Path) -> None:
 def test_corpus_contains_grammar_gated_post311_syntax(corpus_dir: Path) -> None:
     """Interpreter-independent frozen-grammar guarantee via ``feature_version``.
 
-    PEP 695 type parameters are grammar-gated, so ``feature_version=(3, 11)``
-    rejects them on every host interpreter — this asserts the corpus really does
-    exercise post-3.11 grammar, without depending on which minor runs the test.
-    The accepted baseline must conversely parse clean under the 3.11 grammar.
+    PEP 695 type parameters are grammar-gated, so ``feature_version=(3, 11)`` rejects them on every host interpreter —
+    this asserts the corpus really does exercise post-3.11 grammar, without depending on which minor runs the test. The
+    accepted baseline must conversely parse clean under the 3.11 grammar.
     """
     pep695 = (corpus_dir / "pep695_type_params.py").read_text()
     accepted = (corpus_dir / "accepted_311.py").read_text()
@@ -156,7 +154,7 @@ def test_degraded_records_are_stable(tmp_path: Path, corpus_dir: Path) -> None:
 
 
 def test_degradation_tracks_running_grammar(tmp_path: Path, corpus_dir: Path) -> None:
-    """scan-index degrades a module iff the running interpreter cannot parse it.
+    """Scan-index degrades a module iff the running interpreter cannot parse it.
 
     This is the exact correlation that holds on every matrix cell: the extractor
     and this test share ``sys.executable``, so their parse verdicts must agree.
@@ -174,8 +172,8 @@ def test_degradation_tracks_running_grammar(tmp_path: Path, corpus_dir: Path) ->
 def test_post311_modules_degrade_below_312(tmp_path: Path, corpus_dir: Path) -> None:
     """Version-conditioned expectation — the multi-minor teeth of the corpus.
 
-    On 3.10 and 3.11 the two post-3.11 modules must be degraded; on 3.12+ they must
-    index cleanly. The accepted baseline indexes on every supported minor.
+    On 3.10 and 3.11 the two post-3.11 modules must be degraded; on 3.12+ they must index cleanly. The accepted baseline
+    indexes on every supported minor.
     """
     index = _scan(_make_corpus_tree(tmp_path, corpus_dir), tmp_path / "idx")
     status = _module_status(index)

@@ -8,7 +8,7 @@ Two modes:
         destructive binaries (``rm``, ``dd``, ``truncate`` …) that could wipe the
         read-write ``.experiments`` mount — run non-trivial logic via a script entry point.
 
-Limitation (H1): that destructive-binary rejection is a defense-in-depth speed bump against
+Limitation: that destructive-binary rejection is a defense-in-depth speed bump against
 *accidental* wipes, not a security boundary — a deliberate payload routed through a sanctioned
 interpreter (``python -c "...rmtree(...)"``) passes it; containment is the Docker isolation flags.
 
@@ -48,22 +48,22 @@ DEFAULT_TIMEOUT_SEC = 600
 _KILL_TIMEOUT_SEC = 15
 # Docker network modes that preserve sandbox isolation.  ``host`` is excluded by
 # policy: it removes network namespace isolation and would allow exfiltration
-# from inside the verify-mode container (SEC-R-2).
+# from inside the verify-mode container.
 _ALLOWED_NETWORK_MODES: frozenset[str] = frozenset({"none", "bridge", "internal"})
 # Shell metacharacters forbidden in verify-mode command strings.  These reach
 # ``sh -c`` inside the container; ``SANDBOX_NETWORK=host`` would otherwise allow
 # network exfiltration via embedded ``$(...)``, backticks, redirection, etc.
 _VERIFY_FORBIDDEN_CHARS = frozenset(";&|$`<>\n\r\\")
 # Destructive binaries forbidden as bare command tokens in verify mode.  The
-# ``.experiments`` host dir is the one read-write mount (L143); the metachar filter
+# ``.experiments`` host dir is the one read-write mount; the metachar filter
 # above blocks command *chaining* but not a single space-separated destructive
 # invocation (e.g. ``rm -rf /workspace/.experiments/state``), which would silently
-# wipe prior-iteration state that retro/significance analysis depends on (H1).
+# wipe prior-iteration state that retro/significance analysis depends on.
 # Defense-in-depth: reject these as whole-word tokens.  Legitimate metric commands
 # (``pytest``, ``python``, ``echo`` …) are unaffected.
-# Limitation (H1): a speed bump against *accidental* destruction, not a security boundary — it
-# cannot stop deliberate destruction expressed as an interpreter payload (``python -c
-# "__import__('shutil').rmtree(...)"`` token-splits to nothing here).  Containment is the Docker
+# Limitation: a speed bump against *accidental* destruction, not a security boundary — it
+# cannot stop deliberate destruction expressed as a ``python -c`` interpreter payload.
+# Such a payload token-splits to nothing here. Containment is the Docker
 # isolation flags in the argv builders below, not this blocklist.
 _VERIFY_FORBIDDEN_TOKENS: frozenset[str] = frozenset(
     {"rm", "rmdir", "unlink", "shred", "truncate", "dd", "mv", "mkfs", "find", "chmod", "chown"}
@@ -101,7 +101,7 @@ def _verify_rejection_reason(arg: str) -> str | None:
     """Return why a verify-mode command must be rejected, or ``None`` when it may run.
 
     Metacharacters are checked before destructive binaries and the first failure wins, so a
-    command failing both is reported by its more fundamental problem (SEC-R-1 before H1).
+    command failing both is reported by its more fundamental problem (metacharacter check before token check).
 
     Args:
         arg: The verify-mode command string destined for ``sh -c``.
@@ -150,7 +150,7 @@ def build_explore_command(arg: str, network: str, workdir: str, cidfile: str | N
 
     Raises:
         ValueError: if the script path contains ``..`` components (path traversal)
-            or resolves to an absolute path (SEC-M14).
+            or resolves to an absolute path.
 
     Examples:
         >>> build_explore_command("scripts/explore.py", "none", "/proj")[:3]
@@ -378,7 +378,7 @@ def main(argv: list[str] | None = None, env: dict[str, str] | None = None, cwd: 
     env = os.environ if env is None else env
     workdir = Path(cwd).as_posix() if cwd else Path(os.getcwd()).as_posix()
 
-    # Honour only -h/--help via argparse; every other token flows through the manual
+    # Honour only ``-h/--help`` via argparse; every other token flows through the manual
     # _parse_args below, which mirrors the bash interface (last non-flag token wins,
     # --mode=X form, bad mode/arg → exit 2). argparse's own positional/choices errors
     # would change the exit-2 message and the last-token-wins capture — keep the
@@ -421,8 +421,8 @@ def main(argv: list[str] | None = None, env: dict[str, str] | None = None, cwd: 
             return 2
     elif mode == "verify":
         # Verify mode forwards ``arg`` to ``sh -c`` inside the container: metacharacters can
-        # chain arbitrary commands even on non-host networks (SEC-R-1), and a bare destructive
-        # binary needs no metacharacter to wipe the read-write ``.experiments`` mount (H1).
+        # chain arbitrary commands even on non-host networks, and a bare destructive
+        # binary needs no metacharacter to wipe the read-write ``.experiments`` mount.
         reason = _verify_rejection_reason(arg)
         if reason:
             print(f"docker_sandbox_run.py: {reason}", file=sys.stderr)

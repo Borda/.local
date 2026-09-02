@@ -1,8 +1,7 @@
 """Tests for ``bin/fetch_gh_data_group1.py``.
 
-Arg-parsing tests run without any subprocess calls. The happy-path and
-individual-failure tests monkeypatch ``subprocess.run`` and ``which``
-so no real ``gh`` invocation occurs.
+Arg-parsing tests run without any subprocess calls. The happy-path and individual-failure tests monkeypatch
+``subprocess.run`` and ``which`` so no real ``gh`` invocation occurs.
 """
 
 from __future__ import annotations
@@ -30,7 +29,7 @@ def test_missing_repo_exits_1(capsys: pytest.CaptureFixture[str], tmp_path: Path
 
 
 def test_missing_output_dir_exits_1(capsys: pytest.CaptureFixture[str]) -> None:
-    """``--repo`` but no ``--output-dir`` → exit 1 with '--output-dir required' on stderr."""
+    """Require an output directory when a repository is provided."""
     rc = fgd.main(["--repo", "owner/repo"])
     assert rc == 1
     assert "--output-dir required" in capsys.readouterr().err
@@ -51,7 +50,7 @@ def test_no_args_exits_1(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_build_datasets_returns_21_entries() -> None:
-    """``_build_datasets`` returns exactly 21 (name, args) tuples."""
+    """Return exactly 21 (name, args) tuples."""
     datasets = fgd._build_datasets("o/r", "2023-01-01", "2023-01-01T00:00:00Z", "2022-07-01T00:00:00Z")
     assert len(datasets) == 21
     names = [name for name, _ in datasets]
@@ -173,7 +172,7 @@ def test_custom_cutoffs_accepted(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 
 
 def test_gh_missing_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """``which`` returns None → FileNotFoundError propagates."""
+    """Return None → FileNotFoundError propagates."""
     monkeypatch.setattr(fgd, "which", lambda _: None)
     with pytest.raises(FileNotFoundError, match="gh"):
         fgd.main(["--repo", "owner/repo", "--output-dir", str(tmp_path)])

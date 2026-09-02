@@ -996,9 +996,9 @@ def test_incomplete_payload_is_reported_structurally_before_the_baseline_loads(
 ) -> None:
     """Prevent a truncated install from dying on the baseline read instead of naming missing payload files.
 
-    An install missing rules/cli-baseline.json is exactly the incomplete-payload
-    case the payload block diagnoses; loading the baseline first turned it into a
-    bare error object with no missing list, and no help probe should run at all.
+    An install missing rules/cli-baseline.json is exactly the incomplete-payload case the payload block diagnoses;
+    loading the baseline first turned it into a bare error object with no missing list, and no help probe should run at
+    all.
     """
     monkeypatch.setattr(
         bridge_diagnose,
@@ -1591,9 +1591,9 @@ def test_cli_task_source_conflicts_return_a_json_error(
 ) -> None:
     """Ambiguous or missing task sources fail as parseable envelopes, not argparse exits.
 
-    Every caller — skill, MCP tool, lifecycle supervisor — reads exactly one JSON object
-    from stdout. An argparse usage error would print to stderr and exit 2 with nothing to
-    parse, so the two task flags are validated in request construction instead.
+    Every caller — skill, MCP tool, lifecycle supervisor — reads exactly one JSON object from stdout. An argparse usage
+    error would print to stderr and exit 2 with nothing to parse, so the two task flags are validated in request
+    construction instead.
     """
     task_file = tmp_path / "task.md"
     task_file.write_text("Summarize the change.", encoding="utf-8")
@@ -1616,9 +1616,9 @@ def test_cli_reads_a_task_containing_shell_metacharacters_from_a_file(
 ) -> None:
     """Task text that would be hostile on a command line survives verbatim through a file.
 
-    Consumer skills forward text they did not author — review comments, issue bodies — and
-    a brief carrying backticks, ``$(...)`` or embedded quotes is ordinary, not an attack.
-    Reading it from a file keeps correctness independent of the caller's quoting.
+    Consumer skills forward text they did not author — review comments, issue bodies — and a brief carrying backticks,
+    ``$(...)`` or embedded quotes is ordinary, not an attack. Reading it from a file keeps correctness independent of
+    the caller's quoting.
     """
     hostile = 'Fix `rm -rf /` in "quoted" text; $(whoami) && echo done\n'
     task_file = tmp_path / "brief.md"

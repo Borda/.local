@@ -1,17 +1,14 @@
 """Host-capability helpers shared by the foundry hook tests.
 
-Deliberately a uniquely-named module rather than ``conftest``. Every test tree in
-this repo has its own ``conftest.py``, and ``ini_options.testpaths`` spans
-``benchmarks`` and ``plugins``; a bare ``from conftest import ...`` resolves to
-whichever ``conftest`` module was registered under that name first, which under
-``--import-mode=importlib`` is ``benchmarks/conftest.py``. Importing by a name
-that exists exactly once in the repo removes the ordering dependency entirely.
+Deliberately a uniquely-named module rather than ``conftest``. Every test tree in this repo has its own ``conftest.py``,
+and ``ini_options.testpaths`` spans ``benchmarks`` and ``plugins``; a bare ``from conftest import ...`` resolves to
+whichever ``conftest`` module was registered under that name first, which under ``--import-mode=importlib`` is
+``benchmarks/conftest.py``. Importing by a name that exists exactly once in the repo removes the ordering dependency
+entirely.
 
-Fixtures still belong in ``conftest.py`` — pytest injects those by name with no
-import at all. These two are not fixtures: :func:`hook_tmp_base` is called from
-plain module-level helpers that tests invoke directly, and
-:func:`bash_runs_posix_script` is evaluated inside a module-level ``skipif``,
-where a fixture cannot reach.
+Fixtures still belong in ``conftest.py`` — pytest injects those by name with no import at all. These two are not
+fixtures: :func:`hook_tmp_base` is called from plain module-level helpers that tests invoke directly, and
+:func:`bash_runs_posix_script` is evaluated inside a module-level ``skipif``, where a fixture cannot reach.
 """
 
 from __future__ import annotations

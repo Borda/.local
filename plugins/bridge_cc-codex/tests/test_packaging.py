@@ -148,10 +148,8 @@ def test_disposable_package_has_no_nested_marketplace(tmp_path: Path) -> None:
 def test_diagnose_payload_fingerprint_stays_inside_the_validated_package_manifest() -> None:
     """Keep the doctor's completeness fingerprint aligned with the validated package manifest.
 
-    The two file lists are maintained by hand in parallel; a runtime file added
-    to the package gate but not the payload list silently escapes the
-    completeness fingerprint that sync trusts, as ``.mcp.json`` and the CLI
-    baseline once did.
+    The two file lists are maintained by hand in parallel; a runtime file added to the package gate but not the payload
+    list silently escapes the completeness fingerprint that sync trusts, as ``.mcp.json`` and the CLI baseline once did.
     """
     payload = set(bridge_diagnose.PAYLOAD_FILES)
 

@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-# Phase 3 slices 3+4 (plan §12) moved scan-index's implementation into the package:
+# The scan-index implementation now lives in the package:
 # discovery/parsing -> codemap_py.scanner, graph/dedup/index-write -> codemap_py.graph.
 # bin/scan-index is now a thin launcher, so unit-level access imports the package
 # modules directly instead of loading the bin/ script via SourceFileLoader.
@@ -72,7 +72,7 @@ def test_scan_falls_back_to_serial_when_process_pool_is_forbidden(
 
 
 def test_creates_index(tmp_path, gamma_src, beta_src, alpha_src, delta_src, scan_index):
-    """scan-index writes .cache/codemap/<name>.json containing all modules."""
+    """Scan-index writes .cache/codemap/<name>.json containing all modules."""
     (tmp_path / "gamma.py").write_text(gamma_src)
     (tmp_path / "beta.py").write_text(beta_src)
     (tmp_path / "alpha.py").write_text(alpha_src)
@@ -96,7 +96,7 @@ def test_creates_index(tmp_path, gamma_src, beta_src, alpha_src, delta_src, scan
 
 
 def test_incremental_picks_up_new_file(tmp_path, scan_index):
-    """Adding a file after initial scan; --incremental indexes it."""
+    """Adding a file after initial scan; ``--incremental`` indexes it."""
     (tmp_path / "base.py").write_text("def f(): pass\n")
     subprocess.run(
         [sys.executable, str(scan_index), "--root", str(tmp_path)],
@@ -135,7 +135,7 @@ class TestExtractDynamicImports:
         assert result == [{"literal": "os.path", "line": 1}]
 
     def test_dynamic_expression_skipped(self):
-        """importlib.import_module(name) — non-literal arg — must be ignored."""
+        """Ignore dynamic imports whose module name is not a literal."""
         src = "importlib.import_module(name)"
         assert extract_dynamic_imports(ast.parse(src)) == []
 
@@ -209,7 +209,7 @@ class TestScanConfigRefs:
         assert refs == {}
 
     def test_context_truncated_to_120(self, tmp_path: Path):
-        """context field is at most 120 characters."""
+        """Context field is at most 120 characters."""
         long_line = "x = " + "mypackage.utils" + " # " + "a" * 200
         (tmp_path / "setup.cfg").write_text(long_line + "\n")
         refs = scan_config_refs(tmp_path, {"mypackage.utils"})
@@ -365,9 +365,9 @@ class TestScanExclusionMeta:
     def test_collision_recorded_and_deterministic(self, tmp_path: Path, scan_index):
         """Two package trees sharing a top-level name collide; the winner is stable across runs.
 
-        The canonical ``pkg`` tree and a whole-tree copy under ``wt/`` both resolve to the
-        dotted name ``pkg.mod``. Only one survives; the collision record names both, and the
-        winner is identical on every run regardless of filesystem walk order (acceptance).
+        The canonical ``pkg`` tree and a whole-tree copy under ``wt/`` both resolve to the dotted name ``pkg.mod``. Only
+        one survives; the collision record names both, and the winner is identical on every run regardless of filesystem
+        walk order (acceptance).
         """
         for parent in ("pkg", "wt/pkg"):
             (tmp_path / parent).mkdir(parents=True)
@@ -524,11 +524,10 @@ class TestAtomicIndexWrite:
     def test_concurrent_writers_leave_valid_index(self, tmp_path: Path, scan_index):
         """Two writers racing on the same root must not corrupt the index (PID-qualified temp).
 
-        The bg refresh, post-commit hook, and self-heal all invoke scan-index
-        uncoordinated. A shared fixed ".json.tmp" would let two "w" opens interleave
-        into corrupt bytes; the PID-qualified temp gives each writer its own file so
-        every os.replace promotes a complete index. Whichever writer wins, the final
-        file must parse and no PID-suffixed temp may leak.
+        The bg refresh, post-commit hook, and self-heal all invoke scan-index uncoordinated. A shared fixed ".json.tmp"
+        would let two "w" opens interleave into corrupt bytes; the PID-qualified temp gives each writer its own file so
+        every os.replace promotes a complete index. Whichever writer wins, the final file must parse and no PID-suffixed
+        temp may leak.
         """
         (tmp_path / "gamma.py").write_text("g = 1\n")
 

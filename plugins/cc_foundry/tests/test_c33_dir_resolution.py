@@ -1,7 +1,7 @@
 """Regression tests for Check 33b non-LOCAL_MODE _C33_DIR resolution (B2 fix).
 
-Old code: ls -d ~/.claude/plugins/cache/borda-ai-rig/ returns the root dir itself —
-no version specificity, causing grep to scan all cached versions × all plugins.
+Old code: ls -d ~/.claude/plugins/cache/borda-ai-rig/ returns the root dir itself — no version specificity, causing grep
+to scan all cached versions × all plugins.
 
 Fixed code: ls -d .../foundry/*/ | sort -V | tail -1 resolves to latest version dir only.
 """

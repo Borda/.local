@@ -108,7 +108,10 @@ def build_each_message(fields: EachMessageFields) -> str:
         Full commit message string.
 
     Examples:
-        >>> f = EachMessageFields("Fix typo", "3", "octocat", "#42", "Please fix the typo here", "evidence=VALID suggestion=VALID resolution=as-suggested")
+        >>> f = EachMessageFields(
+        ...     "Fix typo", "3", "octocat", "#42", "Please fix the typo here",
+        ...     "evidence=VALID suggestion=VALID resolution=as-suggested",
+        ... )
         >>> msg = build_each_message(f)
         >>> msg.splitlines()[0]
         'Fix typo'
@@ -116,7 +119,8 @@ def build_each_message(fields: EachMessageFields) -> str:
         True
         >>> "Co-authored-by: OpenAI Codex" in msg
         False
-        >>> "Co-authored-by: OpenAI Codex" in build_each_message(EachMessageFields("s", "1", "a", "9", "c", "evidence=VALID", True))
+        >>> codex_fields = EachMessageFields("s", "1", "a", "9", "c", "evidence=VALID", True)
+        >>> "Co-authored-by: OpenAI Codex" in build_each_message(codex_fields)
         True
     """
     quoted = fields.comment[:72]
@@ -239,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     args = list(sys.argv[1:] if argv is None else argv)
 
-    # Honour only -h/--help via argparse; every other flag flows through the manual
+    # Honour only ``-h/--help`` via argparse; every other flag flows through the manual
     # _parse_args below, which is already reject-strict (unknown arg → exit 1) with a
     # bespoke "unknown arg '<a>'" message. argparse's native errors would change that
     # exit-1 contract to exit-2 — keep the manual parser as the sole argv authority.

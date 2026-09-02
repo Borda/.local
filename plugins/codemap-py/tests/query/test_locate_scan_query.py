@@ -144,7 +144,7 @@ class TestMain:
     def test_output_has_no_crlf(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """stdout must not contain CRLF (Windows text-mode regression guard)."""
+        """Stdout must not contain CRLF (Windows text-mode regression guard)."""
         _make_executable(tmp_path / "bin" / "scan-query")
         monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(tmp_path))
         monkeypatch.setenv("HOME", str(tmp_path))
@@ -154,7 +154,7 @@ class TestMain:
         assert "\r" not in capsys.readouterr().out
 
     def test_help_exits_0(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """``--help`` exits 0 and prints usage (argparse convention)."""
+        """Print command usage and exit successfully for a help request."""
         with pytest.raises(SystemExit) as exc:
             main(["--help"])
         assert exc.value.code == 0

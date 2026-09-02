@@ -1,9 +1,8 @@
 """Tests for ``bin/commit_all_items.py``.
 
-``subprocess.run`` and module-level ``which`` are monkeypatched — no real
-``git`` invocations. ``build_commit_message`` is tested directly as a pure
-function. Stdin, counts, and optional ``--codex`` / summaries-file paths
-are covered via direct ``main(argv)`` calls.
+``subprocess.run`` and module-level ``which`` are monkeypatched — no real ``git`` invocations. ``build_commit_message``
+is tested directly as a pure function. Stdin, counts, and optional ``--codex`` / summaries-file paths are covered via
+direct ``main(argv)`` calls.
 """
 
 from __future__ import annotations
@@ -26,7 +25,10 @@ class _FakeCompleted:
 
 @pytest.fixture
 def fake_git(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
-    """Patch subprocess.run and which; record command lists. Default: exit 0."""
+    """Patch subprocess.run and which; record command lists.
+
+    Default: exit 0.
+    """
     recorded: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
@@ -104,7 +106,7 @@ def test_commit_message_contains_pr_and_counts(fake_git: list[list[str]]) -> Non
 
 
 def test_codex_flag_adds_trailer(fake_git: list[list[str]]) -> None:
-    """``--codex`` flag → OpenAI Codex co-author trailer present in message."""
+    """Include the Codex co-author trailer when requested."""
     cai.main(["42", "3", "1", "0", "--codex"])
     msg = _commit_calls(fake_git)[0][3]
     assert "Co-authored-by: OpenAI Codex" in msg
@@ -135,7 +137,7 @@ def test_missing_summaries_file_ignored(fake_git: list[list[str]], tmp_path: Pat
 
 
 def test_git_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``which`` returns None → FileNotFoundError propagates."""
+    """Return None → FileNotFoundError propagates."""
     monkeypatch.setattr(cai, "which", lambda _: None)
     with pytest.raises(FileNotFoundError, match="git"):
         cai.main(["42", "3", "1", "0"])
@@ -143,7 +145,7 @@ def test_git_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.parametrize("flag", ["-h", "--help"])
 def test_help_exits_0_without_git(monkeypatch: pytest.MonkeyPatch, flag: str) -> None:
-    """``-h``/``--help`` prints usage and exits 0; no subprocess/git ever runs."""
+    """Print help without invoking Git or another subprocess."""
     called: list[Any] = []
     monkeypatch.setattr(cai.subprocess, "run", lambda *a, **k: called.append(a))
     with pytest.raises(SystemExit) as exc:
@@ -166,7 +168,7 @@ def test_golden_all_mode_invocation_constructs_expected_commit(fake_git: list[li
 
 
 def test_build_commit_message_pure() -> None:
-    """``build_commit_message`` returns expected subject and counts; no subprocess needed."""
+    """Return expected subject and counts; no subprocess needed."""
     msg = cai.build_commit_message("#7", 5, 2, 1, "", False)
     assert "PR #7" in msg
     assert "5 as-suggested" in msg

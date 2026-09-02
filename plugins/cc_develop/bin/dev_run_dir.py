@@ -34,16 +34,15 @@ _SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9_-]")
 def _sentinel_dir() -> Path:
     """Return ``$TMPDIR`` when set, else ``tempfile.gettempdir()``.
 
-    Matches the shell ``${TMPDIR:-/tmp}`` idiom used by callers that poll this sentinel,
-    so both sides resolve to the same directory on every platform. ``os.environ`` is read
-    first because ``tempfile.gettempdir()`` caches its result on first call and would not
-    observe a later ``TMPDIR`` change.
+    Matches the shell ``${TMPDIR:-/tmp}`` idiom used by callers that poll this sentinel, so both sides resolve to the
+    same directory on every platform. ``os.environ`` is read first because ``tempfile.gettempdir()`` caches its result
+    on first call and would not observe a later ``TMPDIR`` change.
     """
     return Path(os.environ.get("TMPDIR") or tempfile.gettempdir())
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Create run dir and optional sentinel; print path; return exit code.
+    """Create a run directory and optional sentinel, then print its path.
 
     Args:
         argv: Argument list (defaults to sys.argv[1:]).

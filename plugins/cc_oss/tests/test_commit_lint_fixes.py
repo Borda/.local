@@ -1,8 +1,7 @@
 """Tests for ``bin/commit_lint_fixes.py``.
 
-``subprocess.run`` and module-level ``which`` are monkeypatched — no real
-``git`` invocations. Tests cover the no-op path (empty diff) and the
-stage-and-commit path, including commit-failure forwarding.
+``subprocess.run`` and module-level ``which`` are monkeypatched — no real ``git`` invocations. Tests cover the no-op
+path (empty diff) and the stage-and-commit path, including commit-failure forwarding.
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ class _FakeCompleted:
 
 @pytest.mark.parametrize("flag", ["-h", "--help"])
 def test_help_exits_0_without_git(monkeypatch: pytest.MonkeyPatch, flag: str) -> None:
-    """``-h``/``--help`` prints usage and exits 0; no subprocess/git ever runs."""
+    """Print help without invoking Git or another subprocess."""
     called: list[Any] = []
     monkeypatch.setattr(clf.subprocess, "run", lambda *a, **k: called.append(a))
     with pytest.raises(SystemExit) as exc:
@@ -126,7 +125,7 @@ def test_changed_files_are_added_before_commit_with_exact_args(monkeypatch: pyte
 
 
 def test_git_add_failure_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
-    """git add check=True failures are not converted into a misleading successful commit."""
+    """Git add check=True failures are not converted into a misleading successful commit."""
     call_n = [0]
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
@@ -165,7 +164,7 @@ def test_changed_files_commit_message_contains_lint(monkeypatch: pytest.MonkeyPa
 
 
 def test_commit_failure_forwards_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``git commit`` returning non-zero → ``main`` returns that exit code."""
+    """Propagate a failing Git commit exit code."""
     call_n = [0]
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
@@ -183,7 +182,7 @@ def test_commit_failure_forwards_exit_code(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_git_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``which`` returns None → FileNotFoundError propagates."""
+    """Return None → FileNotFoundError propagates."""
     monkeypatch.setattr(clf, "which", lambda _: None)
     with pytest.raises(FileNotFoundError, match="git"):
         clf.main()

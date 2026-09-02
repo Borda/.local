@@ -1,8 +1,7 @@
 """Tests for classify_resolver_sites bin script.
 
-Pure functions (`classify_site`, `find_sites`, `textual_count`, `_strip_comment`)
-already carry doctests via `--doctest-modules`; this file covers the file-walking
-`scan()` and the CLI `main()`, which need `tmp_path`/`capsys` I/O.
+The ``--doctest-modules`` gate already covers the pure functions (`classify_site`, `find_sites`, `textual_count`, and
+`_strip_comment`). This file covers the file-walking `scan()` and the CLI `main()`, which need `tmp_path`/`capsys` I/O.
 """
 
 from __future__ import annotations

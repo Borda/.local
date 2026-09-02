@@ -51,6 +51,10 @@ Hook ids (from `.pre-commit-config.yaml`): `ruff-check`, `ruff-format`, `eslint`
 - Bootstrap test tooling with `uv sync --only-group test`; benchmark-only dependencies use `uv sync --only-group bench`.
 - Run tests with `.venv/bin/python -m pytest <paths>` — **not** `uv run pytest` or a bare `pytest`; the project venv is the pinned environment. Start focused, broaden to the affected suite before completion.
 
+## Python Documentation Style
+
+- A docstring's opening line must state the documented object's purpose in plain English. Move formulas, assignments, configuration literals, function-call notation, and other code-shaped details into the following description or a relevant section.
+
 ## Markdown Policy
 
 Never hard-wrap prose in any Markdown file. Keep each prose paragraph on one physical line; preserve intentional structural breaks in headings, lists, tables, blockquotes, links, HTML `<details>` blocks, fenced code. Do not blindly unwrap or reflow a whole file; edit only the intended prose and retain its surrounding structure.

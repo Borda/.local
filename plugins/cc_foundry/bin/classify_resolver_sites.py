@@ -83,7 +83,8 @@ def classify_site(var: str, lines: list[str], start: int) -> bool:
 
         >>> classify_site("_FS", ['_FS=$(python resolve_shared_path.py)', 'cat "$_FS/x.md"'], 0)
         True
-        >>> classify_site("_FS", ['_FS=$(python resolve_shared_path.py)', '[ -z "$_FS" ] && exit 1', 'cat "$_FS/x.md"'], 0)
+        >>> lines = ['_FS=$(python resolve_shared_path.py)', '[ -z "$_FS" ] && exit 1', 'cat "$_FS/x.md"']
+        >>> classify_site("_FS", lines, 0)
         True
         >>> classify_site("_FS", ['_FS=$(python resolve_shared_path.py)', 'echo "path: $_FS"'], 0)
         False

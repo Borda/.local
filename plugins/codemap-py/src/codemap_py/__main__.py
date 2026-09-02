@@ -1,4 +1,4 @@
-"""``python -m codemap_py`` entrypoint (plan §7.2) — delegates to :func:`codemap_py.cli.main`.
+"""Run the Codemap command-line interface as a Python module.
 
 With ``<plugin-root>/src`` on the import path (via ``PYTHONPATH``, an editable
 install, or a checkout's ``src/`` as CWD) this reaches the same dispatcher as

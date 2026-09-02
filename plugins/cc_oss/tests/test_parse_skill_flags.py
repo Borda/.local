@@ -47,7 +47,7 @@ class TestVarName:
 
 
 # ---------------------------------------------------------------------------
-# _validate_flags — --flags CLI value validation
+# _validate_flags — ``--flags`` CLI value validation
 # ---------------------------------------------------------------------------
 
 
@@ -59,7 +59,7 @@ class TestValidateFlags:
         assert _validate_flags("reply, no-challenge ,worktree") == ["reply", "no-challenge", "worktree"]
 
     def test_empty_string_raises(self) -> None:
-        """Empty --flags value is rejected."""
+        """An empty ``--flags`` value is rejected."""
         with pytest.raises(ValueError, match="at least one flag name"):
             _validate_flags("")
 
@@ -69,7 +69,7 @@ class TestValidateFlags:
             _validate_flags("Reply")
 
     def test_leading_dash_raises(self) -> None:
-        """Flag names are bare (no leading --) — a dash-prefixed token is rejected."""
+        """Flag names are bare (no leading ``--``) — a dash-prefixed token is rejected."""
         with pytest.raises(ValueError, match="invalid flag name"):
             _validate_flags("--reply")
 
@@ -116,20 +116,20 @@ class TestFlagDetection:
 
 
 class TestKeepExtraction:
-    """parse_skill_flags: --keep "<items>" value extraction."""
+    """parse_skill_flags: ``--keep <items>`` value extraction."""
 
     def test_keep_value_extracted(self) -> None:
-        """Quoted --keep value is captured verbatim."""
+        """A quoted ``--keep`` value is captured verbatim."""
         result = parse_skill_flags('42 --keep "drop the typo fix"', [])
         assert result["KEEP_ITEMS"] == "drop the typo fix"
 
     def test_keep_absent_yields_empty_string(self) -> None:
-        """No --keep flag → KEEP_ITEMS is empty string, not absent key."""
+        """No ``--keep`` flag → KEEP_ITEMS is empty string, not absent key."""
         result = parse_skill_flags("42", [])
         assert result["KEEP_ITEMS"] == ""
 
     def test_keep_removed_from_clean_args(self) -> None:
-        """--keep "<value>" is stripped out of CLEAN_ARGS."""
+        """Remove retained-item options from the cleaned argument list."""
         result = parse_skill_flags('42 --keep "drop the typo fix"', [])
         assert "--keep" not in result["CLEAN_ARGS"]
         assert "drop the typo fix" not in result["CLEAN_ARGS"]
@@ -235,7 +235,7 @@ def test_main_via_subprocess_basic() -> None:
 
 
 def test_main_missing_flags_exits_nonzero() -> None:
-    """Missing --flags is an argparse-level error (exit 2)."""
+    """Missing ``--flags`` is an argparse-level error (exit 2)."""
     result = subprocess.run(
         [sys.executable, str(_BIN), "42"],
         capture_output=True,
@@ -246,7 +246,7 @@ def test_main_missing_flags_exits_nonzero() -> None:
 
 
 def test_main_invalid_flag_name_exits_nonzero() -> None:
-    """An invalid flag token in --flags exits 2 with a stderr message."""
+    """An invalid flag token in ``--flags`` exits 2 with a stderr message."""
     result = subprocess.run(
         [sys.executable, str(_BIN), "--flags", "Reply", "42"],
         capture_output=True,
@@ -258,7 +258,7 @@ def test_main_invalid_flag_name_exits_nonzero() -> None:
 
 
 def test_help_flag_exits_zero_via_subprocess() -> None:
-    """``--help`` prints usage and exits 0 (argparse)."""
+    """Print usage and exit 0 (argparse)."""
     result = subprocess.run(
         [sys.executable, str(_BIN), "--help"],
         capture_output=True,

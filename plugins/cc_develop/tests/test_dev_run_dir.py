@@ -45,15 +45,15 @@ def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> str:
 
 
 class TestSentinelDirResolution:
-    """``_sentinel_dir()`` must track ``$TMPDIR`` so shell ``${TMPDIR:-/tmp}`` callers agree."""
+    """Resolve sentinel storage from the same temporary-directory setting as shell callers."""
 
     def test_honors_tmpdir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``$TMPDIR`` set — resolves to it, not to a hardcoded ``/tmp``."""
+        """Use the configured temporary directory instead of a hardcoded path."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         assert dev_run_dir._sentinel_dir() == tmp_path
 
     def test_falls_back_when_tmpdir_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``$TMPDIR`` unset — falls back to ``tempfile.gettempdir()``."""
+        """Use the platform temporary directory when no override is configured."""
         monkeypatch.delenv("TMPDIR", raising=False)
         assert dev_run_dir._sentinel_dir() == Path(tempfile.gettempdir())
 
@@ -71,7 +71,7 @@ class TestRunDirCreation:
     """Tests for ``.developments/<ts>/`` creation."""
 
     def test_creates_developments_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``main()`` creates ``.developments/<ts>/`` under CWD."""
+        """Create ``.developments/<ts>/`` under CWD."""
         monkeypatch.chdir(tmp_path)
         rc = dev_run_dir.main([])
         assert rc == 0
@@ -91,7 +91,7 @@ class TestRunDirCreation:
     def test_output_has_no_crlf(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """stdout must not contain CRLF (Windows text-mode regression guard)."""
+        """Stdout must not contain CRLF (Windows text-mode regression guard)."""
         monkeypatch.chdir(tmp_path)
         dev_run_dir.main([])
         out = capsys.readouterr().out
@@ -104,7 +104,7 @@ class TestRunDirCreation:
         capsys: pytest.CaptureFixture[str],
         sentinel_dir: Path,
     ) -> None:
-        """stdout stays a single run-dir line — callers capture it whole via ``DEV_DIR=$(...)``."""
+        """Stdout stays a single run-dir line — callers capture it whole via ``DEV_DIR=$(...)``."""
         monkeypatch.chdir(tmp_path)
         dev_run_dir.main(["--sentinel", "dev-quiet"])
         lines = capsys.readouterr().out.strip().splitlines()
@@ -122,7 +122,7 @@ class TestSentinelFlag:
         capsys: pytest.CaptureFixture[str],
         sentinel_dir: Path,
     ) -> None:
-        """``--sentinel <name>`` touches sentinel in the ``$TMPDIR`` sentinel dir."""
+        """Touch sentinel in the ``$TMPDIR`` sentinel dir."""
         monkeypatch.chdir(tmp_path)
         sentinel_name = f"dev-py-test-{os.getpid()}"
         rc = dev_run_dir.main(["--sentinel", sentinel_name])
@@ -171,7 +171,7 @@ class TestSentinelFlag:
     def test_sentinel_without_name_skipped(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sentinel_dir: Path
     ) -> None:
-        """``--sentinel`` alone (no name arg) creates no sentinel file."""
+        """Avoid creating a sentinel when its name is omitted."""
         monkeypatch.chdir(tmp_path)
         dev_run_dir.main(["--sentinel"])
         assert list(sentinel_dir.iterdir()) == []
@@ -247,10 +247,10 @@ class TestSentinelSymlinkHardening:
 
 
 class TestHelp:
-    """``--help`` short-circuits before any run-dir side effects."""
+    """Short-circuit before any run-dir side effects."""
 
     def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """``--help`` prints usage to stdout and exits 0 (argparse default)."""
+        """Print usage to stdout and exit 0 (argparse default)."""
         with pytest.raises(SystemExit) as exc:
             dev_run_dir.main(["--help"])
         assert exc.value.code == 0

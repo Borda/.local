@@ -8,10 +8,10 @@ Four legacy arms run the same import-graph navigation tasks:
   plain    — developer with a minimal fix/feature/refactor/review skill; discovers structure via
              Grep / Glob / Bash
   codemap  — same skill extended with /codemap:query; uses the Skill tool for import-graph lookups
-             instead of grepping for structural questions (semble MCP blocked via --disallowed-tools)
+             instead of grepping for structural questions (semble MCP blocked via ``--disallowed-tools``)
   semble   — same skill extended with mcp__semble__search; uses the MCP tool for hybrid
              semantic + lexical search for import-graph questions instead of grepping
-             (Skill tool blocked via --disallowed-tools)
+             (Skill tool blocked via ``--disallowed-tools``)
   combined — both /codemap:query and mcp__semble__search available; agent selects whichever
              tool is best suited for each question; no tools blocked
 
@@ -25,7 +25,7 @@ reducing tool call count, elapsed time, and context consumption.
                 seconds) is intentionally excluded: it amortises over every subsequent query a
                 developer makes and is not part of the per-task exploration loop.
 
-  See: plugins/codemap-py/bin/scan-index --root <repo>
+  See: ``plugins/codemap-py/bin/scan-index --root <repo>``
 
 ## Metrics (per task × arm × model)
 
@@ -48,7 +48,7 @@ reducing tool call count, elapsed time, and context consumption.
   Purpose: assess whether the agent correctly identified the modules that import the task's primary_module
   (its "reverse dependencies", or rdeps). This is a proxy for blast-radius awareness — the core skill under test.
 
-  Ground truth (deterministic, tool-independent — review C-5):
+  Ground truth (deterministic, tool-independent):
     Derived from an independent AST scan of the repo, NOT from the codemap index the codemap
     arm queries. Every production .py file is parsed once; imports are inverted into an
     {imported_module: {importers}} map handling absolute, `from X import submodule`, aliased,
@@ -109,7 +109,7 @@ reducing tool call count, elapsed time, and context consumption.
   - claude CLI on PATH (uses Claude Code subscription — no API key)
   - pip install --group pyproject.toml:bench  (deps in pyproject [dependency-groups] bench)
   - uv add semble  (alternative: uv add semble>=0.1.0)
-  - Pre-built codemap index (see step 1 above)
+  - Pre-built codemap index (see the first quick-start command above)
 
 ## Failure conditions
 
@@ -122,7 +122,7 @@ reducing tool call count, elapsed time, and context consumption.
     semble no-call   — semble arm completed without ever calling mcp__semble__search or mcp__semble__find_related
     combined no-call  — combined arm completed without ever calling Skill or any semble MCP tool
 
-  Cross-arm tool contamination is blocked at the CLI level (not just by instruction) via --disallowed-tools:
+  Cross-arm tool contamination is blocked at the CLI level (not just by instruction) via ``--disallowed-tools``:
     codemap arm      — mcp__semble__search and mcp__semble__find_related are hard-blocked
     semble arm       — Skill is hard-blocked
 
@@ -491,10 +491,9 @@ def _tool_result_text(content: Any) -> str:
 def _query_arguments_from_bash(command: str) -> tuple[str, ...] | None:
     """Return canonical Codemap query arguments from one executable Bash command.
 
-    The decision-grade treatment credits only the stable PATH command
-    ``codemap-py query ...``, its installable absolute launcher, or the legacy
-    ``scan-query ...`` launcher. A Skill invocation remains insufficient until
-    its underlying CLI command completes against the frozen checkout.
+    The decision-grade treatment credits only the stable PATH command ``codemap-py query ...``, its installable absolute
+    launcher, or the legacy ``scan-query ...`` launcher. A Skill invocation remains insufficient until its underlying
+    CLI command completes against the frozen checkout.
     """
     boundary = r"(?:^|&&|\|\||;|\|)\s*"
     environment = r"(?:env\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*"
@@ -597,15 +596,13 @@ def _outside_workspace_path_evidence(
 ) -> tuple[list[str], list[str]]:
     """Return attempted and successful absolute accesses outside the checkout.
 
-    The harness may safely expose the disposable checkout by absolute path,
-    but only a successful external access can leak source bytes into an answer.
-    Denied guesses remain diagnostic evidence without quarantining a clean cell.
-    Only tool fields that execute a command or name a filesystem target count;
-    written content is data rather than an access request.
+    The harness may safely expose the disposable checkout by absolute path, but only a successful external access can
+    leak source bytes into an answer. Denied guesses remain diagnostic evidence without quarantining a clean cell. Only
+    tool fields that execute a command or name a filesystem target count; written content is data rather than an access
+    request.
 
-    Every path here is evidence about the agent's filesystem, recorded verbatim: it is
-    classified against the checkout lexically and never resolved against the host running
-    the scorer.
+    Every path here is evidence about the agent's filesystem, recorded verbatim: it is classified against the checkout
+    lexically and never resolved against the host running the scorer.
     """
     if workspace_root is None:
         return [], []
@@ -706,9 +703,8 @@ def _frozen_index_recovery_attempted(events: Sequence[Mapping[str, Any]]) -> boo
 def _claude_codemap_evidence(events: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """Count completed underlying Codemap CLI queries, never wrapper launches.
 
-    A successful Claude ``Skill`` result only proves that the wrapper ran; it
-    does not prove that its nested command accessed the frozen index. Canonical
-    C-strict evidence therefore requires a matching successful Bash result for
+    A successful Claude ``Skill`` result only proves that the wrapper ran; it does not prove that its nested command
+    accessed the frozen index. Canonical C-strict evidence therefore requires a matching successful Bash result for
     ``codemap-py query`` or legacy ``scan-query``.
     """
     pending: dict[str, tuple[str, ...]] = {}
@@ -1633,11 +1629,9 @@ def run_claude_paid_stage(
 ) -> Path:
     """Execute one Claude P1 stage through the shared paid lifecycle.
 
-    ReadCrop uses a stripped disposable source copy. Executable stages use a
-    benchmark-owned Git worktree for model edits and a second clean worktree
-    for ordinary patch application plus the independent oracle. All stages
-    persist native raw events and null tool-result tokens when Claude does not
-    expose that usage partition.
+    ReadCrop uses a stripped disposable source copy. Executable stages use a benchmark-owned Git worktree for model
+    edits and a second clean worktree for ordinary patch application plus the independent oracle. All stages persist
+    native raw events and null tool-result tokens when Claude does not expose that usage partition.
     """
     runner = ModelRunner(model, MODELS[model], repo_path, timeout=MODEL_TIMEOUT[model])
 
@@ -1899,8 +1893,8 @@ def resolve_agentic_scope(
 def _delivered_task_prompt(task: Mapping[str, object], *, canonical: bool) -> str:
     """Return the exact provider-visible prompt for one task.
 
-    Canonical cells add the shared JSON response contract after the materialized
-    task prose. Explicit legacy arms retain their historical prose-only prompt.
+    Canonical cells add the shared JSON response contract after the materialized task prose. Explicit legacy arms retain
+    their historical prose-only prompt.
     """
     if canonical:
         return materialize_agentic_prompt(task)
@@ -1996,13 +1990,13 @@ class QualityScore:
     # ── Semble-native lens (semble / combined arms only; None when not applicable) ──
     # chunk_hit_rate: fraction of expected rdep modules whose module/file appears in ANY semble
     # search chunk the arm retrieved. A fair semantic-search axis that does not require semble to
-    # emit an exhaustive dotted rdep list (review C-5); erec/rrec stay the codemap-native lens.
+    # emit an exhaustive dotted rdep list; erec/rrec stay the codemap-native lens.
     chunk_hit_rate: Optional[float] = None
 
     # ── Targeted-test correctness signal (fix tasks that declare a test_target; None otherwise) ──
     # test_passed: outcome of running the task's declared pytest node on the post-edit sandbox.
     # A stronger correctness signal than keyword recall — recorded alongside erec, never replacing
-    # it (review M-4). None when the task declares no test or the test could not be launched.
+    # it. None when the task declares no test or the test could not be launched.
     test_passed: Optional[bool] = None
 
     # ── Legacy fields (backward compat — leaf-name matching on output_text) ──
@@ -2047,8 +2041,7 @@ class ToolCounts:
 class BenchmarkRun:
     """Result of a single benchmark run (one task x arm x model).
 
-    Renamed from RunResult; field names are unchanged, so ``asdict()`` output and serialised JSON
-    remain identical.
+    Renamed from RunResult; field names are unchanged, so ``asdict()`` output and serialised JSON remain identical.
     """
 
     arm: str
@@ -2141,8 +2134,8 @@ class Task:
 def parity_arm_identity(arm: str) -> str | None:
     """Return a canonical A/B/C arm only when that arm was explicitly executed.
 
-    Legacy agentic labels have different historical no-call semantics, so they
-    intentionally remain unlabelled rather than being retroactively mapped.
+    Legacy agentic labels have different historical no-call semantics, so they intentionally remain unlabelled rather
+    than being retroactively mapped.
     """
     return arm if arm in ARM_CONTRACTS else None
 
@@ -2498,7 +2491,7 @@ def _derive_module_name(py_path: Path, root: Path) -> Optional[str]:
     scan-index (``path_to_module``) names a file outside any ``__init__`` chain
     (``examples.pytorch.domain_templates.imagenet``, not the bare stem ``imagenet``). Aligning the two
     keeps the AST oracle and the scan-index oracle in one namespace, so a loose importer no longer
-    fires both ``missing_in_index`` and ``missing_in_ast`` as a spurious ``gt-divergence`` (review C-5).
+    fires both ``missing_in_index`` and ``missing_in_ast`` as a spurious ``gt-divergence``.
 
     Args:
         py_path: Absolute path to a ``.py`` file inside ``root``.
@@ -2564,7 +2557,7 @@ def _scan_repo_importers(root: Path) -> dict[str, set[str]]:
 
     The walk resolves each production module's imports and inverts them into
     ``{imported_module: {importer_module, ...}}``. This is the ground-truth source for quality
-    scoring (review C-5): unlike the codemap index it is not the artefact the codemap arm queries,
+    scoring: unlike the codemap index it is not the artefact the codemap arm queries,
     so index blind spots (e.g. ``from pkg import submodule``) surface as divergences instead of
     being invisible.
 
@@ -2601,11 +2594,10 @@ def _scan_repo_importers(root: Path) -> dict[str, set[str]]:
 class GroundTruth:
     """Tool-independent ground truth for quality scoring benchmark runs.
 
-    Loads the codemap index once for centrality metadata, then (when a repo path is given)
-    derives the authoritative expected rdep sets from an independent AST scan of the repo —
-    not from the same index the codemap arm queries. The index-derived list is retained as a
-    diagnostic; per-task divergences are logged so index blind spots become visible instead of
-    invisible (see review C-5). Exposes a ``score()`` method for comparing agent output to truth.
+    Loads the codemap index once for centrality metadata, then (when a repo path is given) derives the authoritative
+    expected rdep sets from an independent AST scan of the repo — not from the same index the codemap arm queries. The
+    index-derived list is retained as a diagnostic; per-task divergences are logged so index blind spots become visible
+    instead of invisible. Exposes a ``score()`` method for comparing agent output to truth.
     """
 
     @staticmethod
@@ -2666,7 +2658,7 @@ class GroundTruth:
         # the index import graph. Tasks define "central" as "imported by the most modules" — i.e.
         # in-degree — so top-10 ranks by in-degree, NOT dep_count. dep_count is the forward import
         # count (out-degree) and would rank on the opposite axis, measuring recall on the wrong
-        # modules (review M-3).
+        # modules.
         _in_degrees: dict[str, int] = defaultdict(int)
         for m in index.get("modules", []):
             if m.get("status") != "ok":
@@ -2748,9 +2740,9 @@ class GroundTruth:
     def _emit_divergences(self) -> None:
         """Print one summary line when the AST oracle and index disagree on any task.
 
-        Per-task detail stays in ``self.divergences`` for callers/tests; a non-empty
-        ``missing_in_index`` means the AST scan found real importers the index lacks —
-        a potential plugin blind spot and the harness's added diagnostic value (review C-5).
+        Per-task detail stays in ``self.divergences`` for callers/tests; a non-empty ``missing_in_index`` means the AST
+        scan found real importers the index lacks — a potential plugin blind spot and the harness's added diagnostic
+        value.
         """
         if not self.divergences:
             return
@@ -2894,7 +2886,7 @@ class GroundTruth:
         # ── Semble chunk-hit rate (semble / combined arm only) ──
         # Module-file granularity: an expected rdep counts as hit if any of its surface forms
         # appears in the concatenated semble search chunks — semantic search need not enumerate
-        # exact dotted rdeps to get credit (review C-5).
+        # exact dotted rdeps to get credit.
         chunk_hit_rate: Optional[float] = None
         if semble_result_text:
             chunk_hits = sum(1 for r in exp if self._rdep_found(r, semble_result_text))
@@ -2970,21 +2962,20 @@ class GroundTruth:
 class ModelRunner:
     """Runs benchmark tasks against a specific Claude model tier.
 
-    Encapsulates model identity, repo path, and timeout. The ``run()`` method launches a Claude
-    subprocess and parses stream-json events into a ``BenchmarkRun`` result.
+    Encapsulates model identity, repo path, and timeout. The ``run()`` method launches a Claude subprocess and parses
+    stream-json events into a ``BenchmarkRun`` result.
 
-    Arm prompts and CLI constants live here — only ModelRunner constructs or launches claude;
-    nothing else needs them.
+    Arm prompts and CLI constants live here — only ModelRunner constructs or launches claude; nothing else needs them.
     """
 
     # Base claude CLI invocation.
-    # --setting-sources project,local excludes USER-level config (caveman plugin, foundry Re:Anchor
+    # ``--setting-sources project,local`` excludes USER-level config (caveman plugin, foundry Re:Anchor
     # box+▓ footer, user CLAUDE.md, user hooks) so the agent's output is not shaped/inflated by the
     # operator's personal setup — identical isolation on every arm. Excluding user also drops the
-    # codemap plugin and semble MCP, so they are re-supplied per arm via --plugin-dir / --mcp-config
+    # codemap plugin and semble MCP, so they are re-supplied per arm via ``--plugin-dir`` and ``--mcp-config``
     # in _arm_isolation_flags (the tools under test must survive isolation). Subscription auth is
     # not a setting source, so it is unaffected.
-    # --no-session-persistence makes every cell non-resumable, preventing conversational state reuse.
+    # ``--no-session-persistence`` makes every cell non-resumable, preventing conversational state reuse.
     _CMD = [
         "claude",
         "-p",
@@ -2997,10 +2988,10 @@ class ModelRunner:
     ]
     # Tools counted as exploration overhead
     EXPLORATION_TOOLS = {"Grep", "Glob", "Bash", "Skill", "mcp__semble__search", "mcp__semble__find_related"}
-    # Tools blocked per arm via --disallowed-tools to enforce mutual exclusion
+    # Tools blocked per arm via ``--disallowed-tools`` to enforce mutual exclusion
     # Bash is kept available for every non-plain arm (and plain) so each has the same read-only
     # shell fallback on a primary-tool error; blocking it for semble alone was an asymmetric
-    # handicap (review H-5). Only the primary discriminator differs: codemap blocks semble MCP,
+    # handicap. Only the primary discriminator differs: codemap blocks semble MCP,
     # semble blocks the Skill tool, plain blocks both structural entry points.
     _ARM_DISALLOWED: dict[str, list[str]] = {
         "codemap": ["--disallowed-tools", "mcp__semble__search,mcp__semble__find_related"],
@@ -3015,7 +3006,7 @@ class ModelRunner:
         "combined": [],
     }
 
-    # Tools pre-approved per arm via --allowedTools. In headless -p mode a tool the arm relies
+    # Tools pre-approved per arm via ``--allowedTools``. In headless -p mode a tool the arm relies
     # on MUST be pre-approved here or it is permission-denied (returns <tool_use_error>). Canonical
     # P1 C treatment evidence is a completed direct ``codemap-py query`` Bash call. Match the
     # production Skill's absolute-launcher form (including its closing quote) as well as the PATH
@@ -3068,7 +3059,7 @@ class ModelRunner:
         ),
     }
     # Shared efficiency sentence — identical for every arm so tool-call count reflects the
-    # agent's own choices, not asymmetric steering (see benchmark review C-4).
+    # agent's own choices, not asymmetric steering.
     _EFFICIENCY = "\n\nAnswer in as few tool calls as possible; do not re-verify results you already have."
 
     # Shared, arm-neutral answer format. This is the erec/rrec extraction target and MUST be
@@ -3097,7 +3088,7 @@ Rules:
 
     # Per-arm supplements below carry tool availability + invocation syntax ONLY. No call caps,
     # no "do not verify" rules, no step protocols — that steering is the measured signal and would
-    # manufacture the savings it claims to observe (benchmark review C-4).
+    # manufacture the benchmark savings it claims to observe.
     _PLAIN_SUPPLEMENT = """
 
 ## Tools available
@@ -3228,7 +3219,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
     )
     # Tool availability + syntax ONLY — no "do this FIRST", no "do NOT grep", no "decisive
     # advantage" framing. That steering was the measured signal and manufactured the tool-call
-    # gap (review N3, mirroring C-4 for the rdep supplements).
+    # gap, mirroring the corresponding rdep-supplement treatment.
     _FIXMULTI_CODEMAP = (
         "\n\n## Codemap integration\n"
         "The installed `/codemap-py:query-code` Skill answers caller and import-graph questions from a pre-built "
@@ -3245,10 +3236,9 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
     def _system_prompt(self, task_type: str, arm: str) -> str:
         """Build the system prompt for one arm × task-type combination.
 
-        The shared ``_EFFICIENCY`` sentence is appended for every task family (fix, read_crop,
-        and rdep) so no arm is uniquely nudged toward more or fewer tool calls (review N3).
-        Canonical parity tasks put their exact labelled JSON answer contract in the user prompt;
-        legacy tasks retain their historical reverse-dependency output format.
+        The shared ``_EFFICIENCY`` sentence is appended for every task family (fix, read_crop, and rdep) so no arm is
+        uniquely nudged toward more or fewer tool calls. Canonical parity tasks put their exact labelled JSON answer
+        contract in the user prompt; legacy tasks retain their historical reverse-dependency output format.
         """
         if task_type == "fix_single":
             supplement = {
@@ -3387,7 +3377,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         # self.repo_path. Blocking Edit/Write is not enough: the codemap and combined arms keep
         # Bash, so an agent could still write through the shell — only a throwaway copy bounds
         # the blast radius. Query (non-reset) arms previously ran in-place, letting a stray edit
-        # contaminate later runs (review M-5); they now copy like every other arm.
+        # contaminate later runs; they now copy like every other arm.
         import shutil
         import tempfile
 
@@ -3403,7 +3393,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             )
             # codemap / combined arms need the prebuilt index present in the sandbox;
             # otherwise the /codemap:query-code Step 0 would build it inside the measured
-            # window (review H-3). The sandbox dir keeps the original repo name, so the
+            # window. The sandbox dir keeps the original repo name, so the
             # repo-name-derived index file (<repo>.json) resolves unchanged (git is absent →
             # resolve_proj_index falls back to the CWD basename). Plain and semble arms are
             # left index-free — plain for isolation, semble because it never queries the index.
@@ -3435,7 +3425,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
                 diff_capture.append(proc.stdout)
                 # Opt-in correctness signal: run the task's declared pytest node on the sandbox
                 # (post-edit, pre-cleanup) so a semantically wrong edit that merely emits the
-                # right keywords does not score full recall unchecked (review M-4).
+                # right keywords does not score full recall unchecked.
                 if task.test_target:
                     test_capture.append(self._run_targeted_test(cwd, task.test_target))
 
@@ -3617,8 +3607,8 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
     def _arm_isolation_flags(cls, arm: str) -> list[str]:
         """Return the per-arm flags that re-supply the tools under test after user config is excluded.
 
-        codemap/combined get the codemap plugin (--plugin-dir) for the Skill; semble/combined get the
-        semble server (--mcp-config, --strict-mcp-config). plain gets nothing — it is the control.
+        codemap/combined get the codemap plugin (``--plugin-dir``) for the Skill; semble/combined get the
+        semble server (``--mcp-config``, ``--strict-mcp-config``). plain gets nothing — it is the control.
 
         Args:
             arm: Benchmark arm (plain / codemap / semble / combined).
@@ -3644,7 +3634,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         codemap ``bin/`` dir is injected explicitly to keep ``scan-query`` reachable inside skill
         Bash calls. For the codemap and combined arms ``SCAN_NO_AUTOBUILD=1`` is set so the
         /codemap-py:query-code Step 0 never runs ``scan-index --incremental`` inside the measured
-        window — the benchmark builds the index out of band (review N2 / H-3). A genuinely
+        window — the benchmark builds the index out of band. A genuinely
         missing index then fails loudly instead of being silently rebuilt mid-task.
 
         ``CLAUDE_PLUGIN_ROOT`` is also exported for the codemap-consuming arms, pointed at the
@@ -3883,7 +3873,6 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
                 (``mcp__semble__search`` or ``mcp__semble__find_related``). Appends the
                 text to ``result.semble_results`` for the exposure-recall corpus.
         """
-
         for text in _iter_tool_result_texts(content):
             _capture_tool_result_text(text, result, is_rdeps=is_rdeps, is_semble=is_semble)
 
@@ -4139,8 +4128,8 @@ def aggregate(
 class Report:
     """Renders a markdown benchmark report from a set of completed runs.
 
-    Encapsulates the savings summary, per-task tables, and report assembly logic. All
-    report-specific constants are class-level attributes.
+    Encapsulates the savings summary, per-task tables, and report assembly logic. All report-specific constants are
+    class-level attributes.
     """
 
     _BASELINE = "plain"
@@ -4183,7 +4172,7 @@ class Report:
     # Task types scored by diff/keyword recall, not by a reverse-dependency list. Their
     # efficiency (token / tool-call) savings are suppressed because the arms differ in edit
     # workload, not in structural-discovery cost — a savings figure there would be biased
-    # (review N3). Quality (erec/rrec keyword recall) is still rendered for them.
+    # Quality (erec/rrec keyword recall) is still rendered for them.
     _FIX_TYPES = ("fix_single", "fix_multicaller")
 
     # Key metrics first — these are the headline savings signal.
@@ -4287,15 +4276,15 @@ class Report:
         }
 
     def _efficiency_task_ids(self) -> list[str]:
-        """Task ids eligible for efficiency savings — fix-family tasks are excluded (review N3)."""
+        """Task ids eligible for efficiency savings — fix-family tasks are excluded."""
         return [tid for tid in self.task_ids if (t := self.task_meta.get(tid)) and t.type not in self._FIX_TYPES]
 
     def _savings_summary(self, agg: dict) -> list[dict]:
         """Build savings rows for one model's aggregated results, one row per arm × metric.
 
-        Each row carries ``n`` — the number of tasks where BOTH the plain baseline and the arm
-        succeeded — so the denominator behind every savings figure is visible (review H-4).
-        Fix-family tasks are excluded from the efficiency denominators (review N3).
+        Each row carries ``n`` — the number of tasks where BOTH the plain baseline and the arm succeeded — so the
+        denominator behind every savings figure is visible. Fix-family tasks are excluded from the efficiency
+        denominators.
         """
         baseline = self._BASELINE
         present_arms = {r.arm for r in self.results}
@@ -4354,9 +4343,8 @@ class Report:
     def _per_task_quality_tables(self, agg: dict) -> list[str]:
         """Render absolute per-arm quality medians (erec / rrec / chunk hit rate) — no savings.
 
-        Quality is a correctness lens where higher is better, so it is shown as absolute
-        percentages for every arm (review H-4). ``chunk_hit_rate`` is the semble-native lens and
-        renders "—" for arms that carry no semble corpus.
+        Quality is a correctness lens where higher is better, so it is shown as absolute percentages for every arm.
+        ``chunk_hit_rate`` is the semble-native lens and renders "—" for arms that carry no semble corpus.
         """
         arms = self._rendered_arms()
         lines: list[str] = []
@@ -4375,8 +4363,8 @@ class Report:
     def _cell_counts(self, model: str) -> dict[str, dict[str, list[int]]]:
         """Return ``{task_id: {arm: [n_total, n_success]}}`` for one model tier.
 
-        Unlike ``aggregate`` (which drops all-failed cells), this keeps every cell so failures are
-        countable — a cell where every run failed still reports ``[n_total, 0]`` (review H-4).
+        Unlike ``aggregate`` (which drops all-failed cells), this keeps every cell so failures are countable — a cell
+        where every run failed still reports ``[n_total, 0]``.
         """
         counts: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, 0]))
         for r in self.results:
@@ -4469,9 +4457,9 @@ def _run_line(run_n: int, total_runs: int, task: Task, model_short: str, arm: st
 def _agentic_arm_order(task: Task, model_short: str, arms: list[str], rep: int) -> tuple[str, ...]:
     """Return the execution order of *arms* for one task/model/repetition block.
 
-    Only the canonical A/B/C set is counterbalanced, through the same revision-bound
-    policy the structural lanes use. Any other arm set (a single arm, a legacy pair) is
-    order-invariant or has no shared policy, so the caller's declared order stands.
+    Only the canonical A/B/C set is counterbalanced, through the same revision-bound policy the structural lanes use.
+    Any other arm set (a single arm, a legacy pair) is order-invariant or has no shared policy, so the caller's declared
+    order stands.
     """
     if set(arms) != set(AGENTIC_ARMS) or len(arms) != len(AGENTIC_ARMS):
         return tuple(arms)
@@ -4492,12 +4480,11 @@ def _iter_combos(
 ) -> Iterator[tuple[Task, str, str, str, int]]:
     """Yield every (task, model, arm, repetition) cell in counterbalanced execution order.
 
-    A fixed A→B→C sequence confounds arm with position: anything that drifts across a
-    block — provider-side load, rate limiting, machine state — hits the arms in the same
-    order every time, and the elapsed-time comparison inherits that drift as if it were
-    an arm effect. The structural lanes already counterbalance via the shared
-    revision-bound policy; the agentic lane now reuses it, keyed by repetition as well so
-    repeated blocks of one cell do not replay a single order.
+    A fixed A→B→C sequence confounds arm with position: anything that drifts across a block — provider-side load, rate
+    limiting, machine state — hits the arms in the same order every time, and the elapsed-time comparison inherits that
+    drift as if it were an arm effect. The structural lanes already counterbalance via the shared revision-bound policy;
+    the agentic lane now reuses it, keyed by repetition as well so repeated blocks of one cell do not replay a single
+    order.
     """
     for task in tasks:
         for model_short, model_id in models:
@@ -4549,8 +4536,8 @@ class _AgenticSubProgressUpdate:
 class Benchmark:
     """Orchestrates the full benchmark run: iterates tasks x arms x models.
 
-    Constructs ``GroundTruth`` internally from the index, manages result accumulation, tool-call
-    logging, and snapshot persistence.
+    Constructs ``GroundTruth`` internally from the index, manages result accumulation, tool-call logging, and snapshot
+    persistence.
     """
 
     def __init__(
@@ -4633,7 +4620,7 @@ class Benchmark:
         # Build corpora for v2 quality scoring.
         # erec uses agent-text only — tool outputs excluded so codemap arm erec measures
         # agent comprehension, not whether the skill echoed the list back. The semble chunk
-        # corpus feeds the semble-native chunk_hit_rate lens (review C-5); erec/rrec stay the
+        # corpus feeds the semble-native chunk_hit_rate lens; erec/rrec stay the
         # codemap-native rdep-recall lens.
         exposure_corpus = result.output_text
         report_corpus = result.output_text[result.last_tool_text_offset :]
@@ -4691,7 +4678,7 @@ class Benchmark:
         # Degenerate-loop detection MUST precede the no-skill-call guard below. A codemap arm that
         # ignored the index and grepped its way through has skill == 0, which the no-call guard
         # would otherwise claim first (labelling it "codemap skill never called") — leaving the
-        # ≥70% grep-ratio classification unreachable for blast-radius tasks (review M-2). Ordering
+        # ≥70% grep-ratio classification unreachable for blast-radius tasks. Ordering
         # it first lets a grep-heavy zero-skill run be labelled degenerate_grep_loop; a zero-skill
         # run that is NOT grep-heavy still falls through to the no-call guard.
         if result.arm == "codemap" and result.success:
@@ -4800,11 +4787,10 @@ class Benchmark:
     def _save_snapshot(self, metadata: dict) -> None:
         """Atomically overwrite the results JSON with the current snapshot.
 
-        Called after every run onto a single rolling file. The payload is written to a temp file
-        in the output directory first, then ``os.replace`` swaps it into place — an atomic rename
-        on POSIX. A SIGINT/kill mid-write therefore leaves the results file either fully old or
-        fully new, never a truncated mix that would lose every accumulated run (review M-1). The
-        temp file is removed if serialisation fails so no ``.tmp`` residue accumulates.
+        Called after every run onto a single rolling file. The payload is written to a temp file in the output directory
+        first, then ``os.replace`` swaps it into place — an atomic rename on POSIX. A SIGINT/kill mid-write therefore
+        leaves the results file either fully old or fully new, never a truncated mix that would lose every accumulated
+        run. The temp file is removed if serialisation fails so no ``.tmp`` residue accumulates.
         """
         import tempfile
 

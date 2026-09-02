@@ -40,8 +40,10 @@ never writes at all, so any symlink there matching the ``borda-ai-rig/foundry/``
 marker substring is obsolete by construction and purged on that cheaper test.
 
 Usage:
-    python "${CLAUDE_PLUGIN_ROOT}/bin/symlink_with_guard.py" cleanup --plugin-root <path> [--home <path>] [--marker <str>]
-    python "${CLAUDE_PLUGIN_ROOT}/bin/symlink_with_guard.py" scan    --plugin-root <path> [--home <path>] [--marker <str>]
+    python "${CLAUDE_PLUGIN_ROOT}/bin/symlink_with_guard.py" cleanup --plugin-root <path> \
+        [--home <path>] [--marker <str>]
+    python "${CLAUDE_PLUGIN_ROOT}/bin/symlink_with_guard.py" scan --plugin-root <path> \
+        [--home <path>] [--marker <str>]
     python "${CLAUDE_PLUGIN_ROOT}/bin/symlink_with_guard.py" create  --src <path> --dest <path> [--home <path>]
 
 Exit codes (same 0/1/2 contract for all modes — including ``create``):
@@ -228,7 +230,7 @@ def _readlink(path: Path) -> str | None:
 
 
 def _is_foundry_managed(target: str, marker: str) -> bool:
-    """True when the readlink target contains the foundry marker substring.
+    """Check whether a link target contains the Foundry ownership marker.
 
     The marker is written with forward slashes (``borda-ai-rig/foundry/``), so a
     native Windows target spelled with backslashes never matched it and both
@@ -244,9 +246,11 @@ def _is_foundry_managed(target: str, marker: str) -> bool:
         True iff ``marker`` appears in ``target``, with either separator style.
 
     Examples:
-        >>> _is_foundry_managed("/home/x/.claude/plugins/cache/borda-ai-rig/foundry/0.17.0/rules/x.md", "borda-ai-rig/foundry/")
+        >>> target = "/home/x/.claude/plugins/cache/borda-ai-rig/foundry/0.17.0/rules/x.md"
+        >>> _is_foundry_managed(target, "borda-ai-rig/foundry/")
         True
-        >>> _is_foundry_managed("C:\\\\Users\\\\x\\\\cache\\\\borda-ai-rig\\\\foundry\\\\0.40.0\\\\skills\\\\a", "borda-ai-rig/foundry/")
+        >>> target = "C:\\\\Users\\\\x\\\\cache\\\\borda-ai-rig\\\\foundry\\\\0.40.0\\\\skills\\\\a"
+        >>> _is_foundry_managed(target, "borda-ai-rig/foundry/")
         True
         >>> _is_foundry_managed("/home/x/local/file.md", "borda-ai-rig/foundry/")
         False
@@ -255,7 +259,7 @@ def _is_foundry_managed(target: str, marker: str) -> bool:
 
 
 def _is_current(target: str, plugin_root: Path) -> bool:
-    """True when the readlink target lives inside the current plugin root.
+    """Check whether a link target resides inside the current plugin root.
 
     Performs a proper path-prefix comparison (``Path.is_relative_to``) instead
     of a substring match, so a plugin root like ``…/foundry/0.1`` doesn't
@@ -364,7 +368,7 @@ def _base_paths(root: Path) -> set[str]:
 
 
 def _owns(dest: Path, target: str, plugin_root: Path, lineage: Path | None) -> bool:
-    """True when foundry may replace or delete ``dest``.
+    """Check whether Foundry may replace or delete a destination.
 
     This is the proof gate for every rules-scope mutation, including migrating a
     pre-namespace unprefixed link. Substring shapes such as
@@ -573,9 +577,8 @@ def cleanup(plugin_root: Path, home: Path, marker: str) -> list[str]:
         marker: Substring identifying foundry-managed targets (skills/agents scopes).
 
     Returns:
-        List of ``"removed obsolete: <name>"`` / ``"removed user-level skill
-        link: <name>"`` / ``"removed obsolete agent: <name>"`` log lines (also
-        implies stdout side-effect when invoked via :func:`main`).
+        Log lines describing removed obsolete items or user-level skill links. Calling
+        :func:`main` also prints these lines to stdout.
     """
     log: list[str] = []
     skills_dest = home / ".claude" / "skills"
@@ -729,7 +732,7 @@ def create_link(src: Path, dest: Path, home: Path) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns process exit code."""
+    """Install or remove guarded links requested by the command line."""
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     parser = argparse.ArgumentParser(
         prog="symlink_with_guard",

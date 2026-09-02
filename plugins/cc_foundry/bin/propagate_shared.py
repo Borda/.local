@@ -319,7 +319,7 @@ def apply(root: Path, manifest: list[dict[str, object]]) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns process exit code (0 clean, 1 drift in check mode)."""
+    """Check or propagate shared files across plugin copies."""
     parser = argparse.ArgumentParser(description="Sync byte-identical cross-plugin shared files")
     parser.add_argument("--apply", action="store_true", help="overwrite copies with canonical (default: check only)")
     parser.add_argument("--root", default=".", help="repository root (default: cwd)")

@@ -58,7 +58,7 @@ format = {}
 # Complexity gate — enforced for codemap-py only (the negated pattern below ignores the
 # rules everywhere else). The other plugins carry their own, much larger, backlog of
 # complexity findings; gating them is a separate decision.
-lint.extend-select = [ "C901", "PLR0911", "PLR0912", "PLR0915" ]
+lint.extend-select = [ "C901", "D401", "D402", "D403", "PLR0911", "PLR0912", "PLR0915", "W505" ]
 # Accepted debt, frozen at today's offender set: the gate exists to stop NEW complexity
 # entering the plugin, not to force a refactor of the scanner and graph internals. Each
 # entry is a ceiling, never a licence — a function added to one of these files that
@@ -75,6 +75,7 @@ lint.per-file-ignores."plugins/codemap-py/src/codemap_py/scanner.py" = [ "C901",
 lint.per-file-ignores."plugins/codemap-py/src/codemap_py/schema.py" = [ "PLR0911" ]
 lint.per-file-ignores."plugins/codemap-py/tests/data/parity_golden/_schema.py" = [ "PLR0911" ]
 lint.mccabe.max-complexity = 12
+lint.pycodestyle.max-doc-length = 120
 lint.pylint = { max-returns = 6, max-branches = 12, max-statements = 50 }
 
 [tool.codespell]
@@ -82,6 +83,11 @@ lint.pylint = { max-returns = 6, max-branches = 12, max-statements = 50 }
 # "fo" (Windows tasklist's real /FO format flag, not a typo for "for"/"of")
 ignore-words-list = "derails,fo"
 skip = "./site,./.git"  # MkDocs build output + git internals — generated, not source
+
+[tool.docformatter]
+black = true
+wrap-summaries = 120
+wrap-descriptions = 120
 
 [tool.pytest]
 ini_options.testpaths = [ "benchmarks", "plugins" ]

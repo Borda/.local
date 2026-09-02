@@ -15,7 +15,8 @@ Failure behaviour mirrors the inline form it replaces: a ``! BREAKING`` line on
 **stdout** (the inline ``printf`` had no redirect) and exit 1.
 
 Usage:
-    python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/load_mode.py" <skill> <subdir> <file.md> [--local] [--fallback-source]
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/load_mode.py" \
+        <skill> <subdir> <file.md> [--local] [--fallback-source]
 
 Arguments:
     skill   Skill directory name (e.g. ``audit``, ``calibrate``, ``distill``).

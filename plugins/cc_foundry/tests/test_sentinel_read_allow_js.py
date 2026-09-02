@@ -49,7 +49,7 @@ def _run(command: str) -> dict:
 
 
 def _is_allowed(result: dict) -> bool:
-    """True when the hook emitted a permissionDecision allow."""
+    """Check whether the hook allowed the requested operation."""
     try:
         return result["hookSpecificOutput"]["permissionDecision"] == "allow"
     except (KeyError, TypeError):
@@ -242,10 +242,9 @@ READ_FORM = f"IFS= read -r RUN_DIR < {SENTINEL}"
 class TestCommentSegments:
     """Segment validation skips whole-line comments.
 
-    Every plugin bash block carries `# timeout: N` annotations on their own
-    lines. Before this was handled, one such line put `#` in first-token
-    position and rejected the whole block — measured on 107 of 790 real
-    blueprint blocks, of which 28 were otherwise fully allowable.
+    Every plugin bash block carries `# timeout: N` annotations on their own lines. Before this was handled, one such
+    line put `#` in first-token position and rejected the whole block — measured on 107 of 790 real blueprint blocks, of
+    which 28 were otherwise fully allowable.
     """
 
     @pytest.mark.parametrize(
@@ -279,9 +278,8 @@ class TestCommentSegments:
     def test_comment_skip_cannot_hide_a_live_command(self, command: str) -> None:
         """Text bash would treat as commented-out is still validated as if live.
 
-        Segments split on `;|&` as well as newline, so the skip can only ever
-        cost an allow (false negative), never grant one. A shell would ignore
-        `rm` here; the hook must not, because it does not parse comment scope.
+        Segments split on `;|&` as well as newline, so the skip can only ever cost an allow (false negative), never
+        grant one. A shell would ignore `rm` here; the hook must not, because it does not parse comment scope.
         """
         result = _run(command)
         assert result == {}, f"{command!r} must passthrough, got: {result}"
@@ -322,9 +320,8 @@ class TestCommentSegments:
 class TestReviewedBypasses:
     """PoCs from the 2026-08-18 adversarial review (Codex + challenger).
 
-    Each was observed ALLOWED and, for the execution-class ones, confirmed to
-    actually run under `bash -c`. They are the reason the comment skip and the
-    traversal rewrite are safe to ship.
+    Each was observed ALLOWED and, for the execution-class ones, confirmed to actually run under `bash -c`. They are the
+    reason the comment skip and the traversal rewrite are safe to ship.
     """
 
     @pytest.mark.parametrize(
@@ -340,11 +337,10 @@ class TestReviewedBypasses:
     def test_escaped_newline_cannot_extend_a_comment_over_a_payload(self, payload: str) -> None:
         """A `\\` ending a comment line must not swallow the next line.
 
-        `maskQuotes` treated backslash-newline as a line continuation and ate the
-        newline, merging the payload into the comment segment — which the comment
-        skip then skipped entirely. bash does NOT continue comments that way: it
-        ends the comment at the physical newline and runs the next line. Hook
-        allowed, shell executed: arbitrary command execution behind a `#`.
+        `maskQuotes` treated backslash-newline as a line continuation and ate the newline, merging the payload into the
+        comment segment — which the comment skip then skipped entirely. bash does NOT continue comments that way: it
+        ends the comment at the physical newline and runs the next line. Hook allowed, shell executed: arbitrary command
+        execution behind a `#`.
         """
         result = _run(f"{READ_FORM}\n# note \\\n{payload}")
         assert result == {}, f"payload {payload!r} STILL ALLOWED behind a comment: {result}"
@@ -363,11 +359,10 @@ class TestReviewedBypasses:
         ],
     )
     def test_ansi_c_quoting_is_refused_outright(self, command: str) -> None:
-        """`$'…'` desyncs the quote masker, so it is rejected rather than parsed.
+        """Reject shell quoting that desynchronizes the quote parser.
 
-        bash unescapes `\\'` inside `$'…'`, ending the string at a different quote
-        than the masker believes. The toggle count drifts, a `;` gets masked away,
-        and the hook sees one `echo` segment where bash runs two commands. No
+        bash unescapes `\\'` inside `$'…'`, ending the string at a different quote than the masker believes. The toggle
+        count drifts, a `;` gets masked away, and the hook sees one `echo` segment where bash runs two commands. No
         blueprint idiom uses ANSI-C quoting, so it fails closed.
         """
         result = _run(f"{READ_FORM}\n{command}")
@@ -383,12 +378,10 @@ class TestReviewedBypasses:
     def test_ansi_c_split_across_a_line_continuation_rejects(self, command: str) -> None:
         """ANSI-C quoting assembled across a `\\`+newline must not reach the desync.
 
-        bash joins a line continuation before tokenizing, so `$\\`+newline+`'x'`
-        really does parse as `$'x'` (verified: it printed `A` for `\\x41`) — and the
-        raw command never contains the literal `$'` the guard tests for. It
-        rejects anyway, but only as a side effect of the escaped-newline fix
-        forcing a segment split at the join point. Pinned here because nothing
-        else would catch it if that fix were ever relaxed.
+        bash joins a line continuation before tokenizing, so `$\\`+newline+`'x'` really does parse as `$'x'` (verified:
+        it printed `A` for `\\x41`) — and the raw command never contains the literal `$'` the guard tests for. It
+        rejects anyway, but only as a side effect of the escaped-newline fix forcing a segment split at the join point.
+        Pinned here because nothing else would catch it if that fix were ever relaxed.
         """
         result = _run(f"{READ_FORM}\n{command}")
         assert result == {}, f"{command!r} STILL ALLOWED — ANSI-C via continuation: {result}"
@@ -401,11 +394,10 @@ class TestReviewedBypasses:
         ],
     )
     def test_backslash_escaped_dots_are_still_traversal(self, command: str) -> None:
-        """`\\.\\.` carries no literal `..` bytes but the shell resolves it as one.
+        """Reject escaped parent traversal that the shell resolves after parsing.
 
-        An unquoted `\\.` is a no-op escape: bash drops the backslash and the path
-        becomes `..`. Confirmed against a real shell reading a file one directory
-        up. The guard therefore also tests a backslash-collapsed copy.
+        An unquoted `\\.` is a no-op escape: bash drops the backslash and the path becomes `..`. Confirmed against a
+        real shell reading a file one directory up. The guard therefore also tests a backslash-collapsed copy.
         """
         result = _run(f"{READ_FORM}\n{command}")
         assert result == {}, f"{command!r} STILL ALLOWED — escaped traversal: {result}"
@@ -418,7 +410,7 @@ class TestReviewedBypasses:
         ],
     )
     def test_uniq_is_not_a_read_only_token(self, command: str) -> None:
-        """`uniq IN OUT` writes OUT — it cannot be a whitelisted segment head.
+        """Write OUT — it cannot be a whitelisted segment head.
 
         Verified against a real shell: `uniq /dev/null victim` truncated a
         two-line file to zero bytes. Same class the list already excludes
@@ -441,11 +433,9 @@ class TestReviewedBypasses:
     def test_quote_and_append_forms_of_sensitive_assignment_reject(self, command: str) -> None:
         """Quoting or escaping a sensitive variable name must not evade the guard.
 
-        bash strips quotes and backslashes from an assignment word before the
-        builtin sees it, so `export "PATH"=…` really does set PATH — and a
-        planted binary on the hijacked PATH then runs as a "read-only"
-        whitelisted token. Confirmed end to end: a planted `cat` printed
-        attacker output. The guard now also tests a quote-stripped copy.
+        bash strips quotes and backslashes from an assignment word before the builtin sees it, so `export "PATH"=…`
+        really does set PATH — and a planted binary on the hijacked PATH then runs as a "read-only" whitelisted token.
+        Confirmed end to end: a planted `cat` printed attacker output. The guard now also tests a quote-stripped copy.
         """
         result = _run(f"{READ_FORM}\n{command}\ncat /etc/hosts")
         assert result == {}, f"{command!r} STILL ALLOWED — PATH hijack: {result}"
@@ -462,11 +452,10 @@ class TestReviewedBypasses:
     def test_bare_parens_are_rejected(self, command: str) -> None:
         """A function definition with a subshell body must not be allowed.
 
-        `cat () ( touch x ); cat` contains no top-level separator inside the
-        body, so segmentation sees one segment whose first token is the safe
-        name `cat` and never vets the body; the following `cat` then runs it.
-        Confirmed creating a marker file under a real shell. The `$(`/`<(`/`>(`
-        guards all require a sigil, so bare parens slipped past every one.
+        `cat () ( touch x ); cat` contains no top-level separator inside the body, so segmentation sees one segment
+        whose first token is the safe name `cat` and never vets the body; the following `cat` then runs it. Confirmed
+        creating a marker file under a real shell. The `$(`/`<(`/`>(` guards all require a sigil, so bare parens slipped
+        past every one.
         """
         result = _run(f"{READ_FORM}\n{command}")
         assert result == {}, f"{command!r} STILL ALLOWED — arbitrary execution: {result}"
@@ -513,9 +502,8 @@ class TestReviewedBypasses:
     def test_variable_write_guards_spare_the_blueprint_idioms(self, command: str) -> None:
         """The write guards must not catch the idioms the hook exists to bless.
 
-        `export CSID="${…}"` carries an expansion in the VALUE, not the name;
-        `read` into an ordinary variable is the core sentinel form; `printf`
-        without `-v` writes to stdout only.
+        `export CSID="${…}"` carries an expansion in the VALUE, not the name; `read` into an ordinary variable is the
+        core sentinel form; `printf` without `-v` writes to stdout only.
         """
         result = _run(f"{READ_FORM}\n{command}")
         assert _is_allowed(result), f"{command!r} should be allowed, got: {result}"
@@ -523,8 +511,8 @@ class TestReviewedBypasses:
     def test_genuine_line_continuation_still_allows(self) -> None:
         """A `\\` continuation outside a comment must keep working.
 
-        The fix only changes what happens to the newline; a real continuation
-        joining two read-only segments is still the blueprint idiom it was.
+        The fix only changes what happens to the newline; a real continuation joining two read-only segments is still
+        the blueprint idiom it was.
         """
         result = _run(f'{READ_FORM}\ngrep -n "H1" "$RUN_DIR/r.md" \\\n| head -5')
         assert _is_allowed(result), f"legit continuation should allow, got: {result}"
@@ -536,10 +524,9 @@ class TestReviewedBypasses:
 class TestRedirectStripping:
     """Only genuine stderr-silencing / stdout-to-null forms are stripped.
 
-    The stripper removes those forms and then rejects any `>` still standing.
-    A prefix match let `>/dev/nullpwned` lose its `>/dev/null` to the stripper,
-    leaving no `>` to reject — so a real file write was allowed. The forms are
-    now anchored to a token boundary.
+    The stripper removes those forms and then rejects any `>` still standing. A prefix match let `>/dev/nullpwned` lose
+    its `>/dev/null` to the stripper, leaving no `>` to reject — so a real file write was allowed. The forms are now
+    anchored to a token boundary.
     """
 
     @pytest.mark.parametrize(
@@ -554,8 +541,8 @@ class TestRedirectStripping:
     def test_write_through_a_dev_null_prefix_is_rejected(self, command: str) -> None:
         """A write target that merely starts with `/dev/null` must not be stripped.
 
-        `echo pwned >/dev/nullpwned` writes a real file; the hook's own contract
-        forbids allowing any write, so this has to passthrough to a prompt.
+        `echo pwned >/dev/nullpwned` writes a real file; the hook's own contract forbids allowing any write, so this has
+        to passthrough to a prompt.
         """
         result = _run(command)
         assert result == {}, f"{command!r} STILL ALLOWED — write redirect: {result}"
@@ -571,8 +558,8 @@ class TestRedirectStripping:
     def test_genuine_silencing_forms_still_allow(self, command: str) -> None:
         """Anchoring the stripped forms must not break the idioms skills actually use.
 
-        Every blueprint sentinel read carries `2>/dev/null`; if the anchoring
-        were too strict these would start prompting again.
+        Every blueprint sentinel read carries `2>/dev/null`; if the anchoring were too strict these would start
+        prompting again.
         """
         result = _run(command)
         assert _is_allowed(result), f"{command!r} should be allowed, got: {result}"
@@ -584,8 +571,8 @@ class TestRedirectStripping:
 class TestTraversalMatching:
     """Traversal rejection keys on a real path component.
 
-    The check previously tested `cmd.includes("..")`, which also fired on `...`
-    ellipsis and version ranges like `v1.2..v1.3` — neither is traversal.
+    The check previously tested `cmd.includes("..")`, which also fired on `...` ellipsis and version ranges like
+    `v1.2..v1.3` — neither is traversal.
     """
 
     @pytest.mark.parametrize(
@@ -635,11 +622,10 @@ class TestTraversalMatching:
     def test_traversal_poc_bypasses_are_closed(self, command: str) -> None:
         """Separators absent from an allow-list neighbour class must not admit traversal.
 
-        A first attempt at this check enumerated the characters a traversal may
-        open at, which let every character omitted from that class through —
-        `cat {a,../etc/passwd}` brace-expands to read `../etc/passwd` and was
-        allowed. The check is now default-reject, exempting only a `..` flanked
-        by word characters, so an unlisted separator fails closed instead.
+        A first attempt at this check enumerated the characters a traversal may open at, which let every character
+        omitted from that class through — `cat {a,../etc/passwd}` brace-expands to read `../etc/passwd` and was allowed.
+        The check is now default-reject, exempting only a `..` flanked by word characters, so an unlisted separator
+        fails closed instead.
         """
         result = _run(command)
         assert result == {}, f"{command!r} STILL ALLOWED — traversal bypass: {result}"
@@ -651,10 +637,9 @@ class TestTraversalMatching:
 class TestRuntimeInvariance:
     """The same shape gets the same verdict whatever the runtime values are.
 
-    This is the hook's entire justification for existing alongside
-    `blueprint-allow.js`: provenance matching covers far more committed text but
-    collapses to zero the moment any value differs between runs, while this hook
-    keys on shape and does not.
+    This is the hook's entire justification for existing alongside `blueprint-allow.js`: provenance matching covers far
+    more committed text but collapses to zero the moment any value differs between runs, while this hook keys on shape
+    and does not.
     """
 
     @pytest.mark.parametrize(
@@ -690,9 +675,8 @@ class TestRuntimeInvariance:
     def test_allows_every_runtime_variant_of_one_shape(self, command: str) -> None:
         """Varying only runtime values must not change an allow verdict.
 
-        Each case is the same read-then-inspect shape with a different sentinel
-        basename, variable name, CSID form, or target filename — exactly what
-        differs between two runs of the same skill.
+        Each case is the same read-then-inspect shape with a different sentinel basename, variable name, CSID form, or
+        target filename — exactly what differs between two runs of the same skill.
         """
         result = _run(command)
         assert _is_allowed(result), f"{command!r} should be allowed, got: {result}"
@@ -708,9 +692,8 @@ class TestRuntimeInvariance:
     def test_rejects_injection_through_the_varied_part(self, command: str) -> None:
         """Invariance must not extend to values carrying shell metacharacters.
 
-        The same slot that legitimately varies is where an injection would be
-        planted, so a varied value containing a substitution, separator, or
-        redirect has to flip the verdict back to passthrough.
+        The same slot that legitimately varies is where an injection would be planted, so a varied value containing a
+        substitution, separator, or redirect has to flip the verdict back to passthrough.
         """
         result = _run(command)
         assert result == {}, f"{command!r} must passthrough, got: {result}"

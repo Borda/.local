@@ -1,14 +1,13 @@
 """Parity between the review->resolve cache contract as *documented* and as *implemented*.
 
 ``skills/_shared/codemap-context.md`` documents the artifact shape and freshness rule that
-``cc_oss/bin/codemap_cache.py`` implements. The doc previously described a two-field rule
-(``git_sha`` + ``scanned_at``) after the implementation had already gained the fail-closed
-``index_stamp`` field, so a reader following the doc would have written artifacts the
-reader rejects. These tests pin doc and implementation together.
+``cc_oss/bin/codemap_cache.py`` implements. The doc previously described a two-field rule (``git_sha`` + ``scanned_at``)
+after the implementation had already gained the fail-closed ``index_stamp`` field, so a reader following the doc would
+have written artifacts the reader rejects. These tests pin doc and implementation together.
 
-The implementation lives in a sibling plugin. That is fine to read from a **test** (tests
-are not shipped runtime), but a standalone cc_develop checkout may not have it, so the
-cross-plugin assertions skip rather than fail when it is absent.
+The implementation lives in a sibling plugin. That is fine to read from a **test** (tests are not shipped runtime), but
+a standalone cc_develop checkout may not have it, so the cross-plugin assertions skip rather than fail when it is
+absent.
 """
 
 from __future__ import annotations

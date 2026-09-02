@@ -86,8 +86,7 @@ def _make_record(
 class TestDifficultyFor:
     """Tests for difficulty_for(file_count: int) -> str.
 
-    Contract (docstring): returns "simple" for count ≤ 1, "medium" for 2–3,
-    "hard" for 4+.
+    Contract (docstring): returns "simple" for count ≤ 1, "medium" for 2–3, "hard" for 4+.
     """
 
     @pytest.mark.parametrize(
@@ -139,9 +138,8 @@ class TestDifficultyFor:
 class TestIsTestPath:
     """Tests for _is_test_path(path: str) -> bool.
 
-    Contract (source + module docstring): returns True when the path belongs
-    to a test file — detected via directory segment "tests"/"test", a
-    test_* prefix, _test.py suffix, or conftest.py filename.
+    Contract (source + module docstring): returns True when the path belongs to a test file — detected via directory
+    segment "tests"/"test", a test_* prefix, _test.py suffix, or conftest.py filename.
     """
 
     @pytest.mark.parametrize(
@@ -204,8 +202,8 @@ class TestIsTestPath:
 class TestModuleFor:
     """Tests for module_for(path: str) -> str.
 
-    Contract (docstring): strips leading ``src/``, collapses ``__init__.py``
-    to package name, drops ``.py``, replaces ``/`` with ``.``.
+    Contract (docstring): strips leading ``src/``, collapses ``__init__.py`` to package name, drops ``.py``, replaces
+    ``/`` with ``.``.
     """
 
     @pytest.mark.parametrize(
@@ -276,8 +274,8 @@ class TestModuleFor:
 class TestBuildPrompt:
     """Tests for build_prompt(title, body) -> str.
 
-    Contract (docstring): returns title + blank line + truncated body;
-    body truncated to PROMPT_BODY_LIMIT characters; whitespace stripped.
+    Contract (docstring): returns title + blank line + truncated body; body truncated to PROMPT_BODY_LIMIT characters;
+    whitespace stripped.
     """
 
     def test_build_prompt_basic_structure(self, script_gen_real_issues: Any) -> None:
@@ -350,8 +348,8 @@ class TestBuildPrompt:
 class TestIsMeaningfulIssue:
     """Tests for is_meaningful_issue(title, body) -> bool.
 
-    Contract (docstring): returns True only when title is non-empty, not in
-    GENERIC_TITLES, and body is non-trivial (truthy and non-blank).
+    Contract (docstring): returns True only when title is non-empty, not in GENERIC_TITLES, and body is non-trivial
+    (truthy and non-blank).
     """
 
     @pytest.mark.parametrize(
@@ -417,9 +415,8 @@ class TestIsMeaningfulIssue:
 class TestBuildTask:
     """Tests for build_task(index, record) -> dict.
 
-    Contract (docstring + schema): returns a task dict with keys id, type,
-    source, workflow_subtype, difficulty, issue_number, issue_url, pr_number,
-    pr_url, prompt, ground_truth, primary_module, scoreable, pr_closes_issue.
+    Contract (docstring + schema): returns a task dict with keys id, type, source, workflow_subtype, difficulty,
+    issue_number, issue_url, pr_number, pr_url, prompt, ground_truth, primary_module, scoreable, pr_closes_issue.
     """
 
     _REQUIRED_KEYS = {
@@ -573,7 +570,7 @@ class TestBuildTask:
         """Verify pr_closes_issue reflects PullRequestInfo.closes_issue accurately.
 
         Scenario: downstream quality audit checks this flag; wrong value masks
-        provenance quality for the D3 check.
+        provenance quality for the downstream audit.
         """
         pr_closes = _make_pr(script_gen_real_issues, closes_issue=True)
         pr_not_closes = _make_pr(script_gen_real_issues, closes_issue=False)

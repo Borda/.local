@@ -45,7 +45,7 @@ def _state_dir(session_id: str) -> Path:
 
 @pytest.fixture
 def session_id(request: pytest.FixtureRequest) -> Iterator[str]:
-    """Unique session id per test, with state dir cleanup before AND after."""
+    """Provide an isolated session identifier and clean its state around each test."""
     sid = f"test-batch-nudge-{request.node.name}"
     _rm(sid)
     yield sid
@@ -61,8 +61,8 @@ def _rm(sid: str) -> None:
 def _backdate_last(sid: str, ms: int) -> None:
     """Push the recorded last-call timestamp back so the NEXT PreToolUse sees a large gap.
 
-    No-op if ``last.json`` doesn't exist yet — e.g. no batchable call has landed
-    (a non-batchable-tool test never writes it, by design).
+    No-op if ``last.json`` doesn't exist yet — e.g. no batchable call has landed (a non-batchable-tool test never writes
+    it, by design).
     """
     last_file = _state_dir(sid) / "last.json"
     try:
@@ -110,9 +110,8 @@ def _run_streak(
 ) -> list:
     """Fire ``n`` sequential batchable Pre/Post pairs with large backdated gaps.
 
-    ``cwd`` is any existing directory — the hook keys its state on ``session_id``
-    under its own sentinel dir and never reads the working directory. Callers pass
-    the ``tmp_path`` fixture, which exists on every platform.
+    ``cwd`` is any existing directory — the hook keys its state on ``session_id`` under its own sentinel dir and never
+    reads the working directory. Callers pass the ``tmp_path`` fixture, which exists on every platform.
 
     Returns the list of PostToolUse ``CompletedProcess`` results, one per call.
     """
@@ -184,7 +183,7 @@ class TestBatchNudge:
     def test_readonly_bash_prefix_counts_as_batchable(
         self, session_id: str, run_hook: Callable, tmp_path: Path
     ) -> None:
-        """`git log`-style read-only Bash commands accumulate the streak like Read/Grep/Glob."""
+        """Accumulate repeated read-only shell commands like other read operations."""
         posts = _run_streak(
             run_hook, session_id, tmp_path, NUDGE_THRESHOLD, tool_name="Bash", tool_input={"command": "git log -5"}
         )

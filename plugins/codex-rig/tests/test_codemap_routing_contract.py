@@ -1,9 +1,8 @@
 """Pin the documented per-skill Codemap route selection against what the skills actually invoke.
 
-`--query-kind` is a per-workflow choice rather than a migration every consumer owes, so the
-contract records each skill's decision in a table. These checks fail when a skill starts or
-stops selecting routes without moving its row, which is the drift that made the adoption gap
-look like an unfinished rollout instead of a recorded choice.
+``--query-kind`` is a per-workflow choice rather than a migration every consumer owes, so the contract records each
+skill's decision in a table. These checks fail when a skill starts or stops selecting routes without moving its row,
+which is the drift that made the adoption gap look like an unfinished rollout instead of a recorded choice.
 """
 
 from __future__ import annotations

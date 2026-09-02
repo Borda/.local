@@ -1,9 +1,8 @@
 """Index self-check on load: a broken index is rejected, never partially served.
 
-``load_index`` runs every decoded index through ``validate_index`` before any
-command reads it. A truncated write, a hand-edited file, or an index from an
-incompatible tool must produce a hard, parseable JSON error advising a rebuild —
-a half-valid index served to a query returns silently wrong answers.
+``load_index`` runs every decoded index through ``validate_index`` before any command reads it. A truncated write, a
+hand-edited file, or an index from an incompatible tool must produce a hard, parseable JSON error advising a rebuild — a
+half-valid index served to a query returns silently wrong answers.
 """
 
 from __future__ import annotations
@@ -39,7 +38,7 @@ def _query_raw(scan_query: Path, root: Path, index_path: Path, *args: str) -> su
 
 @pytest.fixture
 def healthy_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
-    """A minimal scanned project whose index the tests then corrupt in place."""
+    """Create a minimal indexed project for corruption tests."""
     root = tmp_path / "proj"
     root.mkdir()
     (root / "leaf.py").write_text("def leaf_fn(x):\n    return x\n")

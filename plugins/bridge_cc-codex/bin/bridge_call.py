@@ -1,23 +1,18 @@
 """Run, supervise, and normalize one bridge request.
 
-Purpose: Provide the single portable process boundary used by bridge skills and
-the MCP server. It turns an implement, advise, or review
-request into a Codex or Claude child command, captures the child output, and returns one compact JSON
-object rather than a transcript. Scope: This module owns argument construction,
-bounded foreground and detached execution, JSONL parsing, contract validation,
-job records, transcript and incident files, and health logging. It deliberately
-does not discover models, edit manifests, or implement a provider registry.
-Usage: Run ``bridge_call.py implement --task '...'`` for a foreground request or
-add ``--background`` and later use ``status``, ``result``, or ``cancel`` with
-the returned job id. ``bridge_mcp.py`` imports ``run_request`` for the reverse
-direction. Outputs: Every command writes exactly one JSON object to stdout;
-artifacts live beneath ``<workspace>/.temp/bridge``. Failure: Invalid requests,
-invalid model output, unavailable executables, timeouts, and structured child
-faults become a validated result envelope and an incident when appropriate.
-Used by: Claude-facing bridge skills, the Codex-facing stdio MCP server, and
-bridge diagnostics. The implementation supports Python 3.10+, uses Python's
-standard library, and falls back to the native ``taskkill`` process-tree control
-on Windows when a graceful control event cannot stop the complete child group.
+Purpose: Provide the single portable process boundary used by bridge skills and the MCP server. It turns an implement,
+advise, or review request into a Codex or Claude child command, captures the child output, and returns one compact JSON
+object rather than a transcript. Scope: This module owns argument construction, bounded foreground and detached
+execution, JSONL parsing, contract validation, job records, transcript and incident files, and health logging. It
+deliberately does not discover models, edit manifests, or implement a provider registry. Usage: Run ``bridge_call.py``
+with the ``implement`` action and ``--task`` for a foreground request, or add ``--background`` and later use ``status``,
+``result``, or ``cancel`` with the returned job id. ``bridge_mcp.py`` imports ``run_request`` for the reverse direction.
+Outputs: Every command writes exactly one JSON object to stdout; artifacts live beneath ``<workspace>/.temp/bridge``.
+Failure: Invalid requests, invalid model output, unavailable executables, timeouts, and structured child faults become a
+validated result envelope and an incident when appropriate. Used by: Claude-facing bridge skills, the Codex-facing stdio
+MCP server, and bridge diagnostics. The implementation supports Python 3.10+, uses Python's standard library, and falls
+back to the native ``taskkill`` process-tree control on Windows when a graceful control event cannot stop the complete
+child group.
 """
 
 from __future__ import annotations
@@ -122,9 +117,8 @@ class Request:
 def validate_model_core(value: Any) -> dict[str, Any]:
     """Validate and return the strict peer result before public compaction.
 
-    Peer results include bounded supporting ``details`` for transcript storage.
-    The supervisor removes that field before it validates and returns the public
-    envelope, keeping the model boundary compact without discarding evidence.
+    Peer results include bounded supporting ``details`` for transcript storage. The supervisor removes that field before
+    it validates and returns the public envelope, keeping the model boundary compact without discarding evidence.
     """
     if not isinstance(value, dict) or set(value) != set(PEER_FIELDS):
         raise ValueError("model result must contain exactly the seven peer fields")
@@ -500,9 +494,8 @@ def run_request(
 def _lower_effort(current: str, supported_efforts: tuple[str, ...]) -> str | None:
     """Return one bounded lower effort level for a timeout or unsupported-effort retry.
 
-    A retry keeps the original soft budget, so the only recovery with a real
-    chance of finishing inside that budget is a cheaper attempt; escalating
-    effort after a timeout would spend longer thinking against the same clock.
+    A retry keeps the original soft budget, so the only recovery with a real chance of finishing inside that budget is a
+    cheaper attempt; escalating effort after a timeout would spend longer thinking against the same clock.
     """
     allowed = tuple(level for level in EFFORTS if not supported_efforts or level in supported_efforts)
     try:
@@ -592,9 +585,8 @@ def _resolved_command(command: list[str]) -> list[str]:
 def _drain_terminated_child(process: subprocess.Popen[str]) -> tuple[str, str]:
     """Collect buffered output after a group kill without blocking forever.
 
-    A surviving grandchild can hold the inherited pipe write ends open past the
-    group kill; an unbounded ``communicate()`` would then outlive every
-    documented cutoff, so the drain itself is bounded.
+    A surviving grandchild can hold the inherited pipe write ends open past the group kill; an unbounded
+    ``communicate()`` would then outlive every documented cutoff, so the drain itself is bounded.
     """
     try:
         return process.communicate(timeout=5)
@@ -700,8 +692,8 @@ def _parse_output(stdout: str, host: str) -> ParsedOutput:
 def _claude_record(records: list[Any]) -> Any:
     """Select the Claude print-mode response document from parsed stdout records.
 
-    Warning or log lines can precede the response; the response is the last
-    record carrying a recognizable print-mode field, never a bare count guess.
+    Warning or log lines can precede the response; the response is the last record carrying a recognizable print-mode
+    field, never a bare count guess.
     """
     if len(records) == 1:
         return records[0]
@@ -1086,11 +1078,10 @@ QUEUED_STALL_SECONDS = 120.0
 def _observed_status(record: dict[str, Any]) -> str:
     """Downgrade a dead ``running`` or expired ``queued`` state to ``stalled``.
 
-    A supervisor killed without the chance to write its final record would
-    otherwise report ``running`` forever; the caller needs a terminal-looking
-    signal to stop polling and inspect the transcript instead. A ``queued``
-    record has no PID to probe yet, so it stalls on age: a healthy supervisor
-    rewrites the record to ``running`` within moments of its spawn.
+    A supervisor killed without the chance to write its final record would otherwise report ``running`` forever; the
+    caller needs a terminal-looking signal to stop polling and inspect the transcript instead. A ``queued`` record has
+    no PID to probe yet, so it stalls on age: a healthy supervisor rewrites the record to ``running`` within moments of
+    its spawn.
     """
     status = str(record["status"])
     pid = record.get("pid")
@@ -1157,9 +1148,8 @@ def job_result(workspace: Path, job_id: str) -> dict[str, Any]:
 def cancel_job(workspace: Path, job_id: str) -> dict[str, Any]:
     """Cooperatively request supervisor-owned cancellation without signalling a stored PID.
 
-    The return is the same compact projection as ``job_status``: the record
-    also holds the task text and any completed result, which lifecycle calls
-    must not leak back into the caller's context.
+    The return is the same compact projection as ``job_status``: the record also holds the task text and any completed
+    result, which lifecycle calls must not leak back into the caller's context.
     """
     record = _read_job(workspace, job_id)
     if record is None:
@@ -1280,10 +1270,9 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
 def _resolve_task(args: argparse.Namespace) -> str:
     """Return the task text, reading ``--task-file`` when the task is not inline.
 
-    ``--task-file`` exists so a caller holding text it did not author — a pull-request
-    comment, an issue body, a reviewer finding — never has to embed that text in the
-    command line it composes. Quoting is then not a property of how carefully the caller
-    escaped the text.
+    ``--task-file`` exists so a caller holding text it did not author — a pull-request comment, an issue body, a
+    reviewer finding — never has to embed that text in the command line it composes. Quoting is then not a property of
+    how carefully the caller escaped the text.
     """
     if args.task is not None and args.task_file is not None:
         raise ValueError("pass either --task or --task-file, not both")

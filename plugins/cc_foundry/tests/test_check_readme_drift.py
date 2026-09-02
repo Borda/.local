@@ -1,10 +1,9 @@
 """Tests for ``bin/check_readme_drift.py``.
 
-The checker verifies two independently selectable classes of README fact against
-disk: an explicit ``Current version: `X.Y.Z``` marker vs the plugin manifest, and
-``.py``/``.sh`` bin-script references vs files that actually exist in the plugin.
-These tests build disposable plugin trees under ``tmp_path`` and assert the exit code
-and findings for clean, version-drift, stale-reference, and per-subcheck cases.
+The checker verifies two independently selectable classes of README fact against disk: an explicit version marker
+against the plugin manifest, and ``.py``/``.sh`` bin-script references against files that actually exist in the plugin.
+These tests build disposable plugin trees under ``tmp_path`` and assert the exit code and findings for clean, version
+drift, stale-reference, and per-subcheck cases.
 """
 
 from __future__ import annotations
@@ -121,7 +120,7 @@ def test_reference_existing_elsewhere_ignored(tmp_path: Path) -> None:
 
 
 def test_main_exit_codes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """main() exits 1 with findings printed, 0 when clean."""
+    """Exit 1 with findings printed, 0 when clean."""
     plugin = _make_plugin(
         tmp_path,
         version="9.9.9",

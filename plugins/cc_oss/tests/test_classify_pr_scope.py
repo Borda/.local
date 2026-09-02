@@ -1,7 +1,7 @@
 """Tests for ``bin/classify_pr_scope.py``.
 
-Pure deterministic classifier — no subprocess, no I/O. Covers the five
-classification branches plus the refactor-signal override and CLI plumbing.
+Pure deterministic classifier — no subprocess, no I/O. Covers the five classification branches plus the refactor-signal
+override and CLI plumbing.
 """
 
 from __future__ import annotations
@@ -136,7 +136,7 @@ class TestMain:
         assert captured.out.strip() == "CHORE"
 
     def test_feature_via_cli(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """new-api-lines > 0 routes to FEATURE end-to-end."""
+        """New-api-lines > 0 routes to FEATURE end-to-end."""
         rc = cps.main(
             [
                 "--py-files",
@@ -155,13 +155,16 @@ class TestMain:
         assert capsys.readouterr().out.strip() == "FEATURE"
 
     def test_missing_required_arg_exits_nonzero(self) -> None:
-        """argparse exits 2 when a required flag is missing."""
+        """Argparse exits 2 when a required flag is missing."""
         with pytest.raises(SystemExit) as exc:
             cps.main(["--py-files", "1"])
         assert exc.value.code == 2
 
     def test_labels_and_title_default_empty(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """--labels and --title are optional — default empty strings."""
+        """Verify command-line option behavior.
+
+        --labels and --title are optional — default empty strings.
+        """
         rc = cps.main(
             [
                 "--py-files",

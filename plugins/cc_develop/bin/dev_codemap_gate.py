@@ -55,9 +55,8 @@ def _csid() -> str:
 def _first_line(path: Path) -> str:
     """First line of *path* minus its trailing newline; empty string when unreadable.
 
-    Mirrors `[ -f f ] && IFS= read -r X < f`: an unterminated final line still yields its
-    value there (read assigns before returning non-zero), unlike gate-on-sentinel's
-    explicit `|| VALUE=""` wipe.
+    Mirrors `[ -f f ] && IFS= read -r X < f`: an unterminated final line still yields its value there (read assigns
+    before returning non-zero), unlike gate-on-sentinel's explicit `|| VALUE=""` wipe.
     """
     try:
         with path.open("r", encoding="utf-8", errors="replace") as handle:
@@ -100,9 +99,9 @@ def _run_codemap_resolve(bin_dir: Path, raw: str) -> tuple[str, int]:
 
     stderr is inherited, not captured — the shell original never redirected it.
 
-    ``--currency-prefix`` is supplied here because ``codemap_resolve.py`` is byte-identical
-    across consuming plugins (propagate_shared.py MANIFEST); develop's sentinel name is
-    develop's own concern and must never be hard-coded in that shared file.
+    ``--currency-prefix`` is supplied here because ``codemap_resolve.py`` is byte-identical across consuming plugins
+    (propagate_shared.py MANIFEST); develop's sentinel name is develop's own concern and must never be hard-coded in
+    that shared file.
     """
     try:
         proc = subprocess.run(
@@ -120,8 +119,8 @@ def _run_codemap_resolve(bin_dir: Path, raw: str) -> tuple[str, int]:
 def _write_line(path: Path, value: str) -> None:
     """Persist `value` + newline, warning instead of aborting when the target dir is missing.
 
-    A failed `> file` redirect under `set -u` (no `-e`) left the shell original still
-    printing its stdout line and exiting 0; the warning keeps that contract visible.
+    A failed `> file` redirect under `set -u` (no `-e`) left the shell original still printing its stdout line and
+    exiting 0; the warning keeps that contract visible.
     """
     try:
         path.write_text(value + "\n", encoding="utf-8")

@@ -1,8 +1,7 @@
 """Tests for ``bin/health_sentinel.py``.
 
-Both subcommands are filesystem-bound; covered via ``tmp_path``,
-``monkeypatch`` (to inject deterministic timestamps) and ``capsys``
-to assert the eval-able stdout contract for ``start``.
+Both subcommands are filesystem-bound; covered via ``tmp_path``, ``monkeypatch`` (to inject deterministic timestamps)
+and ``capsys`` to assert the eval-able stdout contract for ``start``.
 """
 
 from __future__ import annotations
@@ -104,7 +103,7 @@ class TestHasNewFiles:
 
 
 class TestStartCommand:
-    """main('start', ...): eval-able two-line stdout contract."""
+    """Emit the two-line shell contract when starting a health sentinel."""
 
     def test_prints_two_eval_able_lines(
         self,
@@ -143,7 +142,7 @@ class TestStartCommand:
 
 
 class TestCheckCommand:
-    """main('check', ...): exit code contract."""
+    """Report sentinel health through the documented exit codes."""
 
     def test_exit_0_when_files_newer(self, tmp_path: Path) -> None:
         """File newer than sentinel → exit 0 (alive)."""
@@ -180,7 +179,7 @@ class TestCheckCommand:
 
 
 class TestMainBadArgs:
-    """main: argparse-driven error reporting."""
+    """Main: argparse-driven error reporting."""
 
     def test_no_subcommand(self) -> None:
         """No subcommand → argparse exits 2."""
@@ -196,7 +195,7 @@ class TestMainBadArgs:
 
 
 class TestMainSkillIdValidation:
-    """main('start', ...): skill_id allowlist — only [a-zA-Z0-9_-]+ accepted."""
+    """Reject unsafe skill identifiers when starting a health sentinel."""
 
     @pytest.mark.parametrize(
         "skill_id",

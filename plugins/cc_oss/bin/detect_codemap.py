@@ -24,8 +24,8 @@ Temp files written:
 
 Exit codes:
     0   success (CODEMAP_ENABLED written)
-    1   --strict mode: codemap not installed or index missing (error printed)
-    2   missing required --prefix argument
+    1   ``--strict`` mode: codemap not installed or index missing (error printed)
+    2   missing required ``--prefix`` argument
 """
 
 from __future__ import annotations
@@ -131,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = list(sys.argv[1:] if argv is None else argv)
 
-    # Honour only -h/--help via argparse; every other flag flows through the manual
+    # Honour only ``-h/--help`` via argparse; every other flag flows through the manual
     # loop below, which ignores unknowns and keeps the legacy exit-2-on-missing-prefix
     # contract (argparse's native errors would change both behaviors).
     if args in (["-h"], ["--help"]):
@@ -145,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     strict = False
     proj_override: str | None = None
     # None = "not overridden" → derived from the project root below. An explicit
-    # --idx-dir wins over CODEMAP_INDEX_DIR, which wins over the default layout.
+    # ``--idx-dir`` wins over CODEMAP_INDEX_DIR, which wins over the default layout.
     idx_dir: str | None = os.environ.get("CODEMAP_INDEX_DIR") or None
 
     i = 0

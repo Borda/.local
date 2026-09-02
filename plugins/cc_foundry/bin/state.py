@@ -159,7 +159,10 @@ def load_values(namespace: str) -> int:
 
 
 def clear(namespace: str) -> int:
-    """Remove a namespace's state file (no-op if absent). Returns 0."""
+    """Remove a namespace's state file (no-op if absent).
+
+    Returns 0.
+    """
     state_path(namespace).unlink(missing_ok=True)
     return 0
 

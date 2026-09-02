@@ -1,12 +1,12 @@
 """Core unit tests for ``bin/find-polluter.py`` binary-search helpers.
 
 Covers:
-* ``_is_safe_node_id`` SEC-F-1 security fix: shell metacharacter rejection
+* ``_is_safe_node_id`` shell-metacharacter rejection
 * ``round_estimate`` pure-function boundary values (doctest hookup)
 * ``binary_midpoint`` pure-function correctness (doctest hookup)
 * ``passes_isolation`` subprocess outcomes (pass / verbose-PASSED / fail)
 * ``collect_candidates`` filtering: failing test excluded, blank/non-:: lines stripped,
-  unsafe node IDs dropped with a warning (SEC-F-1 runtime path)
+  unsafe node IDs dropped with a warning
 * ``binary_search`` convergence, single-candidate shortcut, empty-list rejection
 * ``main()`` end-to-end: polluter found, no-args usage, isolation failure,
   no candidates, pytest missing, unsafe failing-test-id rejected, path-traversal
@@ -43,10 +43,9 @@ def _patch_run(monkeypatch: pytest.MonkeyPatch, responder: Any) -> None:
 def _batch_from_argsfile(argv: Sequence[str]) -> list[str]:
     """Return the batch node IDs ``_contaminates`` passed to pytest via ``@file``.
 
-    ``_contaminates`` writes the candidate batch to a tempfile and hands pytest a
-    single ``@<path>`` args-from-file token instead of expanding the batch onto
-    argv (argv-cap safety). Resolve that token the way pytest would and return the
-    file's lines so a fake ``subprocess.run`` can inspect the batch.
+    ``_contaminates`` writes the candidate batch to a tempfile and hands pytest a single ``@<path>`` args-from-file
+    token instead of expanding the batch onto argv (argv-cap safety). Resolve that token the way pytest would and return
+    the file's lines so a fake ``subprocess.run`` can inspect the batch.
     """
     for token in argv[1:]:
         if token.startswith("@"):
@@ -55,12 +54,12 @@ def _batch_from_argsfile(argv: Sequence[str]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# _is_safe_node_id — SEC-F-1 sanitization
+# _is_safe_node_id — shell-metacharacter sanitization
 # ---------------------------------------------------------------------------
 
 
 class TestIsSafeNodeId:
-    """_is_safe_node_id: shell metacharacter rejection (SEC-F-1)."""
+    """_is_safe_node_id: shell-metacharacter rejection."""
 
     @pytest.mark.parametrize(
         "node_id",
@@ -202,7 +201,7 @@ class TestPassesIsolation:
 
 
 class TestCollectCandidates:
-    """collect_candidates: filtering rules and SEC-F-1 unsafe-node-ID drop."""
+    """collect_candidates: filtering rules and unsafe-node-ID drop."""
 
     def test_filters_failing_test_and_noise(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Failing test itself, blank lines, and summary lines are excluded."""
@@ -333,7 +332,7 @@ class TestBinarySearch:
 
 
 class TestMain:
-    """main(): end-to-end CLI exercising all documented exit paths."""
+    """Exercise every documented command-line exit path end to end."""
 
     def test_no_args_prints_usage_and_exits_1(self, capsys: pytest.CaptureFixture[str]) -> None:
         """No arguments → usage on stderr, return code 1."""
@@ -356,7 +355,7 @@ class TestMain:
         assert "SECURITY" in err or "project root" in err.lower()
 
     def test_pytest_missing_exits_1(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-        """pytest not resolvable → exit 1 with 'pytest not found' message."""
+        """Pytest not resolvable → exit 1 with 'pytest not found' message."""
         monkeypatch.setattr(find_polluter, "_resolve_pytest_cmd", lambda: None)
         rc = find_polluter.main(["tests/test_a.py::test_one"])
         assert rc == 1
@@ -470,7 +469,7 @@ class TestArgparseCli:
     """CLI argument parsing: --help and the golden cross-plugin invocation."""
 
     def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """``--help`` prints usage and exits 0 (argparse SystemExit)."""
+        """Print usage and exit 0 (argparse SystemExit)."""
         with pytest.raises(SystemExit) as exc:
             find_polluter.main(["--help"])
         assert exc.value.code == 0

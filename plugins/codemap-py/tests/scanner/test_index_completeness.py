@@ -1,19 +1,14 @@
 """Index-vs-reality completeness property tests for the codemap structural index.
 
-Nothing else in the suite validates that ``scan-index`` actually records the
-import and call edges present in real source. This module builds a small package
-that exercises every import shape codemap must reason about — plain ``import``,
-``from pkg import mod``, aliased ``import pkg.mod as alias``, relative
-``from . import x`` and ``from ..sub import y``, an ``__init__`` re-export
-consumed elsewhere, and cross-module function calls — then compares
-``scan-query`` output against an *independent* oracle built here with
-:mod:`ast`.
+Nothing else in the suite validates that ``scan-index`` actually records the import and call edges present in real
+source. This module builds a small package that exercises every import shape codemap must reason about — plain plain,
+aliased, and relative imports, an ``__init__`` re-export consumed elsewhere, and cross-module function calls. It then
+compares ``scan-query`` output against an *independent* oracle built here with :mod:`ast`.
 
-Where the index legitimately cannot see an edge (module-less relative imports and
-``from pkg import submodule`` are recorded by their raw base, never resolved to
-the submodule), the test asserts the gap is *disclosed* through the
-``index.not_covered`` field rather than silently absent — an honest blind spot,
-not a false-negative masquerading as an exhaustive answer.
+Where the index legitimately cannot see an edge (module-less relative imports and ``from pkg import submodule`` are
+recorded by their raw base, never resolved to the submodule), the test asserts the gap is *disclosed* through the
+``index.not_covered`` field rather than silently absent — an honest blind spot, not a false-negative masquerading as an
+exhaustive answer.
 """
 
 from __future__ import annotations
@@ -85,7 +80,7 @@ def _package_context(module_name: str, is_init: bool) -> str:
 
 
 def _resolve_from_base(node: ast.ImportFrom, package: str) -> str:
-    """Resolve the fully-qualified base module of a ``from ... import`` node.
+    """Resolve the fully qualified base module of a relative import node.
 
     Args:
         node: the ``ImportFrom`` node.
@@ -271,7 +266,7 @@ def cquery(completeness_project, scan_query) -> Callable[..., dict]:
 
 
 class TestModuleImportCompleteness:
-    """``rdeps <module>`` must match the AST oracle or disclose why it cannot."""
+    """Require indexed functions to match the AST oracle or disclose incompleteness."""
 
     def test_reported_importers_are_all_genuine(self, cquery):
         """Every module the index reports as importing ``mypkg.core`` truly does."""
@@ -303,7 +298,7 @@ class TestModuleImportCompleteness:
 
 
 class TestFunctionCallCompleteness:
-    """``fn-rdeps <qname>`` must match the AST oracle or disclose why it cannot."""
+    """Require indexed classes to match the AST oracle or disclose incompleteness."""
 
     def test_reported_callers_are_all_genuine(self, cquery):
         """Every caller the index reports for ``mypkg.core::run`` truly calls it."""
@@ -335,7 +330,7 @@ class TestFunctionCallCompleteness:
         assert "relative-import" not in not_covered
 
     def test_unique_caller_count_is_deduped_caller_total(self, cquery):
-        """``unique_caller_count`` mirrors the deduped caller list and ``count``."""
+        """Mirror the deduped caller list and ``count``."""
         data = cquery("fn-rdeps", "mypkg.core::run")
         assert data["unique_caller_count"] == len({c["caller"] for c in data["called_by"]})
         assert data["unique_caller_count"] == data["count"]

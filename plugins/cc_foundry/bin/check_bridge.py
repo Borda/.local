@@ -42,12 +42,11 @@ _STATUS_ABSENT = "absent"
 def _manifest_lookup(manifest_path: Path) -> bool | None:
     """Return the bridge's installed state per Claude's registry, or None if it cannot answer.
 
-    A selector key alone does not mean installed — the installer itself requires an entry
-    carrying ``installPath`` before it will treat a plugin as present, so this applies the
-    same rule rather than a weaker one.
+    A selector key alone does not mean installed — the installer itself requires an entry carrying ``installPath``
+    before it will treat a plugin as present, so this applies the same rule rather than a weaker one.
 
-    ``None`` is reserved for a registry that could not be consulted at all (absent file,
-    malformed JSON, unexpected shape); it is the only case where the cache gets a vote.
+    ``None`` is reserved for a registry that could not be consulted at all (absent file, malformed JSON, unexpected
+    shape); it is the only case where the cache gets a vote.
     """
     if not manifest_path.is_file():
         return None
@@ -66,8 +65,8 @@ def _manifest_lookup(manifest_path: Path) -> bool | None:
 def _cache_has_target(cache_dir: Path) -> bool:
     """Return whether the marketplace cache holds any bridge version directory.
 
-    Corroborating evidence only, never authoritative: cache directories outlive uninstall,
-    so a hit here proves the bridge was installed at some point, not that it is now.
+    Corroborating evidence only, never authoritative: cache directories outlive uninstall, so a hit here proves the
+    bridge was installed at some point, not that it is now.
     """
     target_root = cache_dir / MARKETPLACE / TARGET_PLUGIN
     if not target_root.is_dir():

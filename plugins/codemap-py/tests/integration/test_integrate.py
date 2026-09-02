@@ -1,4 +1,4 @@
-"""codemap-py integrate engine — check/plan/apply/sync/demo (plan §8.3, w-engine.md).
+"""Codemap-py integrate engine — check/plan/apply/sync/demo.
 
 Black-box against the public API in ``src/codemap_py/integration.py``: ``run``,
 ``build_plan``, ``compute_plan_sha256``, ``load_plan``, ``verify_approval``,
@@ -82,13 +82,13 @@ def _git_commit_all(root: Path) -> None:
 
 @pytest.fixture(params=["normal", "spaces_nonascii"])
 def path_class(request: pytest.FixtureRequest) -> str:
-    """Fixture project/plugin roots vary over normal vs. space+non-ASCII path classes (F8)."""
+    """Return the requested normal or space-and-non-ASCII fixture path class."""
     return request.param
 
 
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_class: str) -> Path:
-    """A disposable fixture repo, chdir'd into so ``canonical_root()`` resolves to it."""
+    """Provide a disposable repository as the current working directory."""
     root = _build_repo(tmp_path, path_class=path_class)
     monkeypatch.chdir(root)
     return root
@@ -457,7 +457,8 @@ def test_audit_warns_on_same_version_consumer_content_drift(
 
 
 def test_audit_usage_reports_runtime_aggregates_without_raw_telemetry_payloads(repo: Path) -> None:
-    """Audit exposes only per-runtime counts/timing and declares tokens unavailable instead of leaking record payloads."""
+    """Audit exposes only per-runtime counts/timing and declares tokens unavailable instead of leaking record
+    payloads."""
     log_dir = repo / ".cache" / "codemap" / "logs" / "claude"
     log_dir.mkdir(parents=True)
     _seed(
@@ -704,10 +705,9 @@ def test_check_is_rejected_without_a_compatibility_alias(repo: Path) -> None:
 def test_sentinel_schema_stays_v1_while_body_protocol_is_v2() -> None:
     """The managed sentinel schema stays pinned at v1 while the block body speaks protocol v2.
 
-    The 0.31.0 compat promise is exactly this split: existing v1 sentinels stay
-    authenticable while the body protocol advances. A silent bump of either
-    constant would pass every round-trip test yet break installed consumers, so
-    the literals are pinned side by side here.
+    The 0.31.0 compat promise is exactly this split: existing v1 sentinels stay authenticable while the body protocol
+    advances. A silent bump of either constant would pass every round-trip test yet break installed consumers, so the
+    literals are pinned side by side here.
     """
     assert integration.BLOCK_SCHEMA_VERSION == 1
     assert integration.PROTOCOL_VERSION == "codemap-py.integration.v2"
@@ -718,7 +718,7 @@ def test_sentinel_schema_stays_v1_while_body_protocol_is_v2() -> None:
 def test_audit_since_bounds_runtime_evidence(
     repo: Path, capsys: pytest.CaptureFixture[str], since: str, expected_records: int
 ) -> None:
-    """``--since`` includes records on its date and excludes earlier telemetry."""
+    """Include records on its date and excludes earlier telemetry."""
     log_dir = repo / ".cache" / "codemap" / "logs" / "claude"
     log_dir.mkdir(parents=True)
     _seed(
@@ -837,7 +837,7 @@ def test_audit_runtime_directory_record_mismatch_is_a_failure(repo: Path, capsys
 
 
 def test_audit_is_zero_write(repo: Path) -> None:
-    """``build_audit_report`` never mutates the fixture tree."""
+    """Keep audit report generation from mutating the fixture tree."""
     before = _tree_snapshot(repo)
     report = integration.build_audit_report("both", repo / integration.PROVIDER_DIR)
     assert report["protocol"] == integration.PROTOCOL_VERSION
@@ -846,7 +846,7 @@ def test_audit_is_zero_write(repo: Path) -> None:
 
 
 def test_audit_cli_json_exits_zero(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """``integrate audit --json`` emits a parseable v2 warning report for empty evidence."""
+    """Emit a parseable v2 warning report for empty evidence."""
     code = integration.run(["audit", "--runtime", "both", "--json"], repo / integration.PROVIDER_DIR)
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
@@ -857,14 +857,13 @@ def test_audit_cli_json_exits_zero(repo: Path, capsys: pytest.CaptureFixture[str
 
 @pytest.mark.skipif(not _SOURCE_CHECKOUT, reason="not running from a source checkout")
 def test_every_managed_file_target_exists_in_this_source_tree() -> None:
-    """Every ``CONSUMER_MANAGED_FILE`` target is a real file in this checkout (E-H4).
+    """Every ``CONSUMER_MANAGED_FILE`` target is a real file in this checkout.
 
-    The map names the host file each consumer's managed block is inserted into. A target
-    that does not exist reads as a first-time insert against a path nothing ships, so the
-    defect stays invisible until an apply run creates a stray file — which is exactly how
-    ``foundry`` came to point at an absent ``skills/_shared/codemap-context.md``. Every
-    other test here builds a disposable fixture tree, so none of them can catch it: this
-    one deliberately asserts against the real source checkout.
+    The map names the host file each consumer's managed block is inserted into. A target that does not exist reads as a
+    first-time insert against a path nothing ships, so the defect stays invisible until an apply run creates a stray
+    file — which is exactly how ``foundry`` came to point at an absent ``skills/_shared/codemap-context.md``. Every
+    other test here builds a disposable fixture tree, so none of them can catch it: this one deliberately asserts
+    against the real source checkout.
     """
     repo_root = Path(__file__).resolve().parents[4]
     missing = [
@@ -925,7 +924,7 @@ def test_runtime_and_source_members_preserve_plan_json_values(repo: Path, monkey
 
 
 def test_plan_writes_only_its_out_artifact(repo: Path, tmp_path: Path) -> None:
-    """``plan --out <path>`` writes nothing under the fixture tree besides the named artifact."""
+    """Write nothing under the fixture tree besides the named artifact."""
     before = _tree_snapshot(repo)
     out = tmp_path / "plan.json"
     code = integration.run(["plan", "--runtime", "claude", "--out", str(out)], repo / integration.PROVIDER_DIR)
@@ -987,7 +986,7 @@ def test_approve_correct_sha_proceeds(repo: Path) -> None:
 
 
 def test_apply_cli_bad_approve_exits_usage(repo: Path, tmp_path: Path) -> None:
-    """``apply`` at the CLI boundary maps a bad ``--approve`` to exit ``2``."""
+    """Map invalid approval input to the documented command-line exit code."""
     plan = integration.build_plan("claude", ["oss"], None, repo / integration.PROVIDER_DIR)
     plan_path = tmp_path / "plan.json"
     _seed(plan_path, json.dumps(plan))
@@ -1033,10 +1032,9 @@ def test_apply_refuses_path_escape(repo: Path) -> None:
 def test_apply_refuses_symlink_target(repo: Path) -> None:
     """A target path traversing a symlink is refused, even though the plan itself is unmodified.
 
-    The symlink points at a sibling file *inside* the same consumer plugin dir, so the
-    resolved path still passes the path-containment check — isolating ``symlink_target``
-    from ``path_escape`` (both fire on an out-of-tree symlink target; only this shape proves
-    the symlink check specifically).
+    The symlink points at a sibling file *inside* the same consumer plugin dir, so the resolved path still passes the
+    path-containment check — isolating ``symlink_target`` from ``path_escape`` (both fire on an out-of-tree symlink
+    target; only this shape proves the symlink check specifically).
     """
     plan = _single_op_plan(repo)
     target_path = repo / plan["ops"][0]["path"]
@@ -1229,10 +1227,10 @@ def test_rollback_failure_reports_recovery_required(
 ) -> None:
     """When rollback itself cannot restore the first target, the engine reports ``recovery-required``.
 
-    Rollback failure is forced deterministically by stubbing ``Journal.save_before_image`` to a
-    no-op — the first target then applies successfully (its own write is untouched) but leaves no
-    before-image to restore from, so the post-rollback hash check finds the (deleted) file's hash
-    doesn't match the plan's recorded ``before_hash`` and reports ``rollback-failed``.
+    Rollback failure is forced deterministically by stubbing ``Journal.save_before_image`` to a no-op — the first target
+    then applies successfully (its own write is untouched) but leaves no before-image to restore from, so the hash check
+    after rollback finds that the deleted file does not match the plan's recorded ``before_hash`` and reports
+    ``rollback-failed``.
     """
     first_path = _seed_prose(repo, "oss", "oss original notes\n")
     _seed_prose(repo, "develop", "develop original notes\n")
@@ -1257,7 +1255,7 @@ def test_rollback_failure_reports_recovery_required(
 
 
 def test_sync_refuses_drift_before_native_call(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """``sync`` revalidates installed state immediately before every plugin op; drift stops it early."""
+    """Revalidate installed state immediately before every plugin op; drift stops it early."""
     monkeypatch.setattr(integration, "_native_json_probe", lambda argv: None)
     plan = integration.build_plan("claude", ["oss"], "local-candidate", repo / integration.PROVIDER_DIR)
 
@@ -1273,7 +1271,7 @@ def test_sync_refuses_drift_before_native_call(repo: Path, monkeypatch: pytest.M
 
 
 def test_sync_approve_source_mismatch_is_approval_error(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """``sync --source`` must match the plan's own recorded source, or approval is rejected."""
+    """Require synchronization approval to match the source recorded in the plan."""
     monkeypatch.setattr(integration, "_native_json_probe", lambda argv: None)
     plan = integration.build_plan("claude", ["oss"], "local-candidate", repo / integration.PROVIDER_DIR)
     with pytest.raises(integration.ApprovalError) as exc:
@@ -1319,7 +1317,7 @@ def test_apply_and_sync_ignore_each_others_operation_kind(repo: Path, monkeypatc
     ],
 )
 def test_win_quoting_guard_flags_unsafe_argv(arguments: list[str], unsafe: bool) -> None:
-    """``_unsafe_windows_batch_argv`` flags spaces/shell-metacharacters unsafe for a ``.bat``/``.cmd`` launcher."""
+    """Flag spaces/shell-metacharacters unsafe for a ``.bat``/``.cmd`` launcher."""
     assert integration._unsafe_windows_batch_argv("claude.cmd", arguments) is unsafe
 
 
@@ -1351,7 +1349,7 @@ def test_win_quoting_resolve_builds_quoted_line_for_safe_argv(monkeypatch: pytes
 
 
 def test_demo_returns_evidence_confined_to_its_own_report(repo: Path) -> None:
-    """``run_demo`` returns check + query evidence and writes only its own disposable report."""
+    """Return check + query evidence and writes only its own disposable report."""
     before = _tree_snapshot(repo)
     demo = integration.run_demo("claude", repo / integration.PROVIDER_DIR)
     assert demo["protocol"] == integration.PROTOCOL_VERSION
@@ -1365,6 +1363,6 @@ def test_demo_returns_evidence_confined_to_its_own_report(repo: Path) -> None:
 
 
 def test_demo_cli_exits_zero_with_no_index_built(repo: Path) -> None:
-    """``integrate demo`` exits 0 when there is simply no index yet (not a failure)."""
+    """Exit 0 when there is simply no index yet (not a failure)."""
     code = integration.run(["demo", "--runtime", "claude"], repo / integration.PROVIDER_DIR)
     assert code == 0

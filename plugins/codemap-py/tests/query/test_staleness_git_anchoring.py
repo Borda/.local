@@ -116,7 +116,7 @@ def _query_from(scan_query: Path, cwd: Path, index_path: Path, *args: str, froze
 
 @pytest.fixture
 def committed_repo(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
-    """A committed git repo with a nested package, scanned clean from its root.
+    """Create a clean indexed repository with a nested package.
 
     Nesting matters: ``pkg/deep/`` is the subdirectory a query is issued from, and
     is deep enough that subdirectory-relative paths cannot coincide with the
@@ -142,7 +142,7 @@ def committed_repo(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
     return root, index_path
 
 
-# Commit dates are pinned so a --since window can sit strictly between the two commits.
+# Commit dates are pinned so a ``--since`` window can sit strictly between the two commits.
 # With ambient timestamps both commits fall inside any window wide enough to catch the
 # second, and a pathspec test then passes on the first commit's .py files no matter what
 # the pathspec says.
@@ -170,7 +170,7 @@ def _commit_at(root: Path, when: str, message: str) -> None:
 
 @pytest.fixture
 def dated_repo(tmp_path: Path) -> Path:
-    """A repo whose second commit touches a ``.pyi`` stub and nothing else.
+    """Create a repository whose second commit changes only a type stub.
 
     Isolating the stub in its own commit is what makes the file-set question decidable:
     if the pathspec does not cover ``*.pyi`` there is nothing else in that commit for it
@@ -194,9 +194,8 @@ def dated_repo(tmp_path: Path) -> Path:
 def reset_query_caches(monkeypatch: pytest.MonkeyPatch) -> None:
     """Clear the module-level git/staleness memos so each in-process test starts cold.
 
-    ``query`` caches git root, exclusions, blob SHAs, and the coverage block for the
-    lifetime of one CLI invocation; inside a single pytest process those would
-    otherwise leak between tests.
+    ``query`` caches git root, exclusions, blob SHAs, and the coverage block for the lifetime of one CLI invocation;
+    inside a single pytest process those would otherwise leak between tests.
     """
     monkeypatch.setattr(query, "_file_shas_cache", None)
     monkeypatch.setattr(query, "_coverage_cache", None)
@@ -234,8 +233,8 @@ class TestGitRootAnchoring:
     def test_real_edit_is_still_detected_from_subdirectory(self, committed_repo, scan_query) -> None:
         """Anchoring must not blind the check: an actual committed edit still reads as stale.
 
-        Run frozen, because the inline self-heal would otherwise repair the index and
-        report ``stale: false`` truthfully — hiding whether the change was seen at all.
+        Run frozen, because the inline self-heal would otherwise repair the index and report ``stale: false`` truthfully
+        — hiding whether the change was seen at all.
         """
         root, index_path = committed_repo
         (root / "pkg" / "gamma.py").write_text('"""Leaf."""\n\n\ndef func_gamma(x):\n    return x + 99\n')
@@ -386,8 +385,8 @@ class TestWriterReaderFileSetParity:
     def test_timestamp_fallback_sees_a_stub_only_commit(self, dated_repo, monkeypatch) -> None:
         """A commit touching only a ``.pyi`` registers as a change.
 
-        The pre-fix pathspec watched ``*.py`` alone, so this commit read as "fresh"
-        and a ``file_shas``-less index claimed currency it did not have.
+        The pre-fix pathspec watched ``*.py`` alone, so this commit read as "fresh" and a ``file_shas``-less index
+        claimed currency it did not have.
         """
         monkeypatch.chdir(dated_repo)
         monkeypatch.setattr(query, "_git_root_cache", dated_repo)
@@ -397,8 +396,7 @@ class TestWriterReaderFileSetParity:
     def test_window_after_every_commit_reports_fresh(self, dated_repo, monkeypatch) -> None:
         """Control: past the last commit the same repo reports no change.
 
-        Without this, the assertion above could pass merely because the window also
-        swept in the earlier ``.py`` commit.
+        Without this, the assertion above could pass merely because the window also swept in the earlier ``.py`` commit.
         """
         monkeypatch.chdir(dated_repo)
         monkeypatch.setattr(query, "_git_root_cache", dated_repo)
@@ -409,12 +407,11 @@ class TestWriterReaderFileSetParity:
 class TestIndexSizeCapAgreement:
     """Every index-size ceiling in the plugin is the same number as the query engine's.
 
-    This class replaces one that asserted the *opposite* — that the helpers deliberately
-    capped lower. That divergence was never a second policy: at 50 MB the helpers refused
-    real indexes, and this repository's own index measured 131 MB, so `check-index-currency`
-    answered ``no_index`` for it. ``no_index`` is what a project with no index at all
-    reports, so the staleness gate simply stopped firing, silently, on exactly the large
-    repositories it exists for. A helper ceiling below the engine's re-opens that.
+    This class replaces one that asserted the *opposite* — that the helpers deliberately capped lower. That divergence
+    was never a second policy: at 50 MB the helpers refused real indexes, and this repository's own index measured 131
+    MB, so `check-index-currency` answered ``no_index`` for it. ``no_index`` is what a project with no index at all
+    reports, so the staleness gate silently stopped firing on exactly the large repositories it exists for. A helper
+    ceiling below the engine's would recreate that blind spot.
     """
 
     #: Helper modules whose ceiling must match the engine's, with the constant's name.

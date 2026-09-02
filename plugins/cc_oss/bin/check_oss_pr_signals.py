@@ -363,16 +363,15 @@ def collect_signals(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns exit code.
+    """Collect pull-request signals and return the process status.
 
     Args:
         argv: Optional argument list (defaults to ``sys.argv[1:]``).
 
     Returns:
-        ``0`` on success, ``1`` on invalid argv, ``2`` on missing gh/git.
+        ``0`` on success, ``1`` for invalid arguments, or ``2`` when ``gh`` or ``git`` is unavailable.
 
-    Examples:
-        No doctest — subprocess-dependent; covered by pytest.
+    No doctest is provided because behavior depends on subprocesses; pytest covers the command.
     """
     parser = argparse.ArgumentParser(
         prog="check_oss_pr_signals.py",

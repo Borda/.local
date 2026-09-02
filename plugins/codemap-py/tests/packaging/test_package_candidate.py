@@ -1,11 +1,9 @@
 """Deterministic real-package builder contract.
 
-Covers the builder CLI contract the install probes depend on, byte-for-byte
-determinism, single-source identity (manifest version equals the tracked
-``.claude-plugin/plugin.json`` version), and payload closure of the real tracked
-tree — skills, hooks, bin, and scripts present; tests, default ``skills/``, and
-``hooks/hooks.json`` absent; no source-tree references, symlinks, or case
-collisions.
+Covers the builder CLI contract the install probes depend on, byte-for-byte determinism, single-source identity
+(manifest version equals the tracked ``.claude-plugin/plugin.json`` version), and payload closure of the real tracked
+tree — skills, hooks, bin, and scripts present; tests, default ``skills/``, and ``hooks/hooks.json`` absent; and no
+references to the source tree, symlinks, or case collisions.
 """
 
 from __future__ import annotations
@@ -80,7 +78,7 @@ def test_manifest_version_is_not_hardcoded(package: Path) -> None:
 
 
 def test_check_flag_reports_deterministic(package: Path) -> None:
-    """``--check`` against a populated reference build exits zero."""
+    """Accept a candidate matching a populated reference build."""
     result = _run_builder("--out", str(package), "--check")
     assert result.returncode == 0, result.stderr
 
@@ -121,7 +119,7 @@ def test_codex_manifest_ships_skill_roster_and_runtime_hooks(package: Path) -> N
 
 
 def test_manifest_skill_rosters(package: Path) -> None:
-    """The package manifest lists the same six skills for both Claude and Codex (plan §8.2 parity)."""
+    """The package manifest lists the same six skills for both Claude and Codex."""
     rosters = json.loads((package / "package-manifest.json").read_text())["skills"]
     expected = {
         "scan-codebase",
@@ -211,7 +209,7 @@ def test_expected_python_hooks_ship(package: Path) -> None:
     ],
 )
 def test_manifest_exec_flag_is_platform_neutral(package: Path, member: str, expected_exec: bool) -> None:
-    """The manifest ``exec`` flag mirrors git's tracked mode, not host st_mode (F10)."""
+    """The manifest ``exec`` flag mirrors git's tracked mode, not host st_mode."""
     manifest = json.loads((package / "package-manifest.json").read_text())
     record = next(entry for entry in manifest["files"] if entry["path"] == member)
     assert record["exec"] is expected_exec
@@ -320,7 +318,7 @@ def test_builder_mutates_nothing_tracked(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="executable bit is unreliable off POSIX")
 def test_check_flags_tampered_reference_exec_mode(tmp_path: Path) -> None:
-    """``--check`` fails when a reference file's on-disk mode drifts from the manifest."""
+    """Reject a reference file whose mode differs from its manifest entry."""
     out = tmp_path / "pkg"
     assert _run_builder("--out", str(out)).returncode == 0
     (out / "README.md").chmod(0o755)

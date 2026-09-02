@@ -5,7 +5,8 @@ Collapses the two-line skill idiom
 
 .. code-block:: bash
 
-    _FS=$(python "$ROOT/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/cc_foundry/skills/_shared")
+    _FS=$(python "$ROOT/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null \
+        || echo "plugins/cc_foundry/skills/_shared")
     cat "$_FS/task-hygiene.md"
 
 into a single call. Resolution is **not** reimplemented here — the cascade is

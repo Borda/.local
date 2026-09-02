@@ -1,9 +1,7 @@
 """Run one mutable benchmark cell with evidence-preserving cleanup.
 
-The lifecycle is provider-neutral. Callers supply creation, action, and
-restoration mechanics; this boundary guarantees that cleanup is attempted on
-every ordinary exit and that a cleanup failure cannot be mistaken for a valid
-measurement.
+The lifecycle is provider-neutral. Callers supply creation, action, and restoration mechanics; this boundary guarantees
+that cleanup is attempted on every ordinary exit and that a cleanup failure cannot be mistaken for a valid measurement.
 """
 
 from __future__ import annotations
@@ -231,10 +229,9 @@ def _probe_patch_test_runtime(pytest_executable: Path) -> dict[str, Any]:
 def patch_test_runtime_identity() -> dict[str, str]:
     """Resolve and fingerprint the pytest launcher used by Patch test commands.
 
-    Patch tasks retain their reviewed command arguments but execute them through
-    the exact absolute pytest selected at scope admission. The launcher's
-    interpreter and pytest module are also bound so a later environment change
-    cannot silently alter the accepted runtime.
+    Patch tasks retain their reviewed command arguments but execute them through the exact absolute pytest selected at
+    scope admission. The launcher's interpreter and pytest module are also bound so a later environment change cannot
+    silently alter the accepted runtime.
     """
     try:
         pytest_command = os.environ.get(PATCH_PYTEST_ENV) or shutil.which("pytest")
@@ -377,8 +374,8 @@ def _verified_source_baseline(repo_path: Path, baseline_commit: str) -> None:
 def _verified_patch_task_source(repo_path: Path, baseline_commit: str) -> tuple[str, str]:
     """Validate a clean source while allowing each patch task's historical baseline.
 
-    Patch tasks freeze distinct commits, so the source checkout need only contain
-    the requested commit; it must retain its original clean state after scoring.
+    Patch tasks freeze distinct commits, so the source checkout need only contain the requested commit; it must retain
+    its original clean state after scoring.
     """
     try:
         head = _workspace_git(repo_path, "rev-parse", "HEAD").stdout.strip()
@@ -514,9 +511,8 @@ def stage_patch_task_agent_workspace(
 ) -> PatchTaskAgentWorkspace:
     """Stage and validate a frozen target-test fixture in an owned clean worktree.
 
-    The fixture is staged so ``git diff`` contains only agent edits. A provider
-    cannot satisfy the task by changing its generated target test, because the
-    captured answer and later scorer both verify its frozen bytes.
+    The fixture is staged so ``git diff`` contains only agent edits. A provider cannot satisfy the task by changing its
+    generated target test, because the captured answer and later scorer both verify its frozen bytes.
     """
     source = source.resolve(strict=True)
     source_head, source_porcelain = _verified_patch_task_source(source, contract.baseline_commit)
@@ -595,9 +591,9 @@ def execute_patch_task_answer(
 ) -> EditExecution:
     """Score one direct or text patch in a second clean worktree without fallback application.
 
-    The function accepts the captured diff from a direct agent worktree or a
-    fenced textual answer parsed by :func:`assess_patch_answer`. It never uses
-    ``git apply --recount``: an ordinary apply failure remains failed evidence.
+    The function accepts the captured diff from a direct agent worktree or a fenced textual answer parsed by
+    :func:`assess_patch_answer`. It never uses ``git apply --recount``: an ordinary apply failure remains failed
+    evidence.
     """
     if not isinstance(contract, EditTaskContract):
         raise TypeError("contract must be an EditTaskContract")
@@ -764,9 +760,8 @@ def relocate_frozen_index_for_worktree(
 ) -> tuple[bytes, dict[str, str]]:
     """Relocate only ``scan_root`` in a frozen index for a byte-identical worktree.
 
-    This derived copy keeps the static graph immutable while allowing Codemap's
-    root-mismatch completeness guard to evaluate the benchmark-owned checkout.
-    The caller records both hashes and rejects a cell that modifies the copy.
+    This derived copy keeps the static graph immutable while allowing Codemap's root-mismatch completeness guard to
+    evaluate the benchmark-owned checkout. The caller records both hashes and rejects a cell that modifies the copy.
     """
     try:
         frozen_payload = json.loads(frozen_bytes)

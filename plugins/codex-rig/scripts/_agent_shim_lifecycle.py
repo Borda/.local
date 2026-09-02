@@ -2,27 +2,38 @@
 
 ## Purpose
 
-Turn bounded state, marker, target, and recovery records into a stable read-only lifecycle classification. The classification gives the manager one vocabulary for healthy, incomplete, stale, and unsafe shim states.
+Turn bounded state, marker, target, and recovery records into a stable read-only lifecycle classification. The
+classification gives the manager one vocabulary for healthy, incomplete, stale, and unsafe shim states.
 
 ## Scope
 
-Accepts serialized evidence and performs no writes or command execution, preserving a safe diagnostic boundary. It is responsible for syntax, field allowlists, size limits, and cross-record consistency rather than filesystem identity checks.
+Accepts serialized evidence and performs no writes or command execution, preserving a safe diagnostic boundary. It is
+responsible for syntax, field allowlists, size limits, and cross-record consistency rather than filesystem identity
+checks.
 
 ## Usage
 
-Import parsing and classification functions before presenting diagnosis or deciding whether an approved repair may proceed. Feed it bounded bytes or already-bounded observations; the observer module owns descriptor-safe filesystem access.
+Import parsing and classification functions before presenting diagnosis or deciding whether an approved repair may
+proceed. Feed it bounded bytes or already-bounded observations; the observer module owns descriptor-safe filesystem
+access.
 
 ## Used by
 
-The shim observer/manager path, approval binding, and lifecycle contract tests call these parsers and classifiers. Approval binding relies on their stable values to ensure a later transaction is based on the same lifecycle evidence that was reviewed.
+The shim observer/manager path, approval binding, and lifecycle contract tests call these parsers and classifiers.
+Approval binding relies on their stable values to ensure a later transaction is based on the same lifecycle evidence
+that was reviewed.
 
 ## Outputs
 
-Returns typed marker/target/recovery observations and a finite classification that the manager can report or bind for approval. Parsed dataclasses preserve the normalized evidence needed by planning without exposing mutable input dictionaries.
+Returns typed marker/target/recovery observations and a finite classification that the manager can report or bind for
+approval. Parsed dataclasses preserve the normalized evidence needed by planning without exposing mutable input
+dictionaries.
 
 ## Failure
 
-Malformed JSON, duplicate keys, invalid state fields, or unsafe marker content raises a data error and keeps mutation unavailable. Callers must surface the error as an unsafe or incomplete lifecycle instead of continuing with guessed defaults.
+Malformed JSON, duplicate keys, invalid state fields, or unsafe marker content raises a data error and keeps mutation
+unavailable. Callers must surface the error as an unsafe or incomplete lifecycle instead of continuing with guessed
+defaults.
 """
 
 from __future__ import annotations

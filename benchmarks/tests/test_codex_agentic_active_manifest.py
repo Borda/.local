@@ -89,9 +89,8 @@ def test_manifest_locks_shared_scope_and_identity() -> None:
 def test_manifest_locks_the_full_shared_agentic_scope_with_one_default_repeat() -> None:
     """The Codex study uses every shared agentic task once in each canonical arm.
 
-    Prevents an apparently valid Codex manifest from silently retaining the
-    incomplete task subset, using a noncanonical arm label, or multiplying the
-    default study beyond the reviewed 16 × 3 × 1 coordinate set.
+    Prevents an apparently valid Codex manifest from silently retaining the incomplete task subset, using a noncanonical
+    arm label, or multiplying the default study beyond the reviewed 16 × 3 × 1 coordinate set.
     """
     manifest = _load(MANIFEST)
     methodology = _load(BENCHMARKS / "manifests" / "provider-parity-methodology.json")
@@ -126,10 +125,9 @@ def test_claude_and_codex_load_identical_shared_agentic_prompts() -> None:
 def test_ba12_and_ba16_declare_every_answer_contract_field_for_scoring() -> None:
     """Prompt-required counts and verdicts cannot disappear behind importer recall.
 
-    Prevents a production-only oracle from grading only the importer list while
-    treating BA-12's excluded-test count or BA-16's separate test/production
-    counts and risk verdict as unscored prose. A plausibly wrong scorer that
-    preserves EREC/RREC alone fails this declaration-level contract.
+    Prevents a production-only oracle from grading only the importer list while treating BA-12's excluded-test count or
+    BA-16's separate test/production counts and risk verdict as unscored prose. A plausibly wrong scorer that preserves
+    EREC/RREC alone fails this declaration-level contract.
     """
     suite = _load(BENCHMARKS / "suites" / "tasks-agentic.json")
     tasks = {task["id"]: task for task in suite["tasks"]}

@@ -1,10 +1,9 @@
 """Tests for ``bin/classify_breaking.py``.
 
-Pure JSON transform — no subprocess, no git. ``main`` reads stdin via
-``monkeypatch.setattr(sys, "stdin", ...)``; ``classify`` and the private
-helpers are exercised directly. Covers Breaking (external caller), internal
-(same-package caller only), removed-symbol Breaking, empty-module external
-treatment, incomplete-coverage propagation, and malformed stdin.
+Pure JSON transform — no subprocess, no git. ``main`` reads stdin via ``monkeypatch.setattr(sys, "stdin", ...)``;
+``classify`` and the private helpers are exercised directly. Covers Breaking (external caller), internal (same-package
+caller only), removed-symbol Breaking, empty-module external treatment, incomplete-coverage propagation, and malformed
+stdin.
 """
 
 from __future__ import annotations
@@ -56,7 +55,7 @@ def test_no_callers_labels_internal() -> None:
 
 
 def test_removed_symbol_labels_breaking() -> None:
-    """fn-rdeps error (previously-public symbol absent) → Breaking with removed reason."""
+    """Fn-rdeps error (previously-public symbol absent) → Breaking with removed reason."""
     entry = {"ok": False, "args": ["mypkg.core::Gone"], "result": {"error": "Symbol not found"}}
     out = cb.classify(_batch([entry]))
     assert out["breaking"][0]["symbol"] == "mypkg.core::Gone"
@@ -88,7 +87,7 @@ def test_incomplete_coverage_propagates() -> None:
 
 
 def test_main_reads_stdin_and_prints_json(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """main reads batch JSON from stdin and prints the classification as JSON."""
+    """Read a batch from standard input and print its classification as JSON."""
     entry = {"ok": True, "result": {"qname": "mypkg.core::Thing", "called_by": [_caller("app.svc")]}}
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(_batch([entry]))))
     rc = cb.main([])

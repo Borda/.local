@@ -1,8 +1,7 @@
 """Tests for bin/codemap_cache.py — review→resolve pre-flight cache.
 
-Covers: write splitting a batch into per-module artifacts, read freshness
-verdicts (fresh, cold miss, index-rebuilt, git-sha mismatch, index-stamp
-mismatch, content-hash mismatch), and the reuse_ratio report metric.
+Covers: write splitting a batch into per-module artifacts, read freshness verdicts (fresh, cold miss, index-rebuilt,
+git-sha mismatch, index-stamp mismatch, content-hash mismatch), and the reuse_ratio report metric.
 """
 
 from __future__ import annotations
@@ -50,7 +49,7 @@ def _write_batch(tmp_path: Path) -> Path:
 
 
 class TestWrite:
-    """write subcommand — batch → per-module artifacts."""
+    """Write subcommand — batch → per-module artifacts."""
 
     def test_write_splits_by_module(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         cache = tmp_path / "cache"
@@ -111,7 +110,7 @@ class TestWrite:
 
 
 class TestRead:
-    """read subcommand — freshness verdicts."""
+    """Read subcommand — freshness verdicts."""
 
     def _seed(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
         cache = tmp_path / "cache"
@@ -169,10 +168,8 @@ class TestRead:
     def test_in_place_rewrite_invalidates(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         """Index rewritten with identical metadata but a new mtime → no reuse.
 
-        Regression for E-L7: ``git_sha`` and ``scanned_at`` are the index's own
-        declared fields, so an ``--incremental`` re-scan or a restored backup that
-        leaves them untouched was indistinguishable from no change at all, and stale
-        answers were served as fresh.
+        ``git_sha`` and ``scanned_at`` are the index's own declared fields, so an incremental scan or a restored backup
+        that leaves them untouched was indistinguishable from no change at all, and stale answers were served as fresh.
         """
         cache = self._seed(tmp_path, capsys)
         rewritten = _write_index(tmp_path, mtime_ns=_FIXED_MTIME_NS + 5_000_000_000)
@@ -210,7 +207,7 @@ class TestRead:
 
 
 class TestReport:
-    """report subcommand — reuse_ratio metric."""
+    """Report subcommand — reuse_ratio metric."""
 
     def test_zero_when_no_reuse_markers(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         cache = tmp_path / "cache"

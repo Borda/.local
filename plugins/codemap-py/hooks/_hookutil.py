@@ -8,12 +8,13 @@ the hooks deliberately do NOT import :mod:`codemap_py`, because they fire on eve
 Grep/Read/Glob/Bash call and must stay free of package imports and subprocesses.
 
 What lives here is exactly the logic that MUST agree across hooks — the project
-anchor, runtime identity, the telemetry log directory, and session/sentinel sanitizer. Each was
-previously copy-pasted per hook, and every divergence between copies was a silent
-join failure rather than an error: shards written under two different keys, or into
-two different directories, still look like perfectly healthy telemetry.
+anchor, runtime identity, the telemetry log directory, and session/sentinel
+sanitizer. Each was previously copy-pasted per hook, and every divergence between copies was a silent join failure
+rather than an error: shards written under two different keys, or into two different directories, still look like
+perfectly healthy telemetry.
 
-consumers: hooks/{seed-session,log-tool-use,log-skill-start,guard-redundant-scan,record-exhausted}.py — imported as bare ``_hookutil``; not a standalone executable
+consumers: hooks/{seed-session,log-tool-use,log-skill-start,guard-redundant-scan,record-exhausted}.py — imported as bare
+``_hookutil``; not a standalone executable
 """
 
 from __future__ import annotations
@@ -50,9 +51,9 @@ def runtime() -> str:
 def runtime_session(payload: dict | None = None) -> str:
     """Return the host session identity without crossing runtime marker boundaries.
 
-    Codex events must never inherit Claude's persisted marker: a Codex thread is
-    supplied by ``CODEX_THREAD_ID`` or the hook payload. Claude retains its native
-    event ``session_id`` so its marker writer and readers keep their established key.
+    Codex events must never inherit Claude's persisted marker: a Codex thread is supplied by ``CODEX_THREAD_ID`` or the
+    hook payload. Claude retains its native event ``session_id`` so its marker writer and readers keep their established
+    key.
     """
     event = payload or {}
     if runtime() == "codex":

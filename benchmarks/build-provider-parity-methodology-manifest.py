@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Build or verify the provider-neutral benchmark methodology lock.
 
-This utility derives the current lock from the committed policy seed and task
-suites. Test fixtures cover malformed or adversarial cases separately; prior
-benchmark runs are not inputs to the current methodology.
-``--check`` writes nothing and fails closed on byte drift.
+This utility derives the current lock from the committed policy seed and task suites. Test fixtures cover malformed or
+adversarial cases separately; prior benchmark runs are not inputs to the current methodology. ``--check`` writes nothing
+and fails closed on byte drift.
 """
 
 from __future__ import annotations
@@ -296,9 +295,8 @@ def _evaluation_contract(policy: Mapping[str, Any]) -> dict[str, Any]:
 def _structural_execution_cells(policy: Mapping[str, Any], suites: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
     """Derive the frozen execution and diagnostic selections from current structural rows.
 
-    The five real-issue rows remain outside the provider-neutral structural
-    execution suite. Every other committed structural row is included in suite
-    order, with the headline policy partitioning the ten diagnostics.
+    The five real-issue rows remain outside the provider-neutral structural execution suite. Every other committed
+    structural row is included in suite order, with the headline policy partitioning the ten diagnostics.
     """
     headline_ids = list(policy["headline_structural_v1"]["task_ids"])
     headline_id_set = set(headline_ids)

@@ -277,9 +277,8 @@ class TestProviderParityTaskIntegration:
     ) -> None:
         """The default 16-task agentic execution plan uses A/B/C once per cell.
 
-        Legacy arm labels remain available only when explicitly selected, so a
-        normal ``--run_all`` invocation cannot silently produce an unpaired
-        legacy experiment instead of the locked provider-parity matrix.
+        Legacy arm labels remain available only when explicitly selected, so a normal ``--run_all`` invocation cannot
+        silently produce an unpaired legacy experiment instead of the locked provider-parity matrix.
         """
         tasks = [script_run_agentic.Task(id=f"BA-{number:02d}", type="fix", prompt="p") for number in range(1, 17)]
 
@@ -302,9 +301,8 @@ class TestProviderParityTaskIntegration:
     def test_resolve_agentic_scope_binds_the_default_claude_matrix(self, script_run_agentic: Any) -> None:
         """The public resolver fingerprints every default Claude coordinate.
 
-        Prevents a scope token that omits the provider, model cohort, task
-        order, or retry-inclusive cell timeout. Those omissions could authorize a different
-        paid study than the one a reviewer inspected.
+        Prevents a scope token that omits the provider, model cohort, task order, or retry-inclusive cell timeout. Those
+        omissions could authorize a different paid study than the one a reviewer inspected.
         """
         first = script_run_agentic.resolve_agentic_scope()
         second = script_run_agentic.resolve_agentic_scope()
@@ -328,10 +326,8 @@ class TestProviderParityTaskIntegration:
     ) -> None:
         """An expanded Claude run is rejected until its exact derived scope is supplied.
 
-        The regression is an accidental repeat override running without a
-        separately reviewable authorization token. The paired successful call
-        proves a valid scope hash is not rejected merely because it is
-        nondefault.
+        The regression is an accidental repeat override running without a separately reviewable authorization token. The
+        paired successful call proves a valid scope hash is not rejected merely because it is nondefault.
         """
         tasks = [script_run_agentic.Task(id=f"BA-{number:02d}", type="fix", prompt="p") for number in range(1, 17)]
         scope = script_run_agentic.resolve_agentic_scope(repetitions=2)
@@ -362,8 +358,8 @@ class TestProviderParityTaskIntegration:
     ) -> None:
         """A canonical Task keeps the exact shared prompt bytes used for its hash.
 
-        The provider-visible prompt must include the shared labelled JSON
-        instruction, while an explicit legacy load keeps only the task prose.
+        The provider-visible prompt must include the shared labelled JSON instruction, while an explicit legacy load
+        keeps only the task prose.
         """
         raw_task = {
             "id": "BA-CONTRACT",
@@ -1089,7 +1085,7 @@ class TestToolCounts:
         assert tc.total == expected_total
 
     def test_total_excludes_blocked_and_bash_for_imports(self, script_run_agentic: Any) -> None:
-        """blocked and bash_for_imports are NOT counted in total.
+        """Blocked and bash_for_imports are NOT counted in total.
 
         Scenario: user sets only the diagnostic counters; total must
         remain 0 because these are not exploration tool calls.
@@ -1115,7 +1111,7 @@ class TestToolCounts:
 
 class TestQualityScore:
     def test_default_instance_has_scored_false(self, script_run_agentic: Any) -> None:
-        """QualityScore() with no args defaults to scored=False.
+        """Verify that an empty quality score is unscored by default.
 
         Scenario: quality scoring not applicable (task has no primary_module);
         the sentinel field scored must be False, all metrics 0.
@@ -1259,7 +1255,7 @@ class TestFindIndex:
     def test_explicit_path_returned_resolved(self, script_run_agentic: Any, tmp_path: Path) -> None:
         """find_index returns the explicit path resolved when supplied.
 
-        Scenario: user passes --index /some/path; the function must return
+        Scenario: user passes ``--index /some/path``; the function must return
         that exact path (resolved) without searching .cache/.
         """
         index = tmp_path / "my-index.json"
@@ -1470,7 +1466,7 @@ class TestGroundTruthGenerateMatchSet:
 
 class TestGroundTruthScore:
     def test_returns_unscored_when_no_ground_truth_for_task(self, script_run_agentic: Any, ground_truth: Any) -> None:
-        """score() returns QualityScore(scored=False) when task has no expected rdeps.
+        """Leave a task unscored when it has no expected reverse dependencies.
 
         Scenario: task_id unknown to the index; score() must return an
         unscored sentinel per the documented contract.
@@ -1486,7 +1482,7 @@ class TestGroundTruthScore:
         assert result.rrec == 0.0
 
     def test_full_recall_when_all_rdeps_in_corpus(self, script_run_agentic: Any, ground_truth: Any) -> None:
-        """score() returns erec=1.0 when all expected rdeps appear in corpus.
+        """Report full exposure recall when all expected reverse dependencies appear.
 
         Scenario: an ideal codemap arm output that lists all expected modules;
         erec should be 1.0 and scored=True.
@@ -1503,7 +1499,7 @@ class TestGroundTruthScore:
         assert result.rrec == pytest.approx(1.0)
 
     def test_zero_recall_when_no_rdeps_in_corpus(self, script_run_agentic: Any, ground_truth: Any) -> None:
-        """score() returns erec=0.0 when no expected rdeps appear in corpus.
+        """Report zero exposure recall when no expected reverse dependency appears.
 
         Scenario: agent output mentions no relevant modules; recall must be 0.
         """
@@ -1517,7 +1513,7 @@ class TestGroundTruthScore:
         assert result.erec == pytest.approx(0.0)
 
     def test_partial_recall_computed_correctly(self, script_run_agentic: Any, ground_truth: Any) -> None:
-        """score() correctly computes erec when only a subset of rdeps are found.
+        """Compute partial exposure recall from the reverse dependencies found.
 
         Scenario: two expected rdeps; agent finds only one; erec must be 0.5.
         """
@@ -1542,7 +1538,7 @@ class TestGroundTruthScore:
     def test_recall_boundary_values_are_exact(
         self, script_run_agentic: Any, tmp_path: Path, found_count: int, expected_recall: float
     ) -> None:
-        """score() reports exact recall fractions around the downstream 70% boundary."""
+        """Preserve exact recall fractions around the downstream acceptance boundary."""
         primary = "pkg.primary"
         callers = [f"pkg.caller{i}" for i in range(10)]
         data = _minimal_index(
@@ -1567,7 +1563,7 @@ class TestGroundTruthScore:
         assert result.rrec == pytest.approx(expected_recall)
 
     def test_delta_equals_erec_minus_rrec(self, script_run_agentic: Any, ground_truth: Any) -> None:
-        """score() delta field equals erec - rrec (information gap).
+        """Verify that the score delta measures the information gap.
 
         Scenario: agent exposes module in tool output but omits it from final
         answer; delta must reflect the gap.
@@ -1584,7 +1580,7 @@ class TestGroundTruthScore:
         assert result.delta == pytest.approx(result.erec - result.rrec)
 
     def test_deff_equals_erec_tp_divided_by_tool_calls(self, script_run_agentic: Any, ground_truth: Any) -> None:
-        """score() deff = erec_tp / max(tool_calls, 1).
+        """Verify that discovery efficiency accounts for the tool-call count.
 
         Scenario: agent uses 4 tool calls and finds 1 rdep; deff = 1/4 = 0.25.
         """
@@ -1600,7 +1596,7 @@ class TestGroundTruthScore:
         assert result.deff == pytest.approx(result.erec_tp / 4)
 
     def test_deff_with_zero_tool_calls_uses_denominator_one(self, script_run_agentic: Any, ground_truth: Any) -> None:
-        """score() uses max(tool_calls, 1) so deff is never a division-by-zero.
+        """Avoid division by zero when computing discovery efficiency without tool calls.
 
         Scenario: tool_calls=0 (e.g. arm that produced no calls);
         deff must equal erec_tp / 1 (not raise ZeroDivisionError).
@@ -1636,7 +1632,7 @@ class TestGroundTruthScore:
     def test_test_modules_excluded_from_expected_rdeps(
         self, script_run_agentic: Any, tmp_path: Path, test_module: dict
     ) -> None:
-        """GroundTruth excludes test modules (tests. prefix or is_test flag) from expected.
+        """GroundTruth excludes test modules (tests prefix or is_test flag) from expected.
 
         Scenario: the index has a test module importing primary_module; it must
         not appear in the expected rdeps set (production callers only, per docs).
@@ -1661,7 +1657,7 @@ class TestGroundTruthScore:
         assert test_module["name"] not in gt.expected.get("X1", set())
 
     def test_skill_coverage_parsed_from_json_result(self, script_run_agentic: Any, ground_truth: Any) -> None:
-        """score() computes skill_coverage from valid codemap JSON result.
+        """Compute skill coverage from a valid structural-query result.
 
         Scenario: codemap skill returns JSON with 'imported_by' list
         containing one of two expected rdeps; skill_coverage must be 0.5.
@@ -1685,7 +1681,7 @@ class TestGroundTruthScore:
     def test_skill_coverage_unions_multiple_one_line_json_results(
         self, script_run_agentic: Any, ground_truth: Any
     ) -> None:
-        """score() unions imported_by across several newline-joined one-line JSON results.
+        """Combine imported modules across multiple newline-delimited query results.
 
         Scenario: the agent ran scan-query rdeps more than once, so skill_result_text
         holds two one-line JSON objects joined by a newline — whole-text json.loads
@@ -1710,7 +1706,7 @@ class TestGroundTruthScore:
     def test_skill_coverage_is_none_when_skill_result_text_absent(
         self, script_run_agentic: Any, ground_truth: Any
     ) -> None:
-        """score() leaves skill_coverage=None when no skill result text provided.
+        """Leave skill coverage unset when no structural-query result is provided.
 
         Scenario: plain arm has no skill result; skill_coverage must remain
         None (not 0.0) to distinguish 'not applicable' from 'zero coverage'.
@@ -1726,7 +1722,7 @@ class TestGroundTruthScore:
         assert result.skill_returned is None
 
     def test_skill_coverage_is_none_for_malformed_json(self, script_run_agentic: Any, ground_truth: Any) -> None:
-        """score() does not crash on malformed skill_result_text; yields None.
+        """Leave skill coverage unset when the structural-query result is malformed.
 
         Scenario: skill returned an error or prose text instead of JSON;
         skill_coverage must stay None rather than raising an exception.
@@ -1743,7 +1739,7 @@ class TestGroundTruthScore:
     def test_skill_coverage_is_none_when_imported_by_key_missing(
         self, script_run_agentic: Any, ground_truth: Any
     ) -> None:
-        """score() skips skill coverage when JSON lacks 'imported_by' key.
+        """Skip skill coverage when the query result lacks imported modules.
 
         Scenario: skill returned valid JSON for a non-rdeps query (e.g. deps);
         skill_coverage must stay None per the documented conditional logic.
@@ -1759,7 +1755,7 @@ class TestGroundTruthScore:
         assert result.skill_coverage is None
 
     def test_case_insensitive_matching(self, script_run_agentic: Any, ground_truth: Any) -> None:
-        """score() matches module names case-insensitively in corpus.
+        """Match module names without regard to letter case.
 
         Scenario: documentation states patterns are case-insensitive;
         upper-case corpus text must still count as a match.
@@ -1857,7 +1853,7 @@ class TestAggregate:
         return run
 
     def test_returns_empty_dict_for_empty_results(self, script_run_agentic: Any) -> None:
-        """aggregate returns empty nested dicts when results list is empty.
+        """Aggregate returns empty nested dicts when results list is empty.
 
         Scenario: benchmark run with no completed tasks; aggregate must
         return a dict keyed by task_id with no arm data.
@@ -1866,7 +1862,7 @@ class TestAggregate:
         assert out == {"T01": {}}
 
     def test_single_run_produces_correct_median(self, script_run_agentic: Any) -> None:
-        """aggregate computes median metrics from a single successful run.
+        """Aggregate computes median metrics from a single successful run.
 
         Scenario: one run per (task, arm) cell; median equals the single
         value and must be present in the output dict.
@@ -1877,7 +1873,7 @@ class TestAggregate:
         assert out["T01"]["plain"]["input_tokens"] == pytest.approx(2000.0)
 
     def test_model_filter_excludes_other_models(self, script_run_agentic: Any) -> None:
-        """aggregate(model_short=X) excludes runs from other model tiers.
+        """Exclude runs from other model tiers when aggregating one tier.
 
         Scenario: results contain haiku and sonnet runs; filtering to haiku
         must not expose sonnet metrics in the output.
@@ -1888,7 +1884,7 @@ class TestAggregate:
         assert out["T01"]["plain"]["input_tokens"] == pytest.approx(100.0)
 
     def test_failed_runs_excluded_from_median(self, script_run_agentic: Any) -> None:
-        """aggregate excludes success=False runs from median computation.
+        """Aggregate excludes success=False runs from median computation.
 
         Scenario: cell contains one successful and one failed run; median
         must be derived from the successful run only.
@@ -1899,7 +1895,7 @@ class TestAggregate:
         assert out["T01"]["codemap"]["elapsed_s"] == pytest.approx(5.0)
 
     def test_success_rate_reflects_pass_fraction(self, script_run_agentic: Any) -> None:
-        """aggregate success_rate = successes / total in cell.
+        """Compute each cell's success rate from its completed runs.
 
         Scenario: 1 success and 1 failure in same cell; success_rate = 0.5.
         """
@@ -1909,7 +1905,7 @@ class TestAggregate:
         assert out["T01"]["plain"]["success_rate"] == pytest.approx(0.5)
 
     def test_all_success_false_reports_spend_without_quality_medians(self, script_run_agentic: Any) -> None:
-        """aggregate keeps an all-failed cell's spend but computes no success-only medians.
+        """Aggregate keeps an all-failed cell's spend but computes no success-only medians.
 
         Scenario: every run in the cell timed out. The cell used to collapse to {},
         hiding the paid timeouts entirely; it must now report the run/failure counts
@@ -1926,7 +1922,7 @@ class TestAggregate:
         assert "erec" not in cell
 
     def test_failure_count_accompanies_success_only_medians(self, script_run_agentic: Any) -> None:
-        """aggregate reports how many runs failed next to the medians they were excluded from.
+        """Aggregate reports how many runs failed next to the medians they were excluded from.
 
         Scenario: two of three runs failed; the median is still the survivor's, but the
         cell must state that it rests on one run out of three.
@@ -1941,7 +1937,7 @@ class TestAggregate:
         assert cell["n_failures"] == 2
 
     def test_all_runs_aggregates_include_failed_runs(self, script_run_agentic: Any) -> None:
-        """aggregate's ``*_all`` metrics span every run, so a failure-heavy arm cannot read as cheap.
+        """Aggregate's ``*_all`` metrics span every run, so a failure-heavy arm cannot read as cheap.
 
         Scenario: one fast success and two wall-clock failures; the success-only median
         elapsed time is the survivor's, while the all-runs median reflects the timeouts.
@@ -1956,7 +1952,7 @@ class TestAggregate:
         assert cell["input_tokens_all"] == pytest.approx(1000.0)
 
     def test_multiple_tasks_segregated_correctly(self, script_run_agentic: Any) -> None:
-        """aggregate groups metrics per task_id independently.
+        """Aggregate groups metrics per task_id independently.
 
         Scenario: results for T01 and T02; each task's arm dict must
         reflect only that task's runs.
@@ -2173,7 +2169,7 @@ class TestArmToolPermissions:
     """Each arm's primary discriminator must be pre-approved, else it is denied in -p mode.
 
     Regression guard: the codemap/combined arms' primary tool is the /codemap:query-code Skill.
-    When it was missing from --allowedTools every codemap Skill call returned <tool_use_error>
+    When it was missing from ``--allowedTools`` every codemap Skill call returned <tool_use_error>
     (permission denied), the run fell back to grep, and the arm scored codemap_skill_errored —
     silently unmeasurable. Both plugin namespaces (codemap, codemap-py) must be allowed since the
     agent may invoke either.
@@ -2181,13 +2177,13 @@ class TestArmToolPermissions:
 
     @staticmethod
     def _allowed(script_run_agentic: Any, arm: str) -> str:
-        """Return the --allowedTools value string for *arm* (empty when the arm has none)."""
+        """Return the ``--allowedTools`` value string for *arm* (empty when the arm has none)."""
         flags = script_run_agentic.ModelRunner._ARM_ALLOWED.get(arm, [])
         return flags[1] if len(flags) == 2 else ""
 
     @pytest.mark.parametrize("arm", ["codemap", "combined"])
     def test_skill_preapproved_for_skill_arms(self, script_run_agentic: Any, arm: str) -> None:
-        """codemap + combined arms pre-approve the /codemap:query-code Skill in both namespaces."""
+        """Codemap + combined arms pre-approve the /codemap:query-code Skill in both namespaces."""
         allowed = self._allowed(script_run_agentic, arm)
         assert "Skill(codemap:query-code)" in allowed
         assert "Skill(codemap-py:query-code)" in allowed
@@ -2198,7 +2194,7 @@ class TestArmToolPermissions:
         assert "Bash(scan-query:*)" in self._allowed(script_run_agentic, arm)
 
     def test_semble_arm_does_not_preapprove_skill(self, script_run_agentic: Any) -> None:
-        """semble arm must not pre-approve the Skill — it hard-blocks it as the control discriminator."""
+        """Semble arm must not pre-approve the Skill — it hard-blocks it as the control discriminator."""
         assert "Skill(" not in self._allowed(script_run_agentic, "semble")
         disallowed = script_run_agentic.ModelRunner._ARM_DISALLOWED["semble"]
         assert any("Skill" in tok for tok in disallowed)
@@ -2227,21 +2223,20 @@ class TestArmToolPermissions:
         assert "Task" in disallowed
 
 
-# ModelRunner — config isolation (--setting-sources / --plugin-dir / --mcp-config)
+# ModelRunner — config isolation (``--setting-sources`` / ``--plugin-dir`` / ``--mcp-config``)
 # ===========================================================================
 
 
 class TestConfigIsolation:
     """The subprocess excludes user config, then re-supplies each arm's tool under test.
 
-    Excluding user-level config (--setting-sources project,local) strips the caveman plugin,
-    foundry Re:Anchor, user CLAUDE.md and hooks so the agent's output is not shaped/inflated by the
-    operator's setup. It also drops the codemap plugin (needed for the Skill) and semble MCP, which
-    _arm_isolation_flags re-supplies per arm.
+    Excluding user-level config (``--setting-sources project,local``) strips the caveman plugin, foundry Re:Anchor, user
+    CLAUDE.md and hooks so the agent's output is not shaped/inflated by the operator's setup. It also drops the codemap
+    plugin (needed for the Skill) and semble MCP, which _arm_isolation_flags re-supplies per arm.
     """
 
     def test_base_cmd_excludes_user_config(self, script_run_agentic: Any) -> None:
-        """_CMD passes --setting-sources project,local so USER config never loads."""
+        """_CMD passes ``--setting-sources project,local`` so USER config never loads."""
         cmd = script_run_agentic.ModelRunner._CMD
         assert "--setting-sources" in cmd
         assert cmd[cmd.index("--setting-sources") + 1] == "project,local"
@@ -2422,7 +2417,7 @@ class TestZeroTokenRetryPredicate:
 
     @pytest.mark.parametrize("arm", ["codemap", "combined"])
     def test_skill_arms_load_codemap_plugin(self, script_run_agentic: Any, arm: str) -> None:
-        """codemap/combined re-supply the codemap plugin via --plugin-dir (Skill availability)."""
+        """Codemap/combined re-supply the codemap plugin via ``--plugin-dir`` (Skill availability)."""
         flags = script_run_agentic.ModelRunner._arm_isolation_flags(arm)
         assert "--plugin-dir" in flags
 
@@ -2435,13 +2430,13 @@ class TestZeroTokenRetryPredicate:
 
     @pytest.mark.parametrize("arm", ["semble", "combined"])
     def test_semble_arms_load_semble_mcp_strictly(self, script_run_agentic: Any, arm: str) -> None:
-        """semble/combined re-supply the semble server via --mcp-config, restricted with --strict."""
+        """Semble/combined re-supply the semble server via ``--mcp-config``, restricted with ``--strict``."""
         flags = script_run_agentic.ModelRunner._arm_isolation_flags(arm)
         assert "--mcp-config" in flags
         assert "--strict-mcp-config" in flags
 
     def test_semble_mcp_config_is_valid_stdio_server(self, script_run_agentic: Any) -> None:
-        """The reconstructed semble config is a valid stdio-server JSON for --mcp-config."""
+        """The reconstructed semble config is a valid stdio-server JSON for ``--mcp-config``."""
         import json
 
         path = script_run_agentic.ModelRunner._semble_mcp_config_path()
@@ -2472,7 +2467,7 @@ class TestModelRunnerSystemPrompt:
 
     @pytest.mark.parametrize("task_type", ["fix", "feature", "refactor", "review"])
     def test_plain_arm_prompt_contains_base_skill(self, script_run_agentic: Any, runner: Any, task_type: str) -> None:
-        """plain arm system prompt contains the skill-specific base text.
+        """Plain arm system prompt contains the skill-specific base text.
 
         Scenario: each of the four task types has a distinct preamble in
         _PLAIN_SKILLS; the assembled prompt must include that preamble.
@@ -2481,7 +2476,7 @@ class TestModelRunnerSystemPrompt:
         assert "software engineer" in prompt.lower()
 
     def test_codemap_arm_prompt_contains_codemap_keyword(self, script_run_agentic: Any, runner: Any) -> None:
-        """codemap arm system prompt mentions /codemap:query.
+        """Codemap arm system prompt mentions /codemap:query.
 
         Scenario: user runs the codemap arm; the injected supplement
         described in the module docstring must reference 'codemap:query'.
@@ -2490,7 +2485,7 @@ class TestModelRunnerSystemPrompt:
         assert "codemap:query" in prompt
 
     def test_semble_arm_prompt_contains_mcp_tool_name(self, script_run_agentic: Any, runner: Any) -> None:
-        """semble arm system prompt mentions mcp__semble__search.
+        """Semble arm system prompt mentions mcp__semble__search.
 
         Scenario: user runs the semble arm; the supplement must mention
         the MCP tool name so the agent knows to use it.
@@ -2499,7 +2494,7 @@ class TestModelRunnerSystemPrompt:
         assert "mcp__semble__search" in prompt
 
     def test_combined_arm_prompt_contains_both_tools(self, script_run_agentic: Any, runner: Any) -> None:
-        """combined arm system prompt mentions both codemap and semble.
+        """Combined arm system prompt mentions both codemap and semble.
 
         Scenario: user runs the combined arm; agent must know about both
         structural tools.
@@ -2519,7 +2514,7 @@ class TestModelRunnerSystemPrompt:
         assert len(prompt) > 0
 
     def test_semble_prompt_contains_repo_path(self, script_run_agentic: Any, runner: Any, tmp_path: Path) -> None:
-        """semble arm prompt includes the actual repo_path string.
+        """Semble arm prompt includes the actual repo_path string.
 
         Scenario: agent needs to pass repo= on every semble call; the
         prompt must contain the resolved repo path so the agent can copy it.
@@ -2529,16 +2524,16 @@ class TestModelRunnerSystemPrompt:
 
 
 # ===========================================================================
-# ModelRunner._system_prompt — arm symmetry (review C-4)
+# ModelRunner._system_prompt — arm symmetry
 # ===========================================================================
 
 
 class TestPromptSymmetry:
     """The measured signal must come from tool availability, not asymmetric steering.
 
-    Every arm must share the same answer format and efficiency instruction, and none may
-    carry call caps, verification bans, or step protocols — that prescriptive steering is what
-    manufactured the deff/tool-call gap the benchmark claims to observe.
+    Every arm must share the same answer format and efficiency instruction, and none may carry call caps, verification
+    bans, or step protocols — that prescriptive steering is what manufactured the deff/tool-call gap the benchmark
+    claims to observe.
     """
 
     _ARMS = ("plain", "codemap", "semble", "combined")
@@ -2809,7 +2804,7 @@ class TestModelsConstant:
     def test_all_documented_tiers_present(self, script_run_agentic: Any) -> None:
         """MODELS contains the three documented model tiers.
 
-        Scenario: user passes --model haiku/sonnet/opus; all three must
+        Scenario: user passes ``--model haiku/sonnet/opus``; all three must
         be valid keys in the MODELS dict.
         """
         for tier in ("haiku", "sonnet", "opus"):
@@ -2819,7 +2814,7 @@ class TestModelsConstant:
         """Every MODELS value is a non-empty string (full model ID).
 
         Scenario: the model ID is passed directly to the claude CLI
-        via --model; an empty string would silently use the wrong model.
+        via ``--model``; an empty string would silently use the wrong model.
         """
         for tier, model_id in script_run_agentic.MODELS.items():
             assert isinstance(model_id, str) and len(model_id) > 0, f"MODELS[{tier!r}] is empty or not a string"
@@ -2881,7 +2876,7 @@ class TestGroundTruthIntegration:
 
 
 # ===========================================================================
-# AST import scan helpers (review C-5)
+# AST import scan helpers
 # ===========================================================================
 
 
@@ -2915,7 +2910,7 @@ class TestDeriveModuleName:
 
         Scenario: examples/pytorch/x.py (no package parent) resolves to 'examples.pytorch.x' — the
         same dotted name scan-index derives — so the AST oracle and the index oracle share one
-        namespace and stop emitting spurious gt-divergence lines for the module (review C-5).
+        namespace and stop emitting spurious gt-divergence lines for the module.
         """
         (tmp_path / "examples" / "pytorch").mkdir(parents=True)
         loose = tmp_path / "examples" / "pytorch" / "x.py"
@@ -3033,7 +3028,7 @@ class TestGroundTruthAstOracle:
         """A divergence entry flags real importers absent from the index.
 
         Scenario: caller_submodule is in the AST set but not the index set, so it must appear
-        under missing_in_index — the harness's C-5 blind-spot signal.
+        under missing_in_index — the harness's blind-spot signal.
         """
         div = ast_gt.divergences["BA-01"]
         assert div["missing_in_index"] == ["app.caller_submodule"]
@@ -3056,7 +3051,7 @@ class TestGroundTruthAstOracle:
 
 
 # ===========================================================================
-# Fix-family prompt symmetry (review N3)
+# Fix-family prompt symmetry
 # ===========================================================================
 
 
@@ -3084,7 +3079,7 @@ class TestFixFamilyPromptSymmetry:
         """The shared efficiency sentence appears in every fix-family arm prompt.
 
         Scenario: fix / read_crop prompts previously returned before the shared efficiency
-        instruction, so only rdep tasks were symmetric; N3 appends it to every arm here too.
+        instruction, so only rdep tasks were symmetric; the shared sentence now appends to every arm here too.
         """
         prompt = runner._system_prompt(task_type, arm)
         assert "as few tool calls as possible" in prompt
@@ -3093,7 +3088,7 @@ class TestFixFamilyPromptSymmetry:
         """The fix_multicaller codemap supplement carries only tool availability + syntax.
 
         Scenario: the old supplement told the codemap arm 'do NOT grep for more' and framed
-        codemap as a 'decisive advantage' — that steering was the measured signal (N3).
+        codemap as a 'decisive advantage' — that steering was the measured signal.
         """
         prompt = runner._system_prompt("fix_multicaller", "codemap")
         for phrase in ("do NOT grep", "decisive advantage", "plain grep misses"):
@@ -3114,7 +3109,7 @@ class TestFixFamilyPromptSymmetry:
 
 
 # ===========================================================================
-# Arm tool policy — semble Bash symmetry (review H-5)
+# Arm tool policy — semble Bash symmetry
 # ===========================================================================
 
 
@@ -3122,7 +3117,7 @@ class TestArmToolPolicy:
     """Semble must keep a shell fallback like every other arm; only its primary tool differs."""
 
     def test_semble_arm_no_longer_blocks_bash(self, script_run_agentic: Any) -> None:
-        """The semble disallowed list no longer contains Bash (H-5 handicap removed)."""
+        """The semble disallowed list no longer contains Bash."""
         disallowed = script_run_agentic.ModelRunner._ARM_DISALLOWED["semble"]
         joined = ",".join(disallowed)
         assert "Bash" not in joined
@@ -3140,16 +3135,16 @@ class TestArmToolPolicy:
 
 
 # ===========================================================================
-# Subprocess env — SCAN_NO_AUTOBUILD opt-out (review N2 / H-3)
+# Subprocess env — SCAN_NO_AUTOBUILD opt-out
 # ===========================================================================
 
 
 class TestSubprocessEnv:
-    """codemap / combined arms opt out of in-task index builds; other arms are untouched."""
+    """Codemap / combined arms opt out of in-task index builds; other arms are untouched."""
 
     @pytest.mark.parametrize("arm", ["codemap", "combined"])
     def test_scan_no_autobuild_set_for_structural_arms(self, script_run_agentic: Any, arm: str) -> None:
-        """SCAN_NO_AUTOBUILD=1 is injected for arms that invoke /codemap:query-code (N2)."""
+        """Disable automatic index builds for arms that invoke the structural-query skill."""
         env = script_run_agentic.ModelRunner._subprocess_env(arm)
         assert env.get("SCAN_NO_AUTOBUILD") == "1"
 
@@ -3163,9 +3158,9 @@ class TestSubprocessEnv:
     def test_claude_plugin_root_set_for_codemap_arms(self, script_run_agentic: Any, arm: str) -> None:
         """CLAUDE_PLUGIN_ROOT is exported for codemap-consuming arms, pointed at the repo fixture.
 
-        Without this, the Skill's ``${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}`` fallback resolves
-        to a relative path absent from the benchmark's copied sandbox repo, and the agent burns
-        calls hunting for the binary instead of querying it.
+        Without this, the Skill's ``${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}`` fallback resolves to a relative path
+        absent from the benchmark's copied sandbox repo, and the agent burns calls hunting for the binary instead of
+        querying it.
         """
         env = script_run_agentic.ModelRunner._subprocess_env(arm)
         assert env.get("CLAUDE_PLUGIN_ROOT") == script_run_agentic.ModelRunner._codemap_plugin_dir()
@@ -3219,7 +3214,7 @@ class TestSubprocessEnv:
 
 
 # ===========================================================================
-# _seed_index_cache — index present in fix-task sandbox (review H-3)
+# _seed_index_cache — index present in fix-task sandbox
 # ===========================================================================
 
 
@@ -3230,7 +3225,7 @@ class TestSeedIndexCache:
         """_seed_index_cache seeds .cache/codemap and .cache/scan from the original repo.
 
         Scenario: fix tasks run in a copy that excludes .cache; without the prebuilt index the
-        codemap arm would build it inside the measured window (H-3), so it is seeded in.
+        codemap arm would build it inside the measured window, so it is seeded in.
         """
         repo = tmp_path / "myrepo"
         (repo / ".cache" / "codemap").mkdir(parents=True)
@@ -3256,7 +3251,7 @@ class TestSeedIndexCache:
 
 
 # ===========================================================================
-# Semble chunk-hit rate lens (review C-5)
+# Semble chunk-hit rate lens
 # ===========================================================================
 
 
@@ -3292,7 +3287,7 @@ class TestSembleChunkHitRate:
 
 
 # ===========================================================================
-# Report rendering — success rate, quality, savings n, failures (review H-4)
+# Report rendering — success rate, quality, savings n, failures
 # ===========================================================================
 
 
@@ -3328,21 +3323,21 @@ class TestReportRendering:
         return script_run_agentic.Report(results, tasks, {"date": "2026-07-03"})
 
     def test_render_includes_success_rate_table(self, script_run_agentic: Any, report: Any) -> None:
-        """The rendered report contains a success-rate table (H-4)."""
+        """The rendered report contains a success-rate table."""
         assert "Success rate (successful / total runs)" in report.render()
 
     def test_render_includes_quality_tables(self, script_run_agentic: Any, report: Any) -> None:
-        """The rendered report contains erec / rrec / chunk-hit quality tables (H-4)."""
+        """The rendered report contains erec / rrec / chunk-hit quality tables."""
         md = report.render()
         assert "Exposure recall (erec)" in md
         assert "Chunk hit rate (semble lens)" in md
 
     def test_render_includes_failed_runs_section(self, script_run_agentic: Any, report: Any) -> None:
-        """Failed runs are listed explicitly, not silently dropped (H-4)."""
+        """Failed runs are listed explicitly, not silently dropped."""
         assert "### Failed runs" in report.render()
 
     def test_savings_summary_has_pair_count_n(self, script_run_agentic: Any, report: Any) -> None:
-        """Every savings row carries an 'n' pair-count denominator (H-4)."""
+        """Every savings row carries an 'n' pair-count denominator."""
         agg = script_run_agentic.aggregate(report.results, report.task_ids, model_short="haiku")
         rows = report._savings_summary(agg)
         assert rows and all("n" in row for row in rows)
@@ -3354,7 +3349,7 @@ class TestReportRendering:
 
 
 class TestReportFixFamilySuppression:
-    """Fix-family suites emit no biased efficiency savings row (review N3)."""
+    """Fix-family suites emit no biased efficiency savings row."""
 
     def _fix_run(self, script: Any, arm: str) -> Any:
         """Build a successful fix_multicaller BenchmarkRun."""
@@ -3366,7 +3361,7 @@ class TestReportFixFamilySuppression:
         return run
 
     def test_efficiency_savings_suppressed_for_fix_suite(self, script_run_agentic: Any) -> None:
-        """A pure fix_multicaller suite yields no efficiency savings rows (N3).
+        """A pure fix_multicaller suite yields no efficiency savings rows.
 
         Scenario: fix tasks differ in edit workload, so token / tool-call savings would be biased;
         _savings_summary must exclude them, leaving no rows for an all-fix suite.
@@ -3389,7 +3384,7 @@ class TestReportFixFamilySuppression:
 
 
 # ===========================================================================
-# Atomic snapshot persistence (review M-1)
+# Atomic snapshot persistence
 # ===========================================================================
 
 
@@ -3429,7 +3424,7 @@ class TestAtomicSnapshot:
         assert not list(benchmark.output_path.parent.glob("*.tmp"))
 
     def test_snapshot_uses_os_replace_from_a_temp_source(self, script_run_agentic: Any, benchmark: Any) -> None:
-        """The final file is produced by os.replace from a temp file, not written in place (M-1).
+        """The final file is produced by os.replace from a temp file, not written in place.
 
         Scenario: an interrupt mid-write must never truncate the real file; the only way that holds
         is if the payload lands via an atomic rename from a distinct temp path.
@@ -3450,7 +3445,7 @@ class TestAtomicSnapshot:
     def test_snapshot_failure_cleans_temp_and_preserves_nothing_partial(
         self, script_run_agentic: Any, benchmark: Any
     ) -> None:
-        """A serialisation failure removes the temp file and never overwrites the target (M-1).
+        """A serialisation failure removes the temp file and never overwrites the target.
 
         Scenario: json.dump raises mid-write; the pre-existing (or absent) results file must stay
         untouched and no orphan .tmp file may be left behind.
@@ -3463,7 +3458,7 @@ class TestAtomicSnapshot:
 
 
 # ===========================================================================
-# Degenerate-loop classification ordering (review M-2)
+# Degenerate-loop classification ordering
 # ===========================================================================
 
 
@@ -3510,7 +3505,7 @@ class TestDegenerateLoopClassification:
         """BA codemap run with skill==0 and ≥70% grep-like calls is labelled degenerate_grep_loop.
 
         Scenario: the no-skill-call guard used to claim this run first ("codemap skill never
-        called"), leaving the grep-ratio classification unreachable for BA tasks (M-2).
+        called"), leaving the grep-ratio classification unreachable for BA tasks.
         """
         bench, task = benchmark
         crafted = script_run_agentic.BenchmarkRun(
@@ -3542,7 +3537,7 @@ class TestDegenerateLoopClassification:
 
 
 # ===========================================================================
-# top10 centrality axis — in-degree not out-degree (review M-3)
+# top10 centrality axis — in-degree not out-degree
 # ===========================================================================
 
 
@@ -3579,7 +3574,7 @@ class TestTop10InDegree:
 
 
 # ===========================================================================
-# Keyword scoring — whitespace tolerance + opt-in test signal (review M-4)
+# Keyword scoring — whitespace tolerance + opt-in test signal
 # ===========================================================================
 
 
@@ -3587,7 +3582,7 @@ class TestFixKeywordNormalization:
     """score_fix / score_read_crop tolerate operator whitespace and carry the test_passed signal."""
 
     def test_score_fix_matches_operator_keyword_despite_whitespace(self, script_run_agentic: Any) -> None:
-        """A '< 1' keyword matches a '<1' diff line after whitespace normalisation (M-4a).
+        """A '< 1' keyword matches a '<1' diff line after whitespace normalisation.
 
         Scenario: the agent writes 'if patience<1:' while the ground-truth keyword is 'patience < 1';
         the recall scorer must credit it rather than penalising the spacing variant.
@@ -3597,12 +3592,12 @@ class TestFixKeywordNormalization:
         assert score.erec == pytest.approx(1.0)
 
     def test_score_read_crop_matches_operator_keyword_despite_whitespace(self, script_run_agentic: Any) -> None:
-        """score_read_crop credits a '< 1' keyword when the answer writes '<1' (M-4a)."""
+        """score_read_crop credits a '< 1' keyword when the answer writes '<1'."""
         score = script_run_agentic.score_read_crop("guard returns <1 on misconfig", ["< 1"])
         assert score.erec == pytest.approx(1.0)
 
     def test_score_read_crop_preserves_word_boundaries(self, script_run_agentic: Any) -> None:
-        """Normalisation keeps word-word spaces so distinct identifiers are not merged (M-4a).
+        """Normalisation keeps word-word spaces so distinct identifiers are not merged.
 
         Scenario: an answer that never mentions 'raise Error' must not falsely match it just because
         whitespace was collapsed elsewhere.
@@ -3617,14 +3612,14 @@ class TestFixKeywordNormalization:
     def test_score_fix_records_test_passed_when_supplied(
         self, script_run_agentic: Any, test_passed: bool, expected: bool
     ) -> None:
-        """score_fix stores the supplied targeted-test outcome alongside erec (M-4b)."""
+        """score_fix stores the supplied targeted-test outcome alongside erec."""
         diff = "+++ b/x.py\n+    fixed = True\n"
         score = script_run_agentic.score_fix(diff, ["fixed"], ["x.py"], test_passed=test_passed)
         assert score.test_passed is expected
         assert score.erec == pytest.approx(1.0)  # erec column is unchanged by the test signal
 
     def test_score_fix_test_passed_defaults_to_none(self, script_run_agentic: Any) -> None:
-        """A task with no declared test leaves test_passed=None (M-4b)."""
+        """A task with no declared test leaves test_passed=None."""
         score = script_run_agentic.score_fix("+++ b/x.py\n+ fixed\n", ["fixed"], ["x.py"])
         assert score.test_passed is None
 
@@ -3688,7 +3683,7 @@ def test_stage_transport_enables_native_edits_only_for_executable_workspaces(
 
 
 # ===========================================================================
-# BA query arms run in an isolated copy, not the real repo (review M-5)
+# BA query arms run in an isolated copy, not the real repo
 # ===========================================================================
 
 
@@ -3698,7 +3693,7 @@ class TestQueryArmIsolation:
     def test_ba_codemap_run_uses_a_copy_and_cannot_mutate_repo(self, script_run_agentic: Any, tmp_path: Path) -> None:
         """A BA codemap run's cwd is a copy of the repo, and edits there never touch self.repo_path.
 
-        Scenario: query arms used to run in-place with Edit/Bash unblocked (M-5); the cwd handed to
+        Scenario: query arms used to run in-place with Edit/Bash unblocked; the cwd handed to
         the subprocess must be a distinct copy, and a write into it must not appear in the real repo.
         """
         repo = tmp_path / "myrepo"

@@ -64,7 +64,7 @@ def compute_proj_index(cwd: Path | None = None) -> tuple[str, Path]:
     work_dir = cwd or Path.cwd()
     git_root: Path | None = None
     try:
-        # timeout=5 — SEC-L7: bound git subprocess to fail fast on hung repos / FUSE mounts.
+        # timeout=5 — Bound git subprocess to fail fast on hung repos / FUSE mounts.
         result = subprocess.run(
             [_resolve("git"), "rev-parse", "--show-toplevel"],
             capture_output=True,
@@ -89,7 +89,7 @@ def compute_proj_index(cwd: Path | None = None) -> tuple[str, Path]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point; returns exit code.
+    """Resolve and print the current project's Codemap index path.
 
     Args:
         argv: Argument list (defaults to sys.argv[1:]).

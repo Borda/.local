@@ -22,37 +22,37 @@ repos:
     rev: v6.0.0
     hooks:
       - id: end-of-file-fixer
-        name: 📄 end-of-file-fixer
+        name: "📄 end-of-file-fixer"
         # Excludes identity-locked benchmark JSON owned by dedicated builders and tests.
         exclude: ^benchmarks/(manifests|suites|tests/fixtures)/.*\.json$
       - id: trailing-whitespace
-        name: ✂️ trailing-whitespace
+        name: "✂️ trailing-whitespace"
         # Excludes identity-locked benchmark JSON owned by dedicated builders and tests.
         exclude: ^benchmarks/(manifests|suites|tests/fixtures)/.*\.json$
       - id: check-json
-        name: 🔍 check-json
+        name: "🔍 check-json"
       - id: check-yaml
-        name: 🔍 check-yaml
+        name: "🔍 check-yaml"
       - id: check-toml
-        name: 🔍 check-toml
+        name: "🔍 check-toml"
       - id: check-executables-have-shebangs
-        name: ⚡ check-executables-have-shebangs
+        name: "⚡ check-executables-have-shebangs"
       - id: check-case-conflict
-        name: 🔤 check-case-conflict
+        name: "🔤 check-case-conflict"
       - id: check-added-large-files
-        name: 📦 check-added-large-files
+        name: "📦 check-added-large-files"
         args: ["--maxkb=250", "--enforce-all"]
       - id: detect-private-key
-        name: 🔐 detect-private-key
+        name: "🔐 detect-private-key"
       - id: check-merge-conflict
-        name: 🔀 check-merge-conflict
+        name: "🔀 check-merge-conflict"
       - id: mixed-line-ending
-        name: ↩️ mixed-line-ending
+        name: "↩️ mixed-line-ending"
         args: ["--fix=lf"]
         # Excludes identity-locked benchmark JSON owned by dedicated builders and tests.
         exclude: ^benchmarks/(manifests|suites|tests/fixtures)/.*\.json$
       - id: pretty-format-json
-        name: ✨ pretty-format-json
+        name: "✨ pretty-format-json"
         args: ["--autofix"]
         # Benchmark manifests, suites, and historical fixtures are identity-locked
         # inputs/outputs. Their dedicated builders/tests own byte and hash validation.
@@ -62,7 +62,7 @@ repos:
     rev: v3.9.4 # using tag; previously pinned SHA when tags were not persistent
     hooks:
       - id: prettier
-        name: 🎨 prettier
+        name: "🎨 prettier"
         # Coverage: HTML, YAML, TOML, and JavaScript source files.
         files: \.(html|yml|yaml|toml|js)$
         # https://prettier.io/docs/en/options.html#print-width
@@ -72,7 +72,7 @@ repos:
     rev: v10.6.0
     hooks:
       - id: eslint
-        name: 🛡️ eslint
+        name: "🛡️ eslint"
         additional_dependencies:
           - eslint@9.21.0
           - globals@16.0.0
@@ -82,16 +82,27 @@ repos:
     rev: v0.15.20
     hooks:
       - id: ruff-check
-        name: 🦀 ruff-check
+        name: "🦀 ruff-check"
         args: ["--fix"]
       - id: ruff-format
-        name: 🦀 ruff-format
+        name: "🦀 ruff-format"
+
+  - repo: https://github.com/PyCQA/docformatter
+    rev: v1.7.8
+    hooks:
+      - id: docformatter
+        name: "📚 docformatter"
+        args: ["--in-place", "--config=pyproject.toml"]
+        # docformatter needs tomli to parse pyproject.toml when pre-commit selects Python 3.10.
+        additional_dependencies: ["tomli"]
+        # Docformatter 1.7.8 crashes while tokenizing multiline f-strings in these files.
+        exclude: ^(?:benchmarks/tests/test_run_all\.py|plugins/codex-rig/tests/test_code_remediate_(?:final_outcome|work_bucket)_validation\.py)$
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.2
     hooks:
       - id: codespell
-        name: ✏️ codespell
+        name: "✏️ codespell"
         # ignore-words-list lives in pyproject.toml [tool.codespell]; tomli lets the
         # isolated hook env parse pyproject on Python <3.11 (3.11+ uses stdlib tomllib).
         args: ["--write-changes"]
@@ -101,7 +112,7 @@ repos:
     rev: 1.0.0
     hooks:
       - id: mdformat
-        name: 📝 mdformat (general)
+        name: "📝 mdformat (general)"
         # Coverage: everything the two instances below do not own — repo-root and config Markdown
         # (README, CLAUDE.md, AGENTS.md, .claude/, .codex/, benchmarks/) plus every plugin
         # README.md and CHANGELOG.md, whose padded table alignment stays human-owned. The three
@@ -118,7 +129,7 @@ repos:
           - mdformat-admon
           - mdformat-web
       - id: mdformat
-        name: 📝 mdformat (plugin sources)
+        name: "📝 mdformat (plugin sources)"
         # Coverage: every plugin Markdown source except README/CHANGELOG (handled above), so plugin
         # tables and prose have exactly one owner. `--compact-tables` replaces the retired
         # trim-plugin-tables hook; `--no-codeformatters` keeps beautysh away from fenced bash, whose
@@ -136,7 +147,7 @@ repos:
           - mdformat-admon
           - mdformat-web
       - id: mdformat
-        name: 📝 mdformat (docs)
+        name: "📝 mdformat (docs)"
         # Coverage: docs/ Markdown with the MkDocs-aware extension set; excluded from the general hook.
         files: ^docs/
         args: ["--number", "--wrap=no"]
@@ -152,7 +163,7 @@ repos:
     rev: lychee-v0.24.2
     hooks:
       - id: lychee
-        name: 🔗 lychee
+        name: "🔗 lychee"
         args:
           - --offline
           - --no-progress
@@ -162,7 +173,7 @@ repos:
   - repo: local
     hooks:
       - id: node-syntax-check
-        name: 🟩 node --check (hooks)
+        name: "🟩 node --check (hooks)"
         language: system
         entry: node --check
         # Plugin hooks under plugins/*/hooks/ are the source of truth; .claude/hooks
@@ -171,7 +182,7 @@ repos:
         types: [javascript]
 
       - id: check-tag-symmetry-empty
-        name: 🏷️ XML empty structural blocks
+        name: "🏷️ XML empty structural blocks"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_tag_symmetry.py --check empty-block
         # Coverage: plugin agent cards and top-level SKILL.md instruction files.
@@ -179,7 +190,7 @@ repos:
         types: [markdown]
 
       - id: check-tag-symmetry-unbalanced
-        name: ⚖️ XML unbalanced tag pairs
+        name: "⚖️ XML unbalanced tag pairs"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_tag_symmetry.py --check unbalanced
         # Coverage: every plugin Markdown file. The check balances the registry plus whatever
@@ -191,7 +202,7 @@ repos:
         types: [markdown]
 
       - id: check-tag-symmetry-escaped
-        name: 🔖 XML escaped structural tags
+        name: "🔖 XML escaped structural tags"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_tag_symmetry.py --check escaped-tag
         # Coverage: plugin agent cards and top-level SKILL.md instruction files — registry-driven,
@@ -200,7 +211,7 @@ repos:
         types: [markdown]
 
       - id: check-tag-symmetry-underscore
-        name: 🔤 XML underscore tag names
+        name: "🔤 XML underscore tag names"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_tag_symmetry.py --check underscore-tag
         # Coverage: every plugin Markdown file, not just agents/SKILL — modes, templates, _shared
@@ -210,21 +221,21 @@ repos:
         types: [markdown]
 
       - id: check-orphaned-bin
-        name: 🔗 orphaned bin/ scripts
+        name: "🔗 orphaned bin/ scripts"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_orphaned_bin.py
         pass_filenames: false
         always_run: true
 
       - id: check-cli-flag-drift
-        name: 🚩 SKILL.md flag drift vs argparse
+        name: "🚩 SKILL.md flag drift vs argparse"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_cli_flag_drift.py
         pass_filenames: false
         always_run: true
 
       - id: check-plugin-module-docs
-        name: 📚 shipped plugin module documentation
+        name: "📚 shipped plugin module documentation"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_plugin_module_docs.py
         # One whole-repository checker: every plugin needs a module overview; Codex
@@ -233,21 +244,21 @@ repos:
         pass_filenames: false
 
       - id: check-readme-drift-version
-        name: 🔢 README version marker drift
+        name: "🔢 README version marker drift"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_readme_drift.py --scan-dir plugins --check version
         pass_filenames: false
         always_run: true
 
       - id: check-readme-drift-bin-refs
-        name: 📄 README bin/ script reference drift
+        name: "📄 README bin/ script reference drift"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_readme_drift.py --scan-dir plugins --check bin-refs
         pass_filenames: false
         always_run: true
 
       - id: codex-rig-package-manifest
-        name: 🔐 Codex Rig package manifest update
+        name: "🔐 Codex Rig package manifest update"
         language: system
         entry: python3 plugins/codex-rig/scripts/build_package.py --update
         # Coverage: every source or metadata change under the Codex Rig plugin.
@@ -255,7 +266,7 @@ repos:
         pass_filenames: false
 
       - id: blueprint-manifest-update
-        name: 🧾 blueprint manifest regeneration
+        name: "🧾 blueprint manifest regeneration"
         language: system
         entry: python3 plugins/cc_foundry/bin/build_blueprint_manifest.py --scan-dir plugins --update
         # Coverage: every Markdown file a plugin ships can carry a bash blueprint.
@@ -263,7 +274,7 @@ repos:
         pass_filenames: false
 
       - id: check-fence-symmetry
-        name: 🚧 code fence symmetry
+        name: "🚧 code fence symmetry"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_fence_symmetry.py
         # Coverage: all Markdown files shipped by plugins.
@@ -271,55 +282,55 @@ repos:
         types: [markdown]
 
       - id: check-routing-links-r1
-        name: 🧭 R1 computed-path resolution
+        name: "🧭 R1 computed-path resolution"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_routing_links.py --check R1
         pass_filenames: false
         always_run: true
 
       - id: check-routing-links-r2
-        name: 🔗 R2 grep-visible referencing (orphan risk)
+        name: "🔗 R2 grep-visible referencing (orphan risk)"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_routing_links.py --check R2
         pass_filenames: false
         always_run: true
 
       - id: check-routing-links-r3
-        name: 🧰 R3 bin/ script reference integrity
+        name: "🧰 R3 bin/ script reference integrity"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_routing_links.py --check R3
         pass_filenames: false
         always_run: true
 
       - id: check-spawn-prompt-vars
-        name: 🪧 unexpanded $VAR in spawn prompts
+        name: "🪧 unexpanded $VAR in spawn prompts"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_spawn_prompt_vars.py --scan-dir plugins
         pass_filenames: false
         always_run: true
 
       - id: check-mode-dispatch
-        name: 🧵 mode dispatch integrity
+        name: "🧵 mode dispatch integrity"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_mode_dispatch.py --scan-dir plugins
         pass_filenames: false
         always_run: true
 
       - id: check-gitignored-refs
-        name: 🙈 No refs to repo-private gitignored files
+        name: "🙈 No refs to repo-private gitignored files"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_gitignored_refs.py
         types: [text]
 
       - id: check-shared-drift
-        name: 🔁 cross-plugin shared-file drift
+        name: "🔁 cross-plugin shared-file drift"
         language: system
         entry: python3 plugins/cc_foundry/bin/propagate_shared.py
         pass_filenames: false
         always_run: true
 
       - id: check-plugin-version-sync
-        name: 🔀 dual-host plugin manifest version sync
+        name: "🔀 dual-host plugin manifest version sync"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_plugin_version_sync.py --scan-dir plugins
         # General: any dir holding BOTH .claude-plugin and .codex-plugin must agree
@@ -328,21 +339,21 @@ repos:
         pass_filenames: false
 
       - id: check-codemap-guard
-        name: 🗺️ unmanaged codemap index-guard copy
+        name: "🗺️ unmanaged codemap index-guard copy"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_codemap_guard.py
         pass_filenames: false
         always_run: true
 
       - id: check-bash-persistence
-        name: 🫙 shell var persistence across Bash blocks
+        name: "🫙 shell var persistence across Bash blocks"
         language: system
         entry: python3 plugins/cc_foundry/bin/check_bash_persistence.py --scan-dir plugins
         pass_filenames: false
         always_run: true
 
       - id: no-hardcoded-user-paths
-        name: 🚫 No hardcoded user paths
+        name: "🚫 No hardcoded user paths"
         language: pygrep
         # Matches /Users/<realname> or /home/<realname> — alphanumeric usernames only.
         # Placeholder docs like /Users/<name>/ are not flagged (< is not alphanumeric).
@@ -357,7 +368,7 @@ repos:
         files: ^plugins/[^/]+/(agents|skills|rules|hooks)/.*\.(md|js)$|^plugins/[^/]+/\.claude-plugin/[^/]+\.json$|^\.claude/(agents|skills|rules)/.*\.md$|^\.claude/hooks/[^/]+\.js$|^\.claude/settings\.json$|^\.codex/(agents|skills|rules)/.*\.md$|^\.codex/hooks/[^/]+\.js$|^\.codex/settings\.json$
 
       - id: no-literal-tmp-in-hooks
-        name: 🌡️ No literal /tmp/ in hook source
+        name: "🌡️ No literal /tmp/ in hook source"
         language: pygrep
         # Hooks must derive their temp base (os.tmpdir(), ${TMPDIR:-/tmp}, tempfile) rather than
         # hardcode /tmp/ — see cc_foundry/rules/claude-config.md §TMPDIR Sentinel Scoping. Only a
@@ -372,7 +383,7 @@ repos:
         files: ^plugins/[^/]+/(hooks|bin)/.*\.(js|py)$|^\.claude/hooks/.*\.(js|py)$|^\.codex/hooks/.*\.(js|py)$
 
       - id: check-benchmark-portable-paths
-        name: 🧳 No hardcoded machine paths in benchmark source
+        name: "🧳 No hardcoded machine paths in benchmark source"
         language: system
         entry: python3 benchmarks/check-portable-paths.py
         # Coverage: maintained benchmark docs/scripts plus the tracked methodology policy; excludes generated, result, and test trees.
@@ -382,14 +393,14 @@ repos:
     rev: v0.19.1 # run `pre-commit autoupdate --repo https://github.com/jorisroovers/gitlint` to set
     hooks:
       - id: gitlint
-        name: ✅ gitlint
+        name: "✅ gitlint"
         stages: [commit-msg]
 
   - repo: https://github.com/tox-dev/pyproject-fmt
     rev: v2.25.3
     hooks:
       - id: pyproject-fmt
-        name: 📐 pyproject-fmt
+        name: "📐 pyproject-fmt"
         additional_dependencies:
           - "tomli>=2.0.1"
 
@@ -397,4 +408,4 @@ repos:
     rev: v0.25
     hooks:
       - id: validate-pyproject
-        name: 🔍 validate-pyproject
+        name: "🔍 validate-pyproject"

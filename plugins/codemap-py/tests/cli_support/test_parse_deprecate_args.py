@@ -1,4 +1,4 @@
-"""Tests for ``bin/parse_deprecate_args.py`` — --deprecate flag extraction from $ARGUMENTS strings."""
+"""Tests for ``bin/parse_deprecate_args.py`` — ``--deprecate`` flag extraction from $ARGUMENTS strings."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ class TestBareDeprecateFlag:
 
 
 class TestDeprecateValueExtraction:
-    """The three quoting styles must all be recognised for --deprecate=<value>."""
+    """The three quoting styles must all be recognised for ``--deprecate=<value>``."""
 
     @pytest.mark.parametrize(
         ("arguments", "expected_decorator"),
@@ -73,7 +73,7 @@ class TestDeprecateValueExtraction:
 
 
 class TestNoDeprecateFlag:
-    """``--no-deprecate`` is explicit negation — always wins."""
+    """Give the explicit negative deprecation flag precedence."""
 
     def test_no_deprecate_alone(self) -> None:
         assert parse("--no-deprecate") == (False, "")
@@ -106,10 +106,9 @@ class TestAbsent:
 
 
 class TestSimilarButDistinctFlags:
-    """Flags that share a prefix with --deprecate must not trigger detection.
+    """Flags that share a prefix with ``--deprecate`` must not trigger detection.
 
-    ``--deprecated`` and ``--deprecate-foo`` are not the same flag — guard against
-    accidental matches.
+    ``--deprecated`` and ``--deprecate-foo`` are not the same flag — guard against accidental matches.
     """
 
     def test_deprecated_suffix_does_not_match(self) -> None:
@@ -173,18 +172,17 @@ def _read_outputs(capsys: pytest.CaptureFixture[str]) -> tuple[str, str]:
 
 
 class TestMain:
-    """``main()`` writes raw values to exclusively-created temp files and prints their paths.
+    """Write raw values to exclusive temporary files and print their paths.
 
-    The ``--arguments=`` form (equals sign, no space) is required so that values
-    starting with ``--`` survive argparse's flag-detection. Filenames carry a random
-    ``tempfile.mkstemp`` suffix (SEC-M7), so tests read the printed paths rather than
+    The ``--arguments=`` form (equals sign, no space) is required so that values starting with ``--`` survive argparse's
+    flag-detection. Filenames carry a random ``tempfile.mkstemp`` suffix, so tests read the printed paths rather than
     fixed names.
     """
 
     def test_main_with_bare_deprecate(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Bare --deprecate → flag=true, decorator=empty."""
+        """Bare ``--deprecate`` → flag=true, decorator=empty."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--arguments=--deprecate"])
         assert rc == 0
@@ -193,7 +191,10 @@ class TestMain:
     def test_main_with_deprecate_value(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """--deprecate=<value> → flag=true, decorator=raw value (no shell quoting)."""
+        """Verify command-line option behavior.
+
+        ``--deprecate=<value>`` → flag=true, decorator=raw value (no shell quoting).
+        """
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--arguments=--deprecate=@mydecorator"])
         assert rc == 0
@@ -202,7 +203,10 @@ class TestMain:
     def test_main_with_no_deprecate(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """--no-deprecate → flag=false, decorator=empty."""
+        """Verify command-line option behavior.
+
+        ``--no-deprecate`` → flag=false, decorator=empty.
+        """
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--arguments=--no-deprecate"])
         assert rc == 0
@@ -211,7 +215,7 @@ class TestMain:
     def test_main_with_absent_flag(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """No --deprecate flag → flag=false, decorator=empty."""
+        """No ``--deprecate`` flag → flag=false, decorator=empty."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--arguments=--dry-run --since 1.0"])
         assert rc == 0
@@ -229,7 +233,7 @@ class TestMain:
     def test_main_with_no_argv(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Default empty string when --arguments omitted → flag=false."""
+        """Default empty string when ``--arguments`` omitted → flag=false."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main([])
         assert rc == 0
@@ -261,7 +265,7 @@ class TestMain:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """main() reads sys.argv when argv=None."""
+        """Read sys.argv when argv=None."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         monkeypatch.setattr(
             sys,
@@ -291,11 +295,10 @@ def test_doctests_pass() -> None:
 
 
 class TestSentinelSymlinkSafety:
-    """``_write_new_sentinel()`` refuses to follow a pre-planted file or symlink.
+    """Refuse to follow a pre-planted file or symlink.
 
-    Regression coverage for the residual-critical finding that the prior
-    ``Path.write_text()`` calls had no ``O_EXCL``/``O_NOFOLLOW`` — a predictable
-    ``-<pid>``-suffixed name in a shared temp dir let a co-located attacker
+    Regression coverage for the residual-critical finding that the prior ``Path.write_text()`` calls had no
+    ``O_EXCL``/``O_NOFOLLOW`` — a predictable ``-<pid>``-suffixed name in a shared temp dir let a co-located attacker
     pre-plant a symlink and have its write follow through to an arbitrary target.
     """
 
@@ -325,11 +328,11 @@ class TestSentinelSymlinkSafety:
 
 
 class TestSafeTmpdirFallback:
-    """``_safe_tmpdir()`` must not re-return a ``TMPDIR`` value it just rejected.
+    """Prevent temporary-directory fallback from returning a rejected path.
 
-    Regression coverage for the residual-critical finding that the prior fallback
-    called ``tempfile.gettempdir()`` directly, which re-reads ``TMPDIR``/``TEMP``/``TMP``
-    from the environment — silently undoing the ownership/absoluteness check above it.
+    Regression coverage for the residual-critical finding that the prior fallback called ``tempfile.gettempdir()``
+    directly, which re-reads ``TMPDIR``/``TEMP``/``TMP`` from the environment — silently undoing the
+    ownership/absoluteness check above it.
     """
 
     def test_nonexistent_tmpdir_override_is_not_returned(self, monkeypatch: pytest.MonkeyPatch) -> None:

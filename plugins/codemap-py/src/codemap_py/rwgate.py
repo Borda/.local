@@ -1,7 +1,7 @@
 """Writer-preferred, cross-process read/write gate for the codemap index.
 
 This module is the process-safe coordination core mandated by the dual-runtime
-plan (§4.4 "Process-safe read/write and version-skew contract").
+plan ("Process-safe read/write and version-skew contract").
 
 What is actually guaranteed, and where:
 
@@ -106,33 +106,28 @@ _O_BINARY = getattr(os, "O_BINARY", 0)
 class IndexBusy(RuntimeError):
     """Raised when a bounded read/write deadline expires under contention.
 
-    A stable, named condition; it never falls back to an unlocked or stale
-    read. Diagnostics identify which phase timed out.
+    A stable, named condition; it never falls back to an unlocked or stale read. Diagnostics identify which phase timed
+    out.
     """
 
 
 class CoordinationUnavailable(RuntimeError):
     """Raised when the coordination root cannot be created or locked.
 
-    A read-only index/coordination root is refused here rather than silently
-    read without a token (plan §4.4). A shared writable ``CODEMAP_INDEX_DIR``
-    is the supported path for read-only source trees.
+    A read-only index/coordination root is refused here rather than silently read without a token. A shared writable
+    ``CODEMAP_INDEX_DIR`` is the supported path for read-only source trees.
     """
 
 
 class IndexUnreadable(CoordinationUnavailable):
     """Raised when the index file exists but does not parse as JSON.
 
-    Deliberately a subclass of :class:`CoordinationUnavailable` rather than a
-    sibling of it. Consumers of this gate already catch
-    ``(IndexBusy, CoordinationUnavailable)`` as the complete set of ways a leased
-    read can fail and translate it into a bounded structured error; a brand-new
-    top-level exception type would have escaped every one of them as a raw
-    traceback on a corrupt index — the exact capability-contract violation this
-    class exists to close. Subclassing makes every existing consumer correct
-    without edits, and the distinct type still lets a caller that cares
-    (``codemap-py query``) report "corrupt, rebuild" instead of "coordination
-    unavailable".
+    Deliberately a subclass of :class:`CoordinationUnavailable` rather than a sibling of it. Consumers of this gate
+    already catch ``(IndexBusy, CoordinationUnavailable)`` as the complete set of ways a leased read can fail and
+    translate it into a bounded structured error; a brand-new top-level exception type would have escaped every one of
+    them as a raw traceback on a corrupt index — the exact capability-contract violation this class exists to close.
+    Subclassing makes every existing consumer correct without edits, and the distinct type still lets a caller that
+    cares (``codemap-py query``) report "corrupt, rebuild" instead of "coordination unavailable".
 
     The message always names the offending path and the rebuild command.
     """
@@ -141,10 +136,9 @@ class IndexUnreadable(CoordinationUnavailable):
 class VersionSkewRefused(RuntimeError):
     """Raised when a writer would overwrite an index written by a newer schema.
 
-    The on-disk index carries a ``scan_version`` greater than the writer's own, so
-    the writer is the older tool. Publishing would silently downgrade the shared
-    index and force the newer reader to rebuild — repeatedly, if both tools keep
-    running. The write is refused instead (plan §4.4 version-skew contract).
+    The on-disk index carries a ``scan_version`` greater than the writer's own, so the writer is the older tool.
+    Publishing would silently downgrade the shared index and force the newer reader to rebuild — repeatedly, if both
+    tools keep running. The write is refused instead.
     """
 
 
@@ -258,13 +252,11 @@ def _emit(event: str, **fields: Any) -> None:
 def _append_event_line(log_path: str, event: str, fields: dict) -> None:
     """Append one ``{event, ...}`` JSON line without cross-process tearing.
 
-    POSIX ``O_APPEND`` is kernel-atomic at EOF, so one ``os.write`` suffices.
-    Windows CRT ``_O_APPEND`` emulates append as seek-to-EOF-then-write — NOT
-    atomic across processes — so two concurrent emitters could interleave and
-    tear a line (observed as ``json.decoder.JSONDecodeError: Extra data`` in
-    the order oracles). There the seek+write runs under a short exclusive
-    byte-0 lock on the log itself (same ``_os_try_lock`` primitive as the
-    gate); on lock-timeout the event is dropped rather than the log corrupted.
+    POSIX ``O_APPEND`` is kernel-atomic at EOF, so one ``os.write`` suffices. Windows CRT ``_O_APPEND`` emulates append
+    as seek-to-EOF-then-write — NOT atomic across processes — so two concurrent emitters could interleave and tear a
+    line (observed as ``json.decoder.JSONDecodeError: Extra data`` in the order oracles). There the seek+write runs
+    under a short exclusive byte-0 lock on the log itself (same ``_os_try_lock`` primitive as the gate); on lock-timeout
+    the event is dropped rather than the log corrupted.
     """
     try:
         line = json.dumps({"event": event, **fields}, sort_keys=True) + "\n"
@@ -294,15 +286,13 @@ def _append_event_line(log_path: str, event: str, fields: dict) -> None:
 class _Registry:
     """Per-process coordination state for one ``.index-rw`` directory.
 
-    Holds the single ``registry.lock`` descriptor, an in-process threading
-    mutex that serialises same-process acquisitions (POSIX ``fcntl`` locks are
-    per-process, so two threads would otherwise both "hold" the mutex), and the
-    owned-token guard mapping owned paths to their live descriptors. The guard
-    spans each token's full lifetime so cleanup never probes or removes a token
-    this process still owns.
+    Holds the single ``registry.lock`` descriptor, an in-process threading mutex that serialises same-process
+    acquisitions (POSIX ``fcntl`` locks are per-process, so two threads would otherwise both "hold" the mutex), and the
+    owned-token guard mapping owned paths to their live descriptors. The guard spans each token's full lifetime so
+    cleanup never probes or removes a token this process still owns.
 
-    Every registry records its creator PID; a mismatch means the object was
-    inherited across ``fork`` and its handles/locks are invalid.
+    Every registry records its creator PID; a mismatch means the object was inherited across ``fork`` and its
+    handles/locks are invalid.
     """
 
     def __init__(self, coord: Path, pid: int) -> None:
@@ -323,10 +313,9 @@ class _Registry:
     def mutex(self, deadline: float) -> Iterator[None]:
         """Hold the registry mutex (thread lock + OS lock) or raise IndexBusy.
 
-        The in-process threading lock serialises same-process acquisitions
-        (POSIX ``fcntl`` locks are per-process, so two threads would otherwise
-        both hold the OS lock); it is acquired with the same bounded deadline so
-        an in-process waiter cannot block past the caller's timeout.
+        The in-process threading lock serialises same-process acquisitions (POSIX ``fcntl`` locks are per-process, so
+        two threads would otherwise both hold the OS lock); it is acquired with the same bounded deadline so a waiter in
+        this process cannot block past the caller's timeout.
         """
         if not self._reg_lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
             raise IndexBusy("registry mutex (in-process) acquisition timed out")
@@ -356,9 +345,8 @@ class _Registry:
     def close_inherited(self) -> None:
         """Close inherited descriptors in a fork child without unlocking.
 
-        The locks are not this (child) process's to release, and leaving the
-        inherited descriptors open would arm the POSIX close-releases-all trap
-        against freshly reopened handles. State is discarded, not unlocked.
+        The locks are not this (child) process's to release, and leaving the inherited descriptors open would arm the
+        POSIX close-releases-all trap against freshly reopened handles. State is discarded, not unlocked.
         """
         for fd in list(self._owned.values()):
             _safe_close(fd)
@@ -426,9 +414,8 @@ def _ensure_coord(index_path: Path) -> Path:
 def _init_registry_file(coord: Path) -> None:
     """Create ``registry.lock`` with its fixed byte once; never truncate/replace.
 
-    ``O_EXCL`` guarantees exactly one initialiser and, critically, means an
-    already-initialised file is never reopened here — reopening and closing a
-    second descriptor would drop a lock this process may currently hold on it.
+    ``O_EXCL`` guarantees exactly one initialiser and, critically, means an already-initialised file is never reopened
+    here — reopening and closing a second descriptor would drop a lock this process may currently hold on it.
     """
     reg = coord / _REGISTRY_NAME
     try:
@@ -515,9 +502,8 @@ def _open_foreign_token(path: Path) -> tuple[Optional[int], str]:
 def _intent_live(reg: _Registry, writer_path: Path) -> bool:
     """Report whether ``writer.json`` is held by a live process (recover if not).
 
-    A dead owner's intent (handle lock acquirable non-blockingly) is removed so
-    a waiting operation may proceed. Liveness is proven by the handle lock —
-    never by PID or age. A Windows pending-delete probe counts as live so the
+    A dead owner's intent (handle lock acquirable non-blockingly) is removed so a waiting operation may proceed.
+    Liveness is proven by the handle lock — never by PID or age. A Windows pending-delete probe counts as live so the
     caller retries next poll rather than racing a create over a releasing file.
     """
     if reg.owns(writer_path):
@@ -538,10 +524,9 @@ def _intent_live(reg: _Registry, writer_path: Path) -> bool:
 def _readers_drained(reg: _Registry, readers_dir: Path) -> bool:
     """Report whether no live reader token remains (recover dead ones).
 
-    Own tokens (this process, guard-active) count as live and are never probed
-    or removed. Foreign tokens whose handle lock is acquirable are dead/complete
-    and are removed under the mutex. A Windows pending-delete probe counts as
-    live (still releasing) so drain waits one more poll instead of crashing.
+    Own tokens (this process, guard-active) count as live and are never probed or removed. Foreign tokens whose handle
+    lock is acquirable are dead/complete and are removed under the mutex. A Windows pending-delete probe counts as live
+    (still releasing) so drain waits one more poll instead of crashing.
     """
     live = 0
     for tok in _list_tokens(readers_dir):
@@ -575,9 +560,8 @@ def _list_tokens(readers_dir: Path) -> list[Path]:
 def _acquire_reader_token(reg: _Registry, coord: Path, deadline: float) -> Path:
     """Linearise and register a shared-reader token, or raise IndexBusy.
 
-    Under the registry mutex, a reader with no live writer intent creates and
-    locks its unique token (its linearization point) before releasing the mutex.
-    If intent already exists it registers nothing and waits.
+    Under the registry mutex, a reader with no live writer intent creates and locks its unique token (its linearization
+    point) before releasing the mutex. If intent already exists it registers nothing and waits.
     """
     readers_dir = coord / _READERS_NAME
     writer_path = coord / _WRITER_NAME
@@ -770,7 +754,7 @@ def _release_writer_intent(reg: _Registry, writer_path: Path) -> None:
 
     * Preferred: reacquire the registry mutex (bounded) and remove the intent
       atomically. Removal is done under the mutex because ``writer.json`` is a
-      *fixed* name — the §4.4 "removes writer intent only under the registry
+      *fixed* name — the registry removes writer intent only under its
       mutex" clause guards the name-recycle race where a competing writer creates
       a fresh intent between our unlock and unlink and we would otherwise delete
       *its* file. (That clause governs fixed-name / foreign-token cleanup; a
@@ -799,9 +783,8 @@ def _release_writer_intent(reg: _Registry, writer_path: Path) -> None:
 def _acquire_writer_intent(reg: _Registry, writer_path: Path, deadline: float) -> None:
     """Create and lock ``writer.json`` under the mutex, or raise IndexBusy.
 
-    Competing writers serialise if they acquire intent later, or return
-    ``index_busy`` at the deadline; starvation-free ordering among writers is
-    not promised (plan §4.4).
+    Competing writers serialise if they acquire intent later, or return ``index_busy`` at the deadline; starvation-free
+    ordering among writers is not promised.
     """
     while True:
         with reg.mutex(deadline):
@@ -817,8 +800,8 @@ def _acquire_writer_intent(reg: _Registry, writer_path: Path, deadline: float) -
 def _drain_readers(reg: _Registry, readers_dir: Path, deadline: float) -> None:
     """Wait until earlier reader tokens drain, or raise IndexBusy.
 
-    Deadline expiry raises rather than proceeding, so the writer never builds
-    over a live reader and no stale read is authorised.
+    Deadline expiry raises rather than proceeding, so the writer never builds over a live reader and no stale read is
+    authorised.
     """
     while True:
         with reg.mutex(deadline):
@@ -831,9 +814,8 @@ def _drain_readers(reg: _Registry, readers_dir: Path, deadline: float) -> None:
 def _clean_orphan_temps(index_path: Path) -> None:
     """Remove crashed-writer temp files beside the index (exclusive phase only).
 
-    Temps are uniquely named ``.<index>.<uuid>.tmp``; a completed publish
-    consumes its own via ``os.replace``, so any survivor is from a crash between
-    temporary write and publish. The last complete index is never touched.
+    Temps are uniquely named ``.<index>.<uuid>.tmp``; a completed publish consumes its own via ``os.replace``, so any
+    survivor is from a crash between temporary write and publish. The last complete index is never touched.
     """
     parent = index_path.parent
     prefix = f".{index_path.name}."
@@ -851,7 +833,7 @@ def _refuse_incompatible_generation(index_path: Path, writer_version: Optional[i
 
     Runs inside the exclusive phase, immediately before ``build_fn`` — the writer
     revalidates the index it is about to replace rather than trusting a check made
-    before the drain (plan §4.4 version-skew contract).
+    before the drain.
 
     The comparison is deliberately one-sided. Refuse only when the on-disk
     ``scan_version`` is strictly greater than *writer_version*: that is the case
@@ -894,12 +876,11 @@ _WINDOWS_REPLACE_DELAY_SECONDS = 0.025
 
 
 def _replace_with_windows_retry(tmp: Path, target: Path) -> None:
-    """``os.replace`` *tmp* over *target*, retrying transient NTFS sharing failures.
+    """Replace a target atomically while retrying transient NTFS sharing failures.
 
-    Windows fails the rename with access-denied / sharing-violation while another
-    process still holds a handle on the destination, where POSIX just succeeds.
-    Both files are complete at every moment of the backoff, so a reader racing the
-    retry sees the old index or the new one, never a partial one.
+    Windows fails the rename with access-denied / sharing-violation while another process still holds a handle on the
+    destination, where POSIX just succeeds. Both files are complete at every moment of the backoff, so a reader racing
+    the retry sees the old index or the new one, never a partial one.
     """
     for attempt in range(_WINDOWS_REPLACE_RETRIES):
         try:
@@ -915,12 +896,11 @@ def _replace_with_windows_retry(tmp: Path, target: Path) -> None:
 def _temp_beside(target: Path) -> Path:
     """Return a unique temp path beside *target*, named so orphans are reclaimable.
 
-    Single source of the temp-name convention. :func:`_clean_orphan_temps` matches
-    exactly this shape (leading dot, ``.tmp`` suffix); a writer that invents its own
-    name instead is invisible to the cleaner and leaks one file per crash forever.
-    The ``uuid4`` component is what makes concurrent writers safe on the write phase
-    — ``os.replace`` is atomic for the rename, never for the bytes written before it,
-    so two writers sharing one temp name interleave into a corrupt file.
+    Single source of the temp-name convention. :func:`_clean_orphan_temps` matches exactly this shape (leading dot,
+    ``.tmp`` suffix); a writer that invents its own name instead is invisible to the cleaner and leaks one file per
+    crash forever. The ``uuid4`` component is what makes concurrent writers safe on the write phase — ``os.replace`` is
+    atomic for the rename, never for the bytes written before it, so two writers sharing one temp name interleave into a
+    corrupt file.
     """
     return target.parent / f".{target.name}.{uuid4().hex}.tmp"
 

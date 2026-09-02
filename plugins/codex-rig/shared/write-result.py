@@ -3,27 +3,38 @@
 
 ## Purpose
 
-Normalize a workflow's outcome, checks, findings, and confidence recovery into a result candidate that the validator can reconcile with evidence. The writer is the single place where CLI metadata becomes the canonical result JSON shape consumed by later validation.
+Normalize a workflow's outcome, checks, findings, and confidence recovery into a result candidate that the validator can
+reconcile with evidence. The writer is the single place where CLI metadata becomes the canonical result JSON shape
+consumed by later validation.
 
 ## Scope
 
-It validates supplied CLI metadata and writes JSON only; it does not run gates, inspect source, or promote a candidate to final output. Gate status and confidence-recovery fields are checked against the supplied ``gates.json`` before the candidate is created.
+It validates supplied CLI metadata and writes JSON only; it does not run gates, inspect source, or promote a candidate
+to final output. Gate status and confidence-recovery fields are checked against the supplied ``gates.json`` before the
+candidate is created.
 
 ## Usage
 
-Invoke the CLI after gates and notes exist, then pass the candidate to ``validate-artifacts.py`` before renaming it to ``result.json``. Provide canonical gate IDs in ``--checks-run`` and ``--checks-failed`` plus metadata JSON containing confidence gaps, closures, recovery evidence, actions, and remaining limits.
+Invoke the CLI after gates and notes exist, then pass the candidate to ``validate-artifacts.py`` before renaming it to
+``result.json``. Provide canonical gate IDs in ``--checks-run`` and ``--checks-failed`` plus metadata JSON containing
+confidence gaps, closures, recovery evidence, actions, and remaining limits.
 
 ## Used by
 
-Artifact-producing workflow skills and result-schema acceptance tests use this writer. Their downstream validators rely on the writer's enum values and list normalization rather than reparsing workflow-specific command-line conventions.
+Artifact-producing workflow skills and result-schema acceptance tests use this writer. Their downstream validators rely
+on the writer's enum values and list normalization rather than reparsing workflow-specific command-line conventions.
 
 ## Outputs
 
-It writes a deterministic schema-v2 candidate JSON with enum-validated status, check lists, findings, and metadata supplied by the completed workflow. The payload includes ``status``, ``checks_run``, ``checks_failed``, finding counts, final confidence, recommendations/follow-up lists, ``artifact_path``, and digest-bound final-handoff metadata.
+It writes a deterministic schema-v2 candidate JSON with enum-validated status, check lists, findings, and metadata
+supplied by the completed workflow. The payload includes ``status``, ``checks_run``, ``checks_failed``, finding counts,
+final confidence, recommendations/follow-up lists, ``artifact_path``, and digest-bound final-handoff metadata.
 
 ## Failure
 
-Invalid enum value, malformed metadata, missing confidence closure or final-handoff binding, or contradictory gate evidence exits non-zero before a candidate exists. In particular, a pass with failed gates or critical findings, a timeout without a failed check, and a confidence status inconsistent with its numeric band are rejected at write time.
+Invalid enum value, malformed metadata, missing confidence closure or final-handoff binding, or contradictory gate
+evidence exits non-zero before a candidate exists. In particular, a pass with failed gates or critical findings, a
+timeout without a failed check, and a confidence status inconsistent with its numeric band are rejected at write time.
 """
 
 from __future__ import annotations
@@ -52,8 +63,8 @@ FINAL_HANDOFF_BRANCHES = {"standard", "assessed", "unavailable", "closed", "call
 class ResultStatus(str, Enum):
     """Overall verdict recorded in the result payload and mirrored by gates.json.
 
-    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``,
-    so members serialise into result JSON as plain strings.
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``, so members serialise into
+    result JSON as plain strings.
     """
 
     PASS = "pass"

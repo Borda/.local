@@ -2,19 +2,20 @@
 
 The hook is a ``PreToolUse`` gate on ``AskUserQuestion``. Its contract:
 
-* **Scoped to in-flight profile runs** — it acts only when the Step-1 sentinel
+* **Scoped to in-flight profile runs** — it acts only when the profile-state sentinel
   ``${TMPDIR:-/tmp}/foundry-profile-state-<CSID>`` exists; without it every
   ``AskUserQuestion`` passes through untouched (empty stdout, exit 0).
 * **Parses a shell fragment** — unlike the flat one-path sentinels other skills
   write, that file holds ``KEY=VALUE`` lines (``REPORT_DIR``, ``SINCE``,
-  ``SESSION_ID``, ``TOP_N``) that Steps 2–3 re-source with ``.``. The hook reads
+  ``SESSION_ID``, ``TOP_N``) that later analysis commands re-source with ``.``.
+  The hook reads
   ``REPORT_DIR`` line-wise, mirroring what ``source`` would bind: leading
   whitespace allowed, no whitespace around ``=``, last assignment wins,
   surrounding quotes peeled.
 * **Denies a missing report** — sentinel present but ``$REPORT_DIR/report.md``
-  absent or empty means Step 2 (run analyzer) / Step 4 (emit terminal output)
-  never happened, so the call is denied with an actionable reason.
-* **Resolves the relative report dir** — Step 1 assigns the relative
+  absent or empty means the analyzer did not run or emit terminal output, so
+  the call is denied with an actionable reason.
+* **Resolves the relative report dir** — profile setup assigns the relative
   ``.reports/profile/$STAMP``, so the sentinel normally holds a relative path
   that only resolves against the payload's ``cwd``.
 * **Fails open** — stale sentinel, absent or malformed ``REPORT_DIR`` line,
@@ -47,7 +48,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def _state_file(report_dir_line: str) -> str:
-    """Build the Step-1 state fragment, substituting its `REPORT_DIR` line."""
+    """Build the initial profile-state fragment with the given ``REPORT_DIR`` line."""
     return f"{report_dir_line}\nSINCE=24h\nSESSION_ID=\nTOP_N=5\n"
 
 
@@ -112,8 +113,7 @@ def _call_export(name: str, *args: object) -> object:
 def profile_run(tmp_path: Path) -> tuple[Path, Path, str]:
     """Stage a profile run that reached Step 1: report dir on disk plus its state file.
 
-    Returns the report dir, the sentinel file, and the project cwd the relative
-    sentinel value resolves against.
+    Returns the report dir, the sentinel file, and the project cwd the relative sentinel value resolves against.
     """
     project = tmp_path / "repo"
     report_dir = project / REPORT_DIR_REL
@@ -222,7 +222,7 @@ def test_simulated_windows_report_dir_resolution_is_canonical_and_contained() ->
 
 
 def test_trailing_slash_tmpdir_resolves_sentinel(tmp_path: Path, profile_run: tuple[Path, Path, str]) -> None:
-    """macOS exports TMPDIR with a trailing slash — the sentinel must still resolve."""
+    """MacOS exports TMPDIR with a trailing slash — the sentinel must still resolve."""
     _, _, cwd = profile_run
 
     assert _denial_reason(_run(tmp_path, _ask_payload(cwd=cwd), tmpdir_suffix="/")) is not None

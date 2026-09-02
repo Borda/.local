@@ -1,16 +1,41 @@
 """Validate Codex App Server command-denial transcripts and isolated live probes.
 
-Purpose: provide a small, standard-library-only negative-conformance oracle for the Codex App Server command approval protocol. Synthetic transcript validation is the repeatable release gate. Explicit `--live` and `--live-matrix` modes start only the operator-selected local App Server binary with operator-provided temporary boundaries and an exact installed plugin identity.
+Purpose: provide a small, standard-library-only negative-conformance oracle for the Codex App Server command approval
+protocol. Synthetic transcript validation is the repeatable release gate. Explicit ``--live`` and ``--live-matrix``
+modes start only the operator-selected local App Server binary with operator-provided temporary boundaries and an exact
+installed plugin identity.
 
-Scope: the validator binds one `item/commandExecution/requestApproval` callback to an exact disposable collector command. A documented grouped network destination is additional evidence, never a substitute for command, target, output, and working-directory identity. It requires the matching `serverRequest/resolved` notification, authoritative declined command completion, and a later authoritative terminal event for the primary turn; rejects output/fallback/duplicate/correlation drift; and requires a later local recovery item from a fresh turn. The ordered matrix adds text-only and installed-skill-input controls before denial, with distinct roots and first-failure stop behavior.
+Scope: the validator binds one `item/commandExecution/requestApproval` callback to an exact disposable collector
+command. A documented grouped network destination is additional evidence, never a substitute for command, target,
+output, and working-directory identity. It requires the matching `serverRequest/resolved` notification, authoritative
+declined command completion, and a later authoritative terminal event for the primary turn; rejects
+output/fallback/duplicate/correlation drift; and requires a later local recovery item from a fresh turn. The ordered
+matrix adds text-only and installed-skill-input controls before denial, with distinct roots and first-failure stop
+behavior.
 
-Usage: run `python app_server_denial_probe.py --transcript transcript.jsonl --thread-id ... --turn-id ... --item-id ... --cwd ... --output-path ... --command ...` for local JSON Lines. The separately authorized single-scenario form adds `--live`, an independently recorded package-manifest digest, and explicit disposable arguments. The matrix form uses `--live-matrix matrix.json`, whose three prepared entries must be ordered `text-control`, `skill-control`, then `denial`; it stops at the first failure and never installs a package or retries.
+Usage: run `python app_server_denial_probe.py --transcript transcript.jsonl --thread-id ... --turn-id ... --item-id ...
+--cwd ... --output-path ... --command ...` for local JSON Lines. The separately authorized single-scenario form adds
+`--live`, an independently recorded package-manifest digest, and explicit disposable arguments. The matrix form uses
+`--live-matrix matrix.json`, whose three prepared entries must be ordered `text-control`, `skill-control`, then
+`denial`; it stops at the first failure and never installs a package or retries.
 
-Outputs: stdout contains JSON with event method names and opaque correlation identifiers only. Live evidence uses locally generated aliases, fixed allowlisted statuses, booleans, safe failure codes, and a bounded event count. It deliberately excludes raw identifiers, commands, paths, environment values, account data, model or reasoning text, prompts, and error payloads so that an acceptance or diagnostic artifact cannot capture secrets or unrelated conversation content.
+Outputs: stdout contains JSON with event method names and opaque correlation identifiers only. Live evidence uses
+locally generated aliases, fixed allowlisted statuses, booleans, safe failure codes, and a bounded event count. It
+deliberately excludes raw identifiers, commands, paths, environment values, account data, model or reasoning text,
+prompts, and error payloads so that an acceptance or diagnostic artifact cannot capture secrets or unrelated
+conversation content.
 
-Failure: malformed JSON, missing or duplicate callbacks, a mismatched identity/destination, output evidence, unresolved approval, non-declined completion, absent or misordered primary termination, absent fresh-turn recovery, or unproven subprocess cleanup raises `ProtocolViolation` and exits non-zero. The live mode rejects paths outside the process-start host temporary root, passes the inherited environment only as an opaque input to the Codex binary while overriding `CODEX_HOME`, never logs environment values, discards stderr, terminates the POSIX process group or the Windows process tree on every exit path, and writes bounded sanitized success or failure evidence atomically only after cleanup was attempted. A cleanup failure remains a failing artifact and can never publish a pass.
+Failure: malformed JSON, missing or duplicate callbacks, a mismatched identity/destination, output evidence, unresolved
+approval, non-declined completion, absent or misordered primary termination, absent fresh-turn recovery, or unproven
+subprocess cleanup raises `ProtocolViolation` and exits non-zero. The live mode rejects paths outside the process-start
+host temporary root, passes the inherited environment only as an opaque input to the Codex binary while overriding
+`CODEX_HOME`, never logs environment values, discards stderr, terminates the POSIX process group or the Windows process
+tree on every exit path, and writes bounded sanitized success or failure evidence atomically only after cleanup was
+attempted. A cleanup failure remains a failing artifact and can never publish a pass.
 
-Used by: `test_app_server_denial_protocol.py` is the deterministic release gate and mocks the live stdio exchange. A human/operator invokes `--live` only after separately authorizing the account/model cost boundary. This module never changes the production Codex home, workspace, network policy, rules, plugin cache, or credentials.
+Used by: `test_app_server_denial_protocol.py` is the deterministic release gate and mocks the live stdio exchange. A
+human/operator invokes ``--live`` only after separately authorizing the account/model cost boundary. This module never
+changes the production Codex home, workspace, network policy, rules, plugin cache, or credentials.
 """
 
 from __future__ import annotations
@@ -381,9 +406,8 @@ def _validate_completed_item(params: Mapping[str, object], expected: DenialExpec
 def validate_transcript(messages: Iterable[Mapping[str, object]], expectation: DenialExpectation) -> ValidationResult:
     """Validate one denied command transcript and return the one required decline response.
 
-    The output path must be absent both before and after validation. A real driver
-    should call this only after its App Server subprocess has terminated, so a
-    post-validation existence check is a negative assertion rather than a race.
+    The output path must be absent both before and after validation. A real driver should call this only after its App
+    Server subprocess has terminated, so a post-validation existence check is a negative assertion rather than a race.
     """
     if expectation.output_path.exists():
         raise ProtocolViolation("output path exists before denial validation")
@@ -1226,11 +1250,10 @@ def run_live_probe(
 ) -> Path:
     """Run one operator-authorized, disposable App Server denial probe over local stdio.
 
-    This function is intentionally not called by tests or CI. Its caller supplies every
-    mutable boundary, including an operator-prepared isolated `CODEX_HOME`, and bears the
-    separate model/account authorization. Path isolation and candidate identity are enforced;
-    whether that home had prior use remains an operator precondition. The function neither
-    inspects credentials nor enables network policy.
+    This function is intentionally not called by tests or CI. Its caller supplies every mutable boundary, including an
+    operator-prepared isolated `CODEX_HOME`, and bears the separate model/account authorization. Path isolation and
+    candidate identity are enforced; whether that home had prior use remains an operator precondition. The function
+    neither inspects credentials nor enables network policy.
     """
     _validate_live_config(config)
     recorder = _SanitizedEventRecorder()

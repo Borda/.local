@@ -31,7 +31,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-# skill -> (setup_worktree.py --sentinel value, run-dir sentinel basename)
+# skill -> (setup_worktree.py ``--sentinel`` value, run-dir sentinel basename)
 _SKILLS: dict[str, tuple[str, str]] = {
     "feature": ("", "dev-feature-team-dir"),
     "fix": ("fix-team-check", "dev-fix-run-dir"),
@@ -52,8 +52,8 @@ def _csid() -> str:
 def _run_setup(bin_dir: Path, sentinel: str) -> str:
     """Run setup_worktree.py and return its stdout with trailing newlines stripped.
 
-    stderr is inherited and the exit code is deliberately ignored — the shell original
-    checked only whether a timestamp came back.
+    stderr is inherited and the exit code is deliberately ignored — the shell original checked only whether a timestamp
+    came back.
     """
     cmd = [sys.executable, str(bin_dir / "setup_worktree.py")]
     if sentinel:

@@ -19,7 +19,9 @@ Exit codes:
 Caller pattern:
     export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
     resolve_preflight.py  # timeout: 15000
-    IFS= read -r CODEX_AVAILABLE < "${TMPDIR:-/tmp}/resolve-preflight-CODEX_AVAILABLE-${CSID}" 2>/dev/null || CODEX_AVAILABLE="false"
+    IFS= read -r CODEX_AVAILABLE \
+        < "${TMPDIR:-/tmp}/resolve-preflight-CODEX_AVAILABLE-${CSID}" 2>/dev/null \
+        || CODEX_AVAILABLE="false"
     IFS= read -r GH_OK < "${TMPDIR:-/tmp}/resolve-preflight-GH_OK-${CSID}" 2>/dev/null || GH_OK="true"
 """
 
@@ -93,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     Examples:
         No doctest — subprocess-dependent; covered by pytest.
     """
-    # Parse args before any network/git call — a bare -h/--help must print usage
+    # Parse args before any network/git call — a bare ``-h/--help`` must print usage
     # and exit without running gh auth / git fetch / git pull.
     argparse.ArgumentParser(
         prog="resolve_preflight.py",

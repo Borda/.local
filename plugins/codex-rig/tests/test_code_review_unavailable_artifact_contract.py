@@ -63,26 +63,22 @@ def _write_unavailable_artifact(
     recovery_action = "Retry the unchanged collector later; no review or merge decision was made."
     if checkout_started:
         recovery_action += " Inspect the local checkout state before retrying."
-    notes = f"""# PR Review Availability: unavailable
-
-Source findings: not assessed
-
-Merge decision: not made
-
-Process diagnostic: `github-network:gh-pr-view`. This is a workflow/integration failure, not a PR finding or merge block.
-
-Recovery: {recovery_action}
-
-Evidence: `pr-error.txt`.
-"""
+    notes = (
+        "# PR Review Availability: unavailable\n\n"
+        "Source findings: not assessed\n\n"
+        "Merge decision: not made\n\n"
+        "Process diagnostic: `github-network:gh-pr-view`. This is a workflow/integration failure, not a PR finding or "
+        "merge block.\n\n"
+        f"Recovery: {recovery_action}\n\n"
+        "Evidence: `pr-error.txt`.\n"
+    )
     if finding_table:
-        notes += """
-## Review Findings and Merge Blocks
-
-| Finding / area | Required change | Evidence | Status |
-| --- | --- | --- | --- |
-| Wrong | Remove this table. | Fixture. | Required |
-"""
+        notes += (
+            "\n## Review Findings and Merge Blocks\n\n"
+            "| Finding / area | Required change | Evidence | Status |\n"
+            "| --- | --- | --- | --- |\n"
+            "| Wrong | Remove this table. | Fixture. | Required |\n"
+        )
     notes += extra_notes
     (out_dir / "review-notes.md").write_text(notes, encoding="utf-8")
     metadata: dict[str, object] = {

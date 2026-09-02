@@ -1,8 +1,7 @@
 """Executable Fix-Single, Fix-Multi, and Patch benchmark stages.
 
-The structural runner supplies the established native Codex transport and
-disposable-home isolation. This module owns executable task contracts, prompts,
-patch scoring, offline rescoring, and executable-stage dispatch.
+The structural runner supplies the established native Codex transport and disposable-home isolation. This module owns
+executable task contracts, prompts, patch scoring, offline rescoring, and executable-stage dispatch.
 """
 
 from __future__ import annotations
@@ -122,8 +121,8 @@ from _bench_common.provider_parity_contracts import (  # noqa: E402
 def _structural() -> ModuleType:
     """Return the already-loaded structural runner without importing another copy.
 
-    Test suites frequently execute the runner under a generated module name, so
-    module identity is established by its resolved source path instead of name.
+    Test suites frequently execute the runner under a generated module name, so module identity is established by its
+    resolved source path instead of name.
     """
     structural_path = STRUCTURAL_PATH.resolve()
     for module in tuple(sys.modules.values()):
@@ -706,9 +705,8 @@ def _require_paid_stage_request(
 ) -> None:
     """Fail closed with the exact recovery command for an invalid paid request.
 
-    Scope approval binds the runner, shared lifecycle, task contracts, and
-    model. A code or contract change therefore intentionally invalidates an
-    earlier approval before a model call can start.
+    Scope approval binds the runner, shared lifecycle, task contracts, and model. A code or contract change therefore
+    intentionally invalidates an earlier approval before a model call can start.
     """
     missing = [
         flag
@@ -1034,8 +1032,8 @@ def preflight_executable_agent_workspace(
 ) -> None:
     """Validate writable-worktree permissions for every arm without a model call.
 
-    Historical Patch preflight supplies the reviewed per-task baseline/index
-    coordinate; ordinary executable stages continue to use the active manifest.
+    Historical Patch preflight supplies the reviewed per-task baseline/index coordinate; ordinary executable stages
+    continue to use the active manifest.
     """
     if patch_test_runtime is not None and dict(patch_test_runtime) != patch_test_runtime_identity():
         raise ValueError("Patch task pytest runtime changed after scope admission")

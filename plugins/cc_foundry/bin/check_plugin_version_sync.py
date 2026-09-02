@@ -76,7 +76,7 @@ def find_desyncs(scan_dir: Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns 0 when all dual-manifest versions agree, else 1."""
+    """CLI entry point - returns 0 when all dual-manifest versions agree, else 1."""
     parser = argparse.ArgumentParser(description="Check .claude-plugin/.codex-plugin version agreement")
     parser.add_argument("--scan-dir", default="plugins", help="directory to scan (default: plugins)")
     # pre-commit passes matched filenames; the scan is repo-shaped, so they are ignored

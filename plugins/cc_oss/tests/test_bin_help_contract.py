@@ -60,13 +60,11 @@ _STANDARD_HELP_SCRIPTS = [
 
 @pytest.mark.parametrize("module_name", [pytest.param(name, id=name) for name in _STANDARD_HELP_SCRIPTS])
 def test_help_flag_exits_zero(module_name: str, capsys: pytest.CaptureFixture[str]) -> None:
-    """``--help`` raises ``SystemExit(0)`` and prints an argparse usage line.
+    """Print command usage before exiting successfully.
 
-    Every script in ``bin/`` except the dedicated-test and no-help-surface
-    exclusions (module-level sets above) uses argparse's own ``-h``
-    handling directly, which always raises before any other argument is
-    validated. A script dropped into ``bin/`` later is picked up here
-    automatically via the live directory glob — nothing to wire by hand.
+    Every script in ``bin/`` except the dedicated-test and no-help-surface exclusions (module-level sets above) uses
+    argparse's own ``-h`` handling directly, which always raises before any other argument is validated. A script
+    dropped into ``bin/`` later is picked up here automatically via the live directory glob — nothing to wire by hand.
     """
     module = sys.modules[module_name]
     with pytest.raises(SystemExit) as exc:
@@ -77,14 +75,12 @@ def test_help_flag_exits_zero(module_name: str, capsys: pytest.CaptureFixture[st
 
 @pytest.mark.parametrize("module_name", [pytest.param(name, id=name) for name in sorted(_RETURNS_INSTEAD_OF_RAISING)])
 def test_help_flag_returns_zero_without_raising(module_name: str, capsys: pytest.CaptureFixture[str]) -> None:
-    """``--help`` prints usage and returns 0 without raising ``SystemExit``.
+    """Print usage and return 0 without raising ``SystemExit``.
 
-    ``fetch_gh_data_group2.py`` and ``detect_thread_type.py`` wrap
-    argparse's ``parse_args`` in a try/except that catches the SystemExit
-    raised for ``-h`` and converts it to a plain return value, so that bad
-    positional args normalise to the bin/ convention's exit-1 instead of
-    argparse's own exit-2. The --help path still exits 0 overall, just via
-    a returned int rather than a propagated exception.
+    ``fetch_gh_data_group2.py`` and ``detect_thread_type.py`` wrap argparse's ``parse_args`` in a try/except that
+    catches the SystemExit raised for ``-h`` and converts it to a plain return value, so that bad positional args
+    normalise to the bin/ convention's exit-1 instead of argparse's own exit-2. The --help path still exits 0 overall,
+    just via a returned int rather than a propagated exception.
     """
     module = sys.modules[module_name]
     rc = module.main(["--help"])

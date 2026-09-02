@@ -1,8 +1,7 @@
 """Tests for ``bin/get_plugin_install_path.py``.
 
-Doctests in the source cover the pure helpers (``pick_latest_install_path``,
-``resolve_install_path``). This file exercises the CLI surface via ``main()``
-with ``capsys`` for stdout/stderr and ``--registry`` for filesystem isolation.
+Doctests in the source cover the pure helpers (``pick_latest_install_path``, ``resolve_install_path``). This file
+exercises the CLI surface via ``main()`` with ``capsys`` for stdout/stderr and ``--registry`` for filesystem isolation.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ def _write_registry(path: Path, payload: dict) -> None:
 
 
 class TestMain:
-    """main: CLI surface — stdout, stderr, exit codes."""
+    """Main: CLI surface — stdout, stderr, exit codes."""
 
     def test_returns_install_path_when_entry_found(
         self,

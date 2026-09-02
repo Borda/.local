@@ -1,8 +1,7 @@
 """Tests for ``bin/check_plugin_version_sync.py``.
 
-The checker walks a scan dir for plugins shipping BOTH ``.claude-plugin`` and
-``.codex-plugin`` manifests and requires the two ``version`` fields to agree —
-one release, two host manifests. Single-host plugins are out of scope.
+The checker walks a scan dir for plugins shipping BOTH ``.claude-plugin`` and ``.codex-plugin`` manifests and requires
+the two ``version`` fields to agree — one release, two host manifests. Single-host plugins are out of scope.
 """
 
 from __future__ import annotations
@@ -37,7 +36,7 @@ def _plugin(root: Path, name: str, claude: str | None, codex: str | None) -> Pat
 
 
 class TestFindDesyncs:
-    """``find_desyncs`` flags disagreeing dual-manifest pairs only."""
+    """Flag disagreeing dual-manifest pairs only."""
 
     def test_matching_pair_is_clean(self, tmp_path: Path) -> None:
         """A dual-host plugin whose manifests agree produces no findings.
@@ -63,8 +62,8 @@ class TestFindDesyncs:
     def test_single_host_plugins_ignored(self, tmp_path: Path) -> None:
         """Plugins shipping only one host manifest are out of scope.
 
-        Most plugins are Claude-only (or Codex-only, like codex-rig); they have
-        no counterpart to desync from and must not produce noise.
+        Most plugins are Claude-only (or Codex-only, like codex-rig); they have no counterpart to desync from and must
+        not produce noise.
         """
         _plugin(tmp_path, "claude-only", "9.9.9", None)
         _plugin(tmp_path, "codex-only", None, "8.8.8")
@@ -73,8 +72,8 @@ class TestFindDesyncs:
     def test_missing_version_field_is_flagged(self, tmp_path: Path) -> None:
         """A dual-host manifest without a ``version`` string is a finding, not a pass.
 
-        Silently treating an absent field as matching would let a malformed
-        manifest disable the gate exactly when it is needed.
+        Silently treating an absent field as matching would let a malformed manifest disable the gate exactly when it is
+        needed.
         """
         plugin = _plugin(tmp_path, "dual", "1.0.0", "1.0.0")
         (plugin / ".codex-plugin" / "plugin.json").write_text(json.dumps({"name": "dual"}), encoding="utf-8")
@@ -85,8 +84,7 @@ class TestFindDesyncs:
     def test_unparseable_manifest_is_flagged(self, tmp_path: Path) -> None:
         """Invalid JSON in either manifest is a finding rather than a crash or a pass.
 
-        The checker runs in pre-commit; a corrupt file must fail the gate with
-        a location, never traceback.
+        The checker runs in pre-commit; a corrupt file must fail the gate with a location, never traceback.
         """
         plugin = _plugin(tmp_path, "dual", "1.0.0", "1.0.0")
         (plugin / ".claude-plugin" / "plugin.json").write_text("{not json", encoding="utf-8")
@@ -108,8 +106,7 @@ class TestMain:
     def test_exit_codes(self, tmp_path: Path, capsys, claude: str, codex: str, expected: int) -> None:
         """Exit 0 when every pair agrees, 1 on any desync (with a VERSION-DESYNC line).
 
-        pre-commit keys purely on the exit code; the printed finding is what the
-        committer acts on.
+        pre-commit keys purely on the exit code; the printed finding is what the committer acts on.
         """
         _plugin(tmp_path, "dual", claude, codex)
         rc = vs.main(["--scan-dir", str(tmp_path)])

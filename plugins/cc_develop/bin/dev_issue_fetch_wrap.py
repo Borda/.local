@@ -55,8 +55,8 @@ def _first_line(path: Path) -> str:
 def _fetch(bin_dir: Path, args: str, repo_name: str) -> tuple[str, int]:
     """Run issue_fetch.py, returning its (stripped stdout, exit code).
 
-    stderr is discarded, matching the shell original's `2>/dev/null` — including the
-    interpreter-missing case, whose message that redirect also swallowed (exit 127).
+    stderr is discarded, matching the shell original's `2>/dev/null` — including the interpreter-missing case, whose
+    message that redirect also swallowed (exit 127).
     """
     cmd = [sys.executable, str(bin_dir / "issue_fetch.py"), args]
     if repo_name:

@@ -7,7 +7,8 @@ historical Patch tasks, for 73 tasks and 219 A/B/C cells. Family selectors such
 as ``RC,FS,FM,PT`` and mixed exact IDs route to native stage scorers. Codex agentic exploration remains in
 ``run-codex-agentic.py``.
 
-The 55 structural tasks are the former `bench`/real-codebase category, not a third benchmark type beside the task-driven structural and agentic runners.
+The 55 structural tasks are the former `bench`/real-codebase category, not a third benchmark type beside the
+task-driven structural and agentic runners.
 
 ## What this measures
 
@@ -259,10 +260,9 @@ def deterministic_arm_order(
 ) -> tuple[str, ...]:
     """Return a revision-bound, position-counterbalanced Codex arm ordering.
 
-    The coordinate remains bound to its experiment/model/effort identity, while
-    the locked task ordinal—not a per-task hash—selects one of six arm
-    permutations. Across the 55-task suite, every treatment therefore occupies
-    each ordinal 18 or 19 times.
+    The coordinate remains bound to its experiment/model/effort identity, while the locked task ordinal—not a per-task
+    hash—selects one of six arm permutations. Across the 55-task suite, every treatment therefore occupies each ordinal
+    18 or 19 times.
     """
     if repetition < 1:
         raise ValueError("repetition must be at least 1")
@@ -504,11 +504,10 @@ def _validate_locked_runtime(
 ) -> None:
     """Fail closed unless the target repository and index match a frozen runtime coordinate.
 
-    Ordinary structural and executable stages remain locked to the active
-    provider-parity manifest. Historical Patch tasks instead supply the
-    reviewed baseline commit, raw source-index digest, and scan version for
-    their individual frozen coordinate. This is deliberately an opt-in path:
-    a caller cannot relax the manifest lock merely by relocating an index.
+    Ordinary structural and executable stages remain locked to the active provider-parity manifest. Historical Patch
+    tasks instead supply the reviewed baseline commit, raw source-index digest, and scan version for their individual
+    frozen coordinate. This is deliberately an opt-in path: a caller cannot relax the manifest lock merely by relocating
+    an index.
     """
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -594,8 +593,8 @@ def build_codex_command(
 ) -> list[str]:
     """Build an ephemeral, JSONL Codex command preserving *prompt* as-is.
 
-    The isolated ``CODEX_HOME`` supplied by :class:`CodexRunner` prevents a
-    user's global config from changing an arm's tool surface.
+    The isolated ``CODEX_HOME`` supplied by :class:`CodexRunner` prevents a user's global config from changing an arm's
+    tool surface.
     """
     if not isinstance(prompt, str):
         raise TypeError("prompt must be a string")
@@ -755,9 +754,8 @@ def _targeted_scope_sha256(scope: Mapping[str, Any]) -> str:
 def resolve_task_selection(manifest_path: Path, selectors: str | Sequence[str] | None = None) -> dict[str, Any]:
     """Resolve one optional mixed selector into canonical stage partitions.
 
-    Omitting selectors selects every supported task exactly once. Explicit
-    selectors may mix family names and exact IDs; overlapping selections are
-    deduplicated in the immutable global stage order.
+    Omitting selectors selects every supported task exactly once. Explicit selectors may mix family names and exact IDs;
+    overlapping selections are deduplicated in the immutable global stage order.
     """
     manifest_path = Path(manifest_path)
     contract = _task_selection_contract(manifest_path)
@@ -1111,9 +1109,8 @@ def _atomic_write_auth_payload(destination: Path, payload: bytes, *, description
 def _remove_private_directory(path: Path, *, description: str, require_private: bool = True) -> None:
     """Remove a disposable private directory after validating its safe identity.
 
-    POSIX callers retain exact owner and ``0700`` checks. Windows does not expose
-    equivalent ACL privacy through ``stat`` mode bits, so cleanup keeps the
-    symlink, directory-type, containment, and post-removal checks without
+    POSIX callers retain exact owner and ``0700`` checks. Windows does not expose equivalent ACL privacy through
+    ``stat`` mode bits, so cleanup keeps the symlink, directory-type, containment, and post-removal checks without
     treating its emulated mode as a POSIX security guarantee.
     """
     path = Path(path)
@@ -2895,9 +2892,8 @@ def _split_normalized_query(query: tuple[str, ...]) -> tuple[str, tuple[str, ...
 def _normalize_locked_query(command: str, arguments: list[str]) -> tuple[str, ...] | None:
     """Canonicalize the locked query grammar without weakening task semantics.
 
-    Positional arguments retain their order.  Only the registered boolean
-    options may move, and ``--limit``/``--top`` accept one non-negative decimal value.
-    Unknown, duplicate, missing-value, and extra option tokens are rejected.
+    Positional arguments retain their order.  Only the registered boolean options may move, and ``--limit``/``--top``
+    accept one non-negative decimal value. Unknown, duplicate, missing-value, and extra option tokens are rejected.
     """
     if not command or not isinstance(command, str):
         return None
@@ -3412,10 +3408,9 @@ class CodexRunner:
     ) -> ArmHome:
         """Create and verify one arm home without invoking a model.
 
-        ``historical_runtime_coordinate`` is reserved for the isolated Patch
-        stage, where the runner is temporarily bound to a reviewed historical
-        worktree and its relocated frozen index. All other callers retain the
-        active-manifest runtime contract.
+        ``historical_runtime_coordinate`` is reserved for the isolated Patch stage, where the runner is temporarily
+        bound to a reviewed historical worktree and its relocated frozen index. All other callers retain the runtime
+        contract from the active manifest.
         """
         _validate_locked_runtime(
             self.repo_path,
@@ -3986,9 +3981,8 @@ class CodexRunner:
     ) -> str:
         """Run one Codex attempt within the coordinate's remaining budget.
 
-        The child runs in its own process group so a timeout kills the descendants too.
-        Killing only the direct child left grandchildren alive, still consuming paid
-        budget outside the measured window.
+        The child runs in its own process group so a timeout kills the descendants too. Killing only the direct child
+        left grandchildren alive, still consuming paid budget outside the measured window.
         """
         attempt_timeout = self.timeout if timeout is None else timeout
         try:
@@ -4258,9 +4252,8 @@ def _load_frozen_rescore_inputs(
 def rescore_results(run_dir: Path) -> Path:
     """Replay frozen raw telemetry and current evaluators into an immutable offline artifact.
 
-    The function accepts only a completed run directory. It never invokes a
-    provider, reads credentials, or rewrites raw telemetry, canonical telemetry,
-    metadata, or frozen input snapshots.
+    The function accepts only a completed run directory. It never invokes a provider, reads credentials, or rewrites raw
+    telemetry, canonical telemetry, metadata, or frozen input snapshots.
     """
     root = Path(run_dir).resolve(strict=True)
     metadata, telemetry_path, tasks, metadata_path, skill_path, skill_sha256 = _load_frozen_rescore_inputs(root)

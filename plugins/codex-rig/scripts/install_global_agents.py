@@ -3,27 +3,36 @@
 
 ## Purpose
 
-Maintain one integrity-marked Codex Rig section inside a user global instruction file while preserving surrounding user content. The managed block gives session tooling a known instruction entry point without taking ownership of unrelated user-authored text.
+Maintain one integrity-marked Codex Rig section inside a user global instruction file while preserving surrounding user
+content. The managed block gives session tooling a known instruction entry point without taking ownership of unrelated
+user-authored text.
 
 ## Scope
 
-Performs explicit local file mutation with backup and atomic-write checks; it does not manage role shims or remote services. Its safety contract covers only the marked block and target-file replacement, not arbitrary edits to the rest of the instruction file.
+Performs explicit local file mutation with backup and atomic-write checks; it does not manage role shims or remote
+services. Its safety contract covers only the marked block and target-file replacement, not arbitrary edits to the rest
+of the instruction file.
 
 ## Usage
 
-Run the documented CLI only for an approved global-instruction lifecycle operation. Select the action through the agent-shims workflow so diagnosis and approval occur before this script changes the target.
+Run the documented CLI only for an approved global-instruction lifecycle operation. Select the action through the
+workflow for agent shims so diagnosis and approval occur before this script changes the target.
 
 ## Used by
 
-The agent-shims workflow, session setup procedures, and global-instruction installer tests call this installer. These callers depend on its marker and hash format to distinguish managed content from user content during update and removal.
+The agent-shims workflow, session setup procedures, and global-instruction installer tests call this installer. These
+callers depend on its marker and hash format to distinguish managed content from user content during update and removal.
 
 ## Outputs
 
-Reports the target, backup when created, and lifecycle status after an atomic local update or removal. A successful result identifies the resulting managed-block state so session setup can continue with an auditable local outcome.
+Reports the target, backup when created, and lifecycle status after an atomic local update or removal. A successful
+result identifies the resulting managed-block state so session setup can continue with an auditable local outcome.
 
 ## Failure
 
-Malformed managed markers, hash mismatch, unsafe target state, or concurrent replacement raises ``UnsafeGlobalAgentsState`` and leaves user content untouched. The caller must surface that failure for review because continuing could overwrite instructions that are no longer the approved file.
+Malformed managed markers, hash mismatch, unsafe target state, or concurrent replacement raises
+``UnsafeGlobalAgentsState`` and leaves user content untouched. The caller must surface that failure for review because
+continuing could overwrite instructions that are no longer the approved file.
 """
 
 from __future__ import annotations

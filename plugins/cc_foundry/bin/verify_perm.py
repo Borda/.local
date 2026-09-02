@@ -115,7 +115,7 @@ def status_for(present: bool, mode: Mode) -> Status:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns exit code."""
+    """Verify that a path has the requested permissions."""
     parser = argparse.ArgumentParser(
         description="Verify permission rule presence/absence in settings.json and permissions-guide.md.",
         add_help=True,

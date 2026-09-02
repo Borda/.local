@@ -1,11 +1,9 @@
 """Rename-migration invariants for the codemap -> codemap-py identity.
 
-Asserts the repository never carries both plugin identities at once, that both
-marketplace catalogs advertise ``codemap-py`` only, that an install-shaped plugin
-cache holding BOTH the legacy and renamed identities resolves to ``codemap-py``
-alone (and the dual state is detectable), and that the legacy ``.cache/codemap/``
-index layout is retained (the resolver is unchanged, so existing indexes keep
-resolving after the rename).
+Asserts the repository never carries both plugin identities at once, that both marketplace catalogs advertise only
+``codemap-py``, and that an install-shaped plugin cache holding BOTH the legacy and renamed identities resolves to
+``codemap-py`` alone (and the dual state is detectable), and that the legacy ``.cache/codemap/`` index layout is
+retained (the resolver is unchanged, so existing indexes keep resolving after the rename).
 """
 
 from __future__ import annotations
@@ -156,9 +154,9 @@ def test_pyi_rebuild_single_pass_then_stable(
 ) -> None:
     """First scan after the .pyi migration rebuilds once; the next scan reuses it byte-stable.
 
-    Executable oracle (plan §4.4 — log text alone is insufficient): a parse-invocation
-    counter proves the ``.pyi`` set is parsed exactly once on the migration scan and not at
-    all on the following scan, and a canonical-bytes comparison proves the index is stable.
+    Executable oracle: a parse-invocation counter proves the ``.pyi`` set
+    is parsed exactly once on the migration scan and not at all on the following scan, and a canonical-bytes comparison
+    proves the index is stable.
     """
     root = tmp_path / "proj"
     shutil.copytree(corpus_pyi_dir, root)

@@ -3,33 +3,38 @@
 
 ## Purpose
 
-detect routing, skill-contract, and calibration-fixture drift before a plugin release or behavior-changing workflow edit.
-It combines static checks with optional behavioral evidence so maintainers can see both contract failures and the confidence limits of the available observations.
+detect routing, skill-contract, and calibration-fixture drift before a plugin release or behavior-changing workflow
+edit. It combines static checks with optional behavioral evidence so maintainers can see both contract failures and the
+confidence limits of the available observations.
 
 ## Scope
 
-validates shipped files and local observations under a selected layout; it does not invoke GitHub or live models.
-The run may execute local helper and self-test commands, but paid model collection is a separate explicit workflow handled by ``run_live_ab.py``.
+validates shipped files and local observations under a selected layout; it does not invoke GitHub or live models. The
+run may execute local helper and self-test commands, but paid model collection is a separate explicit workflow handled
+by ``run_live_ab.py``.
 
 ## Usage
 
-run ``python runtime/calibration/run.py --layout plugin`` from the plugin root after changing skills, agents, or calibration data.
-Use the source layout when checking a repository checkout and the plugin layout when validating files as they will be installed and packaged.
+run ``python runtime/calibration/run.py --layout plugin`` from the plugin root after changing skills, agents, or
+calibration data. Use the source layout when checking a repository checkout and the plugin layout when validating files
+as they will be installed and packaged.
 
 ## Used by
 
-Release and implementation verification workflows, package maintainers, and calibration acceptance tests.
-Its result is also consumed by release-readiness decisions that require named checks, artifact paths, and explicit confidence gaps.
+Release and implementation verification workflows, package maintainers, and calibration acceptance tests. Its result is
+also consumed by release-readiness decisions that require named checks, artifact paths, and explicit confidence gaps.
 
 ## Outputs
 
-writes a timestamped ``result.json`` containing check status, findings, behavioral metrics, confidence, and explicit confidence limits.
-The same report directory records check logs, leak findings, recommendations, and self-test artifacts needed to explain a failed result.
+writes a timestamped ``result.json`` containing check status, findings, behavioral metrics, confidence, and explicit
+confidence limits. The same report directory records check logs, leak findings, recommendations, and self-test artifacts
+needed to explain a failed result.
 
 ## Failure
 
-contract drift produces named failed checks and a non-zero result; absent optional live observations lower confidence rather than fabricating evidence.
-Malformed inputs, missing shipped assets, or failed local gates are preserved in the report so maintainers can distinguish a real regression from incomplete evidence.
+contract drift produces named failed checks and a non-zero result; absent optional live observations lower confidence
+rather than fabricating evidence. Malformed inputs, missing shipped assets, or failed local gates are preserved in the
+report so maintainers can distinguish a real regression from incomplete evidence.
 """
 
 from __future__ import annotations
@@ -1099,8 +1104,8 @@ def cli_argv(path: Path, *arguments: str | Path) -> list[str | Path]:
 def gate_argv(command: str) -> list[str]:
     """Split a fixture gate command, binding a bare interpreter token to the running Python.
 
-    Windows ships no ``python3`` on PATH and a POSIX ``python`` may resolve to Python 2, so the
-    interpreter already executing this calibration run is the only portable target.
+    Windows ships no ``python3`` on PATH and a POSIX ``python`` may resolve to Python 2, so the interpreter already
+    executing this calibration run is the only portable target.
     """
     argv = shlex.split(command)
     if argv and argv[0] in {"python", "python3"}:

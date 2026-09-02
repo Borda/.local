@@ -89,7 +89,7 @@ def test_readcrop_parser_preserves_answer_and_redacted_event_evidence() -> None:
 
 
 def test_unscoreable_answer_leaves_every_recall_field_none() -> None:
-    """B-M6: one failure cannot be averaged into two means and omitted from two."""
+    """One failure cannot be averaged into two means and omitted from two."""
     runner = _load()
     task = {
         "id": "RC-fixture",
@@ -120,7 +120,7 @@ def test_unscoreable_answer_leaves_every_recall_field_none() -> None:
 
 
 def test_prompt_rejects_an_arm_that_has_no_availability_supplement(monkeypatch: pytest.MonkeyPatch) -> None:
-    """B-L4: the guard must survive `python -O`, which strips a bare assert."""
+    """The guard must survive `python -O`, which strips a bare assert."""
     runner = _load()
     monkeypatch.setattr(runner, "ARMS", (*runner.ARMS, "D_phantom"))
 
@@ -129,7 +129,7 @@ def test_prompt_rejects_an_arm_that_has_no_availability_supplement(monkeypatch: 
 
 
 def test_importing_the_stage_does_not_execute_the_structural_runner() -> None:
-    """B-L5: importing a prompt helper must not run the 5000-line paid runner."""
+    """Importing a prompt helper must not run the 5000-line paid runner."""
     probe = (
         "import sys, json; sys.path.insert(0, '.');"
         "from _bench_codex import stage_readcrop;"
@@ -515,7 +515,7 @@ def test_paid_snapshot_binds_the_structural_launcher_and_readcrop_stage(monkeypa
 
 
 def test_readcrop_execution_is_controlled_only_by_dry_run() -> None:
-    """The unified launcher must not leak a public --paid switch into ReadCrop."""
+    """The unified launcher must not leak a public ``--paid`` switch into ReadCrop."""
     runner = _load()
     parameters = inspect.signature(runner.run_stage).parameters
 

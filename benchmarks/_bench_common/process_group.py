@@ -1,9 +1,8 @@
 """Process-group launch and teardown shared by the provider transports.
 
-A wall-clock kill must reach every process the agent spawned, not only the one the
-runner launched. Killing the direct child alone leaves grandchildren alive, still
-consuming paid budget outside the measured window and still holding the pipes the
-runner is trying to drain.
+A wall-clock kill must reach every process the agent spawned, not only the one the runner launched. Killing the direct
+child alone leaves grandchildren alive, still consuming paid budget outside the measured window and still holding the
+pipes the runner is trying to drain.
 """
 
 from __future__ import annotations

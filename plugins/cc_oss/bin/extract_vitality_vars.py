@@ -27,7 +27,7 @@ import shlex
 import sys
 from pathlib import Path
 
-_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB — F-10 guard against runaway reads
+_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB guard against runaway reads
 
 
 def _read_text_guarded(path: Path) -> str:

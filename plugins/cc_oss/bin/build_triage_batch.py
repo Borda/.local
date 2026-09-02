@@ -41,8 +41,11 @@ def build_queries(identifiers: list[str]) -> list[dict[str, object]]:
         List of ``{"cmd", "args"}`` dicts suitable for ``codemap-py query batch``.
 
     Examples:
-        >>> build_queries(["a.b.c", "MyClass"])
-        [{'cmd': 'rdeps', 'args': ['a.b.c', '--exclude-tests']}, {'cmd': 'find-symbol', 'args': ['^MyClass$', '--limit', '1']}]
+        >>> queries = build_queries(["a.b.c", "MyClass"])
+        >>> queries[0]
+        {'cmd': 'rdeps', 'args': ['a.b.c', '--exclude-tests']}
+        >>> queries[1]
+        {'cmd': 'find-symbol', 'args': ['^MyClass$', '--limit', '1']}
         >>> build_queries(["  ", "x"])
         [{'cmd': 'find-symbol', 'args': ['^x$', '--limit', '1']}]
     """

@@ -175,7 +175,7 @@ def _reject_tmpdir(reason: str) -> None:
 def _resolve_tmpdir() -> Path:
     """Resolve the base directory for state files, validating ``TMPDIR`` first.
 
-    SEC-M1: an attacker-controlled ``TMPDIR`` could redirect state writes outside
+    An attacker-controlled ``TMPDIR`` could redirect state writes outside
     the expected directories, so a supplied value must be both absolute and owned
     by the current user. A rejected value falls back to the platform temp dir.
 
@@ -349,7 +349,7 @@ def _derive_identity(arguments: str, plugin_root: Path) -> tuple[str, str, str] 
         return None
     repo_root = _repo_root()
     proj_slug = f"{_sanitize_slug(_short_hostname())}-{_sanitize_slug(Path(repo_root).name)}"
-    # "." is what an absent --root resolves to, and `--root .` is deliberately treated
+    # "." is what an absent ``--root`` resolves to, and ``--root .`` is deliberately treated
     # the same way: basename(".") is empty, which would produce a nameless index.
     proj_name = Path(repo_root).name if root in (None, ".") else Path(root).name
     return scan_args_raw, proj_slug, proj_name

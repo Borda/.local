@@ -40,7 +40,10 @@ class TestResolveRoot:
     """_resolve_root: root precedence and directory-traversal guard."""
 
     def test_returns_absolute_path_from_scan_args(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """--root within cwd resolves to its absolute form and is returned."""
+        """Verify command-line option behavior.
+
+        --root within cwd resolves to its absolute form and is returned.
+        """
         subdir = tmp_path / "proj"
         subdir.mkdir()
         monkeypatch.chdir(tmp_path)
@@ -48,7 +51,10 @@ class TestResolveRoot:
         assert result == str(subdir)
 
     def test_traversal_blocked_exits_2(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """--root outside cwd causes sys.exit(2) — directory traversal guard."""
+        """Verify command-line option behavior.
+
+        --root outside cwd causes sys.exit(2) — directory traversal guard.
+        """
         monkeypatch.chdir(tmp_path)
         outside = tmp_path.parent / "escaped"
         with pytest.raises(SystemExit) as exc_info:
@@ -56,7 +62,7 @@ class TestResolveRoot:
         assert exc_info.value.code == 2
 
     def test_falls_back_to_git_toplevel(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Without --root in SCAN_ARGS, falls back to git rev-parse --show-toplevel."""
+        """Without ``--root`` in SCAN_ARGS, falls back to ``git rev-parse --show-toplevel``."""
         monkeypatch.chdir(tmp_path)
         fake_root = "/some/git/root"
         with patch("subprocess.check_output", return_value=fake_root.encode()):
@@ -71,7 +77,7 @@ class TestResolveRoot:
         assert result == os.path.abspath(str(tmp_path))
 
     def test_empty_scan_args_skips_root_parsing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Empty SCAN_ARGS string does not cause --root lookup or crash."""
+        """Empty SCAN_ARGS string does not cause ``--root`` lookup or crash."""
         monkeypatch.chdir(tmp_path)
         with patch("subprocess.check_output", return_value=str(tmp_path).encode()):
             result = _resolve_root("", timeout=5)
@@ -102,7 +108,7 @@ class TestLoadIndex:
         assert exc_info.value.code == 1
 
     def test_exits_1_when_index_exceeds_size_limit(self, tmp_path: Path) -> None:
-        """Index file larger than MAX_INDEX_SIZE causes sys.exit(1) — DoS guard (SEC-M10)."""
+        """Index file larger than MAX_INDEX_SIZE causes sys.exit(1) — DoS guard."""
         proj = tmp_path.name
         idx_dir = tmp_path / ".cache" / "codemap"
         idx_dir.mkdir(parents=True)
@@ -115,7 +121,7 @@ class TestLoadIndex:
         assert exc_info.value.code == 1
 
     def test_exits_1_on_race_condition_file_disappears(self, tmp_path: Path) -> None:
-        """sys.exit(1) when file exists at getsize but is gone when open() is called (TOCTOU race)."""
+        """Handle an index disappearing between its size check and open operation."""
         proj = tmp_path.name
         idx_dir = tmp_path / ".cache" / "codemap"
         idx_dir.mkdir(parents=True)
@@ -146,7 +152,7 @@ def _write_index(tmp_path: Path, modules: list[dict[str, Any]]) -> None:
 
 
 class TestMain:
-    """main(): stdout output covering all index shapes."""
+    """Report command-line statistics for every supported index shape."""
 
     def test_no_modules_prints_message_and_exits_0(
         self,
@@ -283,10 +289,10 @@ class TestMain:
 
 
 class TestArgparse:
-    """CLI argument handling: --help and the real SCAN_ARGS call-site shape."""
+    """CLI argument handling: ``--help`` and the real SCAN_ARGS call-site shape."""
 
     def test_help_exits_0(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """``--help`` prints usage and exits 0 (argparse default)."""
+        """Print usage and exit 0 (argparse default)."""
         with pytest.raises(SystemExit) as exc_info:
             main(["--help"])
         assert exc_info.value.code == 0

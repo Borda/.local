@@ -1,8 +1,7 @@
 """Tests for ``bin/resolve_centrality.py``.
 
-Covers path-suffix module matching (exact, scan-root prefix on either side,
-``__init__.py`` → package name, no-match), the combined map build, and the CLI
-stdin→JSON path including the invalid-input exit.
+Covers path-suffix module matching (exact, scan-root prefix on either side, ``__init__.py`` → package name, no-match),
+the combined map build, and the CLI stdin→JSON path including the invalid-input exit.
 """
 
 from __future__ import annotations
@@ -62,12 +61,12 @@ class TestBuildMaps:
 
 
 class TestMainCli:
-    """main(): stdin central JSON → JSON maps on stdout, exit codes."""
+    """Transform centrality input into command-line JSON output."""
 
     def test_reads_stdin_and_resolves_files(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """--files resolves against the piped central payload and prints combined JSON."""
+        """Resolve requested files against piped centrality data."""
         payload = '{"central": [{"name": "pkg.auth", "rdep_count": 5, "path": "src/pkg/auth.py"}]}'
         monkeypatch.setattr(rc.sys, "stdin", io.StringIO(payload))
         rc_code = rc.main(["--files", "src/pkg/auth.py"])
@@ -83,10 +82,10 @@ class TestMainCli:
 
 
 class TestNoFilesArg:
-    """main(): absent --files still emits centrality with an empty resolution map."""
+    """Emit centrality with an empty resolution map when no files are supplied."""
 
     def test_empty_files(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-        """No --files → centrality present, file_module empty."""
+        """No ``--files`` → centrality present, file_module empty."""
         payload = '{"central": [{"name": "pkg", "rdep_count": 3, "path": "src/pkg/__init__.py"}]}'
         monkeypatch.setattr(rc.sys, "stdin", io.StringIO(payload))
         rc.main([])

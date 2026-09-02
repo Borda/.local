@@ -63,7 +63,7 @@ class TestResolutionEnum:
 
 
 class TestValidCallResolutions:
-    """VALID_CALL_RESOLUTIONS: type, contents, exclusions."""
+    """Validate the call-resolution schema and its exclusions."""
 
     def test_is_frozenset(self) -> None:
         """Must be a frozenset — immutable, safe to share across modules."""
@@ -99,7 +99,7 @@ class TestValidCallResolutions:
 
 
 class TestScanVersion:
-    """SCAN_VERSION: type and positivity."""
+    """Validate the scan-version type and range."""
 
     def test_is_int(self) -> None:
         """Version must be a plain Python int."""
@@ -152,7 +152,7 @@ class TestPerFeatureVersionConstants:
             assert getattr(_schema, name) > 0, f"{name} must be positive"
 
     def test_sphinx_before_dead_symbol(self) -> None:
-        """dead-symbol depends on sphinx_xref_count — its min version must be higher."""
+        """Dead-symbol depends on sphinx_xref_count — its min version must be higher."""
         from _schema import DEAD_SYMBOL_MIN_VER, SPHINX_XREFS_MIN_VER
 
         assert SPHINX_XREFS_MIN_VER < DEAD_SYMBOL_MIN_VER

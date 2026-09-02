@@ -144,18 +144,18 @@ def format_field(value: Any) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns exit code.
+    """Extract a requested field from a JSON object supplied through the command line.
 
     Args:
         argv: Optional argument list (defaults to ``sys.argv[1:]``).
 
     Returns:
-        0 on success, 1 if no object recovered, 2 if field absent, 3 on usage error.
+        0 on success, 1 if no object was recovered, 2 if the field is absent, or 3 on usage error.
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     raw = list(sys.argv[1:] if argv is None else argv)
 
-    # Handle -h/--help via argparse, then treat positionals opaquely. The <json-or-text>
+    # Handle ``-h/--help`` via argparse, then treat positionals opaquely. The <json-or-text>
     # blob may begin with ``--``, which argparse would reject as an unknown option — so the
     # positionals are NOT fed through parse_args, and the missing-field case keeps exit 3
     # (argparse's own missing-required exit is 2).

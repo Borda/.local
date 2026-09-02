@@ -51,7 +51,7 @@ def test_build_verify_command_network_override() -> None:
     assert cmd[idx + 1] == "host"
 
 
-# ---------- Destructive-token guard (H1) ----------
+# ---------- Destructive-token guard ----------
 
 
 @pytest.mark.parametrize(
@@ -113,7 +113,7 @@ def captured_run(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
 
 @pytest.mark.parametrize("flag", ["-h", "--help"])
 def test_help_exits_0_without_docker(monkeypatch: pytest.MonkeyPatch, flag: str) -> None:
-    """``-h``/``--help`` prints usage and exits 0; no subprocess/docker ever runs."""
+    """Print help without starting Docker or another subprocess."""
     called: list[Any] = []
     monkeypatch.setattr(ds.subprocess, "run", lambda *a, **k: called.append(a))
     with pytest.raises(SystemExit) as exc:
@@ -188,7 +188,7 @@ def test_golden_verify_invocation_constructs_expected_docker_argv(captured_run: 
 def test_network_host_guard_rejects_before_docker(
     captured_run: list[list[str]], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """SANDBOX_NETWORK=host still rejected with exit 2, no docker spawned (SEC-R-2 unchanged)."""
+    """Reject host networking before starting a container."""
     rc = ds.main(["--mode", "explore", "x.py"], env={"SANDBOX_NETWORK": "host"}, cwd="/proj")
     assert rc == 2
     assert "SANDBOX_NETWORK" in capsys.readouterr().err
@@ -197,7 +197,7 @@ def test_network_host_guard_rejects_before_docker(
 
 @pytest.mark.parametrize("network", ["none", "bridge", "internal"])
 def test_network_host_guard_still_allows_isolated_modes(captured_run: list[list[str]], network: str) -> None:
-    """The allowlisted isolated network modes still reach docker argv unchanged (SEC-R-2 boundary)."""
+    """The allowlisted isolated network modes still reach Docker argv unchanged."""
     rc = ds.main(["--mode", "explore", "x.py"], env={"SANDBOX_NETWORK": network}, cwd="/proj")
     assert rc == 0
     cmd = captured_run[0]
@@ -244,7 +244,7 @@ def test_main_verify_mode_dispatches_correctly(captured_run: list[list[str]]) ->
 def test_main_verify_rejects_destructive_command_before_docker(
     captured_run: list[list[str]], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A bare ``rm`` in verify mode wipes the rw .experiments mount → exit 2, no docker (H1)."""
+    """A bare ``rm`` in verify mode wipes the rw .experiments mount → exit 2, no docker."""
     rc = ds.main(["--mode", "verify", "rm -rf /workspace/.experiments/state"], env={}, cwd="/proj")
     assert rc == 2
     assert "destructive binaries" in capsys.readouterr().err

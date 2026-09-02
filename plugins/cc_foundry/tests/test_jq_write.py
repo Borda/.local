@@ -1,8 +1,7 @@
 """Tests for ``bin/jq_write.py``.
 
-Happy path uses real ``jq`` against ``tmp_path`` JSON files; failure paths
-mock ``subprocess.run`` to assert exit codes without depending on jq's
-exact error messages.
+Happy path uses real ``jq`` against ``tmp_path`` JSON files; failure paths mock ``subprocess.run`` to assert exit codes
+without depending on jq's exact error messages.
 """
 
 from __future__ import annotations
@@ -39,7 +38,7 @@ class TestParseJqArgs:
         assert jq_write._parse_jq_args(extras) == extras
 
     def test_missing_value_returns_none(self) -> None:
-        """``--arg k`` without value → None."""
+        """Return no parsed argument when its value is missing."""
         assert jq_write._parse_jq_args(["--arg", "k"]) is None
 
     def test_missing_name_and_value_returns_none(self) -> None:
@@ -58,7 +57,7 @@ class TestRunJqWriteHappyPath:
     """run_jq_write: real jq round-trip against tmp_path JSON."""
 
     def test_identity_filter(self, tmp_path: Path) -> None:
-        """``jq .`` preserves the file; exit 0; content stable."""
+        """Preserve file contents when applying the identity filter."""
         target = tmp_path / "obj.json"
         target.write_text(json.dumps({"a": 1, "b": [2, 3]}), encoding="utf-8")
         rc = jq_write.run_jq_write(target, ".", [])
@@ -66,7 +65,7 @@ class TestRunJqWriteHappyPath:
         assert json.loads(target.read_text(encoding="utf-8")) == {"a": 1, "b": [2, 3]}
 
     def test_field_update_with_arg(self, tmp_path: Path) -> None:
-        """``--arg`` value substituted into filter."""
+        """Substitute a named argument value into the filter."""
         target = tmp_path / "obj.json"
         target.write_text(json.dumps({"version": "0.1.0"}), encoding="utf-8")
         rc = jq_write.run_jq_write(target, ".version = $v", ["--arg", "v", "0.2.0"])
@@ -74,7 +73,7 @@ class TestRunJqWriteHappyPath:
         assert json.loads(target.read_text(encoding="utf-8")) == {"version": "0.2.0"}
 
     def test_tmp_file_cleaned_up_on_success(self, tmp_path: Path) -> None:
-        """``<target>.tmp`` must not linger after a successful write."""
+        """Remove the temporary output after a successful write."""
         target = tmp_path / "obj.json"
         target.write_text(json.dumps({"x": 1}), encoding="utf-8")
         jq_write.run_jq_write(target, ".", [])
@@ -116,7 +115,7 @@ class TestRunJqWriteErrorPaths:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """jq returns non-zero → exit 2, tmp file cleaned up."""
+        """Jq returns non-zero → exit 2, tmp file cleaned up."""
         target = tmp_path / "obj.json"
         target.write_text("{}", encoding="utf-8")
 
@@ -137,7 +136,7 @@ class TestRunJqWriteErrorPaths:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """jq binary absent → FileNotFoundError → exit 2."""
+        """Jq binary absent → FileNotFoundError → exit 2."""
         target = tmp_path / "obj.json"
         target.write_text("{}", encoding="utf-8")
 
@@ -171,7 +170,7 @@ class TestRunJqWriteErrorPaths:
 
 
 class TestMain:
-    """main: CLI surface — argv parsing + exit codes."""
+    """Main: CLI surface — argv parsing + exit codes."""
 
     def test_no_args_returns_3(self, capsys: pytest.CaptureFixture[str]) -> None:
         """No target/filter → exit 3 with usage line."""
@@ -190,7 +189,7 @@ class TestMain:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """``--arg`` without name+value → exit 3."""
+        """Reject an argument option missing its name or value."""
         target = tmp_path / "obj.json"
         target.write_text("{}", encoding="utf-8")
         rc = jq_write.main([str(target), ".", "--arg", "name-only"])
@@ -212,7 +211,7 @@ class TestMain:
         assert json.loads(target.read_text(encoding="utf-8")) == {"k": 2}
 
     def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """``--help`` prints usage and exits 0 (argparse SystemExit)."""
+        """Print usage and exit 0 (argparse SystemExit)."""
         with pytest.raises(SystemExit) as exc:
             jq_write.main(["--help"])
         assert exc.value.code == 0

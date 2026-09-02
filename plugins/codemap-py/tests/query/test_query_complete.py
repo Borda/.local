@@ -54,7 +54,7 @@ def _git(root: Path, *args: str) -> None:
 
 @pytest.fixture
 def degraded_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
-    """A non-git project: one healthy importer, one healthy leaf, one unparsable file.
+    """Create a degraded non-Git project for completeness checks.
 
     ``consumer`` imports ``leaf``; ``broken.py`` has a syntax error → degraded.
     """
@@ -109,7 +109,7 @@ class TestDirectionScopedCompleteness:
 
 @pytest.fixture
 def clean_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
-    """A fully-healthy non-git project so every direction can reach completeness."""
+    """Create a healthy non-Git project for complete directional queries."""
     root = tmp_path / "clean"
     root.mkdir()
     (root / "leaf.py").write_text("def leaf_fn(x):\n    return x\n")
@@ -138,7 +138,7 @@ class TestCleanGraphCompleteness:
 
 @pytest.fixture
 def git_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
-    """A committed git project so the git-blob staleness diff (and heal) engages."""
+    """Create a committed project for staleness detection and repair."""
     root = tmp_path / "gitrepo"
     root.mkdir()
     _git(root, "init", "-q")
@@ -170,7 +170,10 @@ class TestSelfHeal:
         assert data["index"]["query_complete"] is True
 
     def test_no_heal_flag_keeps_stale_result(self, git_project, scan_query):
-        """--no-heal answers from the stale index: new edge invisible, stale flagged honestly."""
+        """Verify command-line option behavior.
+
+        --no-heal answers from the stale index: new edge invisible, stale flagged honestly.
+        """
         root, index_path = git_project
         (root / "newcaller.py").write_text("import leaf\n\ndef also(x):\n    return leaf.leaf_fn(x)\n")
         _git(root, "add", "-A")
@@ -227,7 +230,7 @@ class TestHealBound:
 
 
 class TestUntrackedFileVeto:
-    """An untracked new .py file vetoes global-in/whole-graph but never a local query (F2)."""
+    """An untracked new .py file vetoes global-in/whole-graph but never a local query."""
 
     def test_untracked_present(self, git_project, scan_query):
         """Sanity: an uncommitted new .py file is reported in the coverage `untracked_py` list."""
@@ -237,14 +240,14 @@ class TestUntrackedFileVeto:
         assert any("orphan.py" in p for p in data["index"]["untracked_py"])
 
     def test_untracked_vetoes_global_in(self, git_project, scan_query):
-        """rdeps (global-in) is incomplete while an untracked .py could hide an inbound edge."""
+        """Rdeps (global-in) is incomplete while an untracked .py could hide an inbound edge."""
         root, index_path = git_project
         (root / "orphan.py").write_text("x = 1\n")
         data = _query(scan_query, root, index_path, "rdeps", "leaf")
         assert data["index"]["query_complete"] is False
 
     def test_untracked_does_not_veto_local(self, git_project, scan_query):
-        """F2: `deps` on a healthy module stays complete despite an untracked .py file.
+        """Keep healthy dependency queries complete despite unrelated untracked source.
 
         An untracked file cannot change an already-indexed module's own direct_imports.
         """
@@ -254,7 +257,7 @@ class TestUntrackedFileVeto:
         assert data["index"]["query_complete"] is True
 
     def test_incomplete_note_matches_flag(self, git_project, scan_query):
-        """F1: when the untracked veto fires, the note must not claim the result is complete."""
+        """Avoid claiming completeness after an untracked-source veto."""
         root, index_path = git_project
         (root / "orphan.py").write_text("x = 1\n")
         data = _query(scan_query, root, index_path, "rdeps", "leaf")
@@ -280,21 +283,21 @@ class TestCollisionVeto:
         assert data["index"]["collision_count"] == 1
 
     def test_collision_vetoes_whole_graph(self, clean_project, scan_query):
-        """central (whole-graph) is incomplete whenever any collision dropped a module."""
+        """Central (whole-graph) is incomplete whenever any collision dropped a module."""
         root, index_path = clean_project
         self._inject_collision(index_path, "somewhere")
         data = _query(scan_query, root, index_path, "central", "--top", "5")
         assert data["index"]["query_complete"] is False
 
     def test_collision_does_not_veto_unrelated_local(self, clean_project, scan_query):
-        """F2: `deps` on a module whose name is NOT the colliding one stays complete."""
+        """Keep dependency queries complete for modules outside a name collision."""
         root, index_path = clean_project
         self._inject_collision(index_path, "unrelated.module")
         data = _query(scan_query, root, index_path, "deps", "consumer")
         assert data["index"]["query_complete"] is True
 
     def test_collision_vetoes_own_local(self, clean_project, scan_query):
-        """F2: `deps` on the colliding module itself is incomplete — its own name is ambiguous."""
+        """Mark dependency queries incomplete for a colliding module name."""
         root, index_path = clean_project
         self._inject_collision(index_path, "consumer")
         data = _query(scan_query, root, index_path, "deps", "consumer")
@@ -303,11 +306,11 @@ class TestCollisionVeto:
 
 @pytest.fixture
 def excluded_git_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
-    """A committed git repo holding a .codemapignore-excluded tracked .py and a SKIP_DIR copy.
+    """Create a committed project containing files excluded through both mechanisms.
 
-    ``vendored/vendored.py`` is excluded via ``.codemapignore`` (dropped from file_shas);
-    ``.claude/ghost.py`` sits in a built-in SKIP_DIR but is git-tracked (kept in the
-    git-blob file_shas, since scan-index's git path filters only user exclusions).
+    ``vendored/vendored.py`` is excluded via ``.codemapignore`` (dropped from file_shas); ``.claude/ghost.py`` sits in a
+    built-in SKIP_DIR but is git-tracked (kept in the git-blob file_shas, since scan-index's git path filters only user
+    exclusions).
     """
     root = tmp_path / "excluded"
     root.mkdir()
@@ -329,7 +332,7 @@ def excluded_git_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
 
 
 class TestExclusionAwareStaleness:
-    """F4: scan-query's staleness diff applies the same exclusions scan-index used."""
+    """Apply scanner exclusions consistently during query staleness checks."""
 
     def test_fresh_excluded_repo_not_stale(self, excluded_git_project, scan_query):
         """A .codemapignore-excluded tracked .py must not force a false stale on a fresh index."""

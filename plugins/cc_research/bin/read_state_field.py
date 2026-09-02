@@ -95,13 +95,15 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Reads JSON, navigates the path, prints the value to stdout.
+    """Read a dotted field from a JSON state file and return the process status.
+
+    Reads JSON, navigates the path, and prints the value to stdout.
 
     Args:
         argv: Optional argv list (for testing); defaults to ``sys.argv[1:]``.
 
     Returns:
-        ``0`` on success, ``1`` on file/parse error, ``2`` on argument error.
+        ``0`` on success, ``1`` on file/parse error, or ``2`` on argument error.
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     try:

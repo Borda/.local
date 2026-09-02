@@ -1,8 +1,7 @@
 """Interpreter probe, entry gate, and doctor contract.
 
-Covers plan §7.3 candidate precedence, the CPython ``>=3.11,<3.15`` bound, the
-invalid-``CODEMAP_PYTHON`` hard fail, the §7.5 exit-127 rejection contract, and
-the ``doctor --json`` schema. Version-gated behaviour branches on the running
+Covers interpreter candidate precedence, the CPython ``>=3.11,<3.15`` bound, the invalid-``CODEMAP_PYTHON`` hard fail,
+the exit-127 rejection contract, and the ``doctor --json`` schema. Version-gated behaviour branches on the running
 interpreter so every assertion runs (never skips) on the 3.10 matrix cell.
 """
 
@@ -25,7 +24,7 @@ if str(_SCRIPTS) not in sys.path:
 import codemap_py_cli as cli  # noqa: E402  (needs the scripts/ path insert above)
 
 _RUNNING_SUPPORTED = cli.is_supported(sys.implementation.name, sys.version_info.major, sys.version_info.minor)
-_NO_INTERPRETER_EXIT = 127  # plan §7.5
+_NO_INTERPRETER_EXIT = 127  #
 
 
 def _run_entry(args: list[str], env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -59,7 +58,7 @@ def test_version_bound(impl: str, major: int, minor: int, expected: bool) -> Non
     assert cli.is_supported(impl, major, minor) is expected
 
 
-# --- candidate precedence (plan §7.3) --------------------------------------
+# --- candidate precedence --------------------------------------
 
 
 def test_posix_candidate_order() -> None:
@@ -93,7 +92,7 @@ def test_resolve_skips_unsupported_then_takes_next() -> None:
     assert resolved == ["python"]
 
 
-# --- invalid CODEMAP_PYTHON hard fail (plan §7.3) --------------------------
+# --- invalid CODEMAP_PYTHON hard fail --------------------------
 
 
 def test_invalid_override_missing_binary_hard_fails() -> None:
@@ -130,7 +129,7 @@ def test_launcher_invalid_override_returns_127_empty_stdout() -> None:
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX sh word-splitting; the .cmd path is CI-validated")
 @pytest.mark.skipif(not _RUNNING_SUPPORTED, reason="wrapper delegates to this interpreter; must be supported")
 def test_launcher_accepts_codemap_python_with_space(tmp_path: Path) -> None:
-    """A CODEMAP_PYTHON path containing a space is a single argv element (F9)."""
+    """A CODEMAP_PYTHON path containing a space is a single argv element."""
     wrapper = tmp_path / "py wrap"  # the space in the name is the whole point
     wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
     wrapper.chmod(0o755)
@@ -143,7 +142,7 @@ def test_launcher_accepts_codemap_python_with_space(tmp_path: Path) -> None:
     assert json.loads(completed.stdout)["supported"] is True
 
 
-# --- entry-gate rejection contract (plan §7.5) -----------------------------
+# --- entry-gate rejection contract -----------------------------
 
 
 def test_entry_gate_matches_running_interpreter() -> None:
@@ -157,7 +156,7 @@ def test_entry_gate_matches_running_interpreter() -> None:
         assert result.stderr.strip() != ""
 
 
-# --- doctor --json schema --------------------------------------------------
+# --- ``doctor --json`` schema --------------------------------------------------
 
 
 @pytest.mark.skipif(not _RUNNING_SUPPORTED, reason="doctor JSON schema is only defined on a supported interpreter")

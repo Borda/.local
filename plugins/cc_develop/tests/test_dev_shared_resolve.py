@@ -47,7 +47,7 @@ class TestDevelopOnly:
         assert dev_shared_resolve.resolve_shared_path(home=tmp_path) == str(newer)
 
     def test_orphaned_develop_version_skipped(self, tmp_path: Path) -> None:
-        """``.orphaned_at`` on newest develop version → older one wins."""
+        """Skip an orphaned newest version in favor of the previous release."""
         base = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "develop"
         orphaned = base / "0.20.0"
         (orphaned / "skills" / "_shared").mkdir(parents=True)
@@ -63,7 +63,7 @@ class TestDevelopOnly:
     def test_main_prints_single_line(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """``main()`` no-flag: one line on stdout."""
+        """Emit one output line when no option is provided."""
         monkeypatch.setattr(dev_shared_resolve.Path, "home", classmethod(lambda _cls: tmp_path))
         rc = dev_shared_resolve.main([])
         captured = capsys.readouterr()
@@ -76,7 +76,7 @@ class TestNoSiblingReachIn:
     """The resolver must never expose another plugin's tree."""
 
     def test_foundry_flag_is_rejected(self) -> None:
-        """``--foundry`` no longer exists — argparse must reject it, not silently ignore it."""
+        """Reject the retired Foundry option."""
         with pytest.raises(SystemExit):
             dev_shared_resolve.main(["--foundry"])
 

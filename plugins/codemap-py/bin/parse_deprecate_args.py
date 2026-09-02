@@ -5,7 +5,7 @@ Writes DEPRECATE and DEPRECATE_DECORATOR to exclusively-created temp files and
 prints the two resolved paths to stdout (flag path first, decorator path
 second) so the caller reads with ``cat`` — avoids the ``eval "$(...)"``
 anti-pattern. Filenames carry a random suffix from :func:`tempfile.mkstemp`
-and are created ``O_CREAT|O_EXCL`` (SEC-M7/CWE-377): a pre-planted file or
+and are created ``O_CREAT|O_EXCL`` (/CWE-377): a pre-planted file or
 symlink at a guessed name causes a hard failure rather than a followed write.
 The caller must read the printed paths rather than a fixed name.
 
@@ -45,20 +45,20 @@ import sys
 import tempfile
 from pathlib import Path
 
-# --deprecate=<value> where value is one of:
+# ``--deprecate=<value>`` where value is one of:
 #   - single-quoted: '...'  (no embedded single quotes)
 #   - double-quoted: "..."  (no embedded double quotes)
 #   - unquoted: any run of non-whitespace characters
-# Anchored on left so we never confuse --no-deprecate or other suffixes.
+# Anchored on left so we never confuse ``--no-deprecate`` or other suffixes.
 _DEPRECATE_VALUE_RE = re.compile(
     r"(?:^|\s)--deprecate=(?:'([^']*)'|\"([^\"]*)\"|(\S+))",
 )
-# Bare --deprecate flag — must NOT be followed by '=' (otherwise the value form matches)
-# and must NOT be preceded by '--no-' (otherwise --no-deprecate matches).
+# Bare ``--deprecate`` flag — must NOT be followed by '=' (otherwise the value form matches)
+# and must NOT be preceded by '--no-' (otherwise ``--no-deprecate`` matches).
 _DEPRECATE_BARE_RE = re.compile(
     r"(?:^|\s)--deprecate(?:\s|$)",
 )
-# --no-deprecate flag — explicit negation; overrides any --deprecate occurrence.
+# ``--no-deprecate`` flag — explicit negation; overrides any ``--deprecate`` occurrence.
 _NO_DEPRECATE_RE = re.compile(
     r"(?:^|\s)--no-deprecate(?:\s|$)",
 )
@@ -101,7 +101,7 @@ def parse_deprecate_args(arguments: str) -> tuple[bool, str]:
         >>> parse_deprecate_args("--deprecate --no-deprecate")
         (False, '')
     """
-    # Explicit negation wins regardless of any --deprecate presence.
+    # Explicit negation wins regardless of any ``--deprecate`` presence.
     if _NO_DEPRECATE_RE.search(arguments):
         return False, ""
 
@@ -172,7 +172,7 @@ def _trusted_default_tmpdir() -> str:
 def _safe_tmpdir() -> str:
     """Return a trustworthy temp directory, validating any ``TMPDIR`` override.
 
-    SEC-M7 (CWE-377): ``TMPDIR`` is attacker-influencable. A value like ``/etc``
+     (CWE-377): ``TMPDIR`` is attacker-influencable. A value like ``/etc``
     would redirect writes outside the temp area, and a directory not owned by the
     current user enables symlink-swap races. The override is accepted only when it
     is an absolute path to an existing directory owned by the current user;
@@ -250,7 +250,7 @@ def main(argv: list[str] | None = None) -> int:
 
     Prints the two pid-qualified temp-file paths to stdout (flag path on the first
     line, decorator path on the second) so the calling shell can ``cat`` exactly
-    the files this process wrote — the pid suffix (SEC-M7) is otherwise unknowable
+    the files this process wrote — the pid suffix is otherwise unknowable
     to the caller.
 
     Args:

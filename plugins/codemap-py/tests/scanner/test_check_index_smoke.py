@@ -1,16 +1,12 @@
 """Tests for ``bin/check_index_smoke.py`` — wrapper around smoke_test_index.py.
 
-The wrapper script invokes ``bin/smoke_test_index.py`` as a subprocess,
-projects the result down to ``{"ok":bool,"stale":bool,"age_hours":N}`` (plus
-an ``error`` field on failure), and derives the exit code:
+The wrapper script invokes ``bin/smoke_test_index.py`` as a subprocess, projects the result down to
+``{"ok":bool,"stale":bool,"age_hours":N}`` (plus an ``error`` field on failure), and derives the exit code:
 
-    0 — ok+fresh
-    1 — invalid / stale / empty smoke output
-    2 — invalid arguments
+0 — ok+fresh 1 — invalid / stale / empty smoke output 2 — invalid arguments
 
-Strategy — exercise ``main()`` and the pure projection helpers directly,
-mocking ``subprocess.run`` so tests don't depend on a real Python interpreter
-on PATH and don't write index fixtures to disk.
+Strategy — exercise ``main()`` and the pure projection helpers directly, mocking ``subprocess.run`` so tests don't
+depend on a real Python interpreter on PATH and don't write index fixtures to disk.
 """
 
 from __future__ import annotations
@@ -45,8 +41,8 @@ def fake_smoke(monkeypatch: pytest.MonkeyPatch):
 
     Yields a setter that tests use to declare the raw stdout the upstream
     ``smoke_test_index.py`` should appear to emit on the next call.
-    ``Path.is_file`` is stubbed to ``True`` so the defense-in-depth file-
-    existence guard does not fire before the mocked subprocess call.
+    ``Path.is_file`` is stubbed to ``True`` so the secondary file-existence guard does not fire before the mocked
+    subprocess call.
     """
     state: dict[str, Any] = {"stdout": ""}
 
@@ -71,7 +67,7 @@ class TestProjectSmokeResult:
     """Projection drops upstream-only keys, preserves error on failure paths."""
 
     def test_success_path_strips_extra_keys(self) -> None:
-        """ok+fresh result must surface only ok/stale/age_hours."""
+        """Ok+fresh result must surface only ok/stale/age_hours."""
         out = project_smoke_result(
             json.dumps({"ok": True, "stale": False, "age_hours": 1.5, "path": "/x"}),
         )
@@ -167,7 +163,7 @@ class TestMainHappyPath:
     """Fresh valid smoke result → exit 0 + projected JSON shape."""
 
     def test_ok_and_fresh_exits_zero(self, fake_smoke, capsys: pytest.CaptureFixture[str]) -> None:
-        """ok=true + stale=false → exit 0, minimal JSON, no error key, no leaked ``path``."""
+        """Return minimal successful output for a current healthy index."""
         fake_smoke(json.dumps({"ok": True, "stale": False, "age_hours": 2.31, "path": "/x"}))
         rc = main(["--index-path", "/tmp/idx.json"])
         assert rc == 0
@@ -198,7 +194,7 @@ class TestMainStaleIndex:
 
 
 class TestMainInvalidIndex:
-    """ok=false from upstream → exit 1, error field preserved."""
+    """Preserve an upstream error while returning the failure exit code."""
 
     def test_ok_false_propagates_error(self, fake_smoke, capsys: pytest.CaptureFixture[str]) -> None:
         """Upstream-reported failure surfaces the ``error`` message verbatim."""
@@ -234,7 +230,7 @@ class TestMainEmptySmokeOutput:
 
 
 class TestRunSmokeOSError:
-    """``subprocess.run`` raising OSError → projected error payload, no crash."""
+    """Convert subprocess launch errors into structured output."""
 
     def test_oserror_yields_invocation_error(
         self,

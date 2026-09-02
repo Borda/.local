@@ -205,9 +205,9 @@ class TestUsageBlockLines:
 
 class TestDocstringDrift:
     def test_phantom_flag_in_own_usage_block_is_a_finding(self, tmp_path: Path) -> None:
-        """A script advertising a flag its parser lacks is caught — the E-N9 regression.
+        """Catch a script advertising a flag its parser lacks.
 
-        This is the shape that escaped detection and was then copied into four documents:
+        This is the shape that previously escaped detection and was then copied into four documents:
         the phantom was advertised by the script's own docstring, which nothing validated.
         """
         _make_script(tmp_path, "myplugin", "tool.py", _docstring_script("    tool.py --check"))

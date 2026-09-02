@@ -45,15 +45,15 @@ def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> str:
 
 
 class TestSentinelDirResolution:
-    """``_sentinel_dir()`` must track ``$TMPDIR`` so shell ``${TMPDIR:-/tmp}`` callers agree."""
+    """Resolve sentinel storage from the same temporary-directory setting as shell callers."""
 
     def test_honors_tmpdir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``$TMPDIR`` set — resolves to it, not to a hardcoded ``/tmp``."""
+        """Use the configured temporary directory instead of a hardcoded path."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         assert setup_worktree._sentinel_dir() == tmp_path
 
     def test_falls_back_when_tmpdir_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``$TMPDIR`` unset — falls back to ``tempfile.gettempdir()``."""
+        """Use the platform temporary directory when no override is configured."""
         monkeypatch.delenv("TMPDIR", raising=False)
         assert setup_worktree._sentinel_dir() == Path(tempfile.gettempdir())
 
@@ -71,7 +71,7 @@ class TestRunDirCreation:
     """Tests for ``.temp/develop/<ts>/`` creation and two-line output."""
 
     def test_creates_run_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``main()`` creates ``.temp/develop/<ts>/`` under CWD."""
+        """Create ``.temp/develop/<ts>/`` under CWD."""
         monkeypatch.chdir(tmp_path)
         rc = setup_worktree.main([])
         assert rc == 0
@@ -108,7 +108,7 @@ class TestRunDirCreation:
     def test_output_has_no_crlf(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """stdout must not contain CRLF (Windows text-mode regression guard)."""
+        """Stdout must not contain CRLF (Windows text-mode regression guard)."""
         monkeypatch.chdir(tmp_path)
         setup_worktree.main([])
         out = capsys.readouterr().out
@@ -130,10 +130,10 @@ class TestRunDirCreation:
 
 
 class TestArgparse:
-    """Argparse-layer contract: --help exits 0; golden invocations preserve behaviour."""
+    """Argparse-layer contract: ``--help`` exits 0; golden invocations preserve behaviour."""
 
     def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """``--help`` prints usage and exits 0 without creating a run dir."""
+        """Print usage and exit 0 without creating a run dir."""
         with pytest.raises(SystemExit) as exc:
             setup_worktree.main(["--help"])
         assert exc.value.code == 0
@@ -150,7 +150,7 @@ class TestSentinelFlag:
         capsys: pytest.CaptureFixture[str],
         sentinel_dir: Path,
     ) -> None:
-        """``--sentinel <name>`` touches sentinel in the ``$TMPDIR`` sentinel dir."""
+        """Touch sentinel in the ``$TMPDIR`` sentinel dir."""
         monkeypatch.chdir(tmp_path)
         sentinel_name = f"swt-py-test-{os.getpid()}"
         rc = setup_worktree.main(["--sentinel", sentinel_name])
@@ -199,7 +199,7 @@ class TestSentinelFlag:
     def test_sentinel_without_name_skipped(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sentinel_dir: Path
     ) -> None:
-        """``--sentinel`` alone creates no sentinel file."""
+        """Avoid creating a sentinel when its name is omitted."""
         monkeypatch.chdir(tmp_path)
         setup_worktree.main(["--sentinel"])
         assert list(sentinel_dir.iterdir()) == []

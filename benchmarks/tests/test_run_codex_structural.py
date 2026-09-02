@@ -72,8 +72,7 @@ def test_codex_command_is_ephemeral_json_profile_backed_and_keeps_prompt_exact(
 ) -> None:
     """The transport plan must use isolated profiles and preserve prompt bytes.
 
-    Prevents a legacy command-line sandbox setting from overriding the
-    disposable home's permission profile.
+    Prevents a legacy command-line sandbox setting from overriding the disposable home's permission profile.
     """
     prompt = "Return the callers exactly.\nSecond line stays unchanged."
 
@@ -181,8 +180,8 @@ def test_deterministic_order_uses_only_current_plain_cli_skill_arms(script_run_c
 def test_exact_suite_counterbalances_arm_ordinals_at_one_repetition(script_run_codex: Any) -> None:
     """Each treatment must occupy every ordinal 18 or 19 times across all 55 tasks.
 
-    Prevents a deterministic hash order from making prompt-cache exposure a
-    systematic arm confound while preserving repeatable execution planning.
+    Prevents a deterministic hash order from making prompt-cache exposure a systematic arm confound while preserving
+    repeatable execution planning.
     """
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     task_ids = manifest["preregistered_cells"]["structural_execution_task_ids"]
@@ -218,10 +217,9 @@ def test_permission_profiles_replace_legacy_sandbox_and_grant_only_coordination_
 ) -> None:
     """A/B/C configs must expose only their documented permission surface.
 
-    Prevents a legacy ``--sandbox`` transport flag, an implicitly writable
-    profile, or a treatment profile that can write outside Codemap's lock root.
-    A plausible but incorrect implementation that writes a broad root, omits
-    the profile, or leaves the legacy flag would fail a specific assertion.
+    Prevents a legacy ``--sandbox`` transport flag, an implicitly writable profile, or a treatment profile that can
+    write outside Codemap's lock root. A plausible but incorrect implementation that writes a broad root, omits the
+    profile, or leaves the legacy flag would fail a specific assertion.
     """
     repo_path = tmp_path / "target"
     index_path = repo_path / ".cache" / "codemap" / "locked-index.json"
@@ -409,8 +407,8 @@ def test_skill_home_preserves_plugin_registration_when_permissions_are_applied(
 ) -> None:
     """C must retain enabled plugin tables after applying its permission profile.
 
-    Prevents the runner from verifying plugin installation and then deleting
-    its registration by replacing ``config.toml`` before ``codex exec``.
+    Prevents the runner from verifying plugin installation and then deleting its registration by replacing
+    ``config.toml`` before ``codex exec``.
     """
     repo_path = tmp_path / "target"
     index_path = repo_path / ".cache" / "codemap" / "target.json"
@@ -570,9 +568,8 @@ def test_coordination_root_is_exact_safe_and_cleanup_keeps_the_locked_index(
 ) -> None:
     """The sole treatment write root is the initialized index-local lock directory.
 
-    Prevents writing a parent/cache-wide root or deleting the locked index when
-    the disposable coordination state is cleaned up.  A broad or misplaced root
-    cannot satisfy the exact-path assertion.
+    Prevents writing a parent/cache-wide root or deleting the locked index when the disposable coordination state is
+    cleaned up.  A broad or misplaced root cannot satisfy the exact-path assertion.
     """
     index_path = tmp_path / "target" / ".cache" / "codemap" / "locked-index.json"
     index_path.parent.mkdir(parents=True)
@@ -715,9 +712,8 @@ def test_coordination_root_rejects_symlinks_and_cannot_escape_its_index_director
 ) -> None:
     """Indirect coordination paths must fail before a treatment can write through them.
 
-    Prevents a symlinked lock root or readers directory from granting write
-    access outside the index directory.  Remaining coverage excludes hostile
-    concurrent filesystem replacement, which needs process-level fault tests.
+    Prevents a symlinked lock root or readers directory from granting write access outside the index directory.
+    Remaining coverage excludes hostile concurrent filesystem replacement, which needs process-level fault tests.
     """
     index_path = tmp_path / "target" / ".cache" / "codemap" / "locked-index.json"
     index_path.parent.mkdir(parents=True)
@@ -744,9 +740,8 @@ def test_permission_profile_verification_fails_closed_when_codex_rejects_the_pro
 ) -> None:
     """An unsupported permission profile cannot silently run under Codex defaults.
 
-    Prevents the profile probe from treating an unknown profile as a successful
-    setup.  A check that only validates the Codex binary version would fail to
-    raise here.
+    Prevents the profile probe from treating an unknown profile as a successful setup.  A check that only validates the
+    Codex binary version would fail to raise here.
     """
     repo_path = tmp_path / "target"
     repo_path.mkdir()
@@ -1311,9 +1306,8 @@ def test_retry_policy_does_not_repeat_non_retryable_authentication_failures(
 ) -> None:
     """An expired or consumed refresh token must stop at one attempt.
 
-    Prevents a permanent 401 from consuming two extra paid attempts before the
-    outer study can identify the shared infrastructure failure.  A classifier
-    that treats every zero-token error as transient would make two calls.
+    Prevents a permanent 401 from consuming two extra paid attempts before the outer study can identify the shared
+    infrastructure failure.  A classifier that treats every zero-token error as transient would make two calls.
     """
     streams = iter(
         [
@@ -1346,10 +1340,9 @@ def test_retry_policy_does_not_repeat_non_retryable_authentication_failures(
 def test_parser_keeps_refresh_authentication_classification_after_later_generic_401(script_run_codex: Any) -> None:
     """A later generic provider error cannot make a consumed refresh token retryable.
 
-    Prevents the real event order—refresh-token reuse, ``turn.failed``, then a
-    generic non-zero 401—from losing its deterministic authentication class.
-    A parser that overwrites its classification with the final generic event
-    would spend retry attempts on an already-invalid credential.
+    Prevents the real event order—refresh-token reuse, ``turn.failed``, then a generic non-zero 401—from losing its
+    deterministic authentication class. A parser that overwrites its classification with the final generic event would
+    spend retry attempts on an already-invalid credential.
     """
     stream = "\n".join(
         json.dumps(event)
@@ -1388,8 +1381,8 @@ def test_parser_redacts_textual_credential_headers_from_provider_and_telemetry(
 ) -> None:
     """Credential-bearing textual errors must be safe in every persisted projection.
 
-    Prevents provider error strings from retaining Cookie, Set-Cookie, or
-    non-Bearer Authorization values in either the result error or raw events.
+    Prevents provider error strings from retaining Cookie, Set-Cookie, or non-Bearer Authorization values in either the
+    result error or raw events.
     """
     parsed = codex_runtime.parse_codex_jsonl(json.dumps({"type": "error", "error": f"provider failure: {header}"}))
     persisted_projection = json.dumps({"error": parsed.error, "raw_events": parsed.raw_events})
@@ -1404,9 +1397,8 @@ def test_retry_policy_preserves_partial_response_when_usage_is_absent(
 ) -> None:
     """Partial provider output must remain auditable instead of being retried away.
 
-    Prevents a response event received before a transport failure, but without
-    a usage block, from being overwritten by a later attempt.  A zero-token
-    check alone would incorrectly replace ``partial answer`` here.
+    Prevents a response event received before a transport failure, but without a usage block, from being overwritten by
+    a later attempt.  A zero-token check alone would incorrectly replace ``partial answer`` here.
     """
     first_stream = "\n".join(
         [
@@ -1840,10 +1832,9 @@ def test_paid_skill_home_installs_only_from_bound_run_snapshot(
 ) -> None:
     """C must install snapshot bytes through a run-owned marketplace selector.
 
-    This reproduces the stopped BA-05/C lifecycle: snapshot admission succeeds,
-    then a later cell must be insulated from marketplace drift. Codex CLI 0.146
-    rejects direct plugin paths, so the later home must add only a marketplace
-    rooted inside the run snapshot and select both archived plugins from it.
+    This reproduces the stopped BA-05/C lifecycle: snapshot admission succeeds, then a later cell must be insulated from
+    marketplace drift. Codex CLI 0.146 rejects direct plugin paths, so the later home must add only a marketplace rooted
+    inside the run snapshot and select both archived plugins from it.
     """
     snapshot_root = tmp_path / "run" / "inputs"
     snapshot_root.mkdir(parents=True)
@@ -1990,8 +1981,8 @@ def test_bound_runtime_snapshot_rejects_byte_drift_and_records_observed_identity
 ) -> None:
     """A changed snapshot source must fail with expected/observed identity evidence.
 
-    Prevents a mutable local archive from silently becoming the next cell's
-    plugin source and preserves the identity that caused an admission failure.
+    Prevents a mutable local archive from silently becoming the next cell's plugin source and preserves the identity
+    that caused an admission failure.
     """
     snapshot_root = tmp_path / "run" / "inputs"
     snapshot_root.mkdir(parents=True)
@@ -2246,9 +2237,8 @@ def test_arm_home_cleanup_rejects_non_private_credential_directory(
 ) -> None:
     """Credential homes may be removed only when their owner and mode are private.
 
-    Prevents cleanup from recursively deleting a path whose ownership or
-    permissions changed after creation.  A cleanup path that merely calls
-    ``rmtree`` would delete this fixture and fail the preservation assertion.
+    Prevents cleanup from recursively deleting a path whose ownership or permissions changed after creation.  A cleanup
+    path that merely calls ``rmtree`` would delete this fixture and fail the preservation assertion.
     """
     home_path = tmp_path / violation
     home_path.mkdir()
@@ -2273,8 +2263,8 @@ def test_prepare_verified_home_cleans_credential_home_after_keyboard_interrupt(
 ) -> None:
     """Interrupting authentication cannot retain a credential-bearing cell home.
 
-    Prevents the former ``except Exception`` cleanup path from missing
-    ``KeyboardInterrupt`` after the run auth state has seeded ``auth.json``.
+    Prevents the former ``except Exception`` cleanup path from missing ``KeyboardInterrupt`` after the run auth state
+    has seeded ``auth.json``.
     """
     auth_source = tmp_path / "source-auth.json"
     auth_source.write_text('{"refresh_token":"fixture"}', encoding="utf-8")
@@ -2313,8 +2303,8 @@ def test_auth_source_path_validation_error_is_generic_and_does_not_expose_source
 ) -> None:
     """Unsafe credential paths fail before a provider result can expose their location.
 
-    Prevents a symlink-component validation error from embedding the approved
-    auth-source path in terminal output or any later persisted provider row.
+    Prevents a symlink-component validation error from embedding the approved auth-source path in terminal output or any
+    later persisted provider row.
     """
     source_root = tmp_path / "source-root"
     source_root.mkdir()
@@ -2424,9 +2414,8 @@ def test_runner_reuses_rotated_auth_state_without_mutating_immutable_source(
 ) -> None:
     """A refreshed cell credential seeds the next cell through one private chain.
 
-    Prevents each disposable home from recopying a now-consumed source refresh
-    state.  A source write-back, broad state directory, or retained second link
-    would fail an exact filesystem assertion.
+    Prevents each disposable home from recopying a now-consumed source refresh state.  A source write-back, broad state
+    directory, or retained second link would fail an exact filesystem assertion.
     """
     source = tmp_path / "immutable-auth.json"
     source_bytes = b'{"state":"seed"}'
@@ -2491,9 +2480,8 @@ def test_runner_rejects_auth_source_drift_before_the_next_model_call(
 ) -> None:
     """The immutable source cannot be swapped between authenticated cells.
 
-    Prevents a caller from silently replacing the reviewed source after the
-    run starts.  The transport call count proves detection occurs before the
-    next model process is launched.
+    Prevents a caller from silently replacing the reviewed source after the run starts.  The transport call count proves
+    detection occurs before the next model process is launched.
     """
     source = tmp_path / "immutable-auth.json"
     source.write_bytes(b'{"state":"seed"}')
@@ -2841,10 +2829,10 @@ class _FakePopen:
 def test_failed_coordination_cleanup_is_recorded_not_silently_dropped(
     script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """B-M9: the same cleanup used to be suppressed at some sites and escalated at others.
+    """The same cleanup used to be suppressed at some sites and escalated at others.
 
-    A suppressed failure left the coordination root behind with no trace anywhere,
-    so a leak was invisible until something later tripped over it.
+    A suppressed failure left the coordination root behind with no trace anywhere, so a leak was invisible until
+    something later tripped over it.
     """
     runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
     coordination = tmp_path / "coordination"
@@ -2864,7 +2852,7 @@ def test_failed_coordination_cleanup_is_recorded_not_silently_dropped(
 def test_successful_coordination_cleanup_records_nothing(
     script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """B-M9: the ordinary path stays silent."""
+    """The ordinary path stays silent."""
     runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
     monkeypatch.setattr(script_run_codex, "_cleanup_coordination_root", lambda _path: None)
 
@@ -2875,7 +2863,7 @@ def test_successful_coordination_cleanup_records_nothing(
 def test_coordination_cleanup_never_raises_from_a_finally_block(
     script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """B-M9: raising from cleanup would mask the exception carrying the real cause."""
+    """Raising from cleanup would mask the exception carrying the real cause."""
     runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
 
     def refuse(_path: Path) -> None:
@@ -2893,11 +2881,10 @@ def test_coordination_cleanup_never_raises_from_a_finally_block(
 def test_timed_out_transport_preserves_streamed_usage_events(
     script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """B-H3: a wall-clock kill must not erase the usage the agent already billed.
+    """A wall-clock kill must not erase the usage the agent already billed.
 
-    The timeout branch previously returned an error envelope only, discarding the
-    stdout captured before the kill. Every usage event streamed up to that point was
-    lost, so a timed-out cell persisted as 0 tokens despite genuine spend.
+    The timeout branch previously returned an error envelope only, discarding the stdout captured before the kill. Every
+    usage event streamed up to that point was lost, so a timed-out cell persisted as 0 tokens despite genuine spend.
     """
     runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
     streamed = _completed_stream(output="partial answer")
@@ -2913,7 +2900,7 @@ def test_timed_out_transport_preserves_streamed_usage_events(
 def test_timed_out_transport_kills_the_whole_process_group(
     script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """B-M15: killing only the direct child leaves descendants burning paid budget."""
+    """Killing only the direct child leaves descendants burning paid budget."""
     runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
     terminated: list[Any] = []
     monkeypatch.setattr(script_run_codex.subprocess, "Popen", _FakePopen.factory(timeout_after_streaming=""))
@@ -2925,7 +2912,7 @@ def test_timed_out_transport_kills_the_whole_process_group(
 
 
 def test_transport_child_starts_in_its_own_process_group(script_run_codex: Any) -> None:
-    """B-M15: the Popen keywords must actually detach the child."""
+    """The Popen keywords must actually detach the child."""
     group = script_run_codex.NEW_PROCESS_GROUP
 
     assert group.get("start_new_session") is True or "creationflags" in group
@@ -2934,7 +2921,7 @@ def test_transport_child_starts_in_its_own_process_group(script_run_codex: Any) 
 def test_transport_decodes_undecodable_bytes_instead_of_raising(
     script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """B-L13: text mode without an error policy raises on malformed provider bytes."""
+    """Text mode without an error policy raises on malformed provider bytes."""
     runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
     captured: dict[str, Any] = {}
 
@@ -3250,7 +3237,7 @@ def test_main_records_cell_failures_and_continues_after_smoke(
     assert metadata["cell_outcomes"]["compliance_failed"] == 1
     assert metadata["cell_outcomes"]["locked_query_nonconforming"] == 1
     assert "semantic_query_failed" not in metadata["cell_outcomes"]
-    # A-H1: B is an optional-use canary, so a no-query B cell keeps its pooling
+    # B is an optional-use canary, so a no-query B cell keeps its pooling
     # eligibility. Its non-compliance is still observed and reported above as
     # `compliance_failed`; only the survivorship-inducing exclusion is gone.
     assert metadata["artifacts"]["canonical_telemetry_pooling_eligible"] is True
@@ -3270,7 +3257,7 @@ def test_main_records_cell_failures_and_continues_after_smoke(
 
 
 def test_pooling_still_excludes_a_non_compliant_strict_cell(script_run_codex: Any) -> None:
-    """A-H1: relaxing B must not relax C's required-use contract.
+    """Relaxing B must not relax C's required-use contract.
 
     Pins the other side of the same predicate: the strict arm keeps
     ``required_use_missing`` when it makes no successful query.
@@ -3291,7 +3278,7 @@ def test_pooling_still_excludes_a_non_compliant_strict_cell(script_run_codex: An
 
 
 def test_pooling_admits_a_non_compliant_optional_use_cell(script_run_codex: Any) -> None:
-    """A-H1: a zero-query B cell carries no required-use exclusion."""
+    """A zero-query B cell carries no required-use exclusion."""
     run = script_run_codex.CodexRun(
         arm="B_direct_required",
         task_id="first",
@@ -3314,9 +3301,8 @@ def test_main_stops_after_three_equivalent_unknown_infrastructure_failures(
 ) -> None:
     """Three identical unknown pre-response infrastructure failures stop the study.
 
-    Prevents a shared provider outage from generating a long sequence of
-    zero-token cells after the third matching signature.  Known deterministic
-    authentication failures stop immediately; semantic failures continue.
+    Prevents a shared provider outage from generating a long sequence of zero-token cells after the third matching
+    signature.  Known deterministic authentication failures stop immediately; semantic failures continue.
     """
     tasks = [{"id": f"task-{index}", "prompt": "prompt", "type": "demo"} for index in range(1, 5)]
     calls: list[tuple[str, str]] = []
@@ -3379,8 +3365,8 @@ def test_main_stops_immediately_after_a_deterministic_authentication_failure(
 ) -> None:
     """A known expired or consumed refresh token requires no recurrence wait.
 
-    Prevents a deterministic credential failure from paying for two additional
-    cells merely to satisfy the generic unknown-infrastructure threshold.
+    Prevents a deterministic credential failure from paying for two additional cells merely to satisfy the generic
+    unknown-infrastructure threshold.
     """
     tasks = [{"id": f"task-{index}", "prompt": "prompt", "type": "demo"} for index in range(1, 3)]
     calls: list[tuple[str, str]] = []
@@ -3499,9 +3485,8 @@ def test_main_closes_runner_auth_state_on_all_study_exits(
 ) -> None:
     """The study owns and closes the runner's private auth state lifecycle.
 
-    Prevents normal completion or a mid-study exception from retaining a
-    refreshed credential chain beyond the run.  The concrete state-directory
-    permissions and deletion are exercised in the runner-level auth test.
+    Prevents normal completion or a mid-study exception from retaining a refreshed credential chain beyond the run.  The
+    concrete state-directory permissions and deletion are exercised in the runner-level auth test.
     """
     task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
     closed = 0
@@ -3569,9 +3554,8 @@ def test_main_closes_runner_when_setup_raises_before_the_first_cell(
 ) -> None:
     """Every pre-cell setup boundary closes runner-owned credential state.
 
-    Covers snapshot generation, metadata construction, and first metadata
-    persistence.  A narrow snapshot-only exception handler would leak a
-    refreshed auth chain when either subsequent setup action is interrupted.
+    Covers snapshot generation, metadata construction, and first metadata persistence.  A narrow snapshot-only exception
+    handler would leak a refreshed auth chain when either subsequent setup action is interrupted.
     """
     task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
     closed = 0
@@ -4612,8 +4596,8 @@ def test_canonical_native_item_query_contract(
 ) -> None:
     """Credit B only for the standalone canonical native command item.
 
-    Prevents telemetry from treating shell interpretation or loosely embedded
-    JSON as equivalent to the future benchmark's explicit native-item proof.
+    Prevents telemetry from treating shell interpretation or loosely embedded JSON as equivalent to the future
+    benchmark's explicit native-item proof.
     """
     parsed = codex_runtime.parse_codex_jsonl(
         _completed_stream(
@@ -4890,9 +4874,8 @@ def test_query_mismatch_does_not_reclassify_successful_transport_or_pooling(
 def test_all_locked_execution_queries_accept_strict_option_permutations(script_run_codex: Any) -> None:
     """Every current execution query must survive strict B/C conformance admission.
 
-    The table is derived from the locked 55-task execution set (68 expected
-    queries), rather than from the normalizer's option vocabulary.  This keeps
-    a newly introduced task query from silently becoming unrecognized.
+    The table is derived from the locked 55-task execution set (68 expected queries), rather than from the normalizer's
+    option vocabulary.  This keeps a newly introduced task query from silently becoming unrecognized.
     """
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     execution_ids = manifest["preregistered_cells"]["structural_execution_task_ids"]
@@ -6031,8 +6014,8 @@ def test_C_skill_binding_credits_a_valid_query_while_retaining_manual_read_diagn
 def test_cli_exposes_only_task_selection_not_study_or_paid_switches(script_run_codex: Any) -> None:
     """The single runner infers internal stages from task IDs.
 
-    Prevents deprecated public routing and confirmation switches from surviving
-    after task selection becomes the complete execution interface.
+    Prevents deprecated public routing and confirmation switches from surviving after task selection becomes the
+    complete execution interface.
     """
     parameters = inspect.signature(script_run_codex.cli).parameters
 
@@ -6094,7 +6077,7 @@ def test_unified_paid_command_preserves_the_supplied_absolute_manifest_path(
 
 
 def test_resolve_task_selection_without_selectors_plans_all_stage_cells(script_run_codex: Any) -> None:
-    """Omitting --tasks must plan the complete 73-task, 219-cell benchmark."""
+    """Omitting ``--tasks`` must plan the complete 73-task, 219-cell benchmark."""
     scope = script_run_codex.resolve_task_selection(MANIFEST_PATH, None)
     stage_task_ids = {stage["stage_id"]: stage["task_ids"] for stage in scope["stages"]}
 

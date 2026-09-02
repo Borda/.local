@@ -77,14 +77,17 @@ class TestMainCli:
         assert capsys.readouterr().out.strip() == "lower"
 
     def test_default_returned_when_missing(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """--default value printed when field absent."""
+        """Verify command-line option behavior.
+
+        The ``--default`` value is printed when the field is absent.
+        """
         state = _write_state(tmp_path / "state.json", {"config": {}})
         rc = main([str(state), "config.metric.direction", "--default", "higher"])
         assert rc == 0
         assert capsys.readouterr().out.strip() == "higher"
 
     def test_empty_default_when_missing_and_no_flag(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """No --default + missing field → empty line on stdout."""
+        """Confirm a missing field without ``--default`` prints an empty line."""
         state = _write_state(tmp_path / "state.json", {})
         rc = main([str(state), "missing"])
         assert rc == 0

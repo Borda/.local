@@ -2,18 +2,17 @@
 
 Pinned failure modes:
 
-* E-H1 — every hand-copied index-guard block defaulted to a CWD-relative ``.cache/codemap``
+* Every hand-copied index-guard block defaulted to a CWD-relative ``.cache/codemap``
   while the provider anchors on the git toplevel, so a skill invoked from a subdirectory
   reported a false ``no_index``. The sweep below is tree-wide on purpose: the guard is
-  hand-copied (E-H2), so a per-file assertion would let the next copy drift in unnoticed.
-* E-M5 — the gates wrapper named a build command its own loaded contract does not use,
-  inside the sentence instructing the reader to apply that contract verbatim. Resolved by
-  E-N7 from the contract side, so what is pinned below inverted — see there.
-* E-N7 — the shipped contract now names the gated ``codemap-py index`` launcher itself, so
-  the wrapper's "apply verbatim, with one override" clause described a disagreement that no
-  longer exists. A wrapper claiming to override a contract it agrees with is as misleading as
-  the E-M5 contradiction was: both leave the reader unable to tell which command wins.
-* E-L2 — the retired ``codemap:`` skill prefix.
+  hand-copied, so a per-file assertion would let the next copy drift in unnoticed.
+* The gates wrapper previously named a build command that disagreed with its loaded contract,
+  even though the same sentence instructed the reader to apply that contract verbatim.
+* The shipped contract now names the gated ``codemap-py index`` launcher itself. The wrapper's
+  former "apply verbatim, with one override" clause therefore described a disagreement that no
+  longer exists. Claiming an override where the wrapper and contract agree would leave the
+  reader unable to tell which command wins.
+* The retired ``codemap:`` skill prefix.
 """
 
 from __future__ import annotations
@@ -50,7 +49,7 @@ def _tracked_text_files(root: Path) -> list[Path]:
 
 
 def test_no_cwd_relative_index_dir_anywhere_in_the_plugin():
-    """E-H1: the index lives under the git toplevel; anchoring on the CWD is a false no_index."""
+    """The index lives under the git toplevel; anchoring on the CWD is a false no_index."""
     offenders = [
         p.relative_to(_REPO_ROOT).as_posix()
         for p in _tracked_text_files(_DEVELOP)
@@ -77,15 +76,12 @@ def test_gates_resolve_and_read_the_shipped_contract():
 
 
 def test_build_command_is_applied_from_the_contract_without_an_override():
-    """E-N7: the contract now names the gated launcher, so no override may be claimed.
+    """Ensure the wrapper uses the build command named by the contract without claiming an override.
 
-    This assertion is the inverse of the one E-M5 left here. E-M5 required the wrapper to
-    *state* its override (contract said ``scan-index``, consumers ran ``codemap-py index``),
-    and required the overridden alias to be named or the reader could not apply it. The
-    contract was corrected, so the override became a fiction: it announces a deviation from
-    text that already agrees, and re-introduces the retired alias into a wrapper that never
-    invokes it. What is pinned now is agreement — the build command is named, the override
-    language and the alias are gone.
+    An earlier assertion required the wrapper to state its override because the contract named ``scan-index`` while
+    consumers ran ``codemap-py index``. The corrected contract now agrees with its consumers, so override language would
+    announce a nonexistent deviation and reintroduce an alias the wrapper never invokes. This test keeps the command
+    explicit while ensuring both the obsolete override language and retired alias remain absent.
     """
     text = _GATES.read_text(encoding="utf-8")
 
@@ -102,11 +98,10 @@ def test_gates_read_the_sentinel_the_resolver_writes():
 
 
 def test_no_retired_codemap_skill_prefix():
-    """E-L2: the plugin is `codemap-py:`; the bare `codemap:<skill>` prefix is retired.
+    """The plugin is `codemap-py:`; the bare `codemap:<skill>` prefix is retired.
 
-    The skill name must follow the colon immediately — a prose colon ("With codemap: effort
-    sizing is structural") and the ``# codemap: integrated-via-shared`` marker are not
-    plugin references and must not be flagged.
+    The skill name must follow the colon immediately — a prose colon ("With codemap: effort sizing is structural") and
+    the ``# codemap: integrated-via-shared`` marker are not plugin references and must not be flagged.
     """
     offenders = [
         p.relative_to(_REPO_ROOT).as_posix()

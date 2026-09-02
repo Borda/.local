@@ -251,7 +251,7 @@ def test_main_mode_routing_via_subprocess(argv: list[str], expected_mode: str) -
 
 
 def test_help_flag_exits_zero_via_subprocess() -> None:
-    """``--help`` prints usage and exits 0 (argparse)."""
+    """Print usage and exit 0 (argparse)."""
     result = subprocess.run(
         [sys.executable, str(_BIN), "--help"],
         capture_output=True,
@@ -265,8 +265,8 @@ def test_help_flag_exits_zero_via_subprocess() -> None:
 def test_dash_leading_prose_forwarded_not_misparsed_as_flag() -> None:
     """Blob-forward safety: a comment starting with ``-`` reaches the regex parser as comment-dispatch.
 
-    argparse must NOT intercept dash-leading blob content as an unknown flag — the
-    ``$ARGUMENTS`` blob is forwarded verbatim to ``parse_resolve_args``.
+    argparse must NOT intercept dash-leading blob content as an unknown flag — the ``$ARGUMENTS`` blob is forwarded
+    verbatim to ``parse_resolve_args``.
     """
     result = subprocess.run(
         [sys.executable, str(_BIN), "-x is broken"],

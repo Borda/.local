@@ -1,9 +1,8 @@
 """Tests for ``bin/setup_release_dir.py``.
 
-Pure filesystem tests — no subprocess mocking required. The script
-performs only pathlib/shutil operations; ``tmp_path`` provides isolation.
-Tests mirror the shell-script test coverage plus re-run (symlink overwrite)
-and non-existent-file-not-backed-up edge cases.
+Pure filesystem tests — no subprocess mocking required. The script performs only pathlib/shutil operations; ``tmp_path``
+provides isolation. Tests mirror the shell-script coverage and add cases for rerunning with a symlink overwrite and for
+an absent file that was not backed up.
 """
 
 from __future__ import annotations

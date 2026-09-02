@@ -1,8 +1,8 @@
 """Behavioral acceptance checks for the root Makefile's Claude- and Codex-side sync targets.
 
-These exercise the actual `make <target>` invocation against stubbed CLIs and scratch
-registries — never the real `claude`/`codex` CLIs or the real `$HOME` — so they can run
-safely in CI without touching a developer's or runner's real plugin state.
+These exercise the actual `make <target>` invocation against stubbed CLIs and scratch registries — never the real
+`claude`/`codex` CLIs or the real `$HOME` — so they can run safely in CI without touching a developer's or runner's real
+plugin state.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ def _run_make(
 
 @pytest.fixture
 def fake_claude(tmp_path: Path) -> FakeClaude:
-    """A stub `claude` CLI that logs every invocation and can simulate a failed bridge install."""
+    """Provide a Claude CLI stub that records invocations and simulates installation failures."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     log = tmp_path / "claude-invocations.log"
@@ -84,7 +84,7 @@ def fake_claude(tmp_path: Path) -> FakeClaude:
 
 @pytest.fixture
 def sandbox_home(tmp_path: Path) -> Path:
-    """A scratch $HOME with an empty Claude plugin registry."""
+    """Create an isolated home directory with an empty Claude plugin registry."""
     home = tmp_path / "home"
     plugins_dir = home / ".claude" / "plugins"
     (plugins_dir / "cache").mkdir(parents=True)
@@ -96,7 +96,7 @@ def sandbox_home(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def fake_codex_sync_script(tmp_path: Path) -> FakeScript:
-    """A stub replacing sync_codex.py that records its argv instead of touching real Codex state."""
+    """Provide a Codex sync stub that records arguments without changing real state."""
     path = tmp_path / "fake_sync_codex.py"
     log = tmp_path / "codex-sync.log"
     path.write_text(
@@ -110,7 +110,7 @@ def fake_codex_sync_script(tmp_path: Path) -> FakeScript:
 
 @pytest.fixture
 def fake_codex_home_sync_script(tmp_path: Path) -> FakeScript:
-    """A stub replacing sync_codex_session_policy.py that records its argv."""
+    """Provide a session-policy sync stub that records its arguments."""
     path = tmp_path / "fake_sync_codex_session_policy.py"
     log = tmp_path / "codex-home-sync.log"
     path.write_text(
@@ -132,7 +132,7 @@ class TestInstallClaudePlugins:
 
         ponytail@ponytail is always purged; codex@openai-codex is purged only when this
         run's bridge install succeeded, per plugins/codex-rig/tests/test_sync_setup_dispatch.py's
-        retired contract (blueprint constraint 6) — this is the Claude-side half of that guard,
+        retired contract — this is the Claude-side half of that guard,
         now verified against the Makefile instead of the retired sync.sh.
         """
         env = os.environ.copy()
@@ -174,14 +174,14 @@ class TestInstallClaudePlugins:
 
 
 class TestMigrateMarketplace:
-    """jq-driven registry rewrites for a stale marketplace registration."""
+    """Jq-driven registry rewrites for a stale marketplace registration."""
 
     def test_renames_stale_marketplace_across_all_three_registries(self, tmp_path: Path) -> None:
         """A stale marketplace name must be renamed everywhere, including nested string values.
 
-        Covers the cache directory rename plus all three jq mutations (known_marketplaces.json
-        key rename, installed_plugins.json key + nested-string rename via `walk`, and
-        settings.json's extraKnownMarketplaces deletion + nested-string rename).
+        Covers the cache directory rename plus all three jq mutations (known_marketplaces.json key rename,
+        installed_plugins.json key + nested-string rename via `walk`, and settings.json's extraKnownMarketplaces
+        deletion + nested-string rename).
         """
         cache_dir = tmp_path / "cache"
         (cache_dir / "old-name").mkdir(parents=True)
@@ -228,7 +228,7 @@ class TestInstallCodexPlugins:
     """No-flag invocation contract for the Codex-side install target."""
 
     def test_invokes_sync_codex_install_with_no_flags(self, fake_codex_sync_script: FakeScript) -> None:
-        """Dropped CLI flags (blueprint constraint 2) must not silently resurface as passed args."""
+        """Dropped CLI flags must not silently resurface as passed args."""
         env = os.environ.copy()
 
         result = _run_make(
@@ -276,8 +276,8 @@ class TestSyncCodexHomePolicy:
 def test_target_dry_runs_without_a_make_parse_error(target: str) -> None:
     """Every remaining target must at least dry-run cleanly (catches syntax/escaping regressions).
 
-    A `$$`-escaping mistake or a missing `;` in one of these simpler targets would show up
-    here as a nonzero `make -n` exit even before any real command runs.
+    A `$$`-escaping mistake or a missing `;` in one of these simpler targets would show up here as a nonzero `make -n`
+    exit even before any real command runs.
     """
     result = subprocess.run(
         [GNU_MAKE, "-f", str(MAKEFILE), "-n", target], cwd=ROOT, capture_output=True, text=True, check=False

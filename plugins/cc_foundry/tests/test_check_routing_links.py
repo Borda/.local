@@ -38,8 +38,8 @@ _HAS_PROJECT_PLUGIN_TREE = (Path(__file__).resolve().parent.parent.parent / "cc_
 def _make_plugin_tree(tmp: Path, plugin: str = "foundry") -> tuple[Path, Path]:
     """Create a minimal plugins/cc_<plugin>/ tree and return (plugins_dir, plugin_dir).
 
-    The on-disk source folder is cc_-prefixed after the folder rename, matching
-    what ``_VAR_ROOTS`` resolves paths against; the plugin ``name`` stays bare.
+    The on-disk source folder is cc_-prefixed after the folder rename, matching what ``_VAR_ROOTS`` resolves paths
+    against; the plugin ``name`` stays bare.
     """
     plugins_dir = tmp / "plugins"
     plugin_dir = plugins_dir / f"cc_{plugin}"
@@ -320,8 +320,8 @@ class TestRunR1:
         assert fails == [], f"Expected no FAIL findings, got: {fails}"
 
     def test_warn_not_fail_when_local_only(self, tmp_path: Path) -> None:
-        """Local-only is advisory: the cache is machine state, so a not-yet-released file must
-        never block the commit that releases it."""
+        """Local-only is advisory: the cache is machine state, so a not-yet-released file must never block the commit
+        that releases it."""
         plugins_dir, plugin_dir = _make_plugin_tree(tmp_path)
         cache_dir = _make_cache(tmp_path)
 
@@ -371,9 +371,8 @@ class TestRunR1:
         assert len(infos) >= 1
 
     def test_cross_plugin_literal_ref_resolves_target_not_source_plugin(self, tmp_path: Path) -> None:
-        """Regression: a literal `plugins/<other>/...md` ref must resolve against the
-        REFERENCED plugin's cache, not the SOURCE file's own plugin — even when
-        plugins_dir is absolute (as main() always passes it via .resolve()).
+        """Regression: a literal `plugins/<other>/...md` ref must resolve against the REFERENCED plugin's cache, not the
+        SOURCE file's own plugin — even when plugins_dir is absolute (as main() always passes it via .resolve()).
 
         Prior bug: target_folder was derived via
         `Path(ref.resolved_local).relative_to(plugins_dir).parts[0]`, which always
@@ -662,7 +661,10 @@ class TestMain:
 
     @pytest.mark.skipif(not _HAS_PROJECT_PLUGIN_TREE, reason="requires project-root plugins/ tree")
     def test_real_plugins_dir_no_crash(self) -> None:
-        """Smoke test against the actual plugins/ directory. Should not crash."""
+        """Smoke test against the actual plugins/ directory.
+
+        Should not crash.
+        """
         real_plugins = Path(__file__).resolve().parent.parent.parent  # plugins/
         # Use a nonexistent cache dir so no installed-state comparisons are made
         cache_dir = Path("/tmp/nonexistent_cache_dir_for_test")

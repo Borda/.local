@@ -6,7 +6,7 @@ Usage:
 
 Reads a pip-audit JSON document from stdin and prints a single-line summary of
 the form ``N deps, M vulns``.  Extracted from run_audit_checks.sh inline
-``python -c`` block (F-09 in security audit 2026-05-19) to satisfy the
+``python -c`` block (as noted in the security audit) to satisfy the
 project Check 23e policy prohibiting inline ``python -c`` snippets.
 
 Exit codes:
@@ -60,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     Examples:
         No doctest — requires stdin; covered by pytest with monkeypatch.
     """
-    # Honour only -h/--help; any other argv is ignored (legacy stdin-only contract).
+    # Honour only ``-h/--help``; any other argv is ignored (legacy stdin-only contract).
     effective_argv = sys.argv[1:] if argv is None else argv
     if effective_argv in (["-h"], ["--help"]):
         argparse.ArgumentParser(

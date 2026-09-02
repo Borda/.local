@@ -192,7 +192,7 @@ class TestMainCli:
         return tmp_path / "projects"
 
     def test_session_mode_writes_detail_report(self, tmp_path: Path, capsys):
-        """`--session-id` renders the single-session deep-dive section."""
+        """Render the single-session deep-dive section."""
         root = self._projects_root(tmp_path)
         _write_jsonl(root / "-slug-a" / "sid1.jsonl", [_usage_row("m1", output_tokens=100)])
         out = tmp_path / "cost.md"
@@ -204,7 +204,7 @@ class TestMainCli:
         assert "Session `sid1`" in body
 
     def test_session_mode_unknown_id_returns_1(self, tmp_path: Path, capsys):
-        """An unmatched --session-id exits 1 with a stderr message, no report written."""
+        """An unmatched ``--session-id`` exits 1 with a stderr message, no report written."""
         root = self._projects_root(tmp_path)
         _write_jsonl(root / "-slug-a" / "sid1.jsonl", [_usage_row("m1", output_tokens=100)])
         out = tmp_path / "cost.md"
@@ -214,7 +214,7 @@ class TestMainCli:
         assert not out.exists()
 
     def test_window_mode_ranks_sessions_by_cost(self, tmp_path: Path, capsys):
-        """Default (no --session-id) mode ranks every session in the window by cost."""
+        """Default (no ``--session-id``) mode ranks every session in the window by cost."""
         root = self._projects_root(tmp_path)
         _write_jsonl(root / "-slug-a" / "sid1.jsonl", [_usage_row("m1", output_tokens=100)])
         _write_jsonl(root / "-slug-b" / "sid2.jsonl", [_usage_row("m2", output_tokens=1)])

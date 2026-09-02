@@ -82,13 +82,13 @@ def locate_scan_query() -> Path:
     if found and os.access(found, os.X_OK):
         return Path(found)
 
-    # Tier 2 — CLAUDE_PLUGIN_ROOT (canonicalized: defence-in-depth against symlink/relative-path tricks, SEC-L6)
-    # SEC-M6: only trust an absolute env value; reject empty or relative paths (skip the tier entirely).
+    # Tier 2 — canonicalized CLAUDE_PLUGIN_ROOT, which guards against symlink and relative-path tricks.
+    # Only trust an absolute env value; reject empty or relative paths (skip the tier entirely).
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
     if plugin_root and Path(plugin_root).is_absolute():
         plugin_root_path = Path(plugin_root).resolve()
         result = _find_executable(plugin_root_path / "bin" / "scan-query")
-        # SEC-M5: containment guard — the resolved candidate must stay inside plugin_root; a planted
+        # Containment guard — the resolved candidate must stay inside plugin_root; a planted
         # symlink at bin/scan-query that escapes the plugin root is rejected, falling through to Tier 3.
         if result:
             try:
@@ -98,8 +98,8 @@ def locate_scan_query() -> Path:
                 pass  # unresolvable candidate (broken symlink, permission error) — skip to Tier 3
 
     # Tier 3 — cache glob, newest semver
-    # SEC-L (advisory): same containment guard as Tier 2 — a symlink planted under a cache
-    # version dir that escapes cache_base is rejected rather than trusted on glob match alone.
+    # Apply the same containment guard as Tier 2: reject a cache symlink that escapes
+    # cache_base rather than trusting the glob match alone.
     cache_base = Path.home() / ".claude" / "plugins" / "cache"
     glob_hits = list(cache_base.glob("*/codemap/*/bin/scan-query"))
     if sys.platform == "win32":
@@ -121,7 +121,7 @@ def locate_scan_query() -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point; returns exit code.
+    """Locate and print the preferred ``scan-query`` executable.
 
     Args:
         argv: Optional argv override (defaults to ``sys.argv[1:]``). The script takes

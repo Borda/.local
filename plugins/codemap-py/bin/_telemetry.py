@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""bin/_telemetry.py — compatibility shim for :mod:`codemap_py.telemetry` (Phase 3 slice 1).
+"""Compatibility shim forwarding the legacy telemetry import to :mod:`codemap_py.telemetry`.
 
-``scan-index``/``scan-query`` import this bare module name after inserting
-``bin/`` onto their own ``sys.path``; this shim prepends ``<plugin-root>/src``
-to the process import path, then replaces its own entry in ``sys.modules``
-with the real package module so every attribute access — including the
-module-global ``_PLUGIN_VERSION`` cache a test monkeypatches — reaches the one
-authoritative implementation.
+``scan-index``/``scan-query`` import this bare module name after inserting ``bin/`` onto their own ``sys.path``; this
+shim prepends ``<plugin-root>/src`` to the process import path, then replaces its own entry in ``sys.modules`` with the
+real package module so every attribute access — including the module-global ``_PLUGIN_VERSION`` cache a test
+monkeypatches — reaches the one authoritative implementation.
 
 consumers: bin/scan-index, bin/scan-query — imported as bare ``_telemetry``; not a standalone executable
 """

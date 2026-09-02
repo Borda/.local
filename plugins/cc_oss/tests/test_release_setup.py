@@ -1,14 +1,12 @@
 """Tests for ``bin/release_setup.py``.
 
-All git subprocess calls are monkeypatched via a sequential fake that
-returns pre-configured ``(returncode, stdout)`` pairs in call order.
-No real ``git`` invocations occur. The stable-branch path (3 git calls)
-and fallback path (8 calls) are both covered.
+All git subprocess calls are monkeypatched via a sequential fake that returns pre-configured ``(returncode, stdout)``
+pairs in call order. No real ``git`` invocations occur. The stable-branch path (3 git calls) and fallback path (8 calls)
+are both covered.
 
-Output is written to ``${TMPDIR}/release-setup-<CSID>/<KEY>`` files; tests use
-``monkeypatch.setenv("TMPDIR", str(tmp_path))`` to redirect writes. The
-``conftest.py`` autouse fixture strips ``CLAUDE_CODE_SESSION_ID``/``CSID``,
-so ``<CSID>`` resolves to the literal ``"shared"`` fallback here.
+Output is written below ``${TMPDIR}/release-setup-<CSID>``; tests redirect ``TMPDIR`` with monkeypatch. The
+``conftest.py`` autouse fixture strips ``CLAUDE_CODE_SESSION_ID`` and ``CSID``, so ``<CSID>`` resolves to the literal
+``"shared"`` fallback here.
 """
 
 from __future__ import annotations
@@ -169,14 +167,14 @@ def test_all_output_files_written(monkeypatch: pytest.MonkeyPatch, tmp_path: pyt
 
 
 def test_git_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``which`` returns None → FileNotFoundError propagates."""
+    """Return None → FileNotFoundError propagates."""
     monkeypatch.setattr(rs, "which", lambda _: None)
     with pytest.raises(FileNotFoundError, match="git"):
         rs.main([])
 
 
 def test_help_exits_0_no_git(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """``--help`` prints usage and exits 0 before resolving git."""
+    """Print usage and exit 0 before resolving git."""
     monkeypatch.setattr(rs, "which", lambda _cmd: (_ for _ in ()).throw(AssertionError("which must not run on --help")))
     with pytest.raises(SystemExit) as exc:
         rs.main(["--help"])

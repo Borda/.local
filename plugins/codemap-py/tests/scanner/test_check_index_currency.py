@@ -64,18 +64,18 @@ class TestResult:
     """Tests for the ``_result`` helper."""
 
     def test_current_exit_0(self) -> None:
-        """status=current maps to exit code 0."""
+        """Map to exit code 0."""
         r, code = cic._result("current", "ok")
         assert code == 0
         assert r["status"] == "current"
 
     def test_stale_exit_1(self) -> None:
-        """status=stale maps to exit code 1."""
+        """Map to exit code 1."""
         _, code = cic._result("stale", "changed")
         assert code == 1
 
     def test_no_index_exit_2(self) -> None:
-        """status=no_index maps to exit code 2."""
+        """Map a missing-index status to the documented exit code."""
         _, code = cic._result("no_index", "missing")
         assert code == 2
 
@@ -211,7 +211,7 @@ class TestReadIndex:
 
 
 class TestCheckCurrencyNoIndex:
-    """``check_currency`` when index is absent or unreadable."""
+    """Handle missing and unreadable index files."""
 
     def test_missing_file(self, tmp_path: Path) -> None:
         """Non-existent index path returns no_index."""
@@ -364,7 +364,6 @@ class TestCheckCurrencyTier2:
 
     def test_current_mtime_prefilter(self, tmp_path: Path) -> None:
         """File whose mtime predates scan is not content-checked even when content differs."""
-
         py = tmp_path / "old.py"
         py.write_text("content A")
         old_sha = cic._md5_file(py)
@@ -438,7 +437,7 @@ class TestCheckCurrencyTier2GitBlobs:
     def test_stale_when_git_listing_unavailable(
         self, index_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """``git ls-files`` failing marks every stored file changed rather than assuming current."""
+        """Handle failure by marks every stored file changed rather than assuming current."""
         monkeypatch.setattr(cic, "_git_blob_shas", lambda root: None)
         r, _ = cic.check_currency(index_file, tmp_path)
         assert r["status"] == "stale"
@@ -446,7 +445,7 @@ class TestCheckCurrencyTier2GitBlobs:
 
 
 # ---------------------------------------------------------------------------
-# CLI — main() and --field flag
+# CLI — main() and ``--field`` flag
 # ---------------------------------------------------------------------------
 
 
@@ -456,7 +455,7 @@ class TestCLI:
     def test_field_status_current(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
     ) -> None:
-        """``--field status`` prints only the status value."""
+        """Print only the status value."""
         py = tmp_path / "m.py"
         py.write_text("x = 1")
         sha = cic._md5_file(py)
@@ -472,7 +471,7 @@ class TestCLI:
         assert code == 0
 
     def test_field_reason(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture) -> None:
-        """``--field reason`` prints the reason string."""
+        """Print the reason string."""
         idx = tmp_path / "idx.json"
         _write_index(idx, _minimal_index(git_sha=SHA_A))
         monkeypatch.setattr(cic, "_git_head", lambda root: SHA_B)
@@ -484,7 +483,7 @@ class TestCLI:
     def test_full_json_output(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
     ) -> None:
-        """Without --field, output is valid JSON with status/reason/changed_count."""
+        """Without ``--field``, output is valid JSON with status/reason/changed_count."""
         idx = tmp_path / "idx.json"
         _write_index(idx, _minimal_index(git_sha=SHA_A))
         monkeypatch.setattr(cic, "_git_head", lambda root: SHA_A)
@@ -495,7 +494,7 @@ class TestCLI:
         assert set(data) >= {"status", "reason", "changed_count"}
 
     def test_missing_index_path_arg(self, capsys: pytest.CaptureFixture) -> None:
-        """Missing required --index-path exits non-zero."""
+        """Missing required ``--index-path`` exits non-zero."""
         with pytest.raises(SystemExit) as exc:
             cic.main([])
         assert exc.value.code != 0
@@ -511,7 +510,7 @@ class TestCLI:
         monkeypatch.setattr(cic, "_git_toplevel", lambda: tmp_path)
         monkeypatch.setattr(cic, "_git_head", lambda root: SHA_A)
         monkeypatch.setattr(cic, "_git_dirty_py_count", lambda root: 0)
-        # no --root flag; _git_toplevel mock returns tmp_path
+        # no ``--root`` flag; _git_toplevel mock returns tmp_path
         cic.main(["--index-path", str(idx)])
         out = capsys.readouterr().out.strip()
         data = json.loads(out)
@@ -538,10 +537,9 @@ def gate_events() -> Iterator[list[str]]:
 def live_writer() -> Iterator[Callable[[Path], None]]:
     """Return a callable holding a real exclusive writer lease until the test ends.
 
-    The writer runs on a second thread and parks inside its exclusive phase, so the
-    index it guards is genuinely unavailable to a reader for the whole test — the
-    only condition under which a leased read and a token-free read give different
-    answers.
+    The writer runs on a second thread and parks inside its exclusive phase, so the index it guards is genuinely
+    unavailable to a reader for the whole test — the only condition under which a leased read and a token-free read give
+    different answers.
     """
     release = threading.Event()
     started = threading.Event()
@@ -567,7 +565,7 @@ class TestIndexReadIsLeased:
     """The index is read under a shared reader lease, never token-free."""
 
     def test_read_index_brackets_the_parse_with_a_reader_token(self, tmp_path: Path, gate_events: list[str]) -> None:
-        """``_read_index`` acquires and releases exactly one reader token per read."""
+        """Acquire and release exactly one reader token for each index read."""
         p = tmp_path / "idx.json"
         _write_index(p, _minimal_index())
         cic._read_index(p)

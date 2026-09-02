@@ -1,4 +1,4 @@
-"""codemap_py — dual-runtime Python structural index package (plan §5 layout).
+"""codemap_py — dual-runtime Python structural index package.
 
 Houses the index data contract (:mod:`codemap_py.schema`), the canonical
 project-index resolver (:mod:`codemap_py.index_paths`), the cross-process

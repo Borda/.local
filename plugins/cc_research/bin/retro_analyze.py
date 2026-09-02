@@ -56,9 +56,8 @@ MIN_SAMPLES_FOR_TEST: Final[int] = 6
 class Direction(str, Enum):
     """Which way a metric has to move to count as an improvement.
 
-    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is
-    ``>=3.10``. Values match the ``metric.direction`` field stored in a run's
-    ``state.json`` and the ``--direction`` CLI flag.
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``. Values match the
+    ``metric.direction`` field stored in a run's ``state.json`` and the ``--direction`` CLI flag.
     """
 
     HIGHER = "higher"
@@ -72,7 +71,7 @@ def _validate_jsonl_path(raw: str) -> Path | None:
       * The current working directory (treated as the project root)
       * The project's ``.experiments`` subdirectory
       * ``~/.claude/projects`` (per-project session data; narrower than the
-        full ``~/.claude`` tree — SEC-L8)
+        full ``~/.claude`` tree — )
       * The OS temporary directory — needed for pytest ``tmp_path`` runs.
 
     Args:
@@ -199,8 +198,8 @@ def run_wilcoxon(
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
     """Read a JSONL file; return list of parsed records.
 
-    Tolerates a trailing truncated line by silently skipping it (matches retro
-    SKILL.md behaviour). Raises ``ValueError`` on the first non-final malformed line.
+    Tolerates a trailing truncated line by silently skipping it (matches retro SKILL.md behaviour). Raises
+    ``ValueError`` on the first non-final malformed line.
     """
     records: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as fh:
@@ -222,9 +221,9 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
 def _extract_scores(records: list[dict[str, Any]], baseline_label: str) -> tuple[float, list[float]]:
     """Return (baseline_metric, candidate_metrics) parsed from records.
 
-    Baseline record is the first entry with ``status == baseline_label`` (default
-    label per retro SKILL.md is ``"baseline"``). Candidate records are every entry
-    with ``status == "kept"``. Records lacking a numeric ``metric`` are skipped.
+    Baseline record is the first entry with ``status == baseline_label`` (default label per retro SKILL.md is
+    ``"baseline"``). Candidate records are every entry with ``status == "kept"``. Records lacking a numeric ``metric``
+    are skipped.
     """
     baseline_metric: float | None = None
     candidates: list[float] = []
@@ -244,7 +243,7 @@ def _extract_scores(records: list[dict[str, Any]], baseline_label: str) -> tuple
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns process exit code."""
+    """Run retrospective analysis from command-line arguments."""
     parser = argparse.ArgumentParser(
         prog="retro_analyze",
         description="Wilcoxon signed-rank significance test for /research:retro JSONL output.",

@@ -1,9 +1,8 @@
 """Tests for ``bin/resolve_plugin_root.py``.
 
-Doctests in the source cover the pure helpers (``lookup_registry``,
-``scan_cache``). This file exercises the CLI surface via ``main()`` with a
-``monkeypatch``-ed HOME so the registry/cache cascade and the two security
-gates resolve against an isolated tree.
+Doctests in the source cover the pure helpers (``lookup_registry``, ``scan_cache``). This file exercises the CLI surface
+via ``main()`` with a ``monkeypatch``-ed HOME so the registry/cache cascade and the two security gates resolve against
+an isolated tree.
 """
 
 from __future__ import annotations
@@ -35,7 +34,7 @@ def _write_registry(home: Path, install_path: str, *, installed_at: str = "2026-
 
 
 class TestMain:
-    """main: CLI surface — stdout, stderr, exit codes."""
+    """Main: CLI surface — stdout, stderr, exit codes."""
 
     def test_registry_hit_prints_validated_root(
         self,

@@ -41,9 +41,8 @@ from typing import Final
 class ResolveMode(str, Enum):
     """Routing verdict emitted as the ``MODE`` shell variable.
 
-    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is
-    ``>=3.10``. Members are listed in match order — PR, PR-with-report, bare
-    report, then the comment-dispatch fallback.
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``. Members are listed in match
+    order — PR, PR-with-report, bare report, then the comment-dispatch fallback.
     """
 
     PR = "pr"
@@ -128,7 +127,7 @@ def main(argv: list[str]) -> int:
     Examples:
         No doctest — emits to stdout; covered by pytest via subprocess.
     """
-    # argparse only intercepts a lone -h/--help so users get discoverable help;
+    # argparse only intercepts a lone ``-h/--help`` so users get discoverable help;
     # for any real payload the blob is forwarded untouched (dash-leading prose,
     # e.g. a comment starting with "-", must reach the regex parser intact).
     if argv in (["-h"], ["--help"]):

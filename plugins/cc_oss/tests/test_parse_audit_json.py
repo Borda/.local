@@ -17,7 +17,7 @@ from parse_audit_json import main, summarize
 
 
 class TestSummarize:
-    """summarize: output format and edge cases."""
+    """Summarize: output format and edge cases."""
 
     def test_empty_dependencies(self) -> None:
         """Zero deps and zero vulns produces '0 deps, 0 vulns'."""
@@ -59,7 +59,7 @@ class TestSummarize:
 
 
 class TestMain:
-    """main(): exit codes and stdout output for stdin-driven operation."""
+    """Verify command-line output and exit codes for standard input."""
 
     def test_valid_json_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Valid pip-audit JSON → exit code 0 and summary on stdout."""
@@ -102,7 +102,7 @@ class TestMain:
         assert "stdin read error" in err
 
     def test_argv_override_unused(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """main() accepts argv list for signature compatibility but ignores it."""
+        """Accept but ignore arguments retained for signature compatibility."""
         fake_stdin = io.StringIO(json.dumps({"dependencies": []}))
         with patch("sys.stdin", fake_stdin):
             rc = main(["--ignored"])

@@ -142,7 +142,7 @@ def test_other_event_is_silent(run_hook, tmp_path: Path) -> None:
 
 
 def test_other_source_is_silent(run_hook, tmp_path: Path) -> None:
-    """``matcher: clear`` filters in production; the in-code gate is a second line."""
+    """Filter in production; the in-code gate is a second line."""
     write_handover(tmp_path)
     result = run_hook(HOOK, payload(tmp_path, source="startup"))
     assert result.returncode == 0
@@ -159,7 +159,7 @@ def test_absent_source_still_injects(run_hook, tmp_path: Path) -> None:
 
 
 def test_blank_pointer_is_silent(run_hook, tmp_path: Path) -> None:
-    """``/foundry:session recall`` empties LATEST rather than deleting it."""
+    """Empty the latest-session marker during session recall."""
     write_handover(tmp_path, pointer="")
     result = run_hook(HOOK, payload(tmp_path))
     assert result.returncode == 0
@@ -318,7 +318,7 @@ def test_crlf_consumption_preserves_line_endings(run_hook, tmp_path: Path) -> No
 
 
 def test_hook_is_registered_with_clear_matcher() -> None:
-    """``agent-router.js`` has an unregistered SessionStart branch — this one must not."""
+    """Verify that the result has an unregistered SessionStart branch — this one must not."""
     hooks_json = Path(__file__).resolve().parent.parent / "hooks" / "hooks.json"
     entries = json.loads(hooks_json.read_text(encoding="utf8"))["hooks"]["SessionStart"]
     matching = [entry for entry in entries if any(HOOK in hook.get("command", "") for hook in entry.get("hooks", []))]

@@ -40,7 +40,7 @@ Output (stdout):
 Exit codes:
     0   all files pass
     1   one or more violations found
-    2   argument error (unknown --check mode)
+    2   argument error (unknown ``--check`` mode)
 """
 
 from __future__ import annotations

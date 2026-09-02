@@ -76,16 +76,18 @@ def patch_repo(tmp_path: Path) -> Path:
 
 def _answer() -> str:
     """Return the candidate diff that repairs the staged target without editing it."""
-    return """```diff
-diff --git a/src/app.py b/src/app.py
-index 90731cd..2f13d5a 100644
---- a/src/app.py
-+++ b/src/app.py
-@@ -1,2 +1,2 @@
- def value() -> str:
--    return 'broken'
-+    return 'fixed'
-```"""
+    return (
+        "```diff\n"
+        "diff --git a/src/app.py b/src/app.py\n"
+        "index 90731cd..2f13d5a 100644\n"
+        "--- a/src/app.py\n"
+        "+++ b/src/app.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        " def value() -> str:\n"
+        "-    return 'broken'\n"
+        "+    return 'fixed'\n"
+        "```"
+    )
 
 
 def _already_passing_fixture(task: dict[str, object]) -> dict[str, object]:

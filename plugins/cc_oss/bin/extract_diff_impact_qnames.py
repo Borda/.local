@@ -41,7 +41,10 @@ def extract_qnames(diff_impact_json: str, cap: int = 12) -> list[str]:
         ``module::fn`` qname strings, first-seen order, length at most ``cap``.
 
     Examples:
-        >>> payload = '{"changed_modules": [{"changed_symbols": ["a::f", "a::g"]}, {"changed_symbols": ["a::f", "b::h"]}]}'
+        >>> payload = (
+        ...     '{"changed_modules": [{"changed_symbols": ["a::f", "a::g"]}, '
+        ...     '{"changed_symbols": ["a::f", "b::h"]}]}'
+        ... )
         >>> extract_qnames(payload, cap=10)
         ['a::f', 'a::g', 'b::h']
         >>> extract_qnames(payload, cap=2)

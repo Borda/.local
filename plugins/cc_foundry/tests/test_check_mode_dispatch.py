@@ -84,15 +84,15 @@ def _write(tmp: Path, name: str, text: str) -> Path:
 
 class TestExtractModeRefs:
     def test_quoted_go_to(self) -> None:
-        """`go to "Mode: X"` yields the name X."""
+        """Extract a mode name from a quoted navigation instruction."""
         assert extract_mode_refs('go to "Mode: Memory Distillation" below.') == ["Memory Distillation"]
 
     def test_bold_skip_to(self) -> None:
-        """`Skip to **Mode: X**` is matched case-insensitively on the verb."""
+        """Match a bold mode reference without regard to verb capitalization."""
         assert extract_mode_refs("Skip to **Mode: Executables Extraction** below.") == ["Executables Extraction"]
 
     def test_see_form(self) -> None:
-        """`see **Mode: X**` is a recognised dispatch form."""
+        """Recognize a mode reference introduced by a see instruction."""
         assert extract_mode_refs("see **Mode: External Distillation** below.") == ["External Distillation"]
 
     def test_multiple_refs_deduplicated_in_order(self) -> None:
@@ -168,7 +168,7 @@ class TestCheckFile:
 
 class TestFindSkillFiles:
     def test_globs_skill_md_under_dir(self, tmp_path: Path) -> None:
-        """`*/skills/*/SKILL.md` files under the scan dir are discovered."""
+        """Discover nested skill definitions beneath the scan directory."""
         target = tmp_path / "foundry" / "skills" / "audit" / "SKILL.md"
         target.parent.mkdir(parents=True)
         target.write_text("# audit", encoding="utf-8")
@@ -208,7 +208,7 @@ class TestMain:
         assert "✓" in capsys.readouterr().out
 
     def test_dangling_exit_1(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """A dangling reference exits 1 and prints the finding line."""
+        """Report a dangling mode reference as a failure."""
         path = _write(tmp_path, "SKILL.md", _DANGLING_SKILL)
         exit_code = main([str(path)])
         assert exit_code == 1
@@ -217,7 +217,7 @@ class TestMain:
         assert "Lessons Distillation" in out
 
     def test_scan_dir_mode(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        """`--scan-dir` discovers and checks nested SKILL.md files."""
+        """Discover and validate nested skills from an explicit scan directory."""
         target = tmp_path / "foundry" / "skills" / "distill" / "SKILL.md"
         target.parent.mkdir(parents=True)
         target.write_text(_DANGLING_SKILL, encoding="utf-8")

@@ -1,14 +1,13 @@
 """Index exclusion rules shared between scan-index (writer) and scan-query (reader).
 
-scan-index drops built-in ``SKIP_DIRS`` and user-configured (``pyproject.toml`` /
-``.codemapignore``) paths from the index. scan-query's staleness diff must apply the
-SAME rules — otherwise a git-tracked-but-excluded ``.py`` (e.g. a vendored tree) is
-re-listed unfiltered, shows as "added" against the filtered index ``file_shas``, and
-forces the index permanently stale (the 1.2 ↔ 1.1 integration gap). Keeping the rules
-in one module guarantees writer and reader never diverge.
+scan-index drops built-in ``SKIP_DIRS`` and user-configured (``pyproject.toml`` / ``.codemapignore``) paths from the
+index. scan-query's staleness diff must apply the SAME rules — otherwise a git-tracked-but-excluded ``.py`` (e.g. a
+vendored tree) is re-listed unfiltered, shows as "added" against the filtered index ``file_shas``, and forces the index
+permanently stale (the 1.2 ↔ 1.1 integration gap). Keeping the rules in one module guarantees writer and reader never
+diverge.
 
-Both scripts import via ``sys.path.insert`` on ``__file__``'s directory — this file
-must live alongside them in ``bin/``.
+Both scripts import via ``sys.path.insert`` on ``__file__``'s directory — this file must live alongside them in
+``bin/``.
 
 consumers: bin/scan-index, bin/scan-query — imported as Python module; not a standalone executable
 """

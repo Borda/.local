@@ -136,7 +136,7 @@ class TestMain:
     """Covers main() CLI integration."""
 
     def test_no_files_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """No files argument exits 0 and prints pass line."""
+        """Accept an empty file list and report a passing result."""
         rc = cfs.main([])
         out = capsys.readouterr().out
         assert rc == 0
@@ -152,7 +152,7 @@ class TestMain:
         assert "✓" in out
 
     def test_violation_exits_one(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """File with unclosed fence exits 1 with violation prefixed ! C14b."""
+        """Report an unclosed fence with the stable ``C14b`` diagnostic identifier."""
         f = tmp_path / "bad.md"
         f.write_text("```python\nno close\n", encoding="utf-8")
         rc = cfs.main([str(f)])
@@ -166,7 +166,10 @@ class TestMain:
         assert rc == 0
 
     def test_timeout_flag_accepted(self, tmp_path: Path) -> None:
-        """--timeout flag accepted without affecting exit code."""
+        """Verify command-line option behavior.
+
+        --timeout flag accepted without affecting exit code.
+        """
         f = tmp_path / "clean.md"
         f.write_text("```bash\nok\n```\n", encoding="utf-8")
         rc = cfs.main([str(f), "--timeout", "5"])

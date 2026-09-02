@@ -1,9 +1,8 @@
 """Filesystem regression tests for ``bin/sync_rules.py``.
 
-Every mutation the helper can perform has a case here, because the reverted first
-attempt at this feature shipped two unsafe ones: a foreign marketplace link was
-refreshed, and a ``dotfiles/`` link was deleted, both because ownership was a
-path substring match. The ownership cases below are the guard against that.
+Every mutation the helper can perform has a case here, because the reverted first attempt at this feature shipped two
+unsafe ones: a foreign marketplace link was refreshed, and a ``dotfiles/`` link was deleted, both because ownership was
+a path substring match. The ownership cases below are the guard against that.
 """
 
 from __future__ import annotations
@@ -124,7 +123,7 @@ def test_does_not_own_foreign_targets(tmp_path: Path, target_rel: str) -> None:
 
 
 def test_does_not_own_sibling_version_prefix_collision(tmp_path: Path) -> None:
-    """``…/develop-extra/0.1.0`` must not be adopted by ``…/develop``'s lineage."""
+    """Prevent a similarly named plugin version from entering the Develop lineage."""
     home = _make_home(tmp_path)
     root = _installed_root(home)
     sneaky = (
@@ -158,7 +157,7 @@ def test_creates_rules_dir_when_missing(tmp_path: Path) -> None:
 
 
 def test_relative_plugin_root_still_links_absolutely(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A relative --plugin-root must not become a dangling relative symlink target."""
+    """A relative ``--plugin-root`` must not become a dangling relative symlink target."""
     home = _make_home(tmp_path)
     root = _installed_root(home)
     monkeypatch.chdir(root.parent)

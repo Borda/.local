@@ -1,11 +1,11 @@
-"""Query engine extraction parity (plan §12 Phase 3, step 2; §7.2).
+"""Query engine extraction parity.
 
 Proves the query-engine move into :mod:`codemap_py.query` preserved behavior
 exactly, by comparing the pre-extraction monolithic ``bin/scan-query``
 (checked out from ``HEAD`` — an uncommitted working-tree move, so ``HEAD``
 still holds the true pre-extraction script, same convention as
-``test_extraction_parity_scanner_discovery.py``/``test_extraction_parity_graph_coverage_testimpact.py``) against two current
-surfaces:
+``test_extraction_parity_scanner_discovery.py``/
+``test_extraction_parity_graph_coverage_testimpact.py``) against two current surfaces:
 
 - the now-thin ``bin/scan-query`` launcher (delegates to
   :func:`codemap_py.query.main`) — byte-identical stdout/stderr/exit code is
@@ -15,7 +15,7 @@ surfaces:
   ``_build_parser()``) is identical on both sides even for usage/error
   banners;
 - ``python -m codemap_py query ...`` (:mod:`codemap_py.cli`'s in-process
-  dispatch under the §4.4 read lease) — cross-path equivalence for the
+  dispatch under the shared-index read lease) — cross-path equivalence for the
   extracted package path. This surface's argv[0] basename is ``__main__.py``,
   not ``scan-query``, so argparse's own usage/error banners legitimately
   differ in that one token (pre-existing argparse behavior, not a regression
@@ -149,12 +149,11 @@ _QUERY_CASES = [
 def _materialize_old_bin(dest: Path) -> Path:
     """Copy the frozen pre-extraction monolithic ``scan-query`` + siblings into *dest*.
 
-    Returns the path to the copied ``scan-query`` script, written under the
-    literal basename ``scan-query`` (not a tmp-random name) — argparse derives
-    ``prog`` from ``os.path.basename(sys.argv[0])`` with no explicit override in
-    ``_build_parser()``, so keeping the golden script's basename identical to the
-    current ``bin/scan-query`` launcher's is what makes even the argparse
-    usage/error banners byte-identical between old and new (see module docstring).
+    Returns the path to the copied ``scan-query`` script, written under the literal basename ``scan-query`` instead of a
+    random temporary name — argparse derives ``prog`` from ``os.path.basename(sys.argv[0])`` with no explicit override
+    in ``_build_parser()``, so keeping the golden script's basename identical to the current ``bin/scan-query``
+    launcher's is what makes even the argparse usage/error banners byte-identical between old and new (see module
+    docstring).
     """
     for name in _OLD_BIN_FILES:
         content = (_PARITY_GOLDEN_DIR / name).read_text()
@@ -288,11 +287,11 @@ def built_project(tmp_path_factory: pytest.TempPathFactory, request: pytest.Fixt
 
 
 def _env() -> dict[str, str]:
-    """Base subprocess environment: telemetry off, no stray index-dir override, forced UTF-8 I/O.
+    """Build the controlled subprocess environment for parity checks.
 
-    ``PYTHONUTF8=1`` pins stdio/argv decoding to UTF-8 regardless of the host's console
-    codepage (relevant on Windows, where a non-ASCII path would otherwise decode via
-    cp1252 and diverge between the two child processes under comparison).
+    ``PYTHONUTF8=1`` pins stdio/argv decoding to UTF-8 regardless of the host's console codepage (relevant on Windows,
+    where a non-ASCII path would otherwise decode via cp1252 and diverge between the two child processes under
+    comparison).
     """
     env = {**os.environ, "CODEMAP_LOGGING": "false", "PYTHONUTF8": "1"}
     env.pop("CODEMAP_INDEX_DIR", None)
@@ -409,13 +408,11 @@ def coupled_ranking_project(tmp_path: Path) -> Path:
 def _error_suffix(stderr: str) -> str:
     """Return the ``: error: ...`` tail of an argparse stderr message, prog-name-free.
 
-    argparse's own usage/error banners embed ``prog`` (``os.path.basename(sys.argv[0])``,
-    never pinned by ``_build_parser()``), which legitimately differs between
-    ``bin/scan-query`` (``prog="scan-query"``) and ``python -m codemap_py`` (
-    ``prog="__main__.py"``) — see module docstring. The substantive error text always
-    follows the first ``": error: "`` marker and never itself contains a prog-derived
-    token, so comparing that suffix (rather than the whole banner) verifies the actual
-    error content is unchanged while not asserting on the known-divergent prog token.
+    argparse's own usage/error banners embed ``prog`` (``os.path.basename(sys.argv[0])``, never pinned by
+    ``_build_parser()``), which legitimately differs between the ``scan-query`` script and the ``codemap_py`` module.
+    The substantive error text always follows the first
+    ``": error: "`` marker and never itself contains a prog-derived token, so comparing that suffix (rather than the
+    whole banner) verifies the actual error content is unchanged while not asserting on the known-divergent prog token.
     """
     marker = ": error: "
     idx = stderr.find(marker)
@@ -434,9 +431,8 @@ _COUNT_SEMANTIC_KEYS = {
 def _restore_v13_not_covered(legacy: object, current: object) -> None:
     """Restore only v13 import-gap labels removed from current query payloads.
 
-    Scan v13 resolves relative and ``from package import submodule`` edges that
-    the frozen v11 query oracle reported as uncovered. The parity allowance is
-    deliberately limited to those two labels and preserves the legacy order.
+    Scan v13 resolves relative and ``from package import submodule`` edges that the frozen v11 query oracle reported as
+    uncovered. The parity allowance is deliberately limited to those two labels and preserves the legacy order.
     """
     if isinstance(legacy, dict) and isinstance(current, dict):
         for key, legacy_value in legacy.items():
@@ -456,11 +452,10 @@ def _restore_v13_not_covered(legacy: object, current: object) -> None:
 def _drop_loaded_index_path(node: object) -> object:
     """Strip ``index.index_path`` from *node* in place and return it.
 
-    The current engine reports the index file it actually loaded; the frozen v11 oracle
-    predates the field, and the value is an absolute path under pytest's tmp dir, so it
-    could never be byte-equal to a golden anyway. Parity is asserted on everything else.
-    The field's own contract — that it comes from the load rather than from re-running
-    the resolver — is pinned in ``tests/gate/test_cli_gate.py``, not here.
+    The current engine reports the index file it actually loaded; the frozen v11 oracle predates the field, and the
+    value is an absolute path under pytest's tmp dir, so it could never be byte-equal to a golden anyway. Parity is
+    asserted on everything else. The field's own contract — that it comes from the load rather than from re-running the
+    resolver — is pinned in ``tests/gate/test_cli_gate.py``, not here.
     """
     if isinstance(node, dict):
         block = node.get("index")
@@ -522,12 +517,11 @@ def _assert_golden_query_parity(
 
 
 class TestOldVsNewBinParity:
-    """Golden pre-extraction ``scan-query`` vs. the current thin launcher.
+    """Compare the golden pre-extraction ``scan-query`` with the current thin launcher.
 
-    Both share the ``scan-query`` argv[0] basename, so stable error semantics
-    are asserted identical. Every success payload is byte-identical except
-    ``undocumented`` and ``uncovered``: their legacy fields must be identical,
-    and only their fixed unique-count metadata may be additive.
+    Both share the ``scan-query`` argv[0] basename, so stable error semantics are asserted identical. Every success
+    payload is byte-identical except for ``undocumented`` and ``uncovered``: their legacy fields must be identical, and
+    only their fixed unique-count metadata may be additive.
     """
 
     @pytest.mark.parametrize("case", _QUERY_CASES)
@@ -576,13 +570,12 @@ class TestOldVsNewBinParity:
 
 
 class TestCrossPathParity:
-    """Current thin ``bin/scan-query`` vs. ``python -m codemap_py query ...``.
+    """Compare ``bin/scan-query`` with ``python -m codemap_py query ...``.
 
-    Cross-path equivalence for the extracted package path (:mod:`codemap_py.cli`
-    calling :func:`codemap_py.query.main` in-process under the §4.4 read lease).
-    Success-path JSON output is asserted byte-identical; the two argparse-native
-    usage-error cases compare via :func:`_error_suffix` since their ``prog`` token
-    legitimately differs (see that helper's docstring).
+    Cross-path equivalence for the extracted package path (:mod:`codemap_py.cli` calling :func:`codemap_py.query.main`
+    in-process under the shared-index read lease). Success-path JSON output is asserted byte-identical; the two
+    argparse-native usage-error cases compare via :func:`_error_suffix` since their ``prog`` token legitimately differs
+    (see that helper's docstring).
     """
 
     @pytest.mark.parametrize("case", _QUERY_CASES)
@@ -606,8 +599,8 @@ class TestCrossPathParity:
     def test_missing_index_matches_module_dispatch(self, tmp_path: Path) -> None:
         """A missing index produces the same ``_die_json`` error bin-vs-module-dispatch.
 
-        No argparse usage banner is involved (this is a plain JSON error object),
-        so full byte identity holds including stderr.
+        No argparse usage banner is involved (this is a plain JSON error object), so full byte identity holds including
+        stderr.
         """
         new_bin = _run_new_bin(["list"], tmp_path)
         cli = _run_cli_module(["list"], tmp_path)
@@ -629,10 +622,10 @@ def test_coupled_top_five_is_ordered_by_internal_dependency_count(
     coupled_ranking_project: Path,
     runner: object,
 ) -> None:
-    """``coupled --top 5`` sorts on internal imports, not ``dep_count``.
+    """Sort on internal imports, not ``dep_count``.
 
-    The deliberate inverse ``dep_count`` order means a total-dependency sort
-    would look plausible but violate the command's documented coupling metric.
+    The deliberate inverse ``dep_count`` order means a total-dependency sort would look plausible but violate the
+    command's documented coupling metric.
     """
     result = runner(["coupled", "--top", "5"], coupled_ranking_project)  # type: ignore[operator]
 
@@ -647,8 +640,8 @@ def test_coupled_top_five_is_ordered_by_internal_dependency_count(
 def test_coupled_help_explains_internal_import_ranking(coupled_ranking_project: Path, runner: object) -> None:
     """Public help must state the ordering metric behind ``coupled --top``.
 
-    Prevents a user from interpreting a rank as highest total ``dep_count``
-    and carrying that mismatch into benchmark ground truth or an agent prompt.
+    Prevents a user from interpreting a rank as highest total ``dep_count`` and carrying that mismatch into benchmark
+    ground truth or an agent prompt.
     """
     result = runner(["coupled", "--help"], coupled_ranking_project)  # type: ignore[operator]
 
@@ -668,10 +661,9 @@ def test_coupled_help_explains_internal_import_ranking(coupled_ranking_project: 
 def diff_impact_project(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest) -> Path:
     """Git repo with one committed baseline, then one uncommitted tracked edit.
 
-    Isolated from ``built_project`` — module-scoped, not class-scoped-as-instance-method
-    (pytest deprecates the latter), and its own fixture rather than sharing
-    ``built_project`` so the working-tree mutation this test needs never leaks into the
-    other parametrized cases that assume a pristine, unmutated tree.
+    Isolated from ``built_project`` — module-scoped, not class-scoped-as-instance-method (pytest deprecates the latter),
+    and its own fixture rather than sharing ``built_project`` so the working-tree mutation this test needs never leaks
+    into the other parametrized cases that assume a pristine, unmutated tree.
     """
     base = tmp_path_factory.mktemp("query_parity_git")
     root = base / request.param
@@ -688,14 +680,14 @@ def diff_impact_project(tmp_path_factory: pytest.TempPathFactory, request: pytes
 
 
 class TestDiffImpactParity:
-    """``diff-impact`` needs its own git working tree — isolated from ``built_project``.
+    """Provide an isolated Git working tree for diff-impact parity checks.
 
-    Uses the module-level :func:`diff_impact_project` fixture (committed baseline, then
-    one working-tree edit to a tracked, imported-and-called leaf module).
+    Uses the module-level :func:`diff_impact_project` fixture (committed baseline, then one working-tree edit to a
+    tracked, imported-and-called leaf module).
     """
 
     def test_diff_impact_matches_golden(self, old_scan_query: Path, diff_impact_project: Path) -> None:
-        """``diff-impact --base HEAD`` over a real working-tree edit matches old-vs-new."""
+        """Match both query engines over a real working-tree edit."""
         old = _run_old(old_scan_query, ["diff-impact", "--base", "HEAD"], diff_impact_project)
         new = _run_new_bin(["diff-impact", "--base", "HEAD"], diff_impact_project)
         assert old.returncode == new.returncode == 0
@@ -705,7 +697,7 @@ class TestDiffImpactParity:
         assert old.stderr == new.stderr
 
     def test_diff_impact_matches_module_dispatch(self, diff_impact_project: Path) -> None:
-        """``diff-impact --base HEAD`` matches bin-vs-module-dispatch."""
+        """Match bin-vs-module-dispatch."""
         new_bin = _run_new_bin(["diff-impact", "--base", "HEAD"], diff_impact_project)
         cli = _run_cli_module(["diff-impact", "--base", "HEAD"], diff_impact_project)
         assert new_bin.returncode == cli.returncode == 0

@@ -209,7 +209,7 @@ def run(json_file: Path, hook_name: str, path_pattern: str) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns exit code."""
+    """Remove the requested hook registration."""
     parser = argparse.ArgumentParser(
         prog="remove_hook_from_registry.py",
         description="Remove a named hook from a Claude Code hooks JSON registry.",

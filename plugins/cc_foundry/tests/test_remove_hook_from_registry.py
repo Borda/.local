@@ -1,9 +1,8 @@
 """Tests for ``bin/remove_hook_from_registry.py``.
 
-Covers the contract /foundry:manage delete hook relies on: removes only the
-named hook, leaves unrelated hooks intact, prunes empty groups/events,
-preserves non-``hooks`` top-level keys, and produces the documented exit
-codes for missing-file and bad-JSON inputs.
+Covers the contract /foundry:manage delete hook relies on: removes only the named hook, leaves unrelated hooks intact,
+prunes empty groups/events, preserves non-``hooks`` top-level keys, and produces the documented exit codes for absent
+files and invalid JSON.
 """
 
 from __future__ import annotations
@@ -101,7 +100,7 @@ class TestCountMatches:
     """count_matches: post-write verification helper."""
 
     def test_counts_all_occurrences(self) -> None:
-        """Returns total command-entries matching, summed across events."""
+        """Return total command-entries matching, summed across events."""
         import re
 
         n = rhfr.count_matches(_SAMPLE_REGISTRY, re.compile(r"rtk-rewrite\.js", re.IGNORECASE))
@@ -115,7 +114,7 @@ class TestCountMatches:
 
 
 class TestRun:
-    """run: atomic file rewrite + exit-code contract."""
+    """Run: atomic file rewrite + exit-code contract."""
 
     def test_happy_path_rewrites_file(self, tmp_path: Path) -> None:
         """Target file rewritten with named hook removed; exit 0; tmp cleaned."""
@@ -170,7 +169,7 @@ class TestRun:
 
 
 class TestMain:
-    """main: CLI surface — flag parsing + exit codes."""
+    """Main: CLI surface — flag parsing + exit codes."""
 
     def test_happy_path_end_to_end(self, tmp_path: Path) -> None:
         """Full main() round-trip via argv."""
@@ -195,7 +194,7 @@ class TestMain:
         assert pre_cmds == [".claude/hooks/commit-guard.js"]
 
     def test_missing_required_flag_exits_nonzero(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """argparse: missing required flag → SystemExit(2)."""
+        """Argparse: missing required flag → SystemExit(2)."""
         with pytest.raises(SystemExit) as exc_info:
             rhfr.main(["--json-file", "x.json"])
         assert exc_info.value.code != 0

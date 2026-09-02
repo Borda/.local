@@ -1,7 +1,7 @@
 """Tests for build_blueprint_manifest.py — normalization spec, filters, and CLI.
 
-The normalization pipeline is the contract a companion runtime hook must reproduce
-byte-identically, so it is tested by explicit vectors rather than only by doctest.
+The normalization pipeline is the contract a companion runtime hook must reproduce byte-identically, so it is tested by
+explicit vectors rather than only by doctest.
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ def scan_dir(tmp_path: Path) -> Path:
 
 
 class TestNormalize:
-    """normalize: the four-step pipeline that the runtime hook must mirror exactly."""
+    """Normalize: the four-step pipeline that the runtime hook must mirror exactly."""
 
     @pytest.mark.parametrize(
         ("raw", "expected"),
@@ -114,29 +114,29 @@ class TestNormalize:
 class TestSharedVectors:
     """The shared fixture is the cross-language contract; Python must satisfy all of it.
 
-    ``test_blueprint_allow_js.py`` runs the identical vectors against the JS hook, so a
-    change landing on one side alone fails here or there rather than silently opening
-    the normalization-asymmetry bug class the manifest design depends on avoiding.
+    ``test_blueprint_allow_js.py`` runs the identical vectors against the JS hook, so a change landing on one side alone
+    fails here or there rather than silently opening the normalization-asymmetry bug class the manifest design depends
+    on avoiding.
     """
 
     @pytest.mark.parametrize("vector", vector_params("normalize"))
     def test_normalize(self, vector: dict) -> None:
-        """``normalize`` produces the fixture's expected text for every shared vector."""
+        """Produce the fixture's expected text for every shared vector."""
         assert bbm.normalize(vector["input"]) == vector["expected"]
 
     @pytest.mark.parametrize("vector", vector_params("needs_bailout"))
     def test_needs_bailout(self, vector: dict) -> None:
-        """``needs_bailout`` agrees with the fixture on heredocs and unterminated quotes."""
+        """Agree with the fixture on heredocs and unterminated quotes."""
         assert bbm.needs_bailout(vector["input"]) is vector["expected"]
 
     @pytest.mark.parametrize("vector", vector_params("split_logical_commands"))
     def test_split_logical_commands(self, vector: dict) -> None:
-        """``split_logical_commands`` splits exactly as the fixture specifies."""
+        """Split exactly as the fixture specifies."""
         assert bbm.split_logical_commands(vector["input"]) == vector["expected"]
 
     @pytest.mark.parametrize("vector", vector_params("is_dangerous"))
     def test_is_dangerous(self, vector: dict) -> None:
-        """``is_dangerous`` classifies every shared vector as the fixture specifies.
+        """Classify every shared vector as the fixture specifies.
 
         Classification is the most security-critical function of the pair: a command the
         generator judges safe and the hook judges dangerous merely wastes an allow, but
@@ -150,7 +150,7 @@ class TestSplitLogicalCommands:
     """split_logical_commands: newline-only splitting with verbatim continuations."""
 
     def test_never_splits_on_operators(self) -> None:
-        """``;`` and ``&&`` stay inside one logical command."""
+        """Keep shell separators inside one logical command."""
         assert bbm.split_logical_commands("a; b && c") == ["a; b && c"]
 
     def test_continuation_kept_verbatim(self) -> None:
@@ -190,9 +190,9 @@ class TestBailout:
 class TestDangerFilter:
     """The danger filter's effect on manifest entries.
 
-    Classification itself is asserted by :class:`TestSharedVectors` against the shared
-    cross-language fixture, so the same cases bind the JS hook too; what remains here is
-    how a dangerous verdict shapes the entries and the reported drop count.
+    Classification itself is asserted by :class:`TestSharedVectors` against the shared cross-language fixture, so the
+    same cases bind the JS hook too; what remains here is how a dangerous verdict shapes the entries and the reported
+    drop count.
     """
 
     def test_dangerous_block_still_yields_safe_commands(self) -> None:
@@ -281,21 +281,30 @@ class TestManifestShape:
 
 
 class TestCli:
-    """main: --check / --update behaviour and determinism."""
+    """Main: ``--check`` / ``--update`` behaviour and determinism."""
 
     def test_update_writes_all_target_plugins(self, scan_dir: Path) -> None:
-        """--update creates a manifest for each target plugin."""
+        """Verify command-line option behavior.
+
+        ``--update`` creates a manifest for each target plugin.
+        """
         assert bbm.main(["--update", "--scan-dir", str(scan_dir)]) == 0
         for name in bbm.TARGET_PLUGINS:
             assert (scan_dir / name / bbm.MANIFEST_NAME).is_file()
 
     def test_check_passes_after_update(self, scan_dir: Path) -> None:
-        """--check is clean immediately after --update."""
+        """Verify command-line option behavior.
+
+        ``--check`` is clean immediately after ``--update``.
+        """
         bbm.main(["--update", "--scan-dir", str(scan_dir)])
         assert bbm.main(["--check", "--scan-dir", str(scan_dir)]) == 0
 
     def test_check_detects_drift(self, scan_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """--check fails when a source block changed after the manifest was written."""
+        """Verify command-line option behavior.
+
+        ``--check`` fails when a source block changed after the manifest was written.
+        """
         bbm.main(["--update", "--scan-dir", str(scan_dir)])
         skill = scan_dir / "cc_foundry" / "skills" / "demo" / "SKILL.md"
         skill.write_text("```bash\necho gamma\n```\n", encoding="utf-8")
@@ -308,7 +317,10 @@ class TestCli:
         assert bbm.main(["--check", "--scan-dir", str(scan_dir)]) == 1
 
     def test_check_writes_nothing(self, scan_dir: Path) -> None:
-        """--check never creates or mutates a manifest file."""
+        """Verify command-line option behavior.
+
+        ``--check`` never creates or mutates a manifest file.
+        """
         bbm.main(["--check", "--scan-dir", str(scan_dir)])
         assert not (scan_dir / "cc_foundry" / bbm.MANIFEST_NAME).exists()
 
@@ -337,7 +349,7 @@ class TestCli:
         assert manifest["entries"][bbm.sha256_text("ls -la")] == {"kind": "block", "src": "CLAUDE.md:1"}
 
     def test_mode_flag_is_required(self, scan_dir: Path) -> None:
-        """Neither --check nor --update given is a usage error."""
+        """Neither ``--check`` nor ``--update`` given is a usage error."""
         with pytest.raises(SystemExit) as excinfo:
             bbm.main(["--scan-dir", str(scan_dir)])
         assert excinfo.value.code == 2

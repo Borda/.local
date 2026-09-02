@@ -162,7 +162,7 @@ def test_tool_response_never_parsed(tmp_path: Path) -> None:
 
 
 def test_logging_disabled_suppresses_record(tmp_path: Path) -> None:
-    """CODEMAP_LOGGING=false is honoured — no shard is written."""
+    """Suppress telemetry shards when logging is disabled."""
     result = _run({"tool_name": "Grep", "tool_input": {"pattern": "x"}}, tmp_path, logging="false")
 
     assert result.returncode == 0, result.stderr
@@ -190,8 +190,8 @@ class TestReadRedundancyNudge:
     def test_hint_survives_a_large_preexisting_shard(self, tmp_path: Path) -> None:
         """The nudge still fires on the 3rd read when a big shard already exists.
 
-        Counting used to mean decoding and splitting the whole shard — up to the 10 MB
-        rotation budget — on every matched Read, to decide one advisory.
+        Counting used to mean decoding and splitting the whole shard — up to the 10 MB rotation budget — on every
+        matched Read, to decide one advisory.
         """
         log_dir = tmp_path / ".cache" / "codemap" / "logs" / "claude"
         log_dir.mkdir(parents=True)
@@ -217,8 +217,8 @@ class TestTailLines:
     def test_window_is_bounded_and_drops_the_partial_head(self, tmp_path: Path) -> None:
         """Only the trailing window is read, and its truncated first line is discarded.
 
-        A half-line at the window's head can still contain the searched-for target and
-        would inflate the count, so it never reaches the caller.
+        A half-line at the window's head can still contain the searched-for target and would inflate the count, so it
+        never reaches the caller.
         """
         log_file = tmp_path / "tools.jsonl"
         log_file.write_text("".join(f"line-{index:04d}\n" for index in range(1000)))

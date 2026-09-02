@@ -1,8 +1,7 @@
 """Tests for ``bin/propagate_shared.py``.
 
-The tool keeps byte-identical cross-plugin shared files in sync from a single
-canonical source. These tests use a synthetic MANIFEST over ``tmp_path`` to
-verify drift detection (``check``) and syncing (``apply``) without touching the
+The tool keeps byte-identical cross-plugin shared files in sync from a single canonical source. These tests use a
+synthetic MANIFEST over ``tmp_path`` to verify drift detection (``check``) and syncing (``apply``) without touching the
 real repository manifest.
 """
 
@@ -53,7 +52,7 @@ def test_check_reports_missing_canonical(tmp_path: Path) -> None:
 
 
 def test_apply_syncs_drifted_copies(tmp_path: Path) -> None:
-    """apply() overwrites drifted copies and returns their paths; check() then clean."""
+    """Overwrite drifted copies and return their paths before confirming a clean state."""
     _tree(tmp_path, "NEW\n", "OLD\n", "NEW\n")
     updated = ps.apply(tmp_path, _manifest())
     assert updated == ["b/hook.js"]
@@ -62,7 +61,7 @@ def test_apply_syncs_drifted_copies(tmp_path: Path) -> None:
 
 
 def test_main_check_exit_codes(tmp_path: Path) -> None:
-    """main --check exits 1 on drift, 0 when clean (via monkeypatched MANIFEST)."""
+    """Main --check exits 1 on drift, 0 when clean (via monkeypatched MANIFEST)."""
     _tree(tmp_path, "X\n", "OLD\n", "X\n")
     original = ps.MANIFEST
     ps.MANIFEST = _manifest()
@@ -77,9 +76,8 @@ def test_main_check_exit_codes(tmp_path: Path) -> None:
 def test_real_manifest_prefixes_migrated_copies() -> None:
     """Migrated _shared copies keep the ``foundry--`` source-plugin prefix.
 
-    quality-stack.md and cross-validation-protocol.md copies were renamed so a
-    consumer plugin's own _shared file can never collide with (or be silently
-    overwritten by) a propagated copy; reverting a copy to the bare canonical
+    quality-stack.md and cross-validation-protocol.md copies were renamed so a consumer plugin's own _shared file can
+    never collide with (or be silently overwritten by) a propagated copy; reverting a copy to the bare canonical
     basename would re-open that collision and orphan consumer references.
     """
     for entry in ps.MANIFEST:

@@ -1,9 +1,8 @@
 """Define the shared scientific contract for read-crop benchmark tasks.
 
-The contract owns task identity, the strict answer shape, source-derived
-oracle identity, and read-cost accounting. Provider adapters may transport a
-prompt and report native events, but cannot replace these fields with
-provider-specific truth.
+The contract owns task identity, the strict answer shape, source-derived oracle identity, and read-cost accounting.
+Provider adapters may transport a prompt and report native events, but cannot replace these fields with truth supplied
+by the provider.
 """
 
 from __future__ import annotations
@@ -111,9 +110,8 @@ class ReadcropUsage:
 def build_readcrop_contract(task: Mapping[str, Any], *, source: str) -> ReadcropContract:
     """Create a source-anchored shared contract from one committed task.
 
-    The source text is loaded from the frozen target before execution. It is
-    hashed into the independent oracle so an adapter cannot silently score a
-    response against a different symbol body.
+    The source text is loaded from the frozen target before execution. It is hashed into the independent oracle so an
+    adapter cannot silently score a response against a different symbol body.
     """
     task_id = _required_text(task, "id")
     if _required_text(task, "type") != "read_crop":

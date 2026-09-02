@@ -1,15 +1,13 @@
-"""Telemetry log directory is anchored to the project root, not to the process CWD (E-N3).
+"""Verify telemetry logs remain anchored to the project root rather than the process CWD.
 
-The hook layer, the skill layer and the CLI layer each append shards keyed on one
-session id, and ``debrief-coding`` joins them by reading a single directory. Each layer
-used to spell its own ``Path(os.environ.get("CODEMAP_LOG_DIR", ".cache/codemap/logs"))``
-default, which resolves against the *process* CWD — so a session whose hooks fired at the
-repo root while a query ran from a subdirectory wrote the two halves into two directories
-and the join silently returned nothing. ``query.py`` was the worst of the four because its
+The hook layer, the skill layer and the CLI layer each append shards keyed on one session id, and ``debrief-coding``
+joins them by reading a single directory. Each layer previously resolved the ``CODEMAP_LOG_DIR`` default against the
+*process* CWD, so a session whose hooks fired at the repository root while a query ran from a subdirectory wrote the two
+halves into two directories and the join silently returned nothing. ``query.py`` was the worst of the four because its
 ``_LOG_DIR`` was a module constant frozen at IMPORT time.
 
-Every case here therefore runs from a **subdirectory** of a real git repo and asserts the
-shard landed at the repo root. A test run from the repo root itself cannot fail.
+Every case here therefore runs from a **subdirectory** of a real git repo and asserts the shard landed at the repo root.
+A test run from the repo root itself cannot fail.
 """
 
 from __future__ import annotations
@@ -46,9 +44,8 @@ def _load_hookutil():
 def repo_with_subdir(tmp_path: Path) -> tuple[Path, Path]:
     """Return ``(repo_root, nested_subdir)`` for a real, initialised git repository.
 
-    A real repo (not a bare ``.git`` directory) so the package layer's
-    ``git rev-parse --show-toplevel`` and the hook layer's ``.git`` walk both resolve —
-    the two anchoring mechanisms must agree, and only a real repo proves it.
+    A real repo (not a bare ``.git`` directory) so the package layer's ``git rev-parse --show-toplevel`` and the hook
+    layer's ``.git`` walk both resolve — the two anchoring mechanisms must agree, and only a real repo proves it.
     """
     root = tmp_path / "proj"
     (root / "src" / "pkg").mkdir(parents=True)
@@ -78,7 +75,7 @@ class TestHookLayerAnchoring:
     """Hooks launched inside a subdirectory still write to the repo-root log directory."""
 
     def test_tool_hook_writes_at_the_repo_root(self, repo_with_subdir: tuple[Path, Path]) -> None:
-        """``log-tool-use.py`` run from ``src/pkg`` lands in ``<repo>/.cache/codemap/logs``."""
+        """Anchor tool-use logs at the repository root from a nested directory."""
         root, subdir = repo_with_subdir
 
         result = _run_hook(_TOOL_HOOK, {"tool_name": "Grep", "tool_input": {"pattern": "x"}}, subdir)
@@ -88,7 +85,7 @@ class TestHookLayerAnchoring:
         assert not (subdir / _LOGS_REL).exists()
 
     def test_skill_hook_writes_at_the_repo_root(self, repo_with_subdir: tuple[Path, Path]) -> None:
-        """``log-skill-start.py`` run from ``src/pkg`` lands in ``<repo>/.cache/codemap/logs``."""
+        """Anchor skill-start logs at the repository root from a nested directory."""
         root, subdir = repo_with_subdir
         payload = {"tool_name": "Skill", "tool_input": {"skill": "codemap-py:query-code"}}
 
@@ -105,7 +102,7 @@ class TestCliLayerAnchoring:
     def test_log_cli_writes_at_the_repo_root(
         self, repo_with_subdir: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """``telemetry.log_cli`` invoked from ``src/pkg`` writes under the repo root."""
+        """Anchor command-line telemetry at the repository root from a nested directory."""
         root, subdir = repo_with_subdir
         monkeypatch.setenv("CODEMAP_LOGGING", "true")
         monkeypatch.delenv("CODEMAP_LOG_DIR", raising=False)
@@ -142,12 +139,11 @@ class TestCliLayerAnchoring:
         assert record["session"] == "codex-thread"
 
     def test_query_engine_has_no_import_time_log_dir(self) -> None:
-        """``query`` must not re-freeze a CWD-relative log dir at import time.
+        """Prevent query imports from freezing a working-directory-relative log path.
 
-        The regression this pins is specifically the module *constant*: any value bound
-        at import cannot follow a later ``chdir`` or a ``CODEMAP_LOG_DIR`` exported after
-        the process started, which is exactly how the engine's shards ended up split from
-        the hooks'.
+        The regression this pins is specifically the module *constant*: any value bound at import cannot follow a later
+        ``chdir`` or a ``CODEMAP_LOG_DIR`` exported after the process started, which is exactly how the engine's shards
+        ended up split from the hooks'.
         """
         from codemap_py import query
 
@@ -189,7 +185,7 @@ class TestLayersAgree:
 
 
 class TestOverrideAnchoring:
-    """``CODEMAP_LOG_DIR`` keeps its absolute meaning and gains an anchored relative one."""
+    """Keep its absolute meaning and gains an anchored relative one."""
 
     def test_absolute_override_is_honoured_verbatim(
         self, repo_with_subdir: tuple[Path, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -215,7 +211,7 @@ class TestOverrideAnchoring:
         assert _load_hookutil().log_dir() == root / "build" / "logs" / "claude"
 
     def test_runtime_component_survives_the_anchoring(self, repo_with_subdir: tuple[Path, Path]) -> None:
-        """``log_dir_for`` still appends ``<runtime>/`` on top of the anchored root."""
+        """Append the runtime directory beneath the anchored log root."""
         root, _subdir = repo_with_subdir
 
         assert rl.log_dir_for("codex", root=root, override="") == root / _LOGS_REL / "codex"

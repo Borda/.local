@@ -28,27 +28,42 @@ class TestParseSpecs:
     """parse_specs converts token list into FlagSpec objects."""
 
     def test_bool_spec(self):
-        """--bool produces FlagSpec with correct fields."""
+        """Verify command-line option behavior.
+
+        --bool produces FlagSpec with correct fields.
+        """
         specs = parse_specs(["--bool", "semble", "SEMBLE_ENABLED", "false"])
         assert specs == [FlagSpec(kind=SpecType.BOOL, flag="semble", var="SEMBLE_ENABLED", default="false")]
 
     def test_neg_bool_spec(self):
-        """--neg-bool produces FlagSpec with neg-bool kind."""
+        """Verify command-line option behavior.
+
+        --neg-bool produces FlagSpec with neg-bool kind.
+        """
         specs = parse_specs(["--neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"])
         assert specs == [FlagSpec(kind=SpecType.NEG_BOOL, flag="no-challenge", var="CHALLENGE_ENABLED", default="true")]
 
     def test_codemap_spec(self):
-        """--codemap takes only VAR + DEFAULT (no FLAG token)."""
+        """Verify command-line option behavior.
+
+        --codemap takes only VAR + DEFAULT (no FLAG token).
+        """
         specs = parse_specs(["--codemap", "CODEMAP_RAW", "auto"])
         assert specs == [FlagSpec(kind=SpecType.CODEMAP, flag="", var="CODEMAP_RAW", default="auto")]
 
     def test_int_spec(self):
-        """--int spec stored with default as string."""
+        """Verify command-line option behavior.
+
+        --int spec stored with default as string.
+        """
         specs = parse_specs(["--int", "max-depth", "MAX_DEPTH", "3"])
         assert specs == [FlagSpec(kind=SpecType.INT, flag="max-depth", var="MAX_DEPTH", default="3")]
 
     def test_str_spec(self):
-        """--str spec with empty default."""
+        """Verify command-line option behavior.
+
+        --str spec with empty default.
+        """
         specs = parse_specs(["--str", "plan", "PLAN_FILE", ""])
         assert specs == [FlagSpec(kind=SpecType.STR, flag="plan", var="PLAN_FILE", default="")]
 
@@ -91,28 +106,40 @@ class TestBoolFlags:
     """Boolean and negated-boolean flag extraction."""
 
     def test_bool_present(self):
-        """--semble present → true."""
+        """Verify command-line option behavior.
+
+        --semble present → true.
+        """
         specs = parse_specs(["--bool", "semble", "S", "false"])
         vals, clean = extract_flags("--semble fix auth.py", specs)
         assert vals["S"] == "true"
         assert clean == "fix auth.py"
 
     def test_bool_absent(self):
-        """--semble absent → default."""
+        """Verify command-line option behavior.
+
+        --semble absent → default.
+        """
         specs = parse_specs(["--bool", "semble", "S", "false"])
         vals, clean = extract_flags("fix auth.py", specs)
         assert vals["S"] == "false"
         assert clean == "fix auth.py"
 
     def test_neg_bool_present(self):
-        """--no-challenge present → false."""
+        """Verify command-line option behavior.
+
+        --no-challenge present → false.
+        """
         specs = parse_specs(["--neg-bool", "no-challenge", "CHALLENGE", "true"])
         vals, clean = extract_flags("--no-challenge fix auth.py", specs)
         assert vals["CHALLENGE"] == "false"
         assert clean == "fix auth.py"
 
     def test_neg_bool_absent(self):
-        """--no-challenge absent → default."""
+        """Verify command-line option behavior.
+
+        --no-challenge absent → default.
+        """
         specs = parse_specs(["--neg-bool", "no-challenge", "CHALLENGE", "true"])
         vals, clean = extract_flags("fix auth.py", specs)
         assert vals["CHALLENGE"] == "true"
@@ -148,21 +175,30 @@ class TestCodemapFlag:
         assert vals["CODEMAP_RAW"] == "auto"
 
     def test_codemap_strict(self):
-        """--codemap only → strict."""
+        """Verify command-line option behavior.
+
+        --codemap only → strict.
+        """
         specs = parse_specs(["--codemap", "CODEMAP_RAW", "auto"])
         vals, clean = extract_flags("--codemap fix auth.py", specs)
         assert vals["CODEMAP_RAW"] == "strict"
         assert clean == "fix auth.py"
 
     def test_no_codemap_off(self):
-        """--no-codemap → off."""
+        """Verify command-line option behavior.
+
+        --no-codemap → off.
+        """
         specs = parse_specs(["--codemap", "CODEMAP_RAW", "auto"])
         vals, clean = extract_flags("--no-codemap fix auth.py", specs)
         assert vals["CODEMAP_RAW"] == "off"
         assert clean == "fix auth.py"
 
     def test_both_no_codemap_wins(self):
-        """--codemap + --no-codemap together → off (--no-codemap wins)."""
+        """Verify command-line option behavior.
+
+        --codemap + --no-codemap together → off (--no-codemap wins).
+        """
         specs = parse_specs(["--codemap", "CODEMAP_RAW", "auto"])
         vals, clean = extract_flags("--codemap --no-codemap fix auth.py", specs)
         assert vals["CODEMAP_RAW"] == "off"
@@ -178,21 +214,30 @@ class TestValueFlags:
     """Integer and string flag extraction."""
 
     def test_int_space_form(self):
-        """--max-depth 5 → 5."""
+        """Verify command-line option behavior.
+
+        --max-depth 5 → 5.
+        """
         specs = parse_specs(["--int", "max-depth", "MAX_DEPTH", "3"])
         vals, clean = extract_flags("--max-depth 5 fix auth.py", specs)
         assert vals["MAX_DEPTH"] == "5"
         assert clean == "fix auth.py"
 
     def test_int_eq_form(self):
-        """--max-depth=5 → 5."""
+        """Verify command-line option behavior.
+
+        --max-depth=5 → 5.
+        """
         specs = parse_specs(["--int", "max-depth", "MAX_DEPTH", "3"])
         vals, clean = extract_flags("--max-depth=5 fix auth.py", specs)
         assert vals["MAX_DEPTH"] == "5"
         assert clean == "fix auth.py"
 
     def test_int_absent_default(self):
-        """--max-depth absent → default."""
+        """Verify command-line option behavior.
+
+        --max-depth absent → default.
+        """
         specs = parse_specs(["--int", "max-depth", "MAX_DEPTH", "3"])
         vals, _ = extract_flags("fix auth.py", specs)
         assert vals["MAX_DEPTH"] == "3"
@@ -205,27 +250,39 @@ class TestValueFlags:
         assert exc.value.code == 2
 
     def test_str_space_form(self):
-        """--plan path/to/file.md → value extracted."""
+        """Verify command-line option behavior.
+
+        --plan path/to/file.md → value extracted.
+        """
         specs = parse_specs(["--str", "plan", "PLAN_FILE", ""])
         vals, clean = extract_flags("--plan .plans/active/plan.md fix auth.py", specs)
         assert vals["PLAN_FILE"] == ".plans/active/plan.md"
         assert clean == "fix auth.py"
 
     def test_str_eq_form(self):
-        """--plan=path/to/file.md → value extracted."""
+        """Verify command-line option behavior.
+
+        --plan=path/to/file.md → value extracted.
+        """
         specs = parse_specs(["--str", "plan", "PLAN_FILE", ""])
         vals, clean = extract_flags("--plan=.plans/active/plan.md fix auth.py", specs)
         assert vals["PLAN_FILE"] == ".plans/active/plan.md"
         assert clean == "fix auth.py"
 
     def test_str_absent_empty_default(self):
-        """--str absent → empty string default."""
+        """Verify command-line option behavior.
+
+        --str absent → empty string default.
+        """
         specs = parse_specs(["--str", "plan", "PLAN_FILE", ""])
         vals, _ = extract_flags("fix auth.py", specs)
         assert vals["PLAN_FILE"] == ""
 
     def test_str_ci_run(self):
-        """--ci-run value extracted correctly."""
+        """Verify command-line option behavior.
+
+        --ci-run value extracted correctly.
+        """
         specs = parse_specs(["--str", "ci-run", "CI_RUN_ID", ""])
         vals, clean = extract_flags("--ci-run 12345678 fix auth.py", specs)
         assert vals["CI_RUN_ID"] == "12345678"
@@ -260,7 +317,7 @@ class TestValueFlags:
 
 
 class TestRunOutput:
-    """run() emits shell-eval-safe KEY=VALUE lines."""
+    """Emit shell-eval-safe KEY=VALUE lines."""
 
     def test_single_quote_wrapping(self):
         """All values wrapped in single quotes."""
@@ -370,7 +427,7 @@ class TestWriteSkillFiles:
         assert (tmp_path / "dev-codemap-raw-shared").read_text() == "strict\n"
 
     def test_debug_codemap_raw_persisted(self, tmp_path: Path):
-        """Debug skill: --no-codemap writes 'off' to both per-skill and legacy CODEMAP_RAW files."""
+        """Debug skill: ``--no-codemap`` writes 'off' to both per-skill and legacy CODEMAP_RAW files."""
         write_skill_files("debug", "--no-codemap symptom", tmp_dir=tmp_path)
         assert (tmp_path / "dev-debug-codemap-shared").read_text() == "off\n"
         assert (tmp_path / "dev-codemap-raw-shared").read_text() == "off\n"
@@ -387,10 +444,9 @@ class TestWriteSkillFiles:
     def test_every_written_file_is_newline_terminated(self, skill: str, tmp_path: Path):
         """Every persisted value ends with a newline.
 
-        Consumers read these back with ``IFS= read -r VAR < file || VAR=<default>``. ``read``
-        exits non-zero on a final line with no terminator, so the ``||`` fallback fires and
-        overwrites the value that was just read — a value without the trailing newline is
-        silently replaced by the default in every downstream Bash() block.
+        Consumers read these back with ``IFS= read -r VAR < file || VAR=<default>``. ``read`` exits non-zero on a final
+        line with no terminator, so the ``||`` fallback fires and overwrites the value that was just read — a value
+        without the trailing newline is silently replaced by the default in every downstream Bash() block.
         """
         write_skill_files(skill, "--codemap do the thing", tmp_dir=tmp_path)
         written = sorted(p for p in tmp_path.iterdir() if p.is_file())
@@ -400,18 +456,19 @@ class TestWriteSkillFiles:
 
     @pytest.mark.parametrize("skill", ["feature", "fix", "refactor", "debug", "review"])
     def test_worktree_flag_enabled_persisted(self, skill: str, tmp_path: Path):
-        """Worktree-capable skills: --worktree persists 'true' to its per-skill sentinel (legacy=None → no legacy file)."""
+        """Worktree-capable skills: ``--worktree`` persists 'true' to its per-skill sentinel (legacy=None → no legacy
+        file)."""
         write_skill_files(skill, "--worktree do the thing", tmp_dir=tmp_path)
         assert (tmp_path / f"dev-{skill}-worktree-shared").read_text() == "true\n"
 
     @pytest.mark.parametrize("skill", ["feature", "fix", "refactor", "debug", "review"])
     def test_worktree_flag_absent_defaults_false(self, skill: str, tmp_path: Path):
-        """Worktree-capable skills: absent --worktree defaults the sentinel to 'false'."""
+        """Worktree-capable skills: absent ``--worktree`` defaults the sentinel to 'false'."""
         write_skill_files(skill, "do the thing", tmp_dir=tmp_path)
         assert (tmp_path / f"dev-{skill}-worktree-shared").read_text() == "false\n"
 
     def test_worktree_not_registered_for_plan(self):
-        """plan is analysis-only (never edits) — it must not register --worktree."""
+        """Plan is analysis-only (never edits) — it must not register ``--worktree``."""
         flags = {spec.flag for spec, _legacy in SKILL_SPECS["plan"]}
         assert "worktree" not in flags
 
@@ -422,10 +479,10 @@ class TestWriteSkillFiles:
 
 
 class TestMainEntryPoint:
-    """main() supplies -h/--help without letting argparse touch the blob or spec tokens."""
+    """Supply -h/--help without letting argparse touch the blob or spec tokens."""
 
     def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """``--help`` prints usage to stdout and exits 0 (argparse default)."""
+        """Print usage to stdout and exit 0 (argparse default)."""
         with pytest.raises(SystemExit) as exc:
             main(["--help"])
         assert exc.value.code == 0
@@ -439,9 +496,8 @@ class TestMainEntryPoint:
     def test_legacy_blob_with_dash_tokens_reaches_spec_loop(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Legacy form: blob carrying ``--``-shaped tokens is parsed by the spec loop, not argparse.
 
-        argparse would reject the spec tokens (``--bool`` etc.) as unknown options. The script
-        must instead treat argv[0] as the blob and argv[1:] as spec tokens — proving the blob
-        and specs bypassed argparse entirely.
+        argparse would reject the spec tokens (``--bool`` etc.) as unknown options. The script must instead treat
+        argv[0] as the blob and argv[1:] as spec tokens — proving the blob and specs bypassed argparse entirely.
         """
         rc = main(["--semble --no-challenge fix auth.py", "--bool", "semble", "SEMBLE_ENABLED", "false"])
         out = capsys.readouterr().out
@@ -454,9 +510,8 @@ class TestMainEntryPoint:
     ) -> None:
         """Skill form: the ``--write-files`` blob with ``--flag`` tokens is consumed internally.
 
-        ``--skill``/``--write-files`` are the only genuine outer flags; the trailing blob (which
-        contains ``--semble``/``--no-challenge``) must reach write_skill_files unmangled, not be
-        interpreted as argparse options.
+        ``--skill``/``--write-files`` are the only genuine outer flags; the trailing blob (which contains
+        ``--semble``/``--no-challenge``) must reach write_skill_files unmangled, not be interpreted as argparse options.
         """
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         monkeypatch.delenv("CSID", raising=False)
@@ -467,11 +522,11 @@ class TestMainEntryPoint:
         assert (tmp_path / "dev-feature-no-challenge-shared").read_text() == "false\n"
 
     def test_skill_mode_missing_write_files_exits_1(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """``--skill`` without ``--write-files`` → exit 1 (only supported skill mode)."""
+        """Reject skill mode when file output is not requested."""
         rc = main(["--skill", "feature", "some args"])
         assert rc == 1
         assert "--write-files" in capsys.readouterr().err
 
     def test_module_exposes_main(self) -> None:
-        """``main`` is importable from the module namespace (entry-point contract)."""
+        """Expose the command entry point from the module namespace."""
         assert callable(dev_parse_args.main)

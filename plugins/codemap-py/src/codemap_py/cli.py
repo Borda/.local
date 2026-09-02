@@ -1,34 +1,26 @@
 #!/usr/bin/env python3
-"""codemap_py.cli — codemap-py CLI dispatcher (plan §7.2, §7.3, §7.5).
+"""codemap_py.cli — codemap-py CLI dispatcher.
 
-Dispatches ``codemap-py {index,query,doctor}`` to the current ``bin/``
-executables using argument arrays with ``shell=False``, resolving the index
-identity through the single §4.4 resolver
-(:func:`codemap_py.index_paths.resolve_index`). It also owns the interpreter
-probe (plan §7.3). No general shell-command mode exists.
+Dispatches ``codemap-py {index,query,doctor}`` to the current ``bin/`` executables using argument arrays with
+``shell=False``, resolving the index identity through the single index resolver
+(:func:`codemap_py.index_paths.resolve_index`). It also owns the interpreter probe. No general shell-command mode
+exists.
 
-Every public read/update enters the §4.4 RW gate, but this dispatcher is not
-where that happens: the engines lease themselves —
-:func:`codemap_py.query.main` takes a shared read lease around each index load,
-:func:`codemap_py.graph.main` an exclusive writer lease around build and publish.
-Gating there rather than here covers every entry point (this dispatcher, the
-``bin/scan-query`` and ``bin/scan-index`` launchers, the query engine's self-heal
-spawn, a hook's background refresh) instead of only this one, and it avoids the
-parent/child lock-order inversion that a lease taken here would create around a
-child process that needs its own.
+Every public read/update enters the shared-index RW gate, but this dispatcher is not where that happens: the engines
+lease themselves — :func:`codemap_py.query.main` takes a shared read lease around each index load,
+:func:`codemap_py.graph.main` an exclusive writer lease around build and publish. Gating there rather than here covers
+every entry point (this dispatcher, the ``bin/scan-query`` and ``bin/scan-index`` launchers, the query engine's
+automatic repair spawn, and a hook's background refresh) instead of only this one. This placement also prevents a lock
+order inversion between a parent and a child process that needs its own lease.
 
-``scripts/codemap_py_cli.py`` is a compatibility shim that aliases this module
-in ``sys.modules``, replacing the transitional ``bin/`` path-insertion helper
-with direct imports of :mod:`codemap_py.index_paths` and
-:mod:`codemap_py.rwgate`. ``query`` calls :func:`codemap_py.query.main`
-directly in-process under the shared read lease. ``index`` still shells out
-to ``bin/scan-index`` as a subprocess — a thin launcher over
-:func:`codemap_py.graph.main` — rather than calling it in-process like
-``query`` does.
+``scripts/codemap_py_cli.py`` is a compatibility shim that aliases this module in ``sys.modules``, replacing the
+transitional ``bin/`` path-insertion helper with direct imports of :mod:`codemap_py.index_paths` and
+:mod:`codemap_py.rwgate`. ``query`` calls :func:`codemap_py.query.main` directly in-process under the shared read lease.
+``index`` still shells out to ``bin/scan-index`` as a subprocess — a thin launcher over :func:`codemap_py.graph.main` —
+rather than calling it in-process like ``query`` does.
 
-Exit codes (plan §7.5): ``0`` success, ``1`` runtime/index failure (bounded
-structured stderr — ``index_busy`` / ``index_coordination_unavailable``), ``2``
-invalid syntax, ``127`` no eligible CPython interpreter (including an invalid
+Exit codes: ``0`` success, ``1`` runtime/index failure (bounded structured stderr — ``index_busy`` /
+``index_coordination_unavailable``), ``2`` invalid syntax, ``127`` no eligible CPython interpreter (including an invalid
 authoritative ``CODEMAP_PYTHON``).
 """
 
@@ -76,9 +68,8 @@ Probe = Callable[[Sequence[str]], "ProbeResult | None"]
 def _default_plugin_root() -> Path:
     """Return the plugin root when the CLI is imported outside the entry.
 
-    ``cli.py`` lives at ``<plugin-root>/src/codemap_py/cli.py`` — one level
-    deeper than the pre-slice-1 ``scripts/codemap_py_cli.py`` — so this walks
-    three parents, not two, to still land on the plugin root.
+    ``cli.py`` lives at ``<plugin-root>/src/codemap_py/cli.py`` — one level deeper than the pre-slice-1
+    ``scripts/codemap_py_cli.py`` — so this walks three parents, not two, to still land on the plugin root.
     """
     return Path(__file__).resolve().parents[2]
 
@@ -98,7 +89,7 @@ def is_supported(impl: str, major: int, minor: int) -> bool:
 
 
 def candidate_interpreters(env: Mapping[str, str], platform: str) -> list[list[str]]:
-    """Return ordered interpreter candidates for a platform (plan §7.3).
+    """Return ordered interpreter candidates for a platform.
 
     An authoritative ``CODEMAP_PYTHON`` override, when set, is the sole
     candidate — a present-but-invalid override must fail hard, never fall
@@ -167,7 +158,7 @@ def resolve_interpreter(
 
 
 def _emit_error(code: str, detail: str) -> int:
-    """Write one bounded structured stderr line; return the §7.5 exit ``1``."""
+    """Write one bounded structured stderr line and return runtime-failure exit code ``1``."""
     sys.stderr.write(json.dumps({"error": code, "detail": detail}) + "\n")
     return _RUNTIME_ERROR_EXIT
 
@@ -175,14 +166,13 @@ def _emit_error(code: str, detail: str) -> int:
 def _child_argv(script: str, rest: Sequence[str], plugin_root: Path, root: Path) -> list[str]:
     """Build the child argv, pinning ``--root`` to the resolver's canonical root.
 
-    Pinning ``--root`` keeps scan-index/scan-query resolution aligned with the §4.4
-    resolver root, so both agree on the DEFAULT-layout index path; a user-supplied
-    ``--root`` is honoured untouched.
+    Pinning ``--root`` keeps scan-index/scan-query resolution aligned with the shared-index resolver root, so both agree
+    on the DEFAULT-layout index path; a user-supplied ``--root`` is honoured untouched.
 
-    Under ``CODEMAP_INDEX_DIR`` the child no longer derives its own path either: the
-    resolver's flat ``<override>/<project>.json`` is what it writes and reads. The
-    override case used to resolve here to a ``<root-key>/`` subdirectory the child
-    never touched, so the gate coordinated one file while the child wrote another.
+    Under ``CODEMAP_INDEX_DIR`` the child no longer derives its own path either: the resolver's flat
+    ``<override>/<project>.json`` is what it writes and reads. The override case used to resolve here to a subdirectory
+    named for ``<root-key>`` that the child never touched, so the gate coordinated one file while the child wrote
+    another.
     """
     pin = [] if "--root" in rest else ["--root", str(root)]
     return [sys.executable, str(plugin_root / "bin" / script), *pin, *rest]
@@ -210,8 +200,8 @@ def _doctor(rest: Sequence[str], plugin_root: Path) -> int:
 def _query_argv(rest: Sequence[str], root: Path) -> list[str]:
     """Build the in-process argv for :func:`codemap_py.query.main`, pinning ``--root``.
 
-    Mirrors :func:`_child_argv`'s pinning behavior (a user-supplied ``--root`` wins)
-    without the ``sys.executable``/script-path prefix a subprocess argv needs.
+    Mirrors :func:`_child_argv`'s pinning behavior (a user-supplied ``--root`` wins) without the
+    ``sys.executable``/script-path prefix a subprocess argv needs.
     """
     pin = [] if "--root" in rest else ["--root", str(root)]
     return [*pin, *rest]
@@ -249,11 +239,10 @@ def _run_query(rest: Sequence[str], plugin_root: Path) -> int:
 def _run_index(rest: Sequence[str], plugin_root: Path) -> int:
     """Run scan-index as a subprocess; the engine owns its own writer lease.
 
-    As with :func:`_run_query`, no lease is taken here. ``scan-index`` runs
-    :func:`codemap_py.graph.main`, which builds and publishes under an exclusive
-    lease; wrapping the child in a second one from this parent process would make
-    the child block on its own parent's writer intent until its deadline expired,
-    turning every ``codemap-py index`` invocation into ``index_busy``.
+    As with :func:`_run_query`, no lease is taken here. ``scan-index`` runs :func:`codemap_py.graph.main`, which builds
+    and publishes under an exclusive lease; wrapping the child in a second one from this parent process would make the
+    child block on its own parent's writer intent until its deadline expired, turning every ``codemap-py index``
+    invocation into ``index_busy``.
     """
     if not (plugin_root / "bin" / "scan-index").is_file():
         return _emit_error("missing_executable", "scan-index")
@@ -263,7 +252,7 @@ def _run_index(rest: Sequence[str], plugin_root: Path) -> int:
 
 
 def main(argv: Sequence[str] | None = None, plugin_root: Path | None = None) -> int:
-    """Dispatch ``index``/``query``/``doctor``/``integrate`` (plan §7.5 exit codes)."""
+    """Dispatch ``index``/``query``/``doctor``/``integrate``."""
     argv = sys.argv[1:] if argv is None else list(argv)
     root = _default_plugin_root() if plugin_root is None else plugin_root
     if argv in (["--help"], ["-h"]):

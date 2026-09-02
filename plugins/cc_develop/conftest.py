@@ -1,10 +1,9 @@
 """Pytest path fixture for develop plugin ``bin/`` modules.
 
-Mirrors ``tests/conftest.py``: adds ``plugins/cc_develop/bin/`` to ``sys.path`` so that
-``--doctest-modules`` collection of ``bin/*.py`` files can resolve sibling imports
-(e.g. ``build_codemap_batch`` → ``codemap_scan``). Direct script execution never
-needs this — Python puts the script's own directory on ``sys.path`` — and the
-``tests/`` conftest does not apply to collection under ``bin/``.
+Mirrors ``tests/conftest.py``: adds ``plugins/cc_develop/bin/`` to ``sys.path`` so that ``--doctest-modules`` collection
+of ``bin/*.py`` files can resolve sibling imports (e.g. ``build_codemap_batch`` → ``codemap_scan``). Direct script
+execution never needs this — Python puts the script's own directory on ``sys.path`` — and the ``tests/`` conftest does
+not apply to collection under ``bin/``.
 """
 
 from __future__ import annotations

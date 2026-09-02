@@ -1,8 +1,7 @@
 """Tests for ``bin/check_oss_pr_signals.py``.
 
-Subprocess and ``shutil.which`` are monkeypatched throughout — no real ``gh``
-or ``git`` invocation. Tests cover argv validation, the four signal checks,
-and JSON output routing (stdout vs ``--output-file``).
+Subprocess and ``shutil.which`` are monkeypatched throughout — no real ``gh`` or ``git`` invocation. Tests cover argv
+validation, the four signal checks, and JSON output routing (stdout vs ``--output-file``).
 """
 
 from __future__ import annotations
@@ -71,10 +70,10 @@ def fake_subprocess(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
 
 class TestMainArgValidation:
-    """argv plumbing — required flags, numeric check, missing tools."""
+    """Argv plumbing — required flags, numeric check, missing tools."""
 
     def test_missing_clean_args_exits_2(self) -> None:
-        """argparse exits 2 when --clean-args missing."""
+        """Argparse exits 2 when ``--clean-args`` is missing."""
         with pytest.raises(SystemExit) as exc:
             cops.main([])
         assert exc.value.code == 2
@@ -90,7 +89,7 @@ class TestMainArgValidation:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """``which`` returning None for gh → exit 2."""
+        """Return the missing-tool exit code when GitHub CLI is unavailable."""
         monkeypatch.setattr(cops, "which", lambda cmd: None if cmd == "gh" else "/fake/git")
         rc = cops.main(["--clean-args", "42"])
         assert rc == 2
@@ -127,7 +126,7 @@ class TestExtractRemovedExports:
         assert cops._extract_removed_exports("+only_added") == []
 
     def test_ignores_diff_headers(self) -> None:
-        """``---`` and ``+++`` headers do not contribute symbols."""
+        """Exclude diff headers from changed-symbol extraction."""
         diff = "--- a/src/x/__init__.py\n+++ b/src/x/__init__.py\n-Removed\n"
         assert cops._extract_removed_exports(diff) == ["Removed"]
 
@@ -202,14 +201,14 @@ class TestCollectSignals:
 
 
 class TestOutputRouting:
-    """Stdout vs --output-file paths."""
+    """Stdout versus ``--output-file`` paths."""
 
     def test_stdout_default(
         self,
         fake_subprocess: dict[str, Any],
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """No --output-file → JSON to stdout, exit 0."""
+        """No ``--output-file`` → JSON to stdout, exit 0."""
         rc = cops.main(["--clean-args", "42", "--latest-tag", "v1"])
         assert rc == 0
         out = capsys.readouterr().out
@@ -222,7 +221,10 @@ class TestOutputRouting:
         fake_subprocess: dict[str, Any],
         tmp_path: Path,
     ) -> None:
-        """--output-file path → JSON written to disk."""
+        """Verify command-line option behavior.
+
+        ``--output-file`` path → JSON written to disk.
+        """
         out_path = tmp_path / "signals.json"
         rc = cops.main(["--clean-args", "42", "--output-file", str(out_path)])
         assert rc == 0
@@ -246,7 +248,7 @@ class TestTimeoutResilience:
     """Timeouts return empty strings rather than propagating."""
 
     def test_timeout_yields_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``subprocess.TimeoutExpired`` → empty stdout, no raise."""
+        """Return empty output after a subprocess timeout."""
 
         def _raise_timeout(*_args: Any, **_kwargs: Any) -> _FakeCompleted:
             raise subprocess.TimeoutExpired(cmd=["fake"], timeout=1)
@@ -275,16 +277,15 @@ _SNAPSHOT_DIFF = (
 class TestDiffFileFiltering:
     """Local slice filtering replaces the per-pathspec gh diff subprocesses.
 
-    The snapshot mode exists so /oss:review can fetch the PR diff once and
-    feed every consumer the same bytes — these tests pin that no gh diff
-    subprocess fires and each slice lands in its correct signal field.
+    The snapshot mode exists so /oss:review can fetch the PR diff once and feed every consumer the same bytes — these
+    tests pin that no gh diff subprocess fires and each slice lands in its correct signal field.
     """
 
     def test_slices_derived_without_gh_diff_calls(self, fake_subprocess: dict[str, Any]) -> None:
         """diff_text populates all four slices; zero gh pr diff subprocesses run.
 
-        A regression here means the snapshot silently re-fetches over the
-        network, reintroducing the redundant round-trips the flag removes.
+        A regression here means the snapshot silently fetches from the network again, reintroducing the redundant
+        requests that the flag removes.
         """
         fake_subprocess["responses"] = {"git:show:v1.0.0": "OldExport = None\n"}
         signals = cops.collect_signals(
@@ -303,36 +304,39 @@ class TestDiffFileFiltering:
         assert "## 1.1" in signals.changelog_diff
 
     def test_root_init_matches_glob(self) -> None:
-        """`src/__init__.py` (zero intermediate dirs) is kept by the init slice.
+        """Keep a top-level source initializer in the API slice.
 
-        Git's `src/**/__init__.py` glob matches the depth-zero path; the
-        fnmatch translation drops it unless the extra root pattern is present.
+        Git's `src/**/__init__.py` glob matches the depth-zero path; the fnmatch translation drops it unless the extra
+        root pattern is present.
         """
         sections = cops._split_diff_sections("diff --git a/src/__init__.py b/src/__init__.py\n-Gone\n")
         assert "Gone" in cops._filter_diff(sections, ["src/**/__init__.py", "src/__init__.py"])
 
     def test_non_src_init_excluded(self) -> None:
-        """`tests/__init__.py` never enters the API-stability slice.
+        """Exclude non-source package initializers from the API-stability slice.
 
-        The deprecation check is scoped to the public package surface under
-        src/ — counting test-package inits would fabricate removed exports.
+        The deprecation check is scoped to the public package surface under src/ — counting test-package inits would
+        fabricate removed exports.
         """
         sections = cops._split_diff_sections("diff --git a/tests/__init__.py b/tests/__init__.py\n-x\n")
         assert cops._filter_diff(sections, ["src/**/__init__.py", "src/__init__.py"]) == ""
 
 
 class TestDiffFileCli:
-    """--diff-file argv plumbing: happy path and unreadable-path fallback."""
+    """Verify command-line option behavior.
+
+    ``--diff-file`` argv plumbing: happy path and unreadable-path fallback.
+    """
 
     def test_diff_file_read_and_used(
         self,
         fake_subprocess: dict[str, Any],
         tmp_path: Path,
     ) -> None:
-        """Readable --diff-file → slices from the file, no gh diff subprocess.
+        """Readable ``--diff-file`` → slices from the file, no gh diff subprocess.
 
-        End-to-end pin of the /oss:review Step-3b invocation shape:
-        `--clean-args N --latest-tag T --diff-file SNAP --output-file OUT`.
+        End-to-end pin of the /oss:review data-collection invocation: `--clean-args N --latest-tag T --diff-file SNAP
+        --output-file OUT`.
         """
         snap = tmp_path / "pr.diff"
         snap.write_text(_SNAPSHOT_DIFF, encoding="utf-8")
@@ -352,10 +356,10 @@ class TestDiffFileCli:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """Missing --diff-file path → stderr note + gh subprocess path runs.
+        """Missing ``--diff-file`` path → stderr note + gh subprocess path runs.
 
-        A broken snapshot must degrade to the pre-flag behavior, never to an
-        empty result set that would read as "no signals" downstream.
+        A broken snapshot must degrade to the pre-flag behavior, never to an empty result set that would read as "no
+        signals" downstream.
         """
         rc = cops.main(["--clean-args", "42", "--diff-file", str(tmp_path / "absent.diff")])
         assert rc == 0

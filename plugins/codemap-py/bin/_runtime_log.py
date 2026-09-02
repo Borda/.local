@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""bin/_runtime_log.py — compatibility shim for :mod:`codemap_py.runtime_log` (Phase 3 slice 1).
+"""Compatibility shim forwarding the legacy runtime-log import to :mod:`codemap_py.runtime_log`.
 
-Every prior consumer imports the bare ``_runtime_log`` name after inserting
-``bin/`` onto its own ``sys.path``; this shim prepends ``<plugin-root>/src`` to
-the process import path, then replaces its own entry in ``sys.modules`` with
-the real package module so every attribute access reaches the one
-authoritative implementation.
+Every prior consumer imports the bare ``_runtime_log`` name after inserting ``bin/`` onto its own ``sys.path``; this
+shim prepends ``<plugin-root>/src`` to the process import path, then replaces its own entry in ``sys.modules`` with the
+real package module so every attribute access reaches the one authoritative implementation.
 
 consumers: tests — imported as bare ``_runtime_log``; not a standalone executable
 """

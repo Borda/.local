@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-"""merge_specialist_batch.py — cherry-pick per-item commits from parallel specialist
-worktrees onto the current branch, in original item-priority order.
+"""merge_specialist_batch.py — cherry-pick per-item commits from parallel specialist worktrees onto the current branch,
+in original item-priority order.
 
 oss:resolve Step 8 Phase 2 dispatches one implementation agent per specialist
 (sw-engineer/qa-specialist/doc-scribe/linting-expert), each working in its own
@@ -22,8 +22,8 @@ Usage:
     merge_specialist_batch.py --plan <plan.json> --commit-mode <each|grouped|all|stage>
         [--centrality-file <map.json>]
 
-Plan file: JSON array of ``{"item_id": str, "sha": str, "group"?: str,
-"module"?: str}`` objects, in the exact order to apply.
+Plan file: JSON array of objects containing ``item_id``, ``sha``, and optional
+``group`` and ``module`` fields, in the exact order to apply.
 
 With ``--centrality-file`` (a ``{module: score}`` JSON map) the plan is first
 reordered so the most foundational worktree groups land first — see
@@ -57,9 +57,8 @@ from shutil import which
 class CommitMode(str, Enum):
     """How ``oss:resolve`` turns the cherry-picked action items into commits.
 
-    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is
-    ``>=3.10``. Only ``EACH`` keeps one commit per action item; every other mode
-    stages the diff and lets a later step decide the commit shape.
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``. Only ``EACH`` keeps one commit
+    per action item; every other mode stages the diff and lets a later step decide the commit shape.
     """
 
     EACH = "each"
@@ -234,8 +233,7 @@ def run_plan(entries: list[PlanEntry], commit_mode: CommitMode) -> dict[str, obj
             successful cherry-pick.
 
     Returns:
-        ``{"applied": [item_id, ...], "conflict": {"item_id", "sha", "files"} | None,
-        "remaining": [item_id, ...]}``.
+        A mapping with ``applied``, ``conflict``, and ``remaining`` fields.
 
     Examples:
         No doctest — requires live git subprocess; covered by pytest with monkeypatch.

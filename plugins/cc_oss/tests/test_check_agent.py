@@ -112,7 +112,7 @@ def test_cache_different_agent_returns_false(tmp_path: Path) -> None:
 
 
 def test_main_prints_true(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """``main`` prints ``true`` to stdout when agent found."""
+    """Print ``true`` to stdout when agent found."""
     agents_dir = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "foundry" / "0.5.0" / "agents"
     agents_dir.mkdir(parents=True)
     (agents_dir / "sw-engineer.md").write_text("")
@@ -126,7 +126,7 @@ def test_main_prints_true(tmp_path: Path, capsys: pytest.CaptureFixture[str]) ->
 
 
 def test_main_prints_false(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """``main`` prints ``false`` to stdout when agent absent."""
+    """Print ``false`` to stdout when agent absent."""
     import unittest.mock as mock
 
     with mock.patch.object(check_agent.Path, "home", return_value=tmp_path):

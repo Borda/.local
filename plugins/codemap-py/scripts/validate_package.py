@@ -20,7 +20,7 @@ artifact:
   package-manifest roster skill's ``SKILL.md`` (roster matches the on-disk skill
   dirs exactly), both runtime ``hooks`` pointer files, and every hook helper they
   reference; the Codex manifest declares ``skills: ./codex-skills/`` and ships
-  ``codex-skills/`` with the same six-skill roster as Claude (plan §8.2 parity);
+  ``codex-skills/`` with the same six-skill roster as Claude;
 - executable modes: on POSIX, each file's on-disk executable bit matches its
   manifest ``exec`` flag (informational on Windows).
 
@@ -116,10 +116,9 @@ def _check_portability(package: Path) -> list[str]:
 def _personal_roots() -> tuple[bytes, ...]:
     """Return the concrete build-host home path(s) as bytes to scan for.
 
-    Scanning for the real home (rather than a generic ``/Users/`` pattern) avoids
-    false positives on documented placeholder paths (``/Users/x/``) and on tools
-    whose source legitimately names those prefixes, while still catching a
-    payload file that baked in this checkout's absolute home.
+    Scanning for the real home (rather than a generic ``/Users/`` pattern) avoids false positives on documented
+    placeholder paths (``/Users/x/``) and on tools whose source legitimately names those prefixes, while still catching
+    a payload file that baked in this checkout's absolute home.
     """
     candidates = {str(Path.home()), os.path.realpath(Path.home())}
     return tuple(sorted(root.encode("utf-8") for root in candidates if root not in ("", "/")))
@@ -156,8 +155,8 @@ def _check_closure(package: Path) -> list[str]:
 def _check_exec_modes(package: Path, manifest: dict) -> list[str]:
     """On POSIX, require each on-disk executable bit to match its manifest flag.
 
-    On non-POSIX hosts the executable bit is unreliable, so the check is skipped
-    (informational per plan §9.1); the manifest flag remains authoritative.
+    On non-POSIX hosts the executable bit is unreliable, so the check is informational only; the manifest flag remains
+    authoritative.
     """
     if os.name != "posix":
         return []
@@ -202,16 +201,15 @@ def _check_claude_roster(package: Path, manifest: dict, inventory: set[str]) -> 
             findings.append(f"rostered skill not in inventory: {relative}")
     codex_roster = set(manifest.get("skills", {}).get("codex", []))
     if codex_roster != roster:
-        findings.append(f"codex roster {sorted(codex_roster)} != claude roster {sorted(roster)} (plan §8.2 parity)")
+        findings.append(f"codex roster {sorted(codex_roster)} != claude roster {sorted(roster)}")
     return findings
 
 
 def _check_hook_helpers(package: Path, hooks_relative: str, inventory: set[str]) -> list[str]:
     """Require every hook helper referenced by the wiring file to exist and be inventoried.
 
-    ``hooks/_hookutil.py`` is checked unconditionally: every hook script imports it,
-    but no wiring file names it, so a package shipping the hooks without it would
-    otherwise validate clean while every hook crashes at import time.
+    ``hooks/_hookutil.py`` is checked unconditionally: every hook script imports it, but no wiring file names it, so a
+    package shipping the hooks without it would otherwise validate clean while every hook crashes at import time.
     """
     findings: list[str] = []
     blob = json.dumps(_load_json(package / hooks_relative))

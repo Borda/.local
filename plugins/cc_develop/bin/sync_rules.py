@@ -266,7 +266,7 @@ def resolve_target(dest: Path, target: str) -> Path:
 
 
 def owns(dest: Path, target: str, plugin_root: Path, lineage: Path | None) -> bool:
-    """True when this plugin may replace or delete ``dest``.
+    """Check whether this plugin may replace or delete a destination.
 
     Args:
         dest: Existing symlink under ``~/.claude/rules/``.
@@ -525,7 +525,7 @@ def _report(result: SyncResult) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns process exit code."""
+    """Run rule synchronization from command-line arguments."""
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     parser = argparse.ArgumentParser(
         prog="sync_rules",

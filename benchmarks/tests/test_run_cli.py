@@ -117,13 +117,13 @@ class TestDataclasses:
     """Verify dataclass fields and defaults behave as documented."""
 
     def test_query_stores_cmd_and_args(self, script_run_cli: Any) -> None:
-        """Scenario: Query created from raw dict has correct cmd and args."""
+        """Query created from raw dict has correct cmd and args."""
         q = script_run_cli.Query(cmd="rdeps", args=["foo.bar"])
         assert q.cmd == "rdeps"
         assert q.args == ["foo.bar"]
 
     def test_task_from_dict_roundtrip(self, script_run_cli: Any, minimal_task_dict: dict) -> None:
-        """Scenario: Task.from_dict parses every field correctly."""
+        """Task.from_dict parses every field correctly."""
         t = script_run_cli.Task.from_dict(minimal_task_dict)
         assert t.id == "T-99"
         assert t.skill == "fix"
@@ -133,13 +133,13 @@ class TestDataclasses:
         assert t.queries[0].cmd == "rdeps"
 
     def test_task_from_dict_empty_queries(self, script_run_cli: Any, minimal_task_dict: dict) -> None:
-        """Scenario: Task.from_dict with empty queries list produces empty list."""
+        """Task.from_dict with empty queries list produces empty list."""
         minimal_task_dict["queries"] = []
         t = script_run_cli.Task.from_dict(minimal_task_dict)
         assert t.queries == []
 
     def test_scenario_result_notes_default_empty(self, script_run_cli: Any) -> None:
-        """Scenario: ScenarioResult notes field defaults to empty string."""
+        """ScenarioResult notes field defaults to empty string."""
         r = script_run_cli.ScenarioResult(
             scenario="C1",
             name="x",
@@ -151,7 +151,7 @@ class TestDataclasses:
         assert r.notes == ""
 
     def test_timing_stats_stores_all_fields(self, script_run_cli: Any) -> None:
-        """Scenario: TimingStats round-trips all timing fields."""
+        """TimingStats round-trips all timing fields."""
         ts = script_run_cli.TimingStats(min_ms=1.0, median_ms=2.5, max_ms=10.0, n=5)
         assert ts.min_ms == 1.0
         assert ts.median_ms == 2.5
@@ -159,7 +159,7 @@ class TestDataclasses:
         assert ts.n == 5
 
     def test_accuracy_stats_stores_all_fields(self, script_run_cli: Any) -> None:
-        """Scenario: AccuracyStats round-trips precision/recall and TP/FP/FN."""
+        """AccuracyStats round-trips precision/recall and TP/FP/FN."""
         a = script_run_cli.AccuracyStats(
             precision=0.9,
             recall=0.8,
@@ -175,20 +175,20 @@ class TestDataclasses:
         assert a.fp_modules == ["a.b"]
 
     def test_suite_stats_defaults_zero(self, script_run_cli: Any) -> None:
-        """Scenario: SuiteStats initialises all counters to zero."""
+        """SuiteStats initialises all counters to zero."""
         s = script_run_cli.SuiteStats()
         assert s.total == 0
         assert s.passed == 0
         assert s.failed == 0
 
     def test_validation_result_ok_has_empty_reason(self, script_run_cli: Any) -> None:
-        """Scenario: ValidationResult ok=True carries an empty reason string."""
+        """ValidationResult ok=True carries an empty reason string."""
         vr = script_run_cli.ValidationResult(ok=True, reason="")
         assert vr.ok is True
         assert vr.reason == ""
 
     def test_validation_result_fail_has_reason(self, script_run_cli: Any) -> None:
-        """Scenario: ValidationResult ok=False carries a non-empty reason."""
+        """ValidationResult ok=False carries a non-empty reason."""
         vr = script_run_cli.ValidationResult(ok=False, reason="missing key")
         assert vr.ok is False
         assert "missing" in vr.reason
@@ -203,19 +203,19 @@ class TestLoadTasks:
     """Validate load_tasks contract against the real tasks-code.json file."""
 
     def test_load_tasks_returns_list_of_task_objects(self, script_run_cli: Any, real_tasks: list) -> None:
-        """Scenario: load_tasks with no filter returns Task instances for all records."""
+        """load_tasks with no filter returns Task instances for all records."""
         assert len(real_tasks) > 0
         assert all(isinstance(t, script_run_cli.Task) for t in real_tasks)
 
     def test_load_tasks_total_count_matches_file(self, script_run_cli: Any, real_tasks: list) -> None:
-        """Scenario: task count matches number of objects in tasks-code.json."""
+        """Task count matches number of objects in tasks-code.json."""
         with script_run_cli.TASKS_FILE.open() as f:
             raw = json.load(f)
         assert len(real_tasks) == len(raw)
 
     @pytest.mark.parametrize("skill", ["fix", "feature", "refactor"])
     def test_load_tasks_skill_filter_returns_matching_only(self, script_run_cli: Any, skill: str) -> None:
-        """Scenario: skill_filter keeps only tasks whose skill field matches.
+        """skill_filter keeps only tasks whose skill field matches.
 
         Args:
             skill: One of the three documented skill values.
@@ -225,34 +225,34 @@ class TestLoadTasks:
         assert all(t.skill == skill for t in filtered)
 
     def test_load_tasks_unknown_skill_filter_returns_empty(self, script_run_cli: Any) -> None:
-        """Scenario: skill_filter with an unknown value produces an empty list."""
+        """skill_filter with an unknown value produces an empty list."""
         result = script_run_cli.load_tasks(skill_filter="nonexistent_skill")
         assert result == []
 
     def test_load_tasks_no_filter_includes_all_skills(self, script_run_cli: Any, real_tasks: list) -> None:
-        """Scenario: unfiltered load contains tasks from all three skill groups."""
+        """Unfiltered load contains tasks from all three skill groups."""
         skills = {t.skill for t in real_tasks}
         assert skills >= {"fix", "feature", "refactor"}
 
     def test_load_tasks_queries_are_query_objects(self, script_run_cli: Any, real_tasks: list) -> None:
-        """Scenario: every query within every task is a Query dataclass instance."""
+        """Every query within every task is a Query dataclass instance."""
         for task in real_tasks:
             for q in task.queries:
                 assert isinstance(q, script_run_cli.Query), f"Task {task.id}: expected Query, got {type(q)}"
 
     def test_load_tasks_primary_module_is_dotted_string(self, script_run_cli: Any, real_tasks: list) -> None:
-        """Scenario: primary_module for every task is a non-empty dotted string."""
+        """primary_module for every task is a non-empty dotted string."""
         for task in real_tasks:
             assert "." in task.primary_module, f"Task {task.id} module not dotted: {task.primary_module}"
 
     def test_load_tasks_with_nonexistent_file_raises(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: TASKS_FILE pointing at a missing file raises FileNotFoundError."""
+        """TASKS_FILE pointing at a missing file raises FileNotFoundError."""
         with patch.object(script_run_cli, "TASKS_FILE", tmp_path / "missing.json"):
             with pytest.raises(FileNotFoundError):
                 script_run_cli.load_tasks()
 
     def test_load_tasks_with_malformed_json_raises(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: TASKS_FILE containing invalid JSON raises json.JSONDecodeError."""
+        """TASKS_FILE containing invalid JSON raises json.JSONDecodeError."""
         bad = tmp_path / "bad.json"
         bad.write_text("{not valid json", encoding="utf-8")
         with patch.object(script_run_cli, "TASKS_FILE", bad):
@@ -291,13 +291,13 @@ class TestLoadOssTasks:
     """Validate load_oss_tasks contract (expects flat list JSON)."""
 
     def test_load_oss_tasks_returns_list(self, script_run_cli: Any, oss_tasks_file: Path) -> None:
-        """Scenario: load_oss_tasks returns a list when the file contains a flat list."""
+        """load_oss_tasks returns a list when the file contains a flat list."""
         with patch.object(script_run_cli, "OSS_TASKS_FILE", oss_tasks_file):
             result = script_run_cli.load_oss_tasks()
         assert isinstance(result, list)
 
     def test_load_oss_tasks_absent_file_returns_empty(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: load_oss_tasks returns [] when OSS_TASKS_FILE does not exist."""
+        """load_oss_tasks returns [] when OSS_TASKS_FILE does not exist."""
         with patch.object(script_run_cli, "OSS_TASKS_FILE", tmp_path / "missing.json"):
             result = script_run_cli.load_oss_tasks()
         assert result == []
@@ -313,7 +313,7 @@ class TestLoadOssTasks:
     def test_load_oss_tasks_type_filter_matches_only(
         self, script_run_cli: Any, type_filter: str, oss_tasks_file: Path
     ) -> None:
-        """Scenario: type_filter keeps only tasks whose 'type' field matches.
+        """type_filter keeps only tasks whose 'type' field matches.
 
         Args:
             type_filter: One of the documented task type values.
@@ -325,13 +325,13 @@ class TestLoadOssTasks:
         assert all(t.get("type") == type_filter for t in result)
 
     def test_load_oss_tasks_unknown_type_returns_empty(self, script_run_cli: Any, oss_tasks_file: Path) -> None:
-        """Scenario: type_filter with an unknown value produces an empty list."""
+        """type_filter with an unknown value produces an empty list."""
         with patch.object(script_run_cli, "OSS_TASKS_FILE", oss_tasks_file):
             result = script_run_cli.load_oss_tasks(type_filter="does_not_exist")
         assert result == []
 
     def test_load_oss_tasks_no_filter_includes_all_types(self, script_run_cli: Any, oss_tasks_file: Path) -> None:
-        """Scenario: unfiltered load returns all tasks across types."""
+        """Unfiltered load returns all tasks across types."""
         with patch.object(script_run_cli, "OSS_TASKS_FILE", oss_tasks_file):
             all_tasks = script_run_cli.load_oss_tasks()
         types = {t.get("type") for t in all_tasks}
@@ -339,14 +339,14 @@ class TestLoadOssTasks:
         assert "code_quality" in types
 
     def test_load_oss_tasks_result_dicts_have_id_field(self, script_run_cli: Any, oss_tasks_file: Path) -> None:
-        """Scenario: every returned dict has a non-empty 'id' field."""
+        """Every returned dict has a non-empty 'id' field."""
         with patch.object(script_run_cli, "OSS_TASKS_FILE", oss_tasks_file):
             tasks = script_run_cli.load_oss_tasks()
         for t in tasks:
             assert t.get("id"), f"Task missing 'id': {t}"
 
     def test_load_oss_tasks_with_flat_list_json(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: flat-list JSON is returned as-is without wrapping.
+        """Flat-list JSON is returned as-is without wrapping.
 
         Args:
             tmp_path: Pytest temporary directory.
@@ -385,7 +385,7 @@ class TestPathToModule:
     def test_converts_py_path_to_dotted_module(
         self, script_run_cli: Any, path: str, repo_root: str, expected: str
     ) -> None:
-        """Scenario: .py path is converted to the expected dotted module name.
+        """.py path is converted to the expected dotted module name.
 
         Args:
             path: Filesystem path to a Python source file.
@@ -403,7 +403,7 @@ class TestPathToModule:
         ],
     )
     def test_returns_none_for_non_py_files(self, script_run_cli: Any, path: str) -> None:
-        """Scenario: non-.py paths return None.
+        """non-.py paths return None.
 
         Args:
             path: Path to a non-Python file.
@@ -426,7 +426,7 @@ class TestModuleToGrepPattern:
         ],
     )
     def test_pattern_contains_both_import_forms(self, script_run_cli: Any, module: str, expected: str) -> None:
-        r"""Scenario: pattern contains 'from X import' and 'import X' forms joined by \|.
+        r"""Pattern contains 'from X import' and 'import X' forms joined by \|.
 
         Args:
             module: Dotted module name.
@@ -447,7 +447,7 @@ class TestModuleToPackage:
         ],
     )
     def test_returns_parent_package_or_none(self, script_run_cli: Any, module: str, expected: str | None) -> None:
-        """Scenario: parent package extracted correctly for nested and top-level modules.
+        """Parent package extracted correctly for nested and top-level modules.
 
         Args:
             module: Dotted module name.
@@ -490,7 +490,7 @@ class TestComputePrecisionRecall:
         expected_fp: int,
         expected_fn: int,
     ) -> None:
-        """Scenario: precision/recall computed correctly for documented TP/FP/FN formula.
+        """Precision/recall computed correctly for documented TP/FP/FN formula.
 
         Args:
             codemap_set: Modules returned by scan-query rdeps.
@@ -509,33 +509,33 @@ class TestComputePrecisionRecall:
         assert stats.fn == expected_fn
 
     def test_empty_codemap_set_precision_defaults_to_one(self, script_run_cli: Any) -> None:
-        """Scenario: empty codemap set yields precision=1.0 per documented default."""
+        """Empty codemap set yields precision=1.0 per documented default."""
         stats = script_run_cli.compute_precision_recall(set(), {"a", "b"})
         assert stats.precision == pytest.approx(1.0)
 
     def test_empty_grep_set_recall_defaults_to_one(self, script_run_cli: Any) -> None:
-        """Scenario: empty grep set yields recall=1.0 per documented default."""
+        """Empty grep set yields recall=1.0 per documented default."""
         stats = script_run_cli.compute_precision_recall({"a", "b"}, set())
         assert stats.recall == pytest.approx(1.0)
 
     def test_both_empty_returns_perfect_scores(self, script_run_cli: Any) -> None:
-        """Scenario: both sets empty yields precision=1.0 and recall=1.0."""
+        """Both sets empty yields precision=1.0 and recall=1.0."""
         stats = script_run_cli.compute_precision_recall(set(), set())
         assert stats.precision == pytest.approx(1.0)
         assert stats.recall == pytest.approx(1.0)
 
     def test_fp_modules_sorted(self, script_run_cli: Any) -> None:
-        """Scenario: fp_modules list is sorted alphabetically."""
+        """fp_modules list is sorted alphabetically."""
         stats = script_run_cli.compute_precision_recall({"z", "a", "m"}, set())
         assert stats.fp_modules == sorted(stats.fp_modules)
 
     def test_fn_modules_sorted(self, script_run_cli: Any) -> None:
-        """Scenario: fn_modules list is sorted alphabetically."""
+        """fn_modules list is sorted alphabetically."""
         stats = script_run_cli.compute_precision_recall(set(), {"z", "a", "m"})
         assert stats.fn_modules == sorted(stats.fn_modules)
 
     def test_precision_rounded_to_four_places(self, script_run_cli: Any) -> None:
-        """Scenario: precision is rounded to 4 decimal places as documented."""
+        """Precision is rounded to 4 decimal places as documented."""
         # 2/3 = 0.6667
         stats = script_run_cli.compute_precision_recall({"a", "b", "c"}, {"a", "b"})
         assert stats.precision == round(stats.precision, 4)
@@ -550,17 +550,17 @@ class TestComputeVerdict:
     """Validate compute_verdict against documented thresholds."""
 
     def test_all_pass_returns_pass(self, script_run_cli: Any) -> None:
-        """Scenario: all scenarios passed → verdict is PASS."""
+        """All scenarios passed → verdict is PASS."""
         results = [_make_scenario(script_run_cli, True) for _ in range(3)]
         assert script_run_cli.compute_verdict(results) == "PASS"
 
     def test_all_fail_returns_fail(self, script_run_cli: Any) -> None:
-        """Scenario: all scenarios failed → verdict is FAIL."""
+        """All scenarios failed → verdict is FAIL."""
         results = [_make_scenario(script_run_cli, False) for _ in range(4)]
         assert script_run_cli.compute_verdict(results) == "FAIL"
 
     def test_empty_results_returns_fail(self, script_run_cli: Any) -> None:
-        """Scenario: empty results list → FAIL per documented behaviour."""
+        """Empty results list → FAIL per documented behaviour."""
         assert script_run_cli.compute_verdict([]) == "FAIL"
 
     @pytest.mark.parametrize(
@@ -573,7 +573,7 @@ class TestComputeVerdict:
         ],
     )
     def test_partial_and_fail_boundary(self, script_run_cli: Any, n_pass: int, n_total: int, expected: str) -> None:
-        """Scenario: verdict boundary at 50% pass rate per documented thresholds.
+        """Verdict boundary at 50% pass rate per documented thresholds.
 
         Args:
             n_pass: Number of passing scenarios.
@@ -593,37 +593,37 @@ class TestValidateCentralJson:
     """Validate validate_central_json contract."""
 
     def test_valid_central_response_returns_ok(self, script_run_cli: Any) -> None:
-        """Scenario: well-formed central response with rdep_count → ok=True."""
+        """Well-formed central response with rdep_count → ok=True."""
         data = {"central": [{"name": "foo.bar", "rdep_count": 5}]}
         result = script_run_cli.validate_central_json(data)
         assert result.ok is True
         assert result.reason == ""
 
     def test_missing_central_key_returns_not_ok(self, script_run_cli: Any) -> None:
-        """Scenario: response missing 'central' key → ok=False with reason."""
+        """Response missing 'central' key → ok=False with reason."""
         result = script_run_cli.validate_central_json({"other_key": []})
         assert result.ok is False
         assert "central" in result.reason
 
     def test_empty_central_list_returns_not_ok(self, script_run_cli: Any) -> None:
-        """Scenario: 'central' key present but empty list → ok=False."""
+        """'central' key present but empty list → ok=False."""
         result = script_run_cli.validate_central_json({"central": []})
         assert result.ok is False
 
     def test_central_not_a_list_returns_not_ok(self, script_run_cli: Any) -> None:
-        """Scenario: 'central' value is not a list → ok=False."""
+        """'central' value is not a list → ok=False."""
         result = script_run_cli.validate_central_json({"central": "not a list"})
         assert result.ok is False
 
     def test_item_missing_rdep_count_returns_not_ok(self, script_run_cli: Any) -> None:
-        """Scenario: central item without rdep_count → ok=False with reason."""
+        """Central item without rdep_count → ok=False with reason."""
         data = {"central": [{"name": "foo", "other": 1}]}
         result = script_run_cli.validate_central_json(data)
         assert result.ok is False
         assert "rdep_count" in result.reason
 
     def test_multiple_valid_items_returns_ok(self, script_run_cli: Any) -> None:
-        """Scenario: multiple items all having rdep_count → ok=True."""
+        """Multiple items all having rdep_count → ok=True."""
         data = {"central": [{"rdep_count": i} for i in range(5)]}
         result = script_run_cli.validate_central_json(data)
         assert result.ok is True
@@ -637,7 +637,7 @@ class TestValidateCentralJson:
         ],
     )
     def test_wrong_type_payloads_return_not_ok(self, script_run_cli: Any, data: Any, reason_fragment: str) -> None:
-        """Scenario: wrong JSON shapes fail validation instead of passing structurally."""
+        """Wrong JSON shapes fail validation instead of passing structurally."""
         result = script_run_cli.validate_central_json(data)
         assert result.ok is False
         assert reason_fragment in result.reason
@@ -647,7 +647,7 @@ class TestValidateRdepsJson:
     """Validate validate_rdeps_json contract."""
 
     def test_valid_rdeps_response_returns_ok(self, script_run_cli: Any) -> None:
-        """Scenario: response with imported_by and module keys → ok=True."""
+        """Response with imported_by and module keys → ok=True."""
         data = {"imported_by": ["a.b", "c.d"], "module": "foo.bar"}
         result = script_run_cli.validate_rdeps_json(data)
         assert result.ok is True
@@ -661,7 +661,7 @@ class TestValidateRdepsJson:
         ],
     )
     def test_missing_keys_return_not_ok(self, script_run_cli: Any, data: dict, expected_reason_fragment: str) -> None:
-        """Scenario: missing required keys produce ok=False with the key name in reason.
+        """Missing required keys produce ok=False with the key name in reason.
 
         Args:
             data: Incomplete response dict.
@@ -682,7 +682,7 @@ class TestValidateRdepsJson:
     def test_wrong_type_payloads_return_not_ok(
         self, script_run_cli: Any, data: Any, expected_reason_fragment: str
     ) -> None:
-        """Scenario: wrong JSON value types produce ok=False with a concrete reason."""
+        """Wrong JSON value types produce ok=False with a concrete reason."""
         result = script_run_cli.validate_rdeps_json(data)
         assert result.ok is False
         assert expected_reason_fragment in result.reason
@@ -692,7 +692,7 @@ class TestValidateDepsJson:
     """Validate validate_deps_json contract."""
 
     def test_valid_deps_response_returns_ok(self, script_run_cli: Any) -> None:
-        """Scenario: response with direct_imports and module keys → ok=True."""
+        """Response with direct_imports and module keys → ok=True."""
         data = {"direct_imports": ["x.y"], "module": "foo.bar"}
         result = script_run_cli.validate_deps_json(data)
         assert result.ok is True
@@ -706,7 +706,7 @@ class TestValidateDepsJson:
         ],
     )
     def test_missing_keys_return_not_ok(self, script_run_cli: Any, data: dict, expected_reason_fragment: str) -> None:
-        """Scenario: missing required keys produce ok=False with the key name in reason.
+        """Missing required keys produce ok=False with the key name in reason.
 
         Args:
             data: Incomplete response dict.
@@ -727,7 +727,7 @@ class TestValidateDepsJson:
     def test_wrong_type_payloads_return_not_ok(
         self, script_run_cli: Any, data: Any, expected_reason_fragment: str
     ) -> None:
-        """Scenario: wrong JSON value types produce ok=False with a concrete reason."""
+        """Wrong JSON value types produce ok=False with a concrete reason."""
         result = script_run_cli.validate_deps_json(data)
         assert result.ok is False
         assert expected_reason_fragment in result.reason
@@ -755,7 +755,7 @@ class TestRunScanQuery:
         return p
 
     def test_returns_parsed_json_on_success(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: zero-exit scan-query with valid JSON stdout returns parsed dict."""
+        """Zero-exit scan-query with valid JSON stdout returns parsed dict."""
         payload = {"imported_by": ["a.b"], "module": "foo"}
         fake_result = MagicMock()
         fake_result.returncode = 0
@@ -771,7 +771,7 @@ class TestRunScanQuery:
         assert result == payload
 
     def test_returns_none_on_nonzero_exit(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: non-zero returncode from scan-query yields None."""
+        """Non-zero returncode from scan-query yields None."""
         fake_result = MagicMock()
         fake_result.returncode = 1
         fake_result.stdout = ""
@@ -786,7 +786,7 @@ class TestRunScanQuery:
         assert result is None
 
     def test_returns_none_on_json_decode_error(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: scan-query returns non-JSON stdout → None, no exception raised."""
+        """Scan-query returns non-JSON stdout → None, no exception raised."""
         fake_result = MagicMock()
         fake_result.returncode = 0
         fake_result.stdout = "not json at all"
@@ -801,7 +801,7 @@ class TestRunScanQuery:
         assert result is None
 
     def test_returns_none_on_timeout(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: subprocess.TimeoutExpired from _run is caught and returns None."""
+        """Handle a command timeout without raising an exception."""
         with patch.object(script_run_cli, "_run", side_effect=subprocess.TimeoutExpired(cmd=[], timeout=30)):
             result = script_run_cli.run_scan_query(
                 self._fake_bin(tmp_path),
@@ -812,7 +812,7 @@ class TestRunScanQuery:
         assert result is None
 
     def test_returns_none_on_os_error(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: OSError (binary missing) is caught and returns None."""
+        """Handle an unavailable command binary without raising an exception."""
         with patch.object(script_run_cli, "_run", side_effect=OSError("file not found")):
             result = script_run_cli.run_scan_query(
                 self._fake_bin(tmp_path),
@@ -823,7 +823,7 @@ class TestRunScanQuery:
         assert result is None
 
     def test_passes_index_flag_to_subprocess(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: run_scan_query always injects --index <path> into the command."""
+        """run_scan_query always injects ``--index <path>`` into the command."""
         index_path = tmp_path / "my-index.json"
         fake_result = MagicMock()
         fake_result.returncode = 0
@@ -850,7 +850,7 @@ class TestRunScanQuery:
         assert str(index_path.resolve()) in cmd[idx + 1]
 
     def test_subcommand_appended_after_index(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: subcommand args appear after --index flag in the assembled command."""
+        """Subcommand args appear after the ``--index`` flag in the assembled command."""
         fake_result = MagicMock()
         fake_result.returncode = 0
         fake_result.stdout = json.dumps({})
@@ -873,7 +873,7 @@ class TestRunScanQuery:
         assert "some.module" in cmd
 
     def test_exact_command_order_and_cwd_propagated(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: subprocess command order and cwd are stable for scan-query invocations."""
+        """Subprocess command order and cwd are stable for scan-query invocations."""
         scan_query_bin = self._fake_bin(tmp_path)
         index_path = tmp_path / "idx.json"
         fake_result = MagicMock()
@@ -905,7 +905,7 @@ class TestRunScanQuery:
     def test_result_wrapper_reports_timeout_and_os_error(
         self, script_run_cli: Any, tmp_path: Path, side_effect: Exception, expected_error: str
     ) -> None:
-        """Scenario: result wrapper preserves failure reasons that run_scan_query collapses to None."""
+        """Result wrapper preserves failure reasons that run_scan_query collapses to None."""
         with patch.object(script_run_cli, "_run", side_effect=side_effect):
             result = script_run_cli.run_scan_query_result(
                 self._fake_bin(tmp_path),
@@ -928,12 +928,12 @@ class TestResolveIndexPath:
     """Validate resolve_index_path resolution order."""
 
     def test_explicit_arg_returned_directly(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: when arg is provided it is returned without further resolution."""
+        """When arg is provided it is returned without further resolution."""
         result = script_run_cli.resolve_index_path("/custom/path/index.json", tmp_path)
         assert result == Path("/custom/path/index.json")
 
     def test_finds_index_in_cache_codemap_by_repo_name(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: index at <repo>/.cache/codemap/<name>.json is discovered automatically."""
+        """Index at <repo>/.cache/codemap/<name>.json is discovered automatically."""
         # Create the directory structure matching the lookup logic.
         cache_dir = tmp_path / ".cache" / "codemap"
         cache_dir.mkdir(parents=True)
@@ -944,7 +944,7 @@ class TestResolveIndexPath:
         assert result == index_file
 
     def test_finds_index_after_stripping_master_suffix(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: repo named '<name>-master' resolves to '<name>.json' in cache."""
+        """Repo named '<name>-master' resolves to '<name>.json' in cache."""
         # Simulate a repo dir named pytorch-lightning-master
         repo = tmp_path / "pytorch-lightning-master"
         repo.mkdir()
@@ -957,7 +957,7 @@ class TestResolveIndexPath:
         assert result == index_file
 
     def test_falls_back_to_first_json_in_cache_codemap(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: when name-based lookup fails, first *.json in .cache/codemap/ is used."""
+        """When name-based lookup fails, first *.json in .cache/codemap/ is used."""
         cache_dir = tmp_path / ".cache" / "codemap"
         cache_dir.mkdir(parents=True)
         fallback = cache_dir / "anything.json"
@@ -970,7 +970,7 @@ class TestResolveIndexPath:
         assert result.exists()
 
     def test_returns_default_path_when_no_index_found(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: when no index exists the function returns the canonical default path."""
+        """When no index exists the function returns the canonical default path."""
         # No .cache/ dir created — lookup finds nothing.
         result = script_run_cli.resolve_index_path(None, tmp_path)
         # Should be a path under tmp_path/.cache/codemap/
@@ -987,12 +987,12 @@ class TestResolveRepoPath:
     """Validate resolve_repo_path resolution order."""
 
     def test_explicit_existing_dir_returns_path(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: valid existing directory arg is returned as Path."""
+        """Valid existing directory arg is returned as Path."""
         result = script_run_cli.resolve_repo_path(str(tmp_path))
         assert result == tmp_path
 
     def test_explicit_nonexistent_dir_returns_none(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: arg pointing to a non-existent directory returns None."""
+        """Arg pointing to a non-existent directory returns None."""
         missing = str(tmp_path / "no_such_dir")
         result = script_run_cli.resolve_repo_path(missing)
         assert result is None
@@ -1000,7 +1000,7 @@ class TestResolveRepoPath:
     def test_env_var_used_when_arg_absent(
         self, script_run_cli: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Scenario: PYTORCH_LIGHTNING_PATH env var is consulted when arg is None."""
+        """PYTORCH_LIGHTNING_PATH env var is consulted when arg is None."""
         monkeypatch.setenv("PYTORCH_LIGHTNING_PATH", str(tmp_path))
         result = script_run_cli.resolve_repo_path(None)
         assert result == tmp_path
@@ -1008,7 +1008,7 @@ class TestResolveRepoPath:
     def test_env_var_nonexistent_dir_falls_through(
         self, script_run_cli: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Scenario: PYTORCH_LIGHTNING_PATH pointing to missing dir falls through to local check."""
+        """PYTORCH_LIGHTNING_PATH pointing to missing dir falls through to local check."""
         monkeypatch.setenv("PYTORCH_LIGHTNING_PATH", str(tmp_path / "no_such"))
         # Patch cwd so ./pytorch-lightning also doesn't exist.
         with patch("pathlib.Path.is_dir", return_value=False):
@@ -1016,7 +1016,7 @@ class TestResolveRepoPath:
         assert result is None
 
     def test_no_arg_no_env_no_local_returns_none(self, script_run_cli: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Scenario: all three resolution sources absent → None returned."""
+        """All three resolution sources absent → None returned."""
         monkeypatch.delenv("PYTORCH_LIGHTNING_PATH", raising=False)
         # Make Path.is_dir always False to suppress ./pytorch-lightning fallback.
         with patch("pathlib.Path.is_dir", return_value=False):
@@ -1035,19 +1035,19 @@ class TestFindCodemapBin:
     def test_returns_none_when_not_on_path_and_no_plugin_root(
         self, script_run_cli: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Scenario: binary absent from PATH and no plugin_root → None."""
+        """Binary absent from PATH and no plugin_root → None."""
         with patch("shutil.which", return_value=None):
             result = script_run_cli.find_codemap_bin("scan-query", plugin_root=None)
         assert result is None
 
     def test_finds_binary_via_shutil_which(self, script_run_cli: Any) -> None:
-        """Scenario: binary present on PATH is returned as a Path."""
+        """Binary present on PATH is returned as a Path."""
         with patch("shutil.which", return_value="/usr/local/bin/scan-query"):
             result = script_run_cli.find_codemap_bin("scan-query", plugin_root=None)
         assert result == Path("/usr/local/bin/scan-query")
 
     def test_finds_binary_in_plugin_root_when_not_on_path(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: binary not on PATH but present under plugin_root/plugins/codemap-py/bin/."""
+        """Binary not on PATH but present under plugin_root/plugins/codemap-py/bin/."""
         bin_dir = tmp_path / "plugins" / "codemap-py" / "bin"
         bin_dir.mkdir(parents=True)
         binary = bin_dir / "scan-query"
@@ -1058,16 +1058,16 @@ class TestFindCodemapBin:
         assert result == binary
 
     def test_returns_none_when_plugin_root_lacks_binary(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: plugin_root provided but binary file absent → None."""
+        """plugin_root provided but binary file absent → None."""
         with patch("shutil.which", return_value=None):
             result = script_run_cli.find_codemap_bin("scan-query", plugin_root=tmp_path)
         assert result is None
 
     def test_legacy_codemap_path_never_selected(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: only the retired plugins/codemap/bin/ holds the binary → None.
+        """Only the retired plugins/codemap/bin/ holds the binary → None.
 
-        The resolver targets the renamed ``codemap-py`` identity exclusively, so a
-        stale pre-rename checkout must not yield a false-green binary path.
+        The resolver targets the renamed ``codemap-py`` identity exclusively, so a stale pre-rename checkout must not
+        yield a false-green binary path.
         """
         legacy = tmp_path / "plugins" / "codemap" / "bin"
         legacy.mkdir(parents=True)
@@ -1105,7 +1105,7 @@ class TestThresholdsConfig:
     def test_threshold_value_in_expected_range(
         self, script_run_cli: Any, key: str, sub_key: str, lo: float, hi: float
     ) -> None:
-        """Scenario: each threshold value is a float within a plausible range.
+        """Each threshold value is a float within a plausible range.
 
         Args:
             key: Top-level THRESHOLDS key (e.g. 'C1').
@@ -1118,7 +1118,7 @@ class TestThresholdsConfig:
         assert lo <= value <= hi, f"THRESHOLDS[{key!r}][{sub_key!r}]={value} not in [{lo}, {hi}]"
 
     def test_query_shape_thresholds_have_boolean_flags(self, script_run_cli: Any) -> None:
-        """Scenario: query-shape thresholds have block_present and json_valid booleans."""
+        """Query-shape thresholds have block_present and json_valid booleans."""
         for key in ("Q_fix", "Q_feature", "Q_refactor"):
             assert script_run_cli.THRESHOLDS[key]["block_present"] is True
             assert script_run_cli.THRESHOLDS[key]["json_valid"] is True
@@ -1141,7 +1141,7 @@ class TestIntegrationScanQuery:
     def test_central_returns_valid_structure(
         self, script_run_cli: Any, scan_query_binary: Any, sample_repo: Any
     ) -> None:
-        """Scenario: central subcommand returns a dict that passes validate_central_json."""
+        """Central subcommand returns a dict that passes validate_central_json."""
         repo, index = sample_repo
         data = script_run_cli.run_scan_query(scan_query_binary, ["central"], index, repo)
         assert data is not None, "run_scan_query returned None for 'central'"
@@ -1151,7 +1151,7 @@ class TestIntegrationScanQuery:
     def test_rdeps_known_module_returns_valid_structure(
         self, script_run_cli: Any, scan_query_binary: Any, sample_repo: Any
     ) -> None:
-        """Scenario: rdeps for requests.api returns a dict that passes validate_rdeps_json."""
+        """Rdeps for requests.api returns a dict that passes validate_rdeps_json."""
         repo, index = sample_repo
         data = script_run_cli.run_scan_query(scan_query_binary, ["rdeps", "requests.api"], index, repo)
         assert data is not None, "run_scan_query returned None for 'rdeps requests.api'"
@@ -1161,7 +1161,7 @@ class TestIntegrationScanQuery:
     def test_deps_known_module_returns_valid_structure(
         self, script_run_cli: Any, scan_query_binary: Any, sample_repo: Any
     ) -> None:
-        """Scenario: deps for requests.api returns a dict that passes validate_deps_json."""
+        """Deps for requests.api returns a dict that passes validate_deps_json."""
         repo, index = sample_repo
         data = script_run_cli.run_scan_query(scan_query_binary, ["deps", "requests.api"], index, repo)
         assert data is not None, "run_scan_query returned None for 'deps requests.api'"
@@ -1171,7 +1171,7 @@ class TestIntegrationScanQuery:
     def test_unknown_subcommand_returns_none(
         self, script_run_cli: Any, scan_query_binary: Any, sample_repo: Any
     ) -> None:
-        """Scenario: unrecognised subcommand causes run_scan_query to return None."""
+        """Unrecognised subcommand causes run_scan_query to return None."""
         repo, index = sample_repo
         data = script_run_cli.run_scan_query(scan_query_binary, ["not-a-real-subcommand"], index, repo)
         assert data is None
@@ -1179,7 +1179,7 @@ class TestIntegrationScanQuery:
     def test_central_entries_have_name_and_rdep_count(
         self, script_run_cli: Any, scan_query_binary: Any, sample_repo: Any
     ) -> None:
-        """Scenario: every entry in central list has both 'name' and 'rdep_count' fields."""
+        """Every entry in central list has both 'name' and 'rdep_count' fields."""
         repo, index = sample_repo
         data = script_run_cli.run_scan_query(scan_query_binary, ["central"], index, repo)
         assert data is not None
@@ -1204,21 +1204,21 @@ class TestIntegrationSuiteC:
     def test_returns_three_results(
         self, script_run_cli: Any, pytorch_lightning_repo: Any, scan_query_binary: Any, pytorch_lightning_index: Any
     ) -> None:
-        """Scenario: run_measure_calls returns exactly 3 ScenarioResult objects."""
+        """run_measure_calls returns exactly 3 ScenarioResult objects."""
         results = script_run_cli.run_measure_calls(pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index)
         assert len(results) == 3
 
     def test_scenario_ids(
         self, script_run_cli: Any, pytorch_lightning_repo: Any, scan_query_binary: Any, pytorch_lightning_index: Any
     ) -> None:
-        """Scenario: the three results have scenario IDs C1, C2, C3."""
+        """The three results have scenario IDs C1, C2, C3."""
         results = script_run_cli.run_measure_calls(pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index)
         assert {r.scenario for r in results} == {"C1", "C2", "C3"}
 
     def test_results_are_scenario_result_instances(
         self, script_run_cli: Any, pytorch_lightning_repo: Any, scan_query_binary: Any, pytorch_lightning_index: Any
     ) -> None:
-        """Scenario: every item returned is a ScenarioResult dataclass."""
+        """Every item returned is a ScenarioResult dataclass."""
         results = script_run_cli.run_measure_calls(pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index)
         for r in results:
             assert isinstance(r, script_run_cli.ScenarioResult)
@@ -1234,7 +1234,7 @@ class TestIntegrationSuiteA:
     def test_returns_three_results(
         self, script_run_cli: Any, pytorch_lightning_repo: Any, scan_query_binary: Any, pytorch_lightning_index: Any
     ) -> None:
-        """Scenario: run_measure_accuracy returns exactly 3 ScenarioResult objects."""
+        """run_measure_accuracy returns exactly 3 ScenarioResult objects."""
         results = script_run_cli.run_measure_accuracy(
             pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index
         )
@@ -1243,7 +1243,7 @@ class TestIntegrationSuiteA:
     def test_scenario_ids(
         self, script_run_cli: Any, pytorch_lightning_repo: Any, scan_query_binary: Any, pytorch_lightning_index: Any
     ) -> None:
-        """Scenario: the three results have scenario IDs A1, A2, A3."""
+        """The three results have scenario IDs A1, A2, A3."""
         results = script_run_cli.run_measure_accuracy(
             pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index
         )
@@ -1265,7 +1265,7 @@ class TestIntegrationSuiteL:
         pytorch_lightning_index: Any,
         scan_index_binary: Any,
     ) -> None:
-        """Scenario: run_measure_latency returns exactly 4 ScenarioResult objects."""
+        """run_measure_latency returns exactly 4 ScenarioResult objects."""
         results = script_run_cli.run_measure_latency(
             pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index, scan_index_binary
         )
@@ -1279,7 +1279,7 @@ class TestIntegrationSuiteL:
         pytorch_lightning_index: Any,
         scan_index_binary: Any,
     ) -> None:
-        """Scenario: the four results have scenario IDs L1, L2, L3, L4."""
+        """The four results have scenario IDs L1, L2, L3, L4."""
         results = script_run_cli.run_measure_latency(
             pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index, scan_index_binary
         )
@@ -1342,7 +1342,7 @@ class TestIntegrationSuiteQ:
         scan_query_binary: Any,
         pytorch_lightning_index: Any,
     ) -> None:
-        """Scenario: run_measure_query_shape returns exactly 3 ScenarioResult objects."""
+        """run_measure_query_shape returns exactly 3 ScenarioResult objects."""
         results = script_run_cli.run_measure_query_shape(
             REPO_ROOT, pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index
         )
@@ -1355,7 +1355,7 @@ class TestIntegrationSuiteQ:
         scan_query_binary: Any,
         pytorch_lightning_index: Any,
     ) -> None:
-        """Scenario: the three results have scenario IDs Q_fix, Q_feature, Q_refactor."""
+        """The three results have scenario IDs Q_fix, Q_feature, Q_refactor."""
         results = script_run_cli.run_measure_query_shape(
             REPO_ROOT, pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index
         )
@@ -1363,7 +1363,7 @@ class TestIntegrationSuiteQ:
 
 
 # ===========================================================================
-# Coverage-gap helpers — grep + AST importer verification (C-6)
+# Coverage-gap helpers — grep + AST importer verification
 # ===========================================================================
 
 
@@ -1405,7 +1405,7 @@ class TestGrepImportersBoundary:
     """Validate grep_importers_boundary anchors to import statements only."""
 
     def test_uses_regular_package_chain_for_test_importer(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: a test package below a non-package directory keeps its import identity."""
+        """A test package below a non-package directory keeps its import identity."""
         package = tmp_path / "tests" / "tests_fabric"
         package.mkdir(parents=True)
         (package / "__init__.py").write_text("", encoding="utf-8")
@@ -1419,17 +1419,17 @@ class TestGrepImportersBoundary:
         assert stats.recall == pytest.approx(1.0)
 
     def test_matches_literal_imports_only(self, script_run_cli: Any, sample_pkg: Path) -> None:
-        """Scenario: only literal, boundary-anchored importers are returned; relatives/decoys excluded."""
+        """Only literal, boundary-anchored importers are returned; relatives/decoys excluded."""
         result = script_run_cli.grep_importers_boundary(sample_pkg, "pkg.target")
         assert result == {"pkg.imp_from", "pkg.imp_plain", "pkg.imp_alias"}
 
     def test_excludes_substring_sibling(self, script_run_cli: Any, sample_pkg: Path) -> None:
-        """Scenario: 'import pkg.target_helper' does not match a search for 'pkg.target'."""
+        """'import pkg.target_helper' does not match a search for 'pkg.target'."""
         result = script_run_cli.grep_importers_boundary(sample_pkg, "pkg.target")
         assert "pkg.imp_decoy" not in result
 
     def test_no_match_returns_empty_set(self, script_run_cli: Any, sample_pkg: Path) -> None:
-        """Scenario: a module with no importers yields an empty set."""
+        """A module with no importers yields an empty set."""
         result = script_run_cli.grep_importers_boundary(sample_pkg, "pkg.nonexistent")
         assert result == set()
 
@@ -1438,15 +1438,15 @@ class TestModuleToSourceFile:
     """Validate module_to_source_file resolution."""
 
     def test_resolves_regular_module(self, script_run_cli: Any, sample_pkg: Path) -> None:
-        """Scenario: a dotted module resolves to its .py file."""
+        """A dotted module resolves to its .py file."""
         assert script_run_cli.module_to_source_file("pkg.target", sample_pkg) == sample_pkg / "pkg" / "target.py"
 
     def test_resolves_package_init(self, script_run_cli: Any, sample_pkg: Path) -> None:
-        """Scenario: a package resolves to its __init__.py."""
+        """A package resolves to its __init__.py."""
         assert script_run_cli.module_to_source_file("pkg", sample_pkg) == sample_pkg / "pkg" / "__init__.py"
 
     def test_missing_module_returns_none(self, script_run_cli: Any, sample_pkg: Path) -> None:
-        """Scenario: an unknown module resolves to None."""
+        """An unknown module resolves to None."""
         assert script_run_cli.module_to_source_file("pkg.nope.here", sample_pkg) is None
 
 
@@ -1464,7 +1464,7 @@ class TestResolveRelative:
         ],
     )
     def test_resolution(self, script_run_cli: Any, base: str, level: int, module: str | None, expected: str) -> None:
-        """Scenario: relative import base resolves per level and module suffix.
+        """Relative import base resolves per level and module suffix.
 
         Args:
             base: Base package of the importing file.
@@ -1489,7 +1489,7 @@ class TestFileImportsModule:
         ],
     )
     def test_true_importers(self, script_run_cli: Any, sample_pkg: Path, relpath: str) -> None:
-        """Scenario: every genuine importer of pkg.target is confirmed by AST.
+        """Every genuine importer of pkg.target is confirmed by AST.
 
         Args:
             relpath: Path (relative to repo root) of the importing file.
@@ -1505,7 +1505,7 @@ class TestFileImportsModule:
         ],
     )
     def test_non_importers(self, script_run_cli: Any, sample_pkg: Path, relpath: str) -> None:
-        """Scenario: non-importers, decoys, and unparsable files are rejected.
+        """Non-importers, decoys, and unparsable files are rejected.
 
         Args:
             relpath: Path (relative to repo root) of the file that must not match.
@@ -1517,20 +1517,20 @@ class TestVerifyImporter:
     """Validate verify_importer end-to-end (module name → file → AST check)."""
 
     def test_verifies_relative_extra(self, script_run_cli: Any, sample_pkg: Path) -> None:
-        """Scenario: a grep-missed relative importer is verified as a true importer."""
+        """A grep-missed relative importer is verified as a true importer."""
         assert script_run_cli.verify_importer("pkg.rel.rel_from", "pkg.target", sample_pkg) is True
 
     def test_rejects_decoy(self, script_run_cli: Any, sample_pkg: Path) -> None:
-        """Scenario: a decoy that imports a sibling module is not verified."""
+        """A decoy that imports a sibling module is not verified."""
         assert script_run_cli.verify_importer("pkg.imp_decoy", "pkg.target", sample_pkg) is False
 
     def test_missing_candidate_module_returns_false(self, script_run_cli: Any, sample_pkg: Path) -> None:
-        """Scenario: a candidate module with no source file is rejected."""
+        """A candidate module with no source file is rejected."""
         assert script_run_cli.verify_importer("pkg.ghost", "pkg.target", sample_pkg) is False
 
 
 # ===========================================================================
-# Infeasible-path measurement (C-7)
+# Infeasible-path measurement
 # ===========================================================================
 
 
@@ -1561,7 +1561,7 @@ class TestMeasureInfeasiblePaths:
         )
 
     def test_direct_edge_is_feasible(self, script_run_cli: Any, sample_pkg: Path) -> None:
-        """Scenario: when the source is a direct importer of the target, the path is feasible."""
+        """When the source is a direct importer of the target, the path is feasible."""
         # pkg.imp_from imports pkg.target directly → direct edge → not infeasible.
         task = self._task(script_run_cli, "pkg.imp_from", "pkg.target")
         fraction, infeasible, total, detail = script_run_cli._measure_infeasible_paths([task], sample_pkg)
@@ -1571,7 +1571,7 @@ class TestMeasureInfeasiblePaths:
         assert detail[0]["direct_edge"] is True
 
     def test_missing_edge_is_infeasible(self, script_run_cli: Any, sample_pkg: Path) -> None:
-        """Scenario: when the source does not directly import the target, the path is infeasible."""
+        """When the source does not directly import the target, the path is infeasible."""
         # pkg.unrelated does not import pkg.target → no direct edge → infeasible.
         task = self._task(script_run_cli, "pkg.unrelated", "pkg.target")
         fraction, infeasible, total, detail = script_run_cli._measure_infeasible_paths([task], sample_pkg)
@@ -1582,7 +1582,7 @@ class TestMeasureInfeasiblePaths:
 
 
 # ===========================================================================
-# JSON output — emit + summary envelope (C-9)
+# JSON output — emit + summary envelope
 # ===========================================================================
 
 
@@ -1590,7 +1590,7 @@ class TestEmit:
     """Validate emit prints one compact JSON line with the dataclass fields."""
 
     def test_emits_single_json_line_with_all_fields(self, script_run_cli: Any, capsys: pytest.CaptureFixture) -> None:
-        """Scenario: emit outputs one line whose keys mirror the ScenarioResult fields."""
+        """Emit outputs one line whose keys mirror the ScenarioResult fields."""
         r = script_run_cli.ScenarioResult(
             scenario="C1",
             name="coverage-gap",
@@ -1615,7 +1615,7 @@ class TestBuildSummaryEnvelope:
     """Validate build_summary_envelope aggregation and fields."""
 
     def test_aggregates_suites_and_totals(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: envelope reports per-suite pass/total and overall scenario counts."""
+        """Envelope reports per-suite pass/total and overall scenario counts."""
         results = [
             script_run_cli.ScenarioResult("C1", "x", "calls", True, {}, {}),
             script_run_cli.ScenarioResult("C2", "x", "calls", False, {}, {}),
@@ -1632,14 +1632,14 @@ class TestBuildSummaryEnvelope:
         assert env["date"] == date.today().isoformat()
 
     def test_envelope_is_json_serializable(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: the envelope round-trips through json.dumps/loads unchanged in structure."""
+        """The envelope round-trips through json.dumps/loads unchanged in structure."""
         results = [script_run_cli.ScenarioResult("C1", "x", "calls", True, {}, {})]
         env = script_run_cli.build_summary_envelope(results, tmp_path, tmp_path / "i.json", "PASS")
         assert json.loads(json.dumps(env))["suites"]["calls"]["passed"] == 1
 
 
 # ===========================================================================
-# Report path — single-resolve regression (C-8)
+# Report path — single-resolve regression
 # ===========================================================================
 
 
@@ -1649,7 +1649,7 @@ class TestWriteReportFile:
     def test_returned_path_is_the_written_file(
         self, script_run_cli: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Scenario: write_report_file returns the exact path render_report wrote (no -2 drift)."""
+        """write_report_file returns the exact path render_report wrote (no -2 drift)."""
         monkeypatch.chdir(tmp_path)
         rendered: dict[str, Path] = {}
 
@@ -1666,7 +1666,7 @@ class TestWriteReportFile:
     def test_second_call_uses_counter_suffix(
         self, script_run_cli: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Scenario: a second run writes a distinct code-<date>-2.md that also exists."""
+        """A second run writes a distinct code-<date>-2.md that also exists."""
         monkeypatch.chdir(tmp_path)
 
         def _fake_render(results: Any, repo: Path, index: Path, path: Path) -> None:
@@ -1683,7 +1683,7 @@ class TestWriteReportFile:
     def test_resolve_report_path_has_no_filesystem_side_effect(
         self, script_run_cli: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Scenario: resolve_report_path only computes a path — it never creates benchmarks/results/."""
+        """resolve_report_path only computes a path — it never creates benchmarks/results/."""
         monkeypatch.chdir(tmp_path)
         path = script_run_cli.resolve_report_path()
         assert path.name == f"code-{date.today().isoformat()}.md"
@@ -1692,7 +1692,7 @@ class TestWriteReportFile:
 
 
 # ===========================================================================
-# Error sentinel — run_scan_query_result distinguishes failure from empty (H-9)
+# Error sentinel — run_scan_query_result distinguishes failure from empty
 # ===========================================================================
 
 
@@ -1713,7 +1713,7 @@ class TestRunScanQueryResult:
         return p
 
     def test_success_sets_data_and_ok(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: a zero-exit JSON response yields ok=True with parsed data and no error."""
+        """A zero-exit JSON response yields ok=True with parsed data and no error."""
         fake = MagicMock()
         fake.returncode = 0
         fake.stdout = json.dumps({"imported_by": []})
@@ -1726,7 +1726,7 @@ class TestRunScanQueryResult:
         assert res.data == {"imported_by": []}
 
     def test_nonzero_exit_carries_error(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: a non-zero exit yields ok=False with a stderr-derived error reason."""
+        """A non-zero exit yields ok=False with a stderr-derived error reason."""
         fake = MagicMock()
         fake.returncode = 2
         fake.stdout = ""
@@ -1740,7 +1740,7 @@ class TestRunScanQueryResult:
         assert "module not found" in res.error
 
     def test_timeout_carries_error(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: a subprocess timeout yields ok=False with a timeout error reason."""
+        """A subprocess timeout yields ok=False with a timeout error reason."""
         with patch.object(script_run_cli, "_run", side_effect=subprocess.TimeoutExpired(cmd=[], timeout=30)):
             res = script_run_cli.run_scan_query_result(
                 self._fake_bin(tmp_path), ["central"], tmp_path / "i.json", tmp_path
@@ -1749,7 +1749,7 @@ class TestRunScanQueryResult:
         assert "timeout" in res.error
 
     def test_wrapper_returns_none_on_error(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: the run_scan_query wrapper still returns None on failure (back-compat)."""
+        """The run_scan_query wrapper still returns None on failure (back-compat)."""
         fake = MagicMock()
         fake.returncode = 1
         fake.stdout = ""
@@ -1761,7 +1761,7 @@ class TestRunScanQueryResult:
         assert data is None
 
     def test_codemap_rdeps_result_reports_error(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: codemap_rdeps_result returns an error reason instead of a silent empty set."""
+        """codemap_rdeps_result returns an error reason instead of a silent empty set."""
         fake = MagicMock()
         fake.returncode = 1
         fake.stdout = ""
@@ -1775,7 +1775,7 @@ class TestRunScanQueryResult:
 
 
 # ===========================================================================
-# AST-oracle accuracy scoring — precision oracle + grep recall floor (H-8)
+# AST-oracle accuracy scoring — precision oracle + grep recall floor
 # ===========================================================================
 
 
@@ -1783,7 +1783,7 @@ class TestScoreRdepsAccuracy:
     """Validate score_rdeps_accuracy uses AST precision and a grep recall floor."""
 
     def test_grep_invisible_true_importer_not_penalised(self, script_run_cli: Any, sample_pkg: Path) -> None:
-        """Scenario: an AST-verified relative importer grep cannot see counts as precise, not a FP."""
+        """An AST-verified relative importer grep cannot see counts as precise, not a FP."""
         grep_floor = script_run_cli.grep_importers_boundary(sample_pkg, "pkg.target")
         codemap = grep_floor | {"pkg.rel.rel_from"}  # relative importer grep misses
         stats = script_run_cli.score_rdeps_accuracy(codemap, grep_floor, "pkg.target", sample_pkg)
@@ -1792,7 +1792,7 @@ class TestScoreRdepsAccuracy:
         assert stats.recall == pytest.approx(1.0)
 
     def test_ast_rejected_member_is_false_positive(self, script_run_cli: Any, sample_pkg: Path) -> None:
-        """Scenario: a codemap member the AST oracle rejects is scored as a false positive."""
+        """A codemap member the AST oracle rejects is scored as a false positive."""
         grep_floor = script_run_cli.grep_importers_boundary(sample_pkg, "pkg.target")
         codemap = {"pkg.imp_from", "pkg.imp_decoy"}  # decoy imports pkg.target_helper, not pkg.target
         stats = script_run_cli.score_rdeps_accuracy(codemap, grep_floor, "pkg.target", sample_pkg)
@@ -1801,7 +1801,7 @@ class TestScoreRdepsAccuracy:
         assert stats.fp_modules == ["pkg.imp_decoy"]
 
     def test_recall_floor_penalises_missed_grep_importer(self, script_run_cli: Any, sample_pkg: Path) -> None:
-        """Scenario: a boundary-grep importer codemap omits lowers the recall floor and is a FN."""
+        """A boundary-grep importer codemap omits lowers the recall floor and is a FN."""
         grep_floor = script_run_cli.grep_importers_boundary(sample_pkg, "pkg.target")
         codemap = grep_floor - {"pkg.imp_plain"}  # codemap missed one grep-visible importer
         stats = script_run_cli.score_rdeps_accuracy(codemap, grep_floor, "pkg.target", sample_pkg)
@@ -1810,7 +1810,7 @@ class TestScoreRdepsAccuracy:
 
 
 # ===========================================================================
-# Accuracy error handling — a scan-query failure never scores precision 1.0 (H-9)
+# Accuracy error handling — a scan-query failure never scores precision 1.0
 # ===========================================================================
 
 
@@ -1839,7 +1839,7 @@ class TestAccuracyErrorHandling:
         )
 
     def test_errored_task_not_scored_as_pass(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: a scan-query error marks the task errored and fails A1 (no precision=1.0 pass)."""
+        """A scan-query error marks the task errored and fails A1 (no precision=1.0 pass)."""
         task = self._task(script_run_cli)
         with patch.object(script_run_cli, "codemap_rdeps_result", return_value=(set(), "exit 1: boom")):
             rows = script_run_cli._score_accuracy_tasks([task], tmp_path / "sq", tmp_path / "i.json", tmp_path)
@@ -1850,7 +1850,7 @@ class TestAccuracyErrorHandling:
 
 
 # ===========================================================================
-# A2 vacuous empty result — precision-only scenario must not free-pass on empty (H-9 residual)
+# A2 vacuous empty result — precision-only scenario must not free-pass on empty
 # ===========================================================================
 
 
@@ -1858,7 +1858,7 @@ class TestA2VacuousEmpty:
     """Validate a non-errored EMPTY low-risk codemap result is N/A for A2, never a precision=1.0 pass."""
 
     def test_empty_codemap_is_not_a_free_a2_pass(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: an empty non-errored low-risk result is excluded as vacuous and fails A2 alone."""
+        """An empty non-errored low-risk result is excluded as vacuous and fails A2 alone."""
         task = script_run_cli.Task.from_dict(
             {
                 "id": "B-04",
@@ -1882,7 +1882,7 @@ class TestA2VacuousEmpty:
         assert a2.result["vacuous"] == ["pkg.mod"]
 
     def test_a2_passes_on_real_module_despite_empty_sibling(self, script_run_cli: Any) -> None:
-        """Scenario: A2 passes on a real precision=1.0 module while an empty sibling is N/A, not a fail."""
+        """A2 passes on a real precision=1.0 module while an empty sibling is N/A, not a fail."""
         rows = [
             {"module": "pkg.real", "risk_tier": "low", "errored": False, "codemap_count": 2, "precision": 1.0},
             {"module": "pkg.empty", "risk_tier": "low", "errored": False, "codemap_count": 0, "precision": 1.0},
@@ -1893,7 +1893,7 @@ class TestA2VacuousEmpty:
 
 
 # ===========================================================================
-# Verdict split — primary correctness vs self-consistency track (H-6, H-13)
+# Verdict split — primary correctness vs self-consistency track
 # ===========================================================================
 
 
@@ -1901,7 +1901,7 @@ class TestVerdictSplit:
     """Validate self-consistency suites are excluded from the primary verdict."""
 
     def test_self_consistency_excluded_from_verdict(self, script_run_cli: Any) -> None:
-        """Scenario: a failing self-consistency scenario does not drag the primary verdict."""
+        """A failing self-consistency scenario does not drag the primary verdict."""
         results = [
             script_run_cli.ScenarioResult("C1", "x", "calls", True, {}, {}),
             script_run_cli.ScenarioResult("S2", "x", "symbol", False, {}, {}),
@@ -1909,7 +1909,7 @@ class TestVerdictSplit:
         assert script_run_cli.compute_verdict(results) == "PASS"
 
     def test_verdict_fails_on_primary_failure(self, script_run_cli: Any) -> None:
-        """Scenario: a failing primary scenario below 50% yields FAIL regardless of self-consistency."""
+        """A failing primary scenario below 50% yields FAIL regardless of self-consistency."""
         results = [
             script_run_cli.ScenarioResult("C1", "x", "calls", False, {}, {}),
             script_run_cli.ScenarioResult("A1", "x", "accuracy", False, {}, {}),
@@ -1926,7 +1926,7 @@ class TestVerdictSplit:
         ],
     )
     def test_self_consistency_verdict(self, script_run_cli: Any, passed_flags: list, expected: str) -> None:
-        """Scenario: self-consistency verdict reflects the pass ratio of symbol/health/xrefs.
+        """Self-consistency verdict reflects the pass ratio of symbol/health/xrefs.
 
         Args:
             passed_flags: Pass/fail flags for the self-consistency scenarios.
@@ -1938,12 +1938,12 @@ class TestVerdictSplit:
         assert script_run_cli.compute_self_consistency(results)["verdict"] == expected
 
     def test_self_consistency_skipped_when_absent(self, script_run_cli: Any) -> None:
-        """Scenario: with no self-consistency scenarios the track verdict is SKIPPED."""
+        """With no self-consistency scenarios the track verdict is SKIPPED."""
         results = [script_run_cli.ScenarioResult("C1", "x", "calls", True, {}, {})]
         assert script_run_cli.compute_self_consistency(results)["verdict"] == "SKIPPED"
 
     def test_envelope_reports_primary_and_self_consistency(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: the summary envelope carries separate primary and self_consistency breakdowns."""
+        """The summary envelope carries separate primary and self_consistency breakdowns."""
         results = [
             script_run_cli.ScenarioResult("C1", "x", "calls", True, {}, {}),
             script_run_cli.ScenarioResult("S2", "x", "symbol", False, {}, {}),
@@ -1954,7 +1954,7 @@ class TestVerdictSplit:
 
 
 # ===========================================================================
-# Accuracy tier coverage — every task graded, none silently dropped (M-12)
+# Accuracy tier coverage — every task graded, none silently dropped
 # ===========================================================================
 
 
@@ -1962,7 +1962,7 @@ class TestAccuracyTierCoverage:
     """Validate A1 and A2 partition every risk tier so no accuracy task is silently ungraded."""
 
     def test_a1_and_a2_partition_all_tiers(self, script_run_cli: Any) -> None:
-        """Scenario: one row per known tier lands in exactly one of A1 or A2 (union all, no overlap)."""
+        """One row per known tier lands in exactly one of A1 or A2 (union all, no overlap)."""
         tiers = ["high", "very-high", "moderate-high", "moderate", "low", "low-moderate"]
         rows = [
             {
@@ -1981,7 +1981,7 @@ class TestAccuracyTierCoverage:
         assert a1_mods & a2_mods == set()
 
     def test_previously_ungraded_tiers_now_graded_by_a2(self, script_run_cli: Any) -> None:
-        """Scenario: moderate / low-moderate tiers (formerly ungraded) are now scored under A2."""
+        """Moderate / low-moderate tiers (formerly ungraded) are now scored under A2."""
         rows = [
             {"module": "pkg.mod", "risk_tier": "moderate", "errored": False, "codemap_count": 1, "precision": 1.0},
             {"module": "pkg.lm", "risk_tier": "low-moderate", "errored": False, "codemap_count": 1, "precision": 1.0},
@@ -1991,7 +1991,7 @@ class TestAccuracyTierCoverage:
 
 
 # ===========================================================================
-# A1 per-module gating — a high group mean cannot mask a failing module (M-13)
+# A1 per-module gating — a high group mean cannot mask a failing module
 # ===========================================================================
 
 
@@ -1999,7 +1999,7 @@ class TestA1PerModuleGating:
     """Validate A1 PASS requires every module, not just a passing group mean."""
 
     def test_one_module_below_threshold_fails_despite_passing_mean(self, script_run_cli: Any) -> None:
-        """Scenario: three perfect modules + one at recall 0.5 keep the mean above threshold, yet A1 fails."""
+        """Three perfect modules + one at recall 0.5 keep the mean above threshold, yet A1 fails."""
         rows = [
             {"module": "pkg.a", "risk_tier": "high", "errored": False, "precision": 1.0, "recall": 1.0},
             {"module": "pkg.b", "risk_tier": "high", "errored": False, "precision": 1.0, "recall": 1.0},
@@ -2012,7 +2012,7 @@ class TestA1PerModuleGating:
         assert "pkg.bad" in a1.result["failing_modules"]
 
     def test_all_modules_meeting_threshold_pass(self, script_run_cli: Any) -> None:
-        """Scenario: every high-risk module at/above both thresholds → A1 passes with no failing modules."""
+        """Every high-risk module at/above both thresholds → A1 passes with no failing modules."""
         rows = [
             {"module": "pkg.a", "risk_tier": "high", "errored": False, "precision": 1.0, "recall": 1.0},
             {"module": "pkg.b", "risk_tier": "high", "errored": False, "precision": 0.95, "recall": 0.9},
@@ -2023,7 +2023,7 @@ class TestA1PerModuleGating:
 
 
 # ===========================================================================
-# Hardware capture — latency gates are hardware-bound, host must be recorded (M-14)
+# Hardware capture — latency gates are hardware-bound, host must be recorded
 # ===========================================================================
 
 
@@ -2031,13 +2031,13 @@ class TestHardwareCapture:
     """Validate the report header and JSON envelope record the host for the hardware-calibrated gates."""
 
     def test_envelope_includes_platform_and_cpu_fields(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: the summary envelope carries a hardware dict with platform, cpu_count, and python."""
+        """The summary envelope carries a hardware dict with platform, cpu_count, and python."""
         results = [script_run_cli.ScenarioResult("C1", "x", "calls", True, {}, {})]
         env = script_run_cli.build_summary_envelope(results, tmp_path, tmp_path / "i.json", "PASS")
         assert set(env["hardware"]) >= {"platform", "processor", "cpu_count", "python"}
 
     def test_report_header_records_hardware(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: the rendered report header names the hardware host for the latency thresholds."""
+        """The rendered report header names the hardware host for the latency thresholds."""
         results = [script_run_cli.ScenarioResult("L1", "central", "latency", True, {}, {})]
         report = tmp_path / "r.md"
         script_run_cli.render_report(results, tmp_path, tmp_path / "i.json", report)
@@ -2045,7 +2045,7 @@ class TestHardwareCapture:
 
 
 # ===========================================================================
-# Report reconciliation — S/H/X visible and header counts reconcile (M-15)
+# Report reconciliation — S/H/X visible and header counts reconcile
 # ===========================================================================
 
 
@@ -2053,7 +2053,7 @@ class TestReportReconciliation:
     """Validate every scenario counted in the header is visible in a rendered table (primary + S/H/X)."""
 
     def test_shx_rendered_and_header_counts_reconcile(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: S/H/X render in the self-consistency table and header counts match each track's size."""
+        """S/H/X render in the self-consistency table and header counts match each track's size."""
         sr = script_run_cli.ScenarioResult
         results = [
             sr("C1", "cov", "calls", True, {}, {}),
@@ -2077,7 +2077,7 @@ class TestReportReconciliation:
         assert primary_total + len(sc) == len(results)
 
     def test_skipped_self_consistency_noted_not_silent(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: with no S/H/X results the report explicitly flags the skipped track, not silence."""
+        """With no S/H/X results the report explicitly flags the skipped track, not silence."""
         results = [script_run_cli.ScenarioResult("C1", "cov", "calls", True, {}, {})]
         report = tmp_path / "r.md"
         script_run_cli.render_report(results, tmp_path, tmp_path / "i.json", report)
@@ -2087,7 +2087,7 @@ class TestReportReconciliation:
 
 
 # ===========================================================================
-# Stale-index guard — self-consistency suites skip on an old scan_version (L-C3)
+# Stale-index guard — self-consistency suites skip on an old scan_version
 # ===========================================================================
 
 
@@ -2095,28 +2095,28 @@ class TestIndexScanVersion:
     """Validate the index scan_version reader that gates the self-consistency track."""
 
     def test_reads_recorded_scan_version(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: the recorded integer scan_version is returned from the index JSON."""
+        """The recorded integer scan_version is returned from the index JSON."""
         index = tmp_path / "i.json"
         index.write_text(json.dumps({"scan_version": 7, "modules": []}), encoding="utf-8")
         assert script_run_cli._index_scan_version(index) == 7
 
     def test_missing_field_returns_zero(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: an index without scan_version yields 0, gating the self-consistency suites off."""
+        """An index without scan_version yields 0, gating the self-consistency suites off."""
         index = tmp_path / "i.json"
         index.write_text(json.dumps({"modules": []}), encoding="utf-8")
         assert script_run_cli._index_scan_version(index) == 0
 
     def test_unreadable_index_returns_zero(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: an absent or unparsable index returns 0 rather than raising."""
+        """An absent or unparsable index returns 0 rather than raising."""
         assert script_run_cli._index_scan_version(tmp_path / "nope.json") == 0
 
     def test_min_ver_constant_is_positive(self, script_run_cli: Any) -> None:
-        """Scenario: the self-consistency minimum version is a positive gate value."""
+        """The self-consistency minimum version is a positive gate value."""
         assert script_run_cli._SELF_CONSISTENCY_MIN_VER >= 1
 
 
 class TestTimingCensoring:
-    """B-H6: failed and timed-out runs must not enter the latency statistics."""
+    """Failed and timed-out runs must not enter the latency statistics."""
 
     def test_failed_runs_are_discarded_and_counted(self, script_run_cli: Any, monkeypatch: pytest.MonkeyPatch) -> None:
         """A command that fails instantly otherwise records an excellent latency."""
@@ -2135,8 +2135,7 @@ class TestTimingCensoring:
     ) -> None:
         """The deadline is a lower bound on the true duration, not a measurement.
 
-        Appending 30_000 ms as if it were an observation dragged the median toward
-        the timeout value.
+        Appending 30_000 ms as if it were an observation dragged the median toward the timeout value.
         """
 
         def timeout(*_args: Any, **_kwargs: Any) -> None:
@@ -2186,7 +2185,7 @@ class TestTimingCensoring:
     def test_command_sequence_discards_a_failed_sequence(
         self, script_run_cli: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """B-H6: the same rule applies to the cold-grep sequence timer."""
+        """The same rule applies to the cold-grep sequence timer."""
         monkeypatch.setattr(
             script_run_cli, "_run", lambda *_args, **_kwargs: SimpleNamespace(returncode=2, stdout="", stderr="")
         )

@@ -3,7 +3,7 @@
 
 Builds a commit message summarising counts of as-suggested, self-resolved, and
 rejected items, then runs ``git commit -m <message>``. Extracted from
-oss:resolve action-item-dispatch COMMIT_MODE=all block (AI9).
+oss:resolve action-item-dispatch COMMIT_MODE=all block.
 
 Usage:
     commit_all_items.py PR_NUMBER N_AS_SUGGESTED N_SELF_RESOLVED N_REJECTED \\
@@ -159,9 +159,9 @@ def main(argv: list[str] | None = None) -> int:
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     args = list(sys.argv[1:] if argv is None else argv)
 
-    # Honour only -h/--help via argparse; every other token flows through the manual
+    # Honour only ``-h/--help`` via argparse; every other token flows through the manual
     # positional loop below, which silently ignores extra positionals and accepts
-    # --codex anywhere (legacy "ignore" contract). A broad parse_args would reject
+    # ``--codex`` anywhere (legacy "ignore" contract). A broad parse_args would reject
     # extras with exit 2 and reorder positional handling — keep the manual parser.
     if args in (["-h"], ["--help"]):
         argparse.ArgumentParser(

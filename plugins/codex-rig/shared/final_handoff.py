@@ -2,22 +2,36 @@
 """Validate and render deterministic Codex Rig final handoffs.
 
 ## Purpose
-    Turn one versioned, machine-readable workflow handoff into the exact Markdown or caller-controlled bytes intended for the final user response, closing structural omissions before result promotion.
+
+Turn one versioned, machine-readable workflow handoff into the exact Markdown or caller-controlled bytes intended for
+the final user response, closing structural omissions before result promotion.
 
 ## Scope
-    Validate local handoff JSON, render sibling ``final.md`` output, and bind both files with SHA-256 evidence. The helper does not decide workflow findings, execute project gates, inspect chat transcripts, or send a response.
+
+Validate local handoff JSON, render sibling ``final.md`` output, and bind both files with SHA-256 evidence. The helper
+does not decide workflow findings, execute project gates, inspect chat transcripts, or send a response.
 
 ## Usage
-    Run ``render`` after gates and handoff creation, then run ``check`` directly or through the shared artifact validator before promoting ``result.candidate.json``.
+
+Run ``render`` after gates and handoff creation, then run ``check`` directly or through the shared artifact validator
+before promoting ``result.candidate.json``.
 
 ## Outputs
-    ``render`` writes deterministic UTF-8/LF final text and ``final-handoff.validation.json`` containing the handoff and render digests, skill, branch, schema version, and pass status.
+
+``render`` writes deterministic UTF-8/LF final text and ``final-handoff.validation.json`` containing the handoff and
+render digests, skill, branch, schema version, and pass status.
 
 ## Failure
-    Invalid schemas, branch/table mismatches, hidden source records, incomplete verification, unresolved work without an owner/action, confidence contradictions, path escapes, or post-render drift exit non-zero without claiming a valid handoff.
+
+Invalid schemas, branch/table mismatches, hidden source records, incomplete verification, unresolved work without an
+owner/action, confidence contradictions, path escapes, or post-render drift exit non-zero without claiming a valid
+handoff.
 
 ## Used by
-    All thirteen artifact-producing Codex Rig workflow skills use this helper as their post-gate presentation checkpoint; the shared artifact validator verifies its evidence for schema-v2 workflow results. The non-artifact agent-shim manager is deliberately outside this lifecycle.
+
+All thirteen artifact-producing Codex Rig workflow skills use this helper as their post-gate presentation checkpoint;
+the shared artifact validator verifies its evidence for schema-v2 workflow results. The agent-shim manager is
+deliberately outside the artifact lifecycle.
 """
 
 from __future__ import annotations

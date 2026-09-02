@@ -1,22 +1,17 @@
 """Diagnose locally installed bridge command compatibility.
 
-Purpose: Check that the installed Codex and Claude command help surfaces still
-contain every bridge flag required by the portable supervisor and bind the
-doctor to one complete installed Bridge payload. Scope: The normal mode reads
-the plugin's pinned baseline and manifests, hashes required runtime/setup files,
-invokes only ``--help``, and emits one JSON object describing missing commands,
-flags, or payload members. The optional live mode is an
-explicit operator probe that sends a minimal structured request through the
-shared bridge core; it is never enabled by default. Usage: Run
-``bridge_diagnose.py --direction both --workspace .`` for the free static check
-or add ``--live`` after obtaining authority for a paid authenticated request.
-Outputs: The command prints one JSON object and appends static or live findings
-to the workspace-local health log only when a full bridge request is performed.
-Failure: Missing executables, nonzero help commands, malformed baselines, and
-missing required tokens are reported as findings rather than raising tracebacks.
-Used by: The bridge setup skill and maintainers debugging a host CLI upgrade.
-The module has no network side effect itself unless the caller explicitly opts
-into live mode, and it uses standard-library subprocess handling throughout.
+Purpose: Check that the installed Codex and Claude command help surfaces still contain every bridge flag required by the
+portable supervisor and bind the doctor to one complete installed Bridge payload. Scope: The normal mode reads the
+plugin's pinned baseline and manifests, hashes required runtime/setup files, invokes only ``--help``, and emits one JSON
+object describing missing commands, flags, or payload members. The optional live mode is an explicit operator probe that
+sends a minimal structured request through the shared bridge core; it is never enabled by default. Usage: Run
+``bridge_diagnose.py --direction both --workspace .`` for the free static check or add ``--live`` after obtaining
+authority for a paid authenticated request. Outputs: The command prints one JSON object and appends static or live
+findings to the workspace-local health log only when a full bridge request is performed. Failure: Missing executables,
+nonzero help commands, malformed baselines, and missing required tokens are reported as findings rather than raising
+tracebacks. Used by: The bridge setup skill and maintainers debugging a host CLI upgrade. The module has no network side
+effect itself unless the caller explicitly opts into live mode, and it uses standard-library subprocess handling
+throughout.
 """
 
 from __future__ import annotations
@@ -141,8 +136,8 @@ MAX_HEALTH_LINES = 5_000
 def _health_summary(workspace: Path) -> dict[str, Any]:
     """Summarize retained outcome counts, recent faults, and grouped reported cost.
 
-    The log grows one line per bridge call and is never rotated by the bridge,
-    so the summary reads a bounded tail rather than the complete history.
+    The log grows one line per bridge call and is never rotated by the bridge, so the summary reads a bounded tail
+    rather than the complete history.
     """
     path = BridgePaths(workspace).root / "health.jsonl"
     fault_counts: dict[str, int] = {}
@@ -228,14 +223,14 @@ def _static_result(target: str, baseline: dict[str, list[str]]) -> dict[str, Any
 def _token_present(token: str, text: str) -> bool:
     """Match a required command or flag on a word boundary, not as a substring.
 
-    A bare substring scan would keep reporting ``exec`` present inside
-    ``execute`` long after the real subcommand disappeared from the help text.
+    A bare substring scan would keep reporting ``exec`` present inside ``execute`` long after the real subcommand
+    disappeared from the help text.
     """
     return re.search(rf"(?<![\w-]){re.escape(token)}(?![\w-])", text) is not None
 
 
 def _live_result(target: str, workspace: Path) -> dict[str, Any]:
-    """Run the smallest explicit paid probe only after the caller passed --live."""
+    """Run the smallest explicit paid probe only after the caller passed ``--live``."""
     direction = "claude_to_codex" if target == "codex" else "codex_to_claude"
     request = Request(
         "advise",

@@ -50,7 +50,7 @@ class TestBothFlags:
         assert parse("--root /abs/path --incremental") == ["--root", "/abs/path", "--incremental"]
 
     def test_incremental_then_root(self) -> None:
-        # Output order is fixed: --root first, then --incremental.
+        # Output order is fixed: ``--root`` first, then ``--incremental``.
         assert parse("--incremental --root /tmp/x") == ["--root", "/tmp/x", "--incremental"]
 
     def test_both_with_quoted_root_containing_space(self) -> None:
@@ -69,7 +69,7 @@ class TestEmptyAndNeither:
 
 
 class TestRootPosition:
-    """`--root` must be detected wherever it appears in the string."""
+    """Detect the root option regardless of its position in the argument string."""
 
     @pytest.mark.parametrize(
         ("arguments", "expected"),
@@ -110,11 +110,10 @@ class TestMain:
         assert out.strip() == ""
 
     def test_help_exits_0(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """``--help`` in the outer-flag position exits 0 and prints usage.
+        """Print help successfully when requested as an outer option.
 
-        arg[0] is the opaque $ARGUMENTS blob, so ``-h``/``--help`` is only an argparse
-        flag when it follows the blob (here an empty blob); a leading ``--help`` is
-        treated as blob content, not a flag.
+        arg[0] is the opaque $ARGUMENTS blob, so ``-h``/``--help`` is only an argparse flag when it follows the blob
+        (here an empty blob); a leading ``--help`` is treated as blob content, not a flag.
         """
         with pytest.raises(SystemExit) as exc:
             main(["", "--help"])
@@ -122,7 +121,7 @@ class TestMain:
         assert "usage" in capsys.readouterr().out.lower()
 
     def test_leading_help_is_blob_not_flag(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """A leading ``--help`` is the blob positional (no --root/--incremental) → empty output, exit 0."""
+        """A leading ``--help`` is the blob positional (no ``--root``/``--incremental``) → empty output, exit 0."""
         rc = main(["--help"])
         out = capsys.readouterr().out
         assert rc == 0
@@ -130,7 +129,7 @@ class TestMain:
 
 
 class TestSkillCallSiteRegression:
-    """Golden invocation matching scan-codebase SKILL.md: blob positional + outer --nul-output."""
+    """Golden invocation matching scan-codebase SKILL.md: blob positional + outer ``--nul-output``."""
 
     def test_nul_output_golden(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
@@ -144,7 +143,7 @@ class TestSkillCallSiteRegression:
         assert args_file.read_bytes() == b"--root\x00/abs/proj\x00--incremental\x00"
 
     def test_blob_reaches_inner_parser_unmangled(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """A blob whose --root/--incremental tokens must feed the inner parser, not argparse."""
+        """A blob whose ``--root``/``--incremental`` tokens must feed the inner parser, not argparse."""
         rc = main(["--root /abs/proj --incremental"])
         out = capsys.readouterr().out
         assert rc == 0

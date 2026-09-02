@@ -1,4 +1,4 @@
-"""Extraction parity: graph / coverage / test-impact (plan §12 Phase 3, step 4; §7.2) — graph engine extraction.
+"""Extraction parity: graph / coverage / test-impact — graph engine extraction.
 
 Proves the cross-module graph-construction / coverage / scan-orchestration
 move into :mod:`codemap_py.graph` preserved behavior exactly, by comparing the
@@ -12,8 +12,8 @@ confined to graph construction (as opposed to per-file parsing) cannot hide
 behind an incidental full-JSON match:
 
 - ``fixture_rdep_count`` (pytest fixture dependency graph, built from
-  ``conftest.py`` + a consuming test module) — the data ``scan-query
-  test-impact`` reads to find tests affected by a change;
+  ``conftest.py`` + a consuming test module) — the data ``scan-query test-impact`` reads to find tests affected by a
+  change;
 - ``subprocess_rdep_count`` (subprocess-call edges resolved to sibling
   modules);
 - ``sphinx_xref_count`` / ``doc_xrefs`` (``.rst`` cross-reference scan);
@@ -189,10 +189,9 @@ def _run_scan(
 ) -> tuple[subprocess.CompletedProcess, dict | None]:
     """Run a ``scan-index``-shaped executable against *root*, return (result, index-or-None).
 
-    ``PYTHONUTF8=1`` + ``encoding="utf-8"`` (rather than bare ``text=True``) pin stdio
-    decoding to UTF-8 regardless of the host's console codepage — otherwise a
-    non-ASCII *root* embedded in stderr decodes via the Windows console codepage
-    and the two compared child processes can diverge (mojibake vs. clean UTF-8).
+    ``PYTHONUTF8=1`` + ``encoding="utf-8"`` (rather than bare ``text=True``) pin stdio decoding to UTF-8 regardless of
+    the host's console codepage — otherwise a non-ASCII *root* embedded in stderr decodes via the Windows console
+    codepage and the two compared child processes can diverge (mojibake vs. clean UTF-8).
     """
     index_dir.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "CODEMAP_LOGGING": "false", "CODEMAP_INDEX_DIR": str(index_dir), "PYTHONUTF8": "1"}
@@ -211,7 +210,11 @@ def _run_scan(
 
 
 def _build_fixture_project(root: Path) -> None:
-    """Same feature-rich fixture as ``test_extraction_parity_scanner_discovery.py`` (duplicated — see module docstring)."""
+    """Build the shared feature-rich parity fixture.
+
+    This duplicates the fixture from ``test_extraction_parity_scanner_discovery.py`` as explained in the module
+    docstring.
+    """
     pkg = root / "pkg"
     pkg.mkdir(parents=True)
     (pkg / "__init__.py").write_text("")
@@ -283,9 +286,9 @@ def _build_colliding_fixture(root: Path) -> None:
 def test_graph_aggregates_byte_identical_old_vs_new(tmp_path: Path, old_scan_index: Path, dirname: str) -> None:
     """Full scan of the feature-rich fixture agrees on every graph-layer aggregate field.
 
-    Asserts the whole-index parity (as in ``test_extraction_parity_scanner_discovery.py``)
-    *and* each graph-owned aggregate individually, so a regression isolated to
-    graph construction cannot hide behind an incidental full-JSON match.
+    Asserts the whole-index parity (as in ``test_extraction_parity_scanner_discovery.py``) *and* each graph-owned
+    aggregate individually, so a regression isolated to graph construction cannot hide behind an incidental full-JSON
+    match.
     """
     root = tmp_path / dirname
     root.mkdir()
@@ -338,7 +341,7 @@ def test_dedup_collision_resolution_identical(tmp_path: Path, old_scan_index: Pa
     _assert_v13_index_delta(old_index, new_index)
 
 
-# --- coverage annotation (--with-coverage) ---------------------------------
+# --- coverage annotation (``--with-coverage``) ---------------------------------
 
 
 def _record_coverage(module_path: Path, cov_path: Path) -> None:

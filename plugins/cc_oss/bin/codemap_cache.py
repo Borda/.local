@@ -7,7 +7,7 @@ Materializes the per-module structural-context artifacts that let ``oss:resolve`
 reuse the pre-flight ``codemap-py query`` answers ``develop:review``/``oss:review``
 already computed, instead of re-issuing the same queries.
 
-Artifact shape (report §5.3) — one file per module at
+Artifact shape — one file per module at
 ``<cache-dir>/<module>.json``, split into a stable *prefix* and a volatile
 *delta* so a later cross-skill handoff feature generalizes without rework:
 
@@ -89,12 +89,12 @@ PER_MODULE_QUERIES: tuple[str, ...] = (
 # Mirrors resolve_shared_path.py::_validate_subdir's shape. Leading '.' and
 # '-' are legitimate in real module names (e.g. ".github.scripts.x",
 # "plugins.codemap-py.bin.foo") so the class stays permissive; '..' and '\\'
-# are rejected explicitly since a module builds a path under --cache-dir.
+# are rejected explicitly since a module builds a path under ``--cache-dir``.
 _MODULE_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 def _valid_module(module: str) -> bool:
-    """True when ``module`` is safe to use as ``<cache-dir>/<module>.json``.
+    """Check whether a module name is safe for use in a cache path.
 
     Args:
         module: Dotted module name to validate.

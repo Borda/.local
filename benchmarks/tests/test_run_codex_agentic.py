@@ -117,10 +117,9 @@ def test_dry_run_has_three_probes_and_default_shared_coordinates(agentic: Any) -
 def test_dry_run_default_coordinates_equal_the_shared_16_task_scope(agentic: Any) -> None:
     """The default no-model plan schedules each shared parity coordinate once.
 
-    Prevents a runner that advertises parity while retaining the BA-01 pilot,
-    omitting an arm, duplicating a coordinate, or using a hidden default repeat.
-    A mere plan-length assertion could miss swapped or repeated coordinates, so
-    this compares the complete coordinate set.
+    Prevents a runner that advertises parity while retaining the BA-01 pilot, omitting an arm, duplicating a coordinate,
+    or using a hidden default repeat. A mere plan-length assertion could miss swapped or repeated coordinates, so this
+    compares the complete coordinate set.
     """
     rows = agentic.dry_run()
     actual = {
@@ -140,9 +139,8 @@ def test_dry_run_default_coordinates_equal_the_shared_16_task_scope(agentic: Any
 def test_dry_run_accepts_a_positive_explicit_repeat_override(agentic: Any) -> None:
     """A caller can request an admitted repeat count without changing the task scope.
 
-    Prevents the former fixed-three-repeat pilot behavior and a runner that
-    silently ignores an explicit repeat request. Zero remains invalid because it
-    would create no evidence-bearing parity coordinates.
+    Prevents the former fixed-three-repeat pilot behavior and a runner that silently ignores an explicit repeat request.
+    Zero remains invalid because it would create no evidence-bearing parity coordinates.
     """
     rows = agentic.dry_run(repetitions=2)
     plan = [row.split() for row in rows if row.startswith("PLAN")]
@@ -158,12 +156,11 @@ def test_dry_run_accepts_a_positive_explicit_repeat_override(agentic: Any) -> No
 def test_dry_run_preflights_snapshot_bound_c_admission_without_auth_or_model(
     agentic: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """run-all's no-model preflight must reach the later snapshot-bound C admission.
+    """Run-all's no-model preflight must reach the later snapshot-bound C admission.
 
-    Prevents the pure plan renderer from declaring a runnable agentic study even
-    though later C homes cannot install their archived plugins. The probe raises
-    before any transport/model call; a planner that skips runtime admission must
-    therefore fail this test.
+    Prevents the pure plan renderer from declaring a runnable agentic study even though later C homes cannot install
+    their archived plugins. The probe raises before any transport/model call; a planner that skips runtime admission
+    must therefore fail this test.
     """
     index_path = tmp_path / "locked-index.json"
     index_path.write_text("{}", encoding="utf-8")
@@ -191,6 +188,7 @@ def test_dry_run_preflights_snapshot_bound_c_admission_without_auth_or_model(
 
         def close(self) -> None:
             """Match the production runner cleanup protocol."""
+            pass
 
     monkeypatch.setattr(agentic, "AgenticCodexRunner", SnapshotAdmissionProbe)
 

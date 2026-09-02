@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""bin/_schema.py — compatibility shim for :mod:`codemap_py.schema` (Phase 3 slice 1).
+"""Compatibility shim forwarding the legacy schema import to :mod:`codemap_py.schema`.
 
-``scan-index``/``scan-query`` import this bare module name after inserting
-``bin/`` onto their own ``sys.path``; this shim prepends ``<plugin-root>/src``
-to the process import path, then replaces its own entry in ``sys.modules``
-with the real package module so every attribute access — including private
-internals a test monkeypatches — reaches the one authoritative implementation.
+``scan-index``/``scan-query`` import this bare module name after inserting ``bin/`` onto their own ``sys.path``; this
+shim prepends ``<plugin-root>/src`` to the process import path, then replaces its own entry in ``sys.modules`` with the
+real package module so every attribute access — including private internals a test monkeypatches — reaches the one
+authoritative implementation.
 
 consumers: bin/scan-index, bin/scan-query — imported as bare ``_schema``; not a standalone executable
 """

@@ -1,4 +1,4 @@
-"""Extraction parity: scanner discovery/parsing (plan §12 Phase 3, step 3; §7.2).
+"""Extraction parity: scanner discovery/parsing.
 
 Proves the file-discovery / single-file-AST-parsing move into
 :mod:`codemap_py.scanner` preserved behavior exactly, by comparing the
@@ -127,11 +127,9 @@ _PATH_CLASSES = [
 def _materialize_old_bin(dest: Path) -> Path:
     """Copy the frozen pre-extraction monolithic ``scan-index`` + siblings into *dest*.
 
-    Returns the path to the copied ``scan-index`` script. Source is the static
-    ``tests/data/parity_golden/`` fixture (captured once from ``HEAD`` at the
-    time of this extraction task) — not a live ``git show HEAD:...`` checkout,
-    which would silently start returning the post-extraction thin launcher the
-    moment the extraction commit lands.
+    Returns the path to the copied ``scan-index`` script. Source is the static ``tests/data/parity_golden/`` fixture
+    (captured once from ``HEAD`` at the time of this extraction task) — not a live ``git show HEAD:...`` checkout, which
+    would silently start returning the post-extraction thin launcher the moment the extraction commit lands.
     """
     for name in _OLD_BIN_FILES:
         content = (_PARITY_GOLDEN_DIR / name).read_text()
@@ -219,10 +217,9 @@ def _run_scan(
 ) -> tuple[subprocess.CompletedProcess, dict | None]:
     """Run a ``scan-index``-shaped executable against *root*, return (result, index-or-None).
 
-    ``PYTHONUTF8=1`` + ``encoding="utf-8"`` (rather than bare ``text=True``) pin stdio
-    decoding to UTF-8 regardless of the host's console codepage — otherwise a
-    non-ASCII *root* embedded in stderr decodes via the Windows console codepage
-    and the two compared child processes can diverge (mojibake vs. clean UTF-8).
+    ``PYTHONUTF8=1`` + ``encoding="utf-8"`` (rather than bare ``text=True``) pin stdio decoding to UTF-8 regardless of
+    the host's console codepage — otherwise a non-ASCII *root* embedded in stderr decodes via the Windows console
+    codepage and the two compared child processes can diverge (mojibake vs. clean UTF-8).
     """
     index_dir.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "CODEMAP_LOGGING": "false", "CODEMAP_INDEX_DIR": str(index_dir), "PYTHONUTF8": "1"}
@@ -326,10 +323,9 @@ def test_full_scan_byte_identical_old_vs_new(tmp_path: Path, old_scan_index: Pat
 def test_full_scan_matches_via_python_module_entrypoint(tmp_path: Path, old_scan_index: Path) -> None:
     """The golden monolith also agrees with the new side reached via ``python -m codemap_py index``.
 
-    This drives the production dispatch chain (``codemap_py.cli`` -> rwgate
-    writer lease -> ``bin/scan-index`` subprocess) instead of invoking the
-    launcher bare, proving the currently-wired production entrypoint reaches
-    the same scanner/graph behavior.
+    This drives the production dispatch chain (``codemap_py.cli`` -> rwgate writer lease -> ``bin/scan-index``
+    subprocess) instead of invoking the launcher bare, proving the currently-wired production entrypoint reaches the
+    same scanner/graph behavior.
     """
     root = tmp_path / "proj"
     root.mkdir()
@@ -362,10 +358,9 @@ def test_full_scan_matches_via_python_module_entrypoint(tmp_path: Path, old_scan
 def test_incremental_scan_matches_old_vs_new(tmp_path: Path, old_scan_index: Path) -> None:
     """An incremental re-scan after a source edit agrees old-vs-new.
 
-    Each engine keeps its own baseline (separate ``CODEMAP_INDEX_DIR``) so its
-    ``--incremental`` step reads back exactly the index it itself produced —
-    the two output directories mean stdout/stderr are not compared here (they
-    embed the differing directory), only the resulting index bodies.
+    Each engine keeps its own baseline (separate ``CODEMAP_INDEX_DIR``) so its ``--incremental`` step reads back exactly
+    the index it itself produced — the two output directories mean stdout/stderr are not compared here (they embed the
+    differing directory), only the resulting index bodies.
     """
     root = tmp_path / "proj"
     root.mkdir()
@@ -391,7 +386,7 @@ def test_incremental_scan_matches_old_vs_new(tmp_path: Path, old_scan_index: Pat
 
 
 def test_exclusions_prune_vendored_copy_identically(tmp_path: Path, old_scan_index: Path) -> None:
-    """``.codemapignore``-excluded files are pruned identically old-vs-new."""
+    """Prune ignored files identically in both scanner implementations."""
     root = tmp_path / "proj"
     root.mkdir()
     _build_fixture_project(root)
@@ -413,7 +408,7 @@ def test_exclusions_prune_vendored_copy_identically(tmp_path: Path, old_scan_ind
 
 
 def test_degraded_module_and_stats_output_identical(tmp_path: Path, old_scan_index: Path) -> None:
-    """A syntax-error module degrades identically and prints the same stderr warning."""
+    """Handle a syntax-error module consistently across extraction paths."""
     root = tmp_path / "proj"
     root.mkdir()
     _build_fixture_project(root)  # already includes pkg/broken.py
@@ -461,7 +456,7 @@ def test_permission_error_exit_code_parity(tmp_path: Path, old_scan_index: Path)
     assert old_result.stdout == new_result.stdout == ""
     assert "[codemap] ERROR: [Errno 13] Permission denied:" in _normalize_pid_tmp(old_result.stderr)
 
-    # Deliberate, documented divergence from byte-identical stderr parity (C-H2).
+    # Deliberate, documented divergence from byte-identical stderr parity.
     # An unwritable index directory is now reported by the RW gate as a bounded
     # structured error, which the capability contract's exit-1 row requires and the
     # old raw OSError message did not satisfy. Exit code and stdout parity — the part

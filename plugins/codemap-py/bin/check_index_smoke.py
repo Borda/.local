@@ -100,7 +100,7 @@ def _sanitize_error(raw_error: Any) -> str:
     """Sanitize an upstream error string before forwarding it into emitted JSON.
 
     Caps the message at 256 characters and strips non-printable / non-ASCII
-    characters (SEC-L3: the ``error`` field originates from a child process and
+    characters (The ``error`` field originates from a child process and
     must not be forwarded verbatim into terminal-facing output).
 
     Args:
@@ -146,7 +146,7 @@ def _expected_script_roots(plugin_root: Path) -> tuple[Path, ...]:
     The script may legitimately live under ``~/.claude`` (installed plugin
     cache) or under the in-repo ``plugins/codemap`` plugin root resolved from
     ``$CLAUDE_PLUGIN_ROOT`` (local development). Any resolved script path
-    outside both roots is treated as untrusted (SEC-M1: CWE-22).
+    outside both roots is treated as untrusted (CWE-22).
 
     Args:
         plugin_root: The plugin root the script was resolved against.
@@ -167,7 +167,7 @@ def _resolve_smoke_script() -> Path:
     back to the in-repo ``plugins/codemap`` layout for local development.
 
     The resolved script is validated before it can be forwarded to
-    ``subprocess.run`` (SEC-M1): the path must exist as a regular file and must
+    ``subprocess.run``: the path must exist as a regular file and must
     resolve within ``~/.claude`` or the plugin root. When ``$CLAUDE_PLUGIN_ROOT``
     is set it must be a non-empty, absolute path.
 
@@ -243,7 +243,7 @@ def run_smoke(
 
 
 def _validate_index_path(index_path: str) -> tuple[bool, str]:
-    """Validate that ``index_path`` resolves within allowed roots (SEC-M1: CWE-22).
+    """Validate that ``index_path`` resolves within allowed roots (CWE-22).
 
     Allowed roots are the user home directory and the current working directory.
     An index path resolving outside both (e.g. ``/etc/passwd``) is rejected before
@@ -278,14 +278,13 @@ def _validate_index_path(index_path: str) -> tuple[bool, str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns the derived exit code.
+    """Run the index smoke check and return its process status.
 
     Args:
-        argv: Optional argv override (for tests). When ``None`` argparse
-            reads from ``sys.argv[1:]`` as usual.
+        argv: Optional argument override for tests. When ``None``, argparse reads from ``sys.argv[1:]`` as usual.
 
     Returns:
-        ``0`` ok+fresh, ``1`` failed/stale/no-output, ``2`` bad arguments.
+        ``0`` for a successful fresh index, ``1`` for a failed, stale, or empty result, or ``2`` for invalid arguments.
     """
     parser = argparse.ArgumentParser(
         prog="check_index_smoke.py",
@@ -302,7 +301,7 @@ def main(argv: list[str] | None = None) -> int:
     # argparse exits with code 2 on bad/missing args — matches legacy bash contract.
     args = parser.parse_args(argv)
 
-    # SEC-M1: validate --index-path before forwarding to subprocess (CWE-22 guard)
+    # Validate ``--index-path`` before forwarding to subprocess (CWE-22 guard)
     path_ok, path_err = _validate_index_path(args.index_path)
     if not path_ok:
         projected: dict[str, Any] = {

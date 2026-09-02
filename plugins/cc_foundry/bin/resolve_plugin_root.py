@@ -207,7 +207,7 @@ def resolve(home: Path, marketplace: str, plugin_name: str) -> str | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns process exit code."""
+    """Resolve and print the selected plugin root."""
     parser = argparse.ArgumentParser(
         prog="resolve_plugin_root",
         description="Resolve and validate a plugin's current install root.",

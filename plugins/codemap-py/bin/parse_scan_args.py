@@ -14,11 +14,11 @@ Output (--nul-output <file>):
     Caller reads safely with: while IFS= read -r -d '' arg; do ...; done < <file>
 
 Output (--print-root):
-    Prints just the resolved --root value (or '.' when absent) on stdout.
+    Prints just the resolved ``--root`` value (or '.' when absent) on stdout.
 
 Exit codes:
     0  always (never fails on parsed input).
-    1  --nul-output path validation failed (SEC-M1).
+    1  --nul-output path validation failed.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-# --root <value> where value is one of:
+# ``--root <value>`` where value is one of:
 #   - single-quoted: '...'  (no embedded single quotes)
 #   - double-quoted: "..."  (no embedded double quotes)
 #   - unquoted: any run of non-whitespace characters
@@ -43,7 +43,7 @@ _ROOT_RE = re.compile(
 
 
 def _extract_root(arguments: str) -> str | None:
-    """Return the raw --root value from arguments, or None when absent.
+    """Return the raw ``--root`` value from arguments, or None when absent.
 
     Args:
         arguments: Raw $ARGUMENTS string from the caller.
@@ -144,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
         argv: Optional argv override for testing. Defaults to ``sys.argv[1:]``.
 
     Returns:
-        Exit code (0 on success, 1 when --nul-output path validation fails).
+        Exit code (0 on success, 1 when ``--nul-output`` path validation fails).
 
     Examples:
         >>> import os, tempfile
@@ -161,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = sys.argv[1:] if argv is None else argv
 
-    # arg[0] is the raw $ARGUMENTS blob (its embedded --root/--incremental tokens feed the
+    # arg[0] is the raw $ARGUMENTS blob (its embedded ``--root``/``--incremental`` tokens feed the
     # INNER parser below, NOT argparse). Extracted positionally BEFORE argparse so a blob
     # beginning with "--" is never handed to argparse's flag matcher — all call sites quote it
     # as one argv element. Only the genuine OUTER flags in args[1:] reach argparse.
@@ -190,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if nul_output is not None:
-        # SEC-M1: validate write target is within TMPDIR to prevent arbitrary write via --nul-output.
+        # Validate write target is within TMPDIR to prevent arbitrary write via ``--nul-output``.
         _nul_resolved = Path(nul_output).resolve()
         _tmpdir = Path(os.environ.get("TMPDIR") or tempfile.gettempdir()).resolve()
         try:

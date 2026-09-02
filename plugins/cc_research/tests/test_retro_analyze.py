@@ -164,7 +164,10 @@ class TestMainCLI:
         assert "malformed JSON" in out["error"]
 
     def test_custom_baseline_label(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """--baseline flag selects which status string marks the baseline record."""
+        """Verify command-line option behavior.
+
+        The ``--baseline`` flag selects which status string marks the baseline record.
+        """
         jsonl = tmp_path / "experiments.jsonl"
         _write_jsonl(
             jsonl,

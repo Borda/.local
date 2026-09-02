@@ -32,21 +32,20 @@ import subprocess
 import sys
 from pathlib import Path
 
-# DoS guard (SEC-M10), held at the query engine's ceiling (``query._MAX_INDEX_SIZE_BYTES``):
+# DoS guard, held at the query engine's ceiling (``query._MAX_INDEX_SIZE_BYTES``):
 # a helper that refuses an index the engine serves reports a healthy project as broken.
 MAX_INDEX_SIZE = 512 * 1024 * 1024
-MAX_SCAN_ARGS = 4096  # chars — cap SCAN_ARGS before shlex.split to bound parsing cost (SEC-L8: DoS guard)
+MAX_SCAN_ARGS = 4096  # chars — cap SCAN_ARGS before shlex.split to bound parsing cost (DoS guard)
 
 
 def _resolve_root(scan_args: str, timeout: int = 15) -> str:
-    """Return project root: --root arg → git toplevel → cwd.
+    """Return project root: ``--root`` arg → git toplevel → cwd.
 
-    --root is validated against CWD to block directory traversal via SCAN_ARGS.
+    ``--root`` is validated against CWD to block directory traversal via SCAN_ARGS.
 
     Raises:
-        ValueError: if ``scan_args`` exceeds ``MAX_SCAN_ARGS`` characters — a
-            pathologically large value would make ``shlex.split`` expensive
-            (SEC-L8). Raised before the suppress block so it is not swallowed.
+        ValueError: if ``scan_args`` exceeds ``MAX_SCAN_ARGS`` characters — a pathologically large value would make
+            ``shlex.split`` expensive. Raised before the suppress block so it is not swallowed.
     """
     if len(scan_args) > MAX_SCAN_ARGS:
         raise ValueError(f"SCAN_ARGS too large ({len(scan_args)} chars); max {MAX_SCAN_ARGS}")
@@ -76,7 +75,7 @@ def _resolve_root(scan_args: str, timeout: int = 15) -> str:
 
 
 def _allowed_index_roots() -> tuple[Path, ...]:
-    """Return allowed root directories for CODEMAP_INDEX_DIR validation (SEC-M1: CWE-22).
+    """Return allowed root directories for CODEMAP_INDEX_DIR validation (CWE-22).
 
     Returns:
         Tuple of resolved base paths: the default cache dir under ``~/.cache/codemap``
@@ -100,7 +99,7 @@ def _allowed_index_roots() -> tuple[Path, ...]:
 
 
 def _validate_index_dir(custom_dir: str) -> bool:
-    """Return True when ``custom_dir`` resolves within an allowed cache root (SEC-M1: CWE-22).
+    """Return True when ``custom_dir`` resolves within an allowed cache root (CWE-22).
 
     An attacker-controlled ``CODEMAP_INDEX_DIR`` could point ``json.load`` at an
     arbitrary filesystem path. This check restricts it to the two expected locations.
@@ -118,9 +117,8 @@ def _validate_index_dir(custom_dir: str) -> bool:
 def _load_index(root: str) -> dict:
     """Load codemap index; exit 1 if missing or if CODEMAP_INDEX_DIR fails the path-containment check.
 
-    Respects ``CODEMAP_INDEX_DIR`` env var — when set, reads
-    ``$CODEMAP_INDEX_DIR/<proj>.json`` instead of ``<root>/.cache/codemap/<proj>.json``.
-    ``CODEMAP_INDEX_DIR`` is validated against allowed roots before use (SEC-M1: CWE-22).
+    Respects ``CODEMAP_INDEX_DIR`` env var — when set, reads ``$CODEMAP_INDEX_DIR/<proj>.json`` instead of
+    ``<root>/.cache/codemap/<proj>.json``. ``CODEMAP_INDEX_DIR`` is validated against allowed roots before use (CWE-22).
     """
     proj = os.path.basename(root)
     custom_dir = os.environ.get("CODEMAP_INDEX_DIR")
@@ -135,7 +133,7 @@ def _load_index(root: str) -> dict:
     else:
         index_dir = os.path.join(root, ".cache", "codemap")
     index_path = os.path.join(index_dir, f"{proj}.json")
-    # DoS guard (SEC-M10): refuse oversized index files before json.load to avoid memory exhaustion.
+    # DoS guard: refuse oversized index files before json.load to avoid memory exhaustion.
     try:
         size = os.path.getsize(index_path)
     except FileNotFoundError:

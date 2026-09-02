@@ -1,14 +1,12 @@
 """Real-install proof for the built package (collected, unlike the probe scripts).
 
-Runs the Claude and Codex install probes as subprocesses against a fresh build.
-Each test skips with a named reason ONLY when its runtime CLI is absent (CI
-runners without ``claude``/``codex``); when the CLI is present it asserts the
-probe exits 0, reports ``verification.ok``, exposes the exact six-skill rosters and Codex hook config, installs to a path OUTSIDE the repo checkout
-(source-hidden), and — via the probe's source-independent runtime proof — builds
-from a DISPOSABLE source copy, DELETES it (source_checkout_unavailable), then
-executes ``doctor``/``index``/``query`` from the installed bytes under a scrubbed
-env (no temp-checkout or repo path in env/argv, no such bytes in the installed
-cache) with ``plugin_root`` inside the installed cache.
+Runs the Claude and Codex install probes as subprocesses against a fresh build. Each test skips with a named reason ONLY
+when its runtime CLI is absent (CI runners without ``claude``/``codex``); when the CLI is present it asserts the probe
+exits 0, reports ``verification.ok``, exposes the exact six-skill rosters and Codex hook config, installs to a path
+OUTSIDE the repo checkout (source-hidden), and — via the probe's source-independent runtime proof — builds from a
+DISPOSABLE source copy, DELETES it (source_checkout_unavailable), then executes ``doctor``/``index``/``query`` from the
+installed bytes under a scrubbed env (no temp-checkout or repo path in env/argv, no such bytes in the installed cache)
+with ``plugin_root`` inside the installed cache.
 """
 
 from __future__ import annotations

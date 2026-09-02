@@ -3,7 +3,7 @@
 
 Python rather than a shell regex on purpose: the inline twin of this parse used `[[ =~ ]]` +
 ${BASH_REMATCH[1]}, and zsh — the harness shell — populates $match instead, so every
-`--keep "..."` silently resolved to the empty string.
+``--keep "..."`` silently resolved to the empty string.
 
 Usage: python extract-keep-flag.py <sentinel-slug> "$ARGUMENTS"
   <sentinel-slug> is the sentinel's own slug, not the skill name (research:run writes

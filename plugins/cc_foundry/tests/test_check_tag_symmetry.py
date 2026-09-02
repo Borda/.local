@@ -1,7 +1,7 @@
 """Tests for check_tag_symmetry bin script.
 
-Covers empty-block detection, unbalanced tag detection, escaped-tag detection, the
-per-subcheck ``--check`` selector, clean files, and CLI integration.
+Covers empty-block detection, unbalanced tag detection, escaped-tag detection, the per-subcheck ``--check`` selector,
+clean files, and CLI integration.
 """
 
 from __future__ import annotations
@@ -245,9 +245,9 @@ class TestDynamicBalance:
     def test_attributed_open_pairs_with_plain_close(self, tmp_path: Path) -> None:
         """An open tag carrying attributes still pairs with its bare closing tag.
 
-        Collapsible sections in plugin READMEs are written `<details open>` on one line and
-        closed by a bare `</details>` on its own. Matching the open form literally would count
-        every such section as a missing open and bury a real defect under README noise.
+        Collapsible sections in plugin READMEs are written `<details open>` on one line and closed by a bare
+        `</details>` on its own. Matching the open form literally would count every such section as a missing open and
+        bury a real defect under README noise.
         """
         f = tmp_path / "readme.md"
         f.write_text(
@@ -259,9 +259,8 @@ class TestDynamicBalance:
     def test_placeholder_only_seen_inline_is_never_discovered(self, tmp_path: Path) -> None:
         """A `<name>` that only ever appears mid-sentence is a placeholder, not a block.
 
-        Skill prose is full of unpaired argument placeholders. Discovering names from any
-        occurrence would report every one of them as unbalanced; requiring a standalone line
-        is what separates a block from a placeholder.
+        Skill prose is full of unpaired argument placeholders. Discovering names from any occurrence would report every
+        one of them as unbalanced; requiring a standalone line is what separates a block from a placeholder.
         """
         f = tmp_path / "skill.md"
         f.write_text("Pass <output-path> to the script, then read <output-path>.\n", encoding="utf-8")
@@ -270,11 +269,10 @@ class TestDynamicBalance:
     def test_code_span_quoting_an_html_comment_does_not_leak_later_tags(self, tmp_path: Path) -> None:
         """A line whose code span quotes an HTML comment keeps its later spans intact.
 
-        Stripping comments before code spans deletes the comment out of the span and leaves its
-        two backticks adjacent; every later span on the line then pairs one delimiter off, so
-        quoted prose is treated as code and the tag it mentions escapes into the balance count.
-        The documentation line that names a marker comment and a tag in the same sentence is the
-        real case that produced a phantom unbalanced finding.
+        Stripping comments before code spans deletes the comment out of the span and leaves its two backticks adjacent;
+        every later span on the line then pairs one delimiter off, so quoted prose is treated as code and the tag it
+        mentions escapes into the balance count. The documentation line that names a marker comment and a tag in the
+        same sentence is the real case that produced a phantom unbalanced finding.
         """
         f = tmp_path / "doc.md"
         f.write_text(
@@ -287,9 +285,9 @@ class TestDynamicBalance:
     def test_legacy_underscore_block_is_both_renamed_and_balance_checked(self, tmp_path: Path) -> None:
         """A legacy underscore block reports the rename and its balance defect together.
 
-        Underscore names are on the way out, but one that is still in the tree can still be
-        mis-paired. Admitting them to discovery means the balance defect is reported in the same
-        run as the rename advice, instead of waiting for the rename to land first.
+        Underscore names are on the way out, but one that is still in the tree can still be mis-paired. Admitting them
+        to discovery means the balance defect is reported in the same run as the rename advice, instead of waiting for
+        the rename to land first.
         """
         f = tmp_path / "legacy.md"
         f.write_text("<legacy_block>\n\ncontent\n\n<legacy_block>\n\n</legacy_block>\n", encoding="utf-8")
@@ -315,7 +313,7 @@ class TestParseKinds:
         }
 
     def test_read_error_is_not_selectable(self) -> None:
-        """read-error is always emitted, never nameable in --check."""
+        """Read-error is always emitted, never nameable in ``--check``."""
         with pytest.raises(ValueError, match="read-error"):
             cts.parse_kinds("read-error")
 
@@ -329,7 +327,7 @@ class TestMain:
     """Covers main() CLI integration."""
 
     def test_no_files_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """No files argument exits 0 and prints pass line."""
+        """Accept an empty file list and report a passing result."""
         rc = cts.main([])
         out = capsys.readouterr().out
         assert rc == 0
@@ -345,7 +343,7 @@ class TestMain:
         assert "✓" in out
 
     def test_violation_exits_one(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """File with empty block exits 1 with violation prefixed ! C14a:."""
+        """Report an empty tag block with the stable ``C14a`` diagnostic identifier."""
         f = tmp_path / "bad.md"
         f.write_text("<constants></constants>\n", encoding="utf-8")
         rc = cts.main([str(f)])
@@ -359,7 +357,10 @@ class TestMain:
         assert rc == 0
 
     def test_timeout_flag_accepted(self, tmp_path: Path) -> None:
-        """--timeout flag is accepted and does not affect exit code."""
+        """Verify command-line option behavior.
+
+        The ``--timeout`` flag is accepted and does not affect exit code.
+        """
         f = tmp_path / "clean.md"
         f.write_text("<workflow>\nok\n</workflow>\n", encoding="utf-8")
         rc = cts.main([str(f), "--timeout", "5"])
@@ -367,7 +368,7 @@ class TestMain:
 
 
 class TestMainSubcheckSelection:
-    """Covers --check selecting one subcheck at a time on an all-modes-violating file."""
+    """Covers ``--check`` selecting one subcheck at a time on an all-modes-violating file."""
 
     @staticmethod
     def _all_modes_file(tmp_path: Path) -> Path:
@@ -438,7 +439,7 @@ class TestMainSubcheckSelection:
         assert "[escaped-tag]" in out
 
     def test_unknown_subcheck_exits_two(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """An unknown --check mode exits 2 with the token named on stderr."""
+        """An unknown ``--check`` mode exits 2 with the token named on stderr."""
         rc = cts.main([str(self._all_modes_file(tmp_path)), "--check", "bogus"])
         assert rc == 2
         assert "bogus" in capsys.readouterr().err
@@ -449,12 +450,12 @@ class TestMainSubcheckSelection:
         capsys: pytest.CaptureFixture[str],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """An unreadable file is reported under any --check mode, never filtered away.
+        """An unreadable file is reported under any ``--check`` mode, never filtered away.
 
-        The denial is injected rather than produced by ``chmod(0o000)``: Windows maps chmod
-        onto the read-only attribute only, so the file stayed readable and the assertion tested
-        the OS instead of the filter. The subject here is that a READ_ERROR finding survives
-        ``--check`` narrowing, which an injected OSError exercises identically on every platform.
+        The denial is injected rather than produced by ``chmod(0o000)``: Windows maps chmod onto the read-only attribute
+        only, so the file stayed readable and the assertion tested the OS instead of the filter. The subject here is
+        that a READ_ERROR finding survives ``--check`` narrowing, which an injected OSError exercises identically on
+        every platform.
         """
         unreadable = tmp_path / "locked.md"
         unreadable.write_text("<role>\nok\n</role>\n", encoding="utf-8")

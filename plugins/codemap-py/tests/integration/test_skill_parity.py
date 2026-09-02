@@ -1,10 +1,9 @@
-"""Skill-roster + truth-claim parity between ``claude-skills/`` and ``codex-skills/`` (plan §8.2).
+"""Skill-roster + truth-claim parity between ``claude-skills/`` and ``codex-skills/``.
 
-Black-box against on-disk ``SKILL.md`` files and ``shared/capability-contract.md`` — the single
-source of truth-claims both runtime rosters must not contradict (per that file's own header).
-Comparator helpers here are exercised positively against the real rosters (must pass with zero
-violations) and negatively against synthetic fixture rosters built under ``tmp_path`` (missing
-skill, stale command name, unsupported cache path, contradictory limit) — real plugin files are
+Black-box against on-disk ``SKILL.md`` files and ``shared/capability-contract.md`` — the single source of truth-claims
+both runtime rosters must not contradict (per that file's own header). Comparator helpers here are exercised positively
+against the real rosters (must pass with zero violations) and negatively against synthetic fixture rosters built under
+``tmp_path`` (missing skill, stale command name, unsupported cache path, contradictory limit) — real plugin files are
 never mutated to prove the negative paths.
 """
 
@@ -272,8 +271,8 @@ def test_mode_table_checker_rejects_stale_command_name() -> None:
 def _not_for_skill_refs(full_text: str) -> set[str]:
     """Union of skill names cross-referenced by every NOT-for/Skip-for clause in *full_text*.
 
-    Deliberately tolerant of prose-wording differences (explicitly allowed latitude per
-    capability-contract.md's parity requirements) — only *which skill* is referenced counts.
+    Deliberately tolerant of prose-wording differences (explicitly allowed latitude per capability-contract.md's parity
+    requirements) — only *which skill* is referenced counts.
     """
     refs: set[str] = set()
     for clause in _NOT_FOR_RE.findall(full_text):
@@ -547,7 +546,7 @@ def test_gated_dispatch_checker_rejects_an_ungated_alias_call() -> None:
 
 
 def test_no_roster_command_invokes_an_undefined_launcher_variable() -> None:
-    """``$CODEMAP_BIN`` is defined nowhere in the plugin — a command using it degrades to not-found."""
+    """Prevent roster commands from invoking an undefined launcher variable."""
     offenders = [
         f"{runtime_dir.name}/{skill_name}"
         for runtime_dir in (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR)
@@ -569,7 +568,7 @@ def test_every_codex_skill_carries_a_runtime_note(skill_name: str) -> None:
 
 @pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))
 def test_rename_refs_qname_grammar_matches_find_symbol_source(runtime_dir: Path) -> None:
-    """``cmd_find_symbol`` matches a symbol-local ``qualified_name``; a ``module::symbol`` form returns zero matches."""
+    """Match a symbol-local ``qualified_name``; a ``module::symbol`` form returns zero matches."""
     flat = _flat(_skill_text(runtime_dir, "rename-refs"))
 
     assert _QNAME_GRAMMAR_CLAIM in flat
@@ -578,7 +577,7 @@ def test_rename_refs_qname_grammar_matches_find_symbol_source(runtime_dir: Path)
 
 @pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))
 def test_query_code_discloses_the_result_cap_beside_the_stop_querying_rule(runtime_dir: Path) -> None:
-    """``query_complete`` scores graph coverage only — the 20-item cap must be disclosed next to it."""
+    """Score graph coverage only — the 20-item cap must be disclosed next to it."""
     flat = _flat(_skill_text(runtime_dir, "query-code"))
 
     assert all(snippet in flat for snippet in _TRUNCATION_DISCLOSURE_SNIPPETS)
@@ -593,7 +592,10 @@ def test_contract_keeps_the_result_cap_the_rosters_must_disclose() -> None:
 
 
 def test_debrief_reads_anonymized_copies_for_every_telemetry_layer() -> None:
-    """``--anonymize`` must not read raw tool shards — Grep patterns and Read paths would enter a shareable export."""
+    """Prevent shareable exports from reading raw tool telemetry.
+
+    Raw Grep patterns and Read paths could contain sensitive project data.
+    """
     text = _skill_text(_CLAUDE_SKILLS_DIR, "debrief-coding")
 
     assert "tools*-anon.jsonl" in text
@@ -618,7 +620,7 @@ def test_suppressed_default_checker_rejects_the_benign_zero_fallback() -> None:
 
 
 def test_scan_codebase_reports_the_scanners_real_exit_code() -> None:
-    """Inside ``if ! cmd``, ``$?`` is the negated compound's status (always 0) — capture the rc before branching."""
+    """Capture the command status before branching around a negated shell condition."""
     text = _skill_text(_CLAUDE_SKILLS_DIR, "scan-codebase")
 
     assert "_SCAN_RC=$?" in text
@@ -645,7 +647,10 @@ def test_query_code_routing_table_admits_it_is_partial(runtime_dir: Path) -> Non
 
 @pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))
 def test_query_code_states_the_test_impact_subcommand_versus_skill_split(runtime_dir: Path) -> None:
-    """One-off structural fact → the subcommand here; full workflow → the ``test-impact`` skill. Both are supported."""
+    """One-off structural fact → the subcommand here; full workflow → the ``test-impact`` skill.
+
+    Both are supported.
+    """
     flat = _flat(_skill_text(runtime_dir, "query-code"))
 
     assert "test-impact split" in flat
@@ -659,7 +664,7 @@ def test_contract_records_the_test_impact_routing_split() -> None:
 
 @pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))
 def test_rename_refs_needs_no_jq(runtime_dir: Path) -> None:
-    """``jq`` is absent on stock Windows/CI images; JSON extraction goes through the already-required python3."""
+    """Keep rename-reference workflows independent of an optional JSON utility."""
     text = _skill_text(runtime_dir, "rename-refs")
 
     assert [p.pattern for p in _JQ_INVOCATIONS if p.search(text)] == []
@@ -667,7 +672,7 @@ def test_rename_refs_needs_no_jq(runtime_dir: Path) -> None:
 
 @pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))
 def test_rename_refs_reads_completeness_forward_first(runtime_dir: Path) -> None:
-    """``query_complete`` is the forward field; the legacy ``exhaustive`` alias may only be a fallback."""
+    """Prefer the current completeness field over its legacy alias."""
     flat = _flat(_skill_text(runtime_dir, "rename-refs"))
 
     assert "query_complete" in flat
@@ -694,5 +699,5 @@ def test_report_paths_are_branch_scoped_and_never_overwritten(runtime_dir: Path,
     ids=("claude", "codex", "shared-contract"),
 )
 def test_integration_demo_promises_plain_versus_structural_evidence(contract_path: Path) -> None:
-    """``demo``'s evidence is the contrast between runs — one structural query alone is weaker than the contract."""
+    """Require comparative evidence for the demonstration workflow."""
     assert "plain-vs-structural" in _flat(contract_path.read_text(encoding="utf-8"))

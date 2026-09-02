@@ -3,27 +3,39 @@
 
 ## Purpose
 
-Produce stable status, patch, file-list, and stat evidence for skill artifacts before review or implementation. Keeping these views in named files lets later workflow steps cite the exact local tree state used for a review or implementation decision.
+Produce stable status, patch, file-list, and stat evidence for skill artifacts before review or implementation. Keeping
+these views in named files lets later workflow steps cite the exact local tree state used for a review or implementation
+decision.
 
 ## Scope
 
-It invokes read-only local Git inspection for a working tree, path, or commit; it does not fetch, push, alter branches, or choose review findings. The ``path`` scope compares ``HEAD`` for one path, while ``commit`` compares the requested revision and deliberately leaves ``untracked.txt`` empty.
+It invokes read-only local Git inspection for a working tree, path, or commit; it does not fetch, push, alter branches,
+or choose review findings. The ``path`` scope compares ``HEAD`` for one path, while ``commit`` compares the requested
+revision and deliberately leaves ``untracked.txt`` empty.
 
 ## Usage
 
-Run ``python collect_diff.py --scope <working-tree|path|commit> --out <directory>`` with ``--target`` for ``path`` or ``commit`` scopes. The output directory is created when needed, and the command returns the underlying Git status for command failures.
+Run ``python collect_diff.py --scope <working-tree|path|commit> --out <directory>`` with ``--target`` for ``path`` or
+``commit`` scopes. The output directory is created when needed, and the command returns the underlying Git status for
+command failures.
 
 ## Used by
 
-Codex Rig workflow skills, implement/review artifact setup, and portable-helper acceptance tests use this collector. Callers treat its files as local evidence and must not infer that an empty patch means the repository was clean unless ``status.txt`` agrees.
+Codex Rig workflow skills, implement/review artifact setup, and portable-helper acceptance tests use this collector.
+Callers treat its files as local evidence and must not infer that an empty patch means the repository was clean unless
+``status.txt`` agrees.
 
 ## Outputs
 
-It writes ``status.txt``, ``diff.patch``, ``files.txt``, ``diffstat.txt``, ``numstat.txt``, and ``untracked.txt`` under the requested output directory. Invalid scope or a missing required target additionally writes ``scope-error.txt`` with a stable reason before returning exit code ``2``.
+It writes ``status.txt``, ``diff.patch``, ``files.txt``, ``diffstat.txt``, ``numstat.txt``, and ``untracked.txt`` under
+the requested output directory. Invalid scope or a missing required target additionally writes ``scope-error.txt`` with
+a stable reason before returning exit code ``2``.
 
 ## Failure
 
-Invalid scope/target or a failed local Git command exits non-zero and leaves the caller with no claim that diff evidence is complete. Git output files may already exist when a later command fails, so consumers must gate on the exit code rather than treating partial artifacts as a complete pack.
+Invalid scope/target or a failed local Git command exits non-zero and leaves the caller with no claim that diff evidence
+is complete. Git output files may already exist when a later command fails, so consumers must gate on the exit code
+rather than treating partial artifacts as a complete pack.
 """
 
 from __future__ import annotations

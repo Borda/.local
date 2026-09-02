@@ -1,8 +1,7 @@
 """Define provider-parity benchmark contracts without executing a benchmark.
 
-This library loads locked task policy, preserves canonical task identity,
-dispatches shared evaluators, and constructs paired effects. It does not
-generate tasks, invoke Claude or Codex, parse provider events, or run models.
+This library loads locked task policy, preserves canonical task identity, dispatches shared evaluators, and constructs
+paired effects. It does not generate tasks, invoke Claude or Codex, parse provider events, or run models.
 """
 
 from __future__ import annotations
@@ -264,9 +263,8 @@ def materialize_task_prompt(task: Task) -> str:
 def token_accounting_inconsistent(input_tokens: int, cached_input_tokens: int) -> bool:
     """Return whether native cached input exceeds gross input.
 
-    Gross and cached counts are retained as provider-native evidence. A cache
-    count above gross is internally contradictory, so derived token metrics
-    must remain unscoreable rather than being coerced into a plausible value.
+    Gross and cached counts are retained as provider-native evidence. A cache count above gross is internally
+    contradictory, so derived token metrics must remain unscoreable rather than being coerced into a plausible value.
     """
     for name, value in (("input_tokens", input_tokens), ("cached_input_tokens", cached_input_tokens)):
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -277,9 +275,8 @@ def token_accounting_inconsistent(input_tokens: int, cached_input_tokens: int) -
 def fresh_input_tokens(input_tokens: int, cached_input_tokens: int) -> int | None:
     """Return fresh input tokens, or ``None`` for contradictory native usage.
 
-    Native providers report gross input and a cached subset. The raw values
-    remain available for diagnosis; this derived metric is deliberately absent
-    when the cache exceeds gross so it cannot enter token comparisons.
+    Native providers report gross input and a cached subset. The raw values remain available for diagnosis; this derived
+    metric is deliberately absent when the cache exceeds gross so it cannot enter token comparisons.
     """
     if token_accounting_inconsistent(input_tokens, cached_input_tokens):
         return None
@@ -312,9 +309,8 @@ def canonical_result_rows(
 ) -> list[dict[str, Any]]:
     """Return a derived task/repetition/arm ordered view of raw result rows.
 
-    The caller retains its raw append-only stream in execution order.  This
-    function only constructs a canonical analysis sidecar and rejects
-    ambiguous coordinates instead of silently selecting evidence.
+    The caller retains its raw append-only stream in execution order.  This function only constructs a canonical
+    analysis sidecar and rejects ambiguous coordinates instead of silently selecting evidence.
     """
     task_rank = {task_id: index for index, task_id in enumerate(task_order)}
     arm_rank = {arm: index for index, arm in enumerate(arm_order)}
@@ -412,9 +408,8 @@ def deterministic_arm_order(
 ) -> tuple[str, ...]:
     """Return the revision-bound arm order for one paired experiment block.
 
-    The returned arm names are the ones the named provider actually runs. Returning
-    Claude's arm names for every provider left the Codex lane with no shared ordering to
-    reuse, which is why it carries its own reimplementation.
+    The returned arm names are the ones the named provider actually runs. Returning Claude's arm names for every
+    provider left the Codex lane with no shared ordering to reuse, which is why it carries its own reimplementation.
     """
     if repetition < 1:
         raise ValueError("repetition must be at least 1")

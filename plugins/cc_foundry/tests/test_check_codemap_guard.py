@@ -83,7 +83,7 @@ class TestInvariants:
 
 class TestScanScope:
     def test_provider_tree_excluded(self) -> None:
-        """codemap-py defines the layout consumers mirror; it is not a copy of itself."""
+        """Codemap-py defines the layout consumers mirror; it is not a copy of itself."""
         assert not _scannable(_REPO / "plugins" / "codemap-py" / "src" / "x.py", _REPO)
 
     def test_checker_excludes_itself(self) -> None:
@@ -190,7 +190,7 @@ class TestQualityStackGuard:
     """The blast-radius snippet must gate on the index, not the binary alone."""
 
     def test_guard_requires_index_not_just_binary(self) -> None:
-        """`command -v codemap-py` alone passes with no index; every query then errors."""
+        """Allow command discovery without an index while rejecting later queries."""
         text = (_FOUNDRY / "skills" / "_shared" / "quality-stack.md").read_text(encoding="utf-8")
         assert '[ -f "${_IDX}/${PROJ}.json" ]' in text
 

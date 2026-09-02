@@ -3,27 +3,40 @@
 
 ## Purpose
 
-Compute the minimum review tier, exact file/line evidence, and mandatory specialist signals from the normalized diff artifacts produced by Codex Rig. Synchronize those mechanical fields into ``review-routing.json`` so arithmetic and path classification are never authored from model memory.
+Compute the minimum review tier, exact file/line evidence, and mandatory specialist signals from the normalized diff
+artifacts produced by Codex Rig. Synchronize those mechanical fields into ``review-routing.json`` so arithmetic and path
+classification are never authored from model memory.
 
 ## Scope
 
-Read only ``files.txt``, ``untracked.txt``, and ``numstat.txt`` from one code-review run directory, then update only ``mechanical_risk_tier`` and ``mechanical_risk_evidence`` in its existing routing object. Semantic risk signals, declared risk tier, triggered roles, and their evidence remain reviewer-owned and are preserved value-for-value while the JSON representation is normalized.
+Read only ``files.txt``, ``untracked.txt``, and ``numstat.txt`` from one code-review run directory, then update only
+``mechanical_risk_tier`` and ``mechanical_risk_evidence`` in its existing routing object. Semantic risk signals,
+declared risk tier, triggered roles, and their evidence remain reviewer-owned and are preserved value-for-value while
+the JSON representation is normalized.
 
 ## Usage
 
-Run ``python review_routing.py --out <run-directory>`` after writing the semantic routing decisions and before creating the specialist manifest. The command is idempotent, so a retry after regenerating diff evidence produces the same canonical JSON when the inputs are unchanged.
+Run ``python review_routing.py --out <run-directory>`` after writing the semantic routing decisions and before creating
+the specialist manifest. The command is idempotent, so a retry after regenerating diff evidence produces the same
+canonical JSON when the inputs are unchanged.
 
 ## Used by
 
-The code-review skill invokes this helper during T2 routing, and ``validate_artifacts.py`` imports the same derivation function during the terminal contract check. Tests exercise the installed-path CLI and validator import independently so packaging cannot silently separate the producer from the consumer.
+The code-review skill invokes this helper during T2 routing, and ``validate_artifacts.py`` imports the same derivation
+function during the terminal contract check. Tests exercise the installed-path CLI and validator import independently so
+packaging cannot silently separate the producer from the consumer.
 
 ## Outputs
 
-Rewrite ``review-routing.json`` with deterministic indentation, sorted keys, and one trailing newline, then print the updated path. The derived evidence records the unique changed-file count, total numeric additions plus deletions, unknown-size rows, and any mechanically detected high-risk or configuration paths.
+Rewrite ``review-routing.json`` with deterministic indentation, sorted keys, and one trailing newline, then print the
+updated path. The derived evidence records the unique changed-file count, total numeric additions plus deletions,
+unknown-size rows, and any mechanically detected high-risk or configuration paths.
 
 ## Failure
 
-Missing or malformed routing JSON, a non-object payload, unreadable diff evidence, or an unwritable output path exits non-zero with the underlying local error. The helper never invents semantic signals or lowers the declared tier, and the final validator still rejects underclassification, incomplete signals, or inconsistent specialist routing.
+Missing or malformed routing JSON, a non-object payload, unreadable diff evidence, or an unwritable output path exits
+non-zero with the underlying local error. The helper never invents semantic signals or lowers the declared tier, and the
+final validator still rejects underclassification, incomplete signals, or inconsistent specialist routing.
 """
 
 from __future__ import annotations
