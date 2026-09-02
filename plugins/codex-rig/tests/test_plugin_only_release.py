@@ -100,6 +100,22 @@ def load_package_validator() -> Any:
     return module
 
 
+def load_package_builder() -> Any:
+    """Load the package builder that owns publication file discovery."""
+    path = PLUGIN_ROOT / "scripts" / "build_package.py"
+    spec = importlib.util.spec_from_file_location("codex_rig_release_package_builder", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def write_payload_manifest(package_root: Path, *relative_paths: str) -> None:
+    """Declare the exact synthetic publication files inspected by the validator."""
+    payload = {"files": [{"path": relative} for relative in relative_paths]}
+    (package_root / "package-manifest.json").write_text(json.dumps(payload), encoding="utf-8", newline="\n")
+
+
 @pytest.mark.parametrize(
     "payload",
     (
@@ -116,6 +132,7 @@ def test_package_validator_rejects_simulated_windows_user_profile_paths(
     package_root = tmp_path / "package"
     package_root.mkdir()
     (package_root / "runtime.txt").write_bytes(payload)
+    write_payload_manifest(package_root, "runtime.txt")
     monkeypatch.setattr(validator, "PACKAGE_ROOT", package_root)
 
     with pytest.raises(ValueError, match=r"private material in payload: runtime\.txt"):
@@ -139,6 +156,22 @@ def test_package_validator_accepts_non_private_simulated_windows_paths(
     package_root = tmp_path / "package"
     package_root.mkdir()
     (package_root / "runtime.txt").write_bytes(payload)
+    write_payload_manifest(package_root, "runtime.txt")
+    monkeypatch.setattr(validator, "PACKAGE_ROOT", package_root)
+
+    validator.validate_publication_payload()
+
+
+def test_package_validator_ignores_unmanifested_generated_reports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Inspect declared publication bytes without treating retained reports as payload."""
+    validator = load_package_validator()
+    package_root = tmp_path / "package"
+    (package_root / ".reports" / "calibration").mkdir(parents=True)
+    (package_root / ".reports" / "calibration" / "result.json").write_bytes(b'"' + b"/Users/" + b'Alice/project"')
+    (package_root / "runtime.txt").write_text("portable runtime\n", encoding="utf-8", newline="\n")
+    write_payload_manifest(package_root, "runtime.txt")
     monkeypatch.setattr(validator, "PACKAGE_ROOT", package_root)
 
     validator.validate_publication_payload()
@@ -180,14 +213,7 @@ def parse_frontmatter(path: Path) -> dict[str, str]:
 
 def package_files() -> set[str]:
     """Return all regular release payload paths except the self-hashing manifest."""
-    return {
-        path.relative_to(PLUGIN_ROOT).as_posix()
-        for path in PLUGIN_ROOT.rglob("*")
-        if path.is_file()
-        and path.name not in {".coverage", "package-manifest.json"}
-        and "__pycache__" not in path.parts
-        and ".pytest_cache" not in path.parts
-    }
+    return {path.relative_to(PLUGIN_ROOT).as_posix() for path in load_package_builder().iter_payload_files()}
 
 
 def test_skill_roster_names_and_manifest_records_are_exact() -> None:
@@ -303,7 +329,7 @@ def test_release_profile_declares_only_packaged_lifecycle_features() -> None:
     assert plugin["interface"]["capabilities"] == [
         "13 workflow skills and 1 legacy-shim lifecycle manager",
         "15 specialist role cards",
-        "Parallel blank-agent role injection",
+        "Staged execution manifest validation",
         "Authenticated cleanup for prior agent shims",
         "Optional SessionStart health diagnostic",
         "Built-in and inline role fallback",
@@ -831,9 +857,7 @@ def test_public_payload_has_no_private_release_references() -> None:
     """Prevent internal planning identifiers and personal paths from entering the release."""
     forbidden_references = ("plugin-" + "package.json",)
     violations: list[tuple[str, str]] = []
-    for path in PLUGIN_ROOT.rglob("*"):
-        if not path.is_file() or "__pycache__" in path.parts or ".pytest_cache" in path.parts:
-            continue
+    for path in load_package_builder().iter_payload_files():
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:

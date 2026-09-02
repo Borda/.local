@@ -143,7 +143,7 @@ If checkout starts dirty, conflicted, or partially merged, fail or ask cleanup b
 
 **Structural context (optional)**: when `target_scope` names a Python module, also probe codemap-py once for changed-symbol/caller impact: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category review [--target <qname>] --out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue normalizing the available report and/or online findings evidence. Persist the result once here; specialist owners assigned in step 06 receive `<run-directory>/codemap-context.json` in their context pack, never a fresh query.
 
-Write `<run-directory>/action-items.md` starting with `## Review Item Resolution Table`, before prose. Ingest every available report finding, normalized report-origin review obligation, fetched online PR comment, PR review, review thread, and unresolved review thread as a source record. For bare PR online-only intake, every source record is `online`; never synthesize a missing report item. Default to one item row per source record. Exact duplicates may share one item row only when they express the same obligation and receive one disposition; grouping never removes provenance. Every grouped row must visibly enumerate every contributing source record with category `report|online`, stable source ID, source location or `general`, complete body without truncation, and fetched evidence path or `report-only`. If user supplied/requested report, preserve both the report and fresh-online records even when they repeat each other. Table is selectable-findings source; every `resolved` row needs resolution evidence. Never substitute source counts, thread IDs, representative comments, ellipses, or artifact links for the full source records, and never reduce the ledger to changed/selected/unresolved/high-impact rows.
+Write `<run-directory>/action-items.md` starting with `## Review Item Resolution Table`, before prose. Ingest every available report finding, normalized report-origin review obligation, fetched online PR comment, PR review, review thread, and unresolved review thread as a source record. For bare PR online-only intake, every source record is `online`; never synthesize a missing report item. Default to one item row per source record. Exact duplicates may share one item row only when they express the same obligation and receive one disposition; grouping never removes provenance. In the initial selection, durable resolution, and final outcome tables, render each contributing source only as `report [<report-file>:<line>]`, `report [<report-json>#<finding-id>]`, or `online [<comment|thread|review-id>]`, preserving source order and joining grouped references with one plain ASCII space. A source cell is a unique pointer only: never add a location, body, evidence path, URL, resolution, or summary. Keep every table compact: cells contain identifiers, short names, statuses, and ordered symbols; put longer summaries, resolution explanations, evidence, and next actions in symbol definitions immediately below each table. If user supplied/requested report, preserve both the report and fresh-online records even when they repeat each other. Table is selectable-findings source; every `resolved` row needs resolution evidence. Full source details stay in machine metadata and expanded item records: category `report|online`, stable source ID, source location or `general`, complete body without truncation, and fetched evidence path or `report-only`. Never replace source references with counts, representative sources, ellipses, URLs, or artifact-only labels, and never reduce the ledger to changed/selected/unresolved/high-impact rows.
 
 When `online-review-summary.json` reports `pr_metadata_transport=public-https-fallback`, list the sorted `unavailable_evidence` IDs `github_provided_file_list`, `mergeability`, `review_decision`, `reviews`, and `top_level_comments` in `action-items.md` and the online action evidence, and add the exact confidence gap `Public HTTPS PR metadata fallback omitted evidence: <sorted IDs>.` Substitute that sorted list into `<sorted IDs>`. The final remediation confidence is capped at `0.89`; carry the gap and its closure state through `action-items.md`, result metadata, and unresolved/deferred evidence.
 
@@ -174,7 +174,7 @@ Required table columns:
 - input item: stable input row id, report id, PR comment id, review id, thread id, source location
 - item name: short human-readable finding/review obligation/gate/comment/thread name
 - item type: `code|test|docs|review-gate|confidence-gap|pr-comment|pr-review|pr-thread|unresolved-pr-thread|ci|typing|lint|security|performance|process|other`
-- sources: ordered source records rendered as `<report|online> [<stable id>] @ <location|general> — <complete body> — <evidence path|report-only>`; join multiple records with `<br>` and escape Markdown table delimiters without shortening text
+- sources: ordered compact unique pointers rendered as `report [<report-file>:<line>]`, `report [<report-json>#<finding-id>]`, or `online [<comment|thread|review-id>]`; join multiple records with one plain ASCII space and never append locations, bodies, evidence paths, resolutions, summaries, or online URLs
 - item id or source location
 - source category: `report|online`; `online` covers PR comments, reviews, threads, and unresolved threads while item type preserves the detailed online subtype
 - fetched evidence path, or `report-only`
@@ -184,8 +184,8 @@ Required table columns:
 - triage status: `valid|resolved|duplicate|stale|out-of-scope|already-fixed|already-applied|needs-clarification`
 - resolution: `implemented|resolved|rejected|stale|not-applicable|duplicate|already-fixed|already-applied|needs-clarification|unresolved`
 - owner/status: `todo|fixed|resolved|deferred|unresolved|not-selected|not-actionable`
-- resolved how: how/why resolved/unresolved/deferred/not applicable
-- closure evidence or unresolved rationale
+- resolved how: `[O<row-position>]`; immediately below the table define `[O<row-position>] <how/why resolved/unresolved/deferred/not applicable>`
+- closure evidence or unresolved rationale: `[E<row-position>]`; immediately below the table define `[E<row-position>] <complete evidence, unresolved rationale, owner action, or next action>`
 
 After table add `## Final Resolution Summary`:
 
@@ -211,7 +211,7 @@ Then add `## Final Resolution Table Completeness`:
 - omitted source records total: must be `0`
 - grouped items total
 
-`CODE_REMEDIATE_METADATA.final_resolution_table` has the same item and source counts plus `items`, the ordered machine-readable source for the durable and final-chat tables. Each item contains non-empty `input_item_id`, `item_name`, `item_type`, `severity`, `triage_status`, `resolution_status`, `owner_status`, `resolved_how`, and `evidence`, plus boolean `selectable` and a non-empty ordered `sources` list. Each source contains exactly the visible provenance fields `kind=report|online`, `source_id`, `location`, `body`, and `evidence`; `(kind, source_id)` is unique across items. Preserve source order, full bodies, and unique IDs. Render the `Review Item Resolution Table` and `Final Outcome Table` from this list. The final handoff maps cells mechanically as `input_item_id`, `severity`, `item_name`, every complete source record joined in source order, `resolution_status — resolved_how`, and `evidence — owner/status: owner_status`; no later prose rewrite may change those values. Fail before output if the durable table and items disagree, either visible table omits any source field/body, `omitted_source_records_total` is nonzero, source counts disagree, the final table omits or changes an item, counts fail to account for every row, or any row lacks a disposition. `CODE_REMEDIATE_METADATA.final_resolution_table.required_columns` lists `input item`, `item name`, `item type`, `sources`, `triage status`, `resolution`, `owner/status`, `resolved how`, `evidence`.
+`CODE_REMEDIATE_METADATA.final_resolution_table` has the same item and source counts plus `items`, the ordered machine-readable source for the durable and final-chat tables. Each item contains non-empty `input_item_id`, `item_name`, `item_type`, `severity`, `triage_status`, `resolution_status`, `owner_status`, `resolved_how`, and `evidence`, plus boolean `selectable` and a non-empty ordered `sources` list. Each source contains `kind=report|online`, `source_id`, `location`, `body`, and `evidence`; `(kind, source_id)` is unique across items. A report `source_id` is `<report-file>:<line>` or `<report-json>#<finding-id>`; an online `source_id` is its stable comment, thread, or review ID, never a URL. Preserve source order, full bodies, and unique IDs. Render the `Review Item Resolution Table` and `Final Outcome Table` from this list. Their `Sources` cells contain only the ordered compact pointers; full source records remain in metadata and expanded item records. The durable table uses `[O<n>]` and `[E<n>]` cells and defines their complete `resolved_how` and `evidence` text immediately below the table. The final handoff maps cells mechanically as `input_item_id`, `severity`, `item_name`, every compact source reference joined in source order, `resolution_status — [O<n>]`, and `[E<n>] — owner/status: owner_status`; its table `details` list contains the ordered `O<n>`/`E<n>` definitions. No later prose rewrite may change those values. Fail before output if the durable table and items disagree, a compact pointer or detail symbol is missing or changed, expanded source detail is missing, `omitted_source_records_total` is nonzero, source counts disagree, the final table omits or changes an item, counts fail to account for every row, or any row lacks a disposition. `CODE_REMEDIATE_METADATA.final_resolution_table.required_columns` lists `input item`, `item name`, `item type`, `sources`, `triage status`, `resolution`, `owner/status`, `resolved how`, `evidence`.
 
 Closure evidence for report-origin obligation must match type:
 
@@ -220,7 +220,7 @@ Closure evidence for report-origin obligation must match type:
 - type/lint/test environment: installed-environment command log, or missing executable/dependency rationale
 - confidence gap: closing evidence, or explicit unresolved/deferred record
 
-After table, keep expanded item for each report finding and unresolved online review thread/comment:
+After table, keep an expanded item record for every remediation item:
 
 - finding id or source location
 - severity
@@ -246,9 +246,9 @@ Selection list table columns:
 - index
 - severity: `critical|high|medium|low`
 - item id or source location
-- source
-- summary
-- expected closure evidence
+- source: the same ordered compact report and online unique pointers used by the durable and final tables; never include source locations, bodies, evidence paths, resolutions, summaries, or online URLs
+- summary: `[S<index>]`; immediately below the table define `[S<index>] <complete summary>`
+- expected closure evidence: `[C<index>]`; immediately below the table define `[C<index>] <complete expected closure evidence>`
 
 Selectable items:
 
@@ -265,17 +265,15 @@ Before accepting an explicit scope or prompting for one, complete the pre-edit `
 
 1. `## Resolution Scope Selection`.
 2. The selection source, exact prompt text or explicit-input note, selection-confirmation state, selected indexes/severity groups, omitted resolved-online count, deferred/unselected indexes, and unselected critical/high findings.
-3. The complete six-column selection table above, with every selectable item. Do not abbreviate summaries, source locations, or expected closure evidence.
+3. The complete six-column selection table above, with every selectable item, followed immediately by every ordered `[S<index>]` and `[C<index>]` definition. Do not abbreviate the definitions, compact source references, or expected closure evidence.
 
 For an omitted `remediation_scope`, record the pending state before prompting: `selection source: user-prompt`, the exact prompt below, `user selection confirmed before editing: false`, and no selected indexes or severity groups. Retain resolved online items only as the documented omitted count; do not add them to the table.
 
 Read the complete `<run-directory>/resolution-scope.md` through the filesystem tool and render it unabridged before any scope prompt or edits. Immediately append `Full report: <run-directory>/action-items.md`; do not use shell output or a persisted path variable to assemble this context.
 
-The `Full report` path must appear immediately after the unabridged scope context and target `<run-directory>/action-items.md`, the complete normalized resolution report. The link supplements the scope context; do not replace the context with a `Selectable items:` summary, shortened numbered list, artifact link, or ellipsis. The terminal table must let the user choose from the full item id/source, severity, summary, and closure evidence without opening another file.
+The `Full report` path must appear immediately after the unabridged scope context and target `<run-directory>/action-items.md`, the complete normalized resolution report. The link supplements the scope context; do not replace the context with a `Selectable items:` summary, shortened numbered list, artifact link, or ellipsis. The rendered table must let the user choose from the full item id/source, severity, summary, and closure evidence without opening another file.
 
-Immediately after the terminal command returns and before opening the scope-selection control, emit a user-visible assistant message that reproduces the exact unabridged `resolution-scope.md` content followed immediately by `Full report: <action-items.md path>`. Do this even when a terminal tool has already returned the same text. A collapsed tool result, `Read resolution-scope.md` summary, status message, artifact link without the ledger, or an announcement that the ledger is rendering does not count as user-visible scope context. The scope-selection control must not appear until that full message has been sent. This context message must not contain the selection question or its choices.
-
-After the unabridged terminal rendering, open exactly one scope-selection control. The scope-selection control is the sole owner of this question and its choices. Configure it with:
+Immediately after the terminal command returns, emit exactly one user-visible assistant message containing, in order, the exact unabridged `resolution-scope.md` content, `Full report: <action-items.md path>`, and this question with its choices:
 
 ```text
 Which findings should I remediate?
@@ -284,7 +282,9 @@ Which findings should I remediate?
 - indexes: comma-separated indexes or ranges such as 1,3,5-7
 ```
 
-If `remediation_scope` supplied, it is user selection: apply without re-asking; still write and print the complete `<run-directory>/resolution-scope.md` before edits. If omitted and selectable items exist, stop before edits and open the control exactly once. Never infer `all`, silently select only code-editable items, or use default selection. If the runtime cannot open an interactive control but can ask directly, ask once in plain text instead of opening the control; never use both channels for the same question. If the runtime cannot ask at all, fail `scope-selection-required` before edit. If none selectable, write and print `none-selectable`, skip implementation, continue gates/artifact.
+A terminal/tool rendering alone never satisfies this interaction: collapsed output, `Read resolution-scope.md` summaries, status messages, artifact links without the ledger, and announcements that the ledger is rendering do not expose selectable options. Do not open a second scope-selection control after the combined user-visible message; that would duplicate the question and split its choices from their context.
+
+If `remediation_scope` supplied, it is user selection: apply without re-asking; still write and print the complete `<run-directory>/resolution-scope.md` before edits, but omit the question and choices from the user-visible message. If omitted and selectable items exist, stop before edits and ask exactly once with the combined message above. Never infer `all`, silently select only code-editable items, or use default selection. If the runtime cannot ask at all, fail `scope-selection-required` before edit. If none selectable, write and print `none-selectable`, skip implementation, continue gates/artifact.
 
 Record in `<run-directory>/resolution-scope.md` and `CODE_REMEDIATE_METADATA.resolution_scope`:
 
@@ -318,7 +318,7 @@ Before any selected-scope edit or specialist spawn, write `<run-directory>/resol
 - `## Execution Order`: dependency-aware bucket order and `parent-owned|sequential-specialists|parallel-specialists` mode.
 - `## Ungrouped Items`: always `none`; every selected item belongs to exactly one bucket, including parent-owned work.
 
-Also write `<run-directory>/work-bucket-plan.json` with `schema_version=1` and the exact `work_buckets` array used to render the user-visible table. Hash those file bytes with SHA-256 and record the digest in the workplan before asking for approval. The table, JSON, and metadata must describe the same buckets.
+Also write `<run-directory>/work-bucket-plan.json` with the exact `work_buckets` array used to render the user-visible table. Use `schema_version=1` for parent-owned, sequential, and planning-only work. Use `schema_version=2` from the outset when proposing production `parallel-specialists`; include the consumer, source repository relative to its workspace parent, a `.codex-rig-worktrees/<run-id>` sibling worktree root outside that repository, exact baseline HEAD/tree, rollback and cleanup policies, context hashes, resource locks, output paths, and verification commands required by the production lifecycle below. Keep the plan, approval, state, patches, rollback material, and lifecycle projection in the source-local `<run-directory>`. Hash the exact plan bytes with SHA-256 and record the digest in the workplan before asking for approval. The table, JSON, metadata, and approval must describe and bind the same plan bytes; never upgrade an already approved schema-v1 plan in place.
 
 Group per capable specialist/domain when it reduces duplicated context or preserves one root cause. Valid keys:
 
@@ -375,11 +375,29 @@ Every owner/verifier must be one of the enums above. Parent buckets use `executi
 
 Record `CODE_REMEDIATE_METADATA.resolution_workplan`: existing group/owner/verifier counts and path; `max_items_per_bucket=5`; `execution_mode`; `bucket_plan_path`, `bucket_plan_sha256`, `parallel_approval_path`, eligibility, approval requirement/status/source/response, prompt flag, `approved_plan_sha256`; plus `work_buckets` with bucket id, selected indexes, owner, owned paths/evidence, execution mode, and any singleton rationale.
 
+### Production Parallel Lifecycle
+
+`parallel-specialists` is planning-only until a schema-v2 production lifecycle reaches `complete` and the shared artifact validator reconciles it. Approval proves only authorization for the exact plan; it never proves dispatch, execution, integration, or source application. The route is local to code-remediate, and generic `write_parallel_promoted` remains `false`.
+
+Inspect `python PLUGIN_ROOT/shared/parallel_worktrees.py --help`, then use its parent-owned commands in this order: `prepare`, one `create-handover` per terminal child, one `join` containing every handover file, one `collect` per joined node, `integrate`, `apply-source`, then `cleanup`. Handover files must remain inside the source-local run directory. If the parent cannot invoke this boundary or any precondition is unavailable, do not dispatch parallel writers; revise the plan to parent-owned or sequential execution.
+
+Preparation requires a completely clean authoritative repository with no merge, cherry-pick, revert, or rebase in progress; exact plan and approval digests; matching baseline HEAD/tree; an exact new lifecycle-state basename in the plan/approval run directory; two to four independent buckets; concrete non-overlapping owned paths; compatible resource locks; actual source-local context-pack paths and SHA-256 values; the fixed `code-remediate-shared-quality-gates` reference; and generated detached worktrees outside the authoritative checkout. Re-hash every context pack at preparation and each authority transition. Reject arbitrary bucket fields such as plan-driven shell commands, caller-selected or pre-existing state/output paths, source drift, aliases, symlinks, ignored or untracked output, commits, staged content, deletes, renames, file-mode/type changes, undeclared paths, or operation-state changes. Every declared owned path is required to change.
+
+Each parallel child context pack must preserve zero ignored or untracked output at handover by naming exact no-cache or no-output verification commands for every required child check. Prefer tool-native flags or environment controls that suppress disposable caches, coverage files, bytecode, reports, and equivalent generated output; parent integration still runs the authoritative shared quality gates after source application. Before hashing the plan, execute every exact child verification command in a disposable clean worktree containing the planned postimages; require exit zero, unchanged intended tracked postimages, and zero ignored or untracked output. Freeze only byte-identical command text that passed preflight. Changing a command or its environment after preflight requires a new plan digest and approval. A child must not delete verification output after the command because deletion would hide an observed boundary violation. When a required check cannot run without writing outside the declared tracked paths, re-plan that bucket as parent-owned or sequential before dispatch.
+
+Freeze one dependency-ready wave before child dispatch. Each child receives one worktree and returns canonical terminal status, summary, changed paths, and patch SHA-256 without committing. The parent re-derives every patch from the child worktree, validates its report and exact ownership, joins all required terminal handovers, then applies parent-derived patches to a separate integration worktree in lexical bucket ID order. Lifecycle integration verifies only Git structure, exact paths, and postimage hashes and records `structurally-verified`; it does not execute or claim plan-provided commands. After parent source application, run the existing shared quality-gate phase and require its validated `gates.json` before a passing remediation result.
+
+Only the parent may apply the integrated bundle to the authoritative repository. Immediately before application, recheck the exact HEAD/tree, clean operation state, and every approved path preimage. Persist one durable reverse patch plus its SHA-256 before writing; preflight one parent-generated forward bundle; apply it once; then verify every expected postimage. This is parent-authoritative operational postcondition containment with `capability_sandbox_verified=false`, not per-child capability isolation and not a hostile-child security boundary. Without a repository-wide external lock, source application is conditionally reversible rather than globally atomic.
+
+If any affected path after an apply failure matches neither its recorded preimage nor expected postimage, record `rollback-ambiguous`, retain all worktrees and patches, and stop without automatic restoration. Otherwise restore only the known approved paths to the frozen baseline, recompute every path hash, and record `failed-rolled-back` only when all restored hashes equal the frozen preimages; a restore error or mismatch becomes `rollback-ambiguous`. Retain the durable reverse patch as independent recovery evidence. Perform non-force cleanup only after durable source application and exact postcondition verification; cleanup failure retains evidence and blocks `completed`.
+
+Bind the final lifecycle projection into `CODE_REMEDIATE_METADATA.resolution_workplan.production_lifecycle` with its run-relative path, SHA-256, and status. The projection must reconcile the plan digest, baseline, joined node/path/patch hashes, every retained parent-derived child patch, deterministic structural integration order, source preimages/postimages, the retained parent forward bundle, source-application status, rollback artifact, cleanup outcome with `force=false`, and containment limitation. Never emit a completed remediation result from plan metadata alone or without passing shared-gate evidence.
+
 ### 07: Apply Fixes In Selected Scope
 
 Fix selected scope in priority: `critical` -> `high` -> `medium` -> `low`.
 
-In `mode=pr`, complete target-merge conflict resolution and its authorized merge commit before selected report/online-review findings. Then fix one selected valid group at a time; `<run-directory>/resolution-workplan.md` is execution ledger. Never edit unselected findings or selected item outside assigned group unless update workplan first with reason/affected closure evidence. After each group, record changed files/evidence in `<run-directory>/closure-log.md`.
+In `mode=pr`, complete target-merge conflict resolution and its authorized merge commit before selected report/online-review findings. For parent-owned or sequential execution, fix one selected valid group at a time. For approved production parallel execution, follow the complete lifecycle above and treat the parent join as the barrier before source application. `<run-directory>/resolution-workplan.md` remains the execution ledger. Never edit unselected findings or a selected item outside its assigned group unless the workplan is updated first with the reason and affected closure evidence. After each group, record changed files/evidence in `<run-directory>/closure-log.md`.
 
 ### 08: Challenge Closure Before Full Gates
 
@@ -434,7 +452,7 @@ Follow `../../shared/helper-cli-contract.md` and authoritative help. Write `CODE
 - `confidence_gaps`, `confidence_recovery`: initial/final score, status, evidence, recovery actions, remaining limits
 - `confidence_gap_closures`: one `closed|unresolved|deferred` closure with evidence/rationale per non-empty confidence gap
 - `resolution_scope`: requested scope, `selection_source`, prompt, `selection_confirmed_by_user`, selected indexes/severity groups, deferred indexes, omitted resolved-online count
-- `resolution_workplan`: `groups_total`, ownership counts, `unassigned_selected_items`, five-item cap, execution mode, parallel eligibility, `parallel_approval_status`, exact bucket membership/owned paths, and workplan path
+- `resolution_workplan`: `groups_total`, ownership counts, `unassigned_selected_items`, five-item cap, execution mode, parallel eligibility, `parallel_approval_status`, exact bucket membership/owned paths, workplan path, and the path/SHA-256/status of the reconciled production lifecycle when completed parallel specialists are claimed
 - `review_report_intake`: requested-report and report/review-gate counts, including `report_items_marked_out_of_scope`
 - `final_resolution_table`: ordered per-item machine ledger, ingested/final/omitted/selectability counts, source records and grouped-item counts, required columns, triage/resolution counts
 - `out_of_scope_confirmation`: count, `all_confirmed_by_user`, and each item id/source/rationale/evidence path/confirmation
@@ -494,10 +512,10 @@ Do not commit for a remediation summary alone or without the user's explicit aut
 36. Final table status counts do not cover every row => fail.
 37. Final table lacks `input item`, `item name`, `item type`, `triage status`, `resolution`, `owner/status`, `resolved how`, or `evidence` => fail.
 38. Final chat lacks compact resolution summary, unresolved/deferred items, confidence/material limits, or artifact path => fail.
-39. A pre-edit scope interaction substitutes a compact `Selectable items:` list for the unabridged terminal `resolution-scope.md` context => fail: `scope-context-not-rendered`.
+39. A pre-edit scope interaction substitutes a compact `Selectable items:` list for the unabridged `resolution-scope.md` context => fail: `scope-context-not-rendered`.
 40. The unabridged scope context is not immediately followed by a `Full report` link/path to `<run-directory>/action-items.md` => fail: `scope-report-link-missing`.
-41. A scope-selection control opens without an immediately preceding user-visible assistant message containing the unabridged scope context and `Full report` path; collapsed tool output does not count => fail: `scope-context-not-visible`.
-    - The scope-selection question or choices appear in both a user-visible context message and the scope-selection control => fail: `scope-prompt-duplicated`.
+41. The user-visible assistant message does not contain the unabridged scope context, `Full report` path, selection question, and choices together; collapsed tool output does not count => fail: `scope-context-not-visible`.
+    - A separate scope-selection control repeats the question after the combined user-visible message => fail: `scope-prompt-duplicated`.
     - The parallel-approval question or choices appear in both a user-visible plan message and the approval control => fail: `parallel-approval-prompt-duplicated`.
 42. An explicitly requested remediation commit omits `Co-authored-by: Codex <codex@openai.com>` or the shared commit-response template => fail: `codex-coauthor-trailer-missing`.
 43. Existing history would be rewritten without an explicit request for that exact operation => fail: `history-rewrite-not-explicitly-authorized`.
@@ -517,14 +535,18 @@ Do not commit for a remediation summary alone or without the user's explicit aut
 57. Parallel owned path is absolute, globbed, contains `..`, aliases another path, or overlaps another bucket by ancestor/descendant => fail.
 58. `final_resolution_table.items` is absent, duplicates an input ID, disagrees with declared counts, or does not match the durable Markdown rows => fail.
 59. A remediation item has no source record, uses a source category other than `report|online`, duplicates a `(kind, source_id)`, or omits a source ID, location, complete body, or evidence path => fail: `code-remediate-source-provenance-incomplete`.
-60. A grouped item, durable row, or final-chat row replaces any contributing source with counts, IDs alone, a representative source, shortened body, ellipsis, or artifact-only provenance => fail: `code-remediate-grouped-source-detail-omitted`.
+60. An initial-selection, durable, or final-chat row omits, changes, reorders, or expands a compact unique source pointer; keeps long detail inline instead of using the required symbol; omits a symbol definition immediately below the table; or an expanded item record omits a contributing source's location, complete body, or evidence path => fail: `code-remediate-source-presentation-mismatch`.
 61. Source-record totals disagree or `omitted_source_records_total` is not `0` => fail: `code-remediate-source-coverage-mismatch`.
+62. A completed `parallel-specialists` result uses a schema-v1 planning artifact or omits a completed schema-v2 production lifecycle reference => fail: `code-remediate-production-lifecycle-required`.
+63. A referenced production lifecycle is absent, escapes the run directory, has the wrong SHA-256, or is not durably readable => fail: `code-remediate-production-lifecycle-evidence-missing`.
+64. Production lifecycle evidence names a different approved plan digest => fail: `code-remediate-production-lifecycle-plan-mismatch`.
+65. Production lifecycle status, joined nodes, ownership, patch hashes, integration order, source application, rollback material, cleanup, or containment fields do not reconcile with the approved schema-v2 plan and result metadata => fail closed; never downgrade the result to planning evidence or infer completion.
 
 ## Quality Gates
 
 Required checks:
 
-- `review`: complete action-item resolution table/item and source-record counts; visible full `report|online` provenance for grouped sources; review report failed-gate/follow-up intake; PR/diff relevance; indexed scope selection with prompt/confirmation; bounded non-overlapping work buckets with fan-out approval; user-confirmed out-of-scope rationale; PR online-review triage; target refresh; intent-first merge/conflict resolution; merge authorization/completion evidence; relevant local checkout evidence; closure log; unresolved list with closure classes/next owner/attempted evidence/next action; `git diff --check`.
+- `review`: complete action-item resolution table/item and source-record counts; compact ordered `report|online` references in visible tables plus full provenance in machine metadata and expanded records; review report failed-gate/follow-up intake; PR/diff relevance; indexed scope selection with prompt/confirmation; bounded non-overlapping work buckets with fan-out approval; schema-v2 production lifecycle reconciliation for completed parallel specialists; user-confirmed out-of-scope rationale; PR online-review triage; target refresh; intent-first merge/conflict resolution; merge authorization/completion evidence; relevant local checkout evidence; closure log; unresolved list with closure classes/next owner/attempted evidence/next action; `git diff --check`.
 - `tests`: smallest checks proving fixed-finding closure.
 - `artifact`: shared validator confirms closure artifacts, gate logs, result JSON shape.
 
@@ -538,7 +560,7 @@ Conditional checks:
 Update calibration when resolution policy/output shape changes:
 
 - benchmark patterns: `code-remediate`
-- behavioral cases: bare PR online-only intake without a prior review artifact, explicit report-alias boundary, ambiguous findings, false closure, unresolved critical/high handling, missing user-selected resolution scope, missing resolution workplan for selected items, selected item omitted or duplicated across buckets, bucket over five items, low-volume fan-out, one-specialist-per-finding overhead, parallel execution without user approval, overlapping parallel ownership, specialist-owned bucket missing context pack, unconfirmed out-of-scope triage, connected PR item marked out-of-scope, missing connected follow-up, code-review-to-remediation gate symmetry, unresolved selected-item closure summary, complete final resolution table, per-item machine ledger reconciled with durable Markdown, grouped report/online source preservation with full bodies, final chat outcome table for every ingested item and source, gate failure disclosure, artifact validator bypass, PR online review triage, supplemental-thread degradation, sandboxed collector network approval, PR target-branch refresh, PR intent-first merge/conflict completion, fork-aware numbered checkout, verified local diff before edits
+- behavioral cases: bare PR online-only intake without a prior review artifact, explicit report-alias boundary, ambiguous findings, false closure, unresolved critical/high handling, missing user-selected resolution scope, missing resolution workplan for selected items, selected item omitted or duplicated across buckets, bucket over five items, low-volume fan-out, one-specialist-per-finding overhead, parallel execution without user approval, overlapping parallel ownership, specialist-owned bucket missing context pack, completed parallel remediation without hash-bound join/integration/source-application/rollback/cleanup evidence, capability-sandbox overclaim, unconfirmed out-of-scope triage, connected PR item marked out-of-scope, missing connected follow-up, code-review-to-remediation gate symmetry, unresolved selected-item closure summary, complete final resolution table, per-item machine ledger reconciled with durable Markdown, compact report/online references with full expanded source records, final chat outcome table for every ingested item and source, gate failure disclosure, artifact validator bypass, PR online review triage, supplemental-thread degradation, sandboxed collector network approval, PR target-branch refresh, PR intent-first merge/conflict completion, fork-aware numbered checkout, verified local diff before edits
 
 ## Output Contract
 
@@ -557,7 +579,9 @@ The pre-edit scope context and one-channel interaction behavior remain exactly a
 Final chat follows the shared ordered frame:
 
 - `Outcome`: start `Remediation Summary` with requested scope; ingested/selected/implemented/unresolved/deferred totals; whether all selected local actionable items closed; and gate status.
-- `Results`: render `## Final Outcome Table` from `CODE_REMEDIATE_METADATA.final_resolution_table.items`, with one row for every ingested item, including non-selectable, rejected, resolved, and unselected rows. Preserve item and source order. Use exactly `Item | Severity | Finding | Sources | Outcome | Evidence / next action`. The `Sources` cell renders every source using the same unabridged `report|online`, stable ID, location, complete body, and evidence-path format as the durable table; grouped rows must show all contributing sources.
+- `Results`: render `## Final Outcome Table` from `CODE_REMEDIATE_METADATA.final_resolution_table.items`, with one row for every ingested item, including non-selectable, rejected, resolved, and unselected rows. Preserve item and source order. Use exactly `Item | Severity | Finding | Sources | Outcome | Evidence / next action`.
+  - Render every source only as a report file-and-line, report JSON-and-finding-ID, or online stable-ID pointer; grouped rows show all contributing compact pointers in source order. Full source detail remains in the linked result and complete ledger.
+  - Render Outcome as `<resolution_status> — [O<n>]` and Evidence / next action as `[E<n>] — owner/status: <owner_status>`. Put the complete ordered `[O<n>]` and `[E<n>]` definitions immediately below the table.
 - Apply the shared `Verification`, `Remaining`, `Next steps`, `Confidence`, and supplemental `Artifact` rules. List every unresolved/deferred item with owner/action; link the result and full ledger; for `mode=pr`, add merge-prestage evidence and remaining collision risk.
 - `Item`: combine the selection index, when present, with the stable input item ID or source location.
 - `Outcome`: use `Implemented — <exact change>`, `Rejected — <duplicate, stale, not-applicable, or user-confirmed out-of-scope rationale>`, `Skipped / unselected — <user selection and remaining owner/action>`, `Already closed — <existing closure evidence>`, or `Unresolved — <blocker and next owner/action>`.

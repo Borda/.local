@@ -167,7 +167,7 @@ Blocking defaults guide merge judgment; they are not automatic labels:
 
 Always:
 
-- Write `<run-directory>/review-routing.json` with `schema_version=1`; declared risk tier; every exact boolean signal below; `signal_evidence` as an object containing every signal with a non-empty JSON `list[str]` value for each true/false decision; sorted `triggered_roles`; and `trigger_reasons` as an object containing only triggered roles with a non-empty JSON `list[str]` value.
+- Write `<run-directory>/review-routing.json` with `schema_version=1`; declared risk tier; every exact boolean signal below; `signal_evidence` as an object containing every signal with a non-empty JSON `list[str]` value for each true/false decision; sorted `triggered_roles`; and `trigger_reasons` as an object containing only triggered roles with a non-empty JSON `list[str]` value. When and only when a Sol-pinned role is explicitly selected, add `sol_selection` with that exact role as its only key and an object containing only `source=explicit-user-selection`, non-empty `parent_event_id`, and lowercase 64-hex `selection_sha256`; the manifest must mirror this record exactly.
 - For example, write `"signal_evidence": {"bug_fix": ["PR body and changed test identify the corrected behavior."]}` and `"trigger_reasons": {"qa-specialist": ["Bug-fix and test-path evidence require QA."]}`. Bare strings are invalid.
 - Then run `python PLUGIN_ROOT/skills/code-review/review_routing.py --out <run-directory>` so the shipped deterministic producer replaces `mechanical_risk_tier` and `mechanical_risk_evidence` from `files.txt`, `untracked.txt`, and `numstat.txt`; never calculate or copy those fields manually.
 - Keep the declared tier at or above mechanical file/line, binary-size, config/dependency, CI, migration, or security-path evidence.
@@ -185,7 +185,7 @@ Routing rules:
 - `TRIVIAL`: no automatic QA/challenger pass; conditional axes may trigger.
 - `LOCAL`: QA only for QA-risk; challenger only for challenge-risk. File-count-only LOCAL triggers neither.
 - `BROAD` and `HIGH_RISK`: always real QA and challenger passes.
-- Conditional role only when matching `axis_<role>` signal is true.
+- Non-Sol conditional role only when matching `axis_<role>` signal is true. `solution-architect` and `security-auditor` additionally require valid explicit-user-selection evidence; an axis signal alone fails routing and never selects Sol.
 
 For every triggered pass:
 
@@ -218,14 +218,24 @@ Use runtime-provided subagents when independence materially helps and follow the
 
 - A built-in/default child receives the exact canonical role card before its context pack.
 - It may count as independent only when it has a separate child identity/output and the artifact records the card hash, route, actual model, and observed controls.
-- If no safe subagent route exists, write a labeled in-main substitute for each triggered role and set `fanout_substituted=true`.
+- If no safe subagent route exists, write a labeled in-main substitute for each triggered role and set `fanout_substituted=true`. The substitute must be substantive, identify the exact role in its output, use one unique output path, and record no spawn attempts.
 - Substitution lowers confidence and never satisfies independence for critical findings.
 
-`specialist-manifest.json` uses schema version 2 and contains `review_run_id`, `parent_thread_id=$CODEX_THREAD_ID`, `review_input_sha256`, and triggered passes only.
+`specialist-manifest.json` uses schema version 3 and contains `review_run_id`, `parent_thread_id=$CODEX_THREAD_ID`, `review_input_sha256`, optional exact mirrored `sol_selection`, and triggered passes only. Schema 2 remains readable only for historical artifacts and must not be produced by a new review.
 
-- Each spawn records role-card hash, route, attempted routes, fallback reason, requested and observed controls, parent spawn event ID, child thread ID/path, turn ID, actual model/effort, context/output paths/hashes, status, and transient error type when applicable.
+- Every pass records `role_card_sha256` for the exact installed `roles/<role>/ROLE.md`. Each spawn additionally records route, attempted routes, fallback reason, requested and observed controls, parent spawn event ID, child thread ID/path, turn ID, actual model/effort, context/output paths/hashes, status, and transient error type when applicable.
 - `selected_attempt` identifies completed output.
 - Validator checks hash-derived child name, parent spawn, child linkage, actual model/effort, final child message, hashes, and provenance header against Codex rollout logs.
+
+When any pass is spawned, freeze `<run-directory>/execution-plan.json` before dispatch and write `<run-directory>/execution-manifest.json` with shared schema version 2 after terminal evidence and joins exist. The plan must bind a non-sensitive task classification; the runtime manifest must use the portable tier with restricted network, approval policy `never`, context/output common-secret scans, unverified filesystem isolation, and no write node. Add `runtime_execution` to `specialist-manifest.json` with only `plan_path`, `manifest_path`, and exact `manifest_sha256`. The shared runtime manifest contains exactly the spawned roles; its selected context/output paths must match their specialist pass records. Run the review manifest preflight only after both artifacts are frozen. Historical schema-v1 manifests remain structurally readable but are not runtime-promotion evidence.
+
+Execution labels are runtime outcomes, not planning claims:
+
+- Report `parallel` only when the shared validator binds at least two substantive child intervals that overlap on the observed host timeline.
+- Report `independent-spawned` when multiple validated children run without substantive overlap.
+- Report `serial` for one ordinary child or an explicitly serial plan.
+- Report `serial-fallback` only when the same frozen plan and gates were attempted as a fallback and the validated child intervals do not overlap.
+- Runtime evidence is limited to the exact portable summary fields `evidence_level=portable-read-restricted`, `network_mode=restricted`, `approval_policy=never`, and `filesystem_credential_isolation=unverified`; it does not claim global network, command, credential, or filesystem denial or that all command behavior was inspected. `write_parallel_eligible` stays false; code review is a read-only pilot. The `host-isolated` tier remains unavailable until authoritative host evidence exists.
 
 Attempt policy:
 
@@ -340,7 +350,7 @@ Run the review validator with `--manifest-only` against the completed run direct
 
 Follow `../../shared/helper-cli-contract.md` and authoritative help. Write with `CODE_REVIEW_METADATA` and `FOLLOW_UP`; run review-specific validator before shared validator for `code-review`; promote only candidate accepted by both.
 
-`CODE_REVIEW_METADATA.specialist_passes` mirrors every triggered `specialist-manifest.json` entry; `review_run_id`/`review_input_sha256` mirror top-level values. `CODE_REVIEW_METADATA.scope` matches normalized scope. For assessed reviews, `CODE_REVIEW_METADATA.review_decision` mirrors `Decision Summary` recommendation, summary, rationale. A terminal collection failure records `review_status=unavailable` with source findings not assessed and merge decision not made. A terminal close records `review_status=closed` plus the validated `close_decision`, with source findings not assessed and detailed review skipped. Both terminal shapes use exactly zero `critical`, `high`, `medium`, and `low` findings and omit normal recommendations/follow-up and assessed-review metadata. Every assessed non-`accept-as-is` PR and every `needs-more-work` result in another scope carries the validated canonical `Review Findings and Merge Blocks` table in `review-notes.md`; terminal unavailable and closed results use their canonical plain prose and no table. An assessed review with unavailable thread-resolution evidence includes the canonical thread confidence gap and unresolved/deferred closure rationale. `CODE_REVIEW_METADATA.confidence_recovery` mirrors `Confidence Calibration` and includes `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, `remaining_limits`. `CODE_REVIEW_METADATA.confidence_gap_closures` has one closure per non-empty `confidence_gaps`, with `status=closed|unresolved|deferred` and matching evidence/rationale.
+`CODE_REVIEW_METADATA.specialist_passes` mirrors every triggered `specialist-manifest.json` entry; `review_run_id`/`review_input_sha256` mirror top-level values. When passes were spawned, `execution_mode`, `execution_evidence_level`, and `write_parallel_eligible=false` mirror the shared runtime summary. `CODE_REVIEW_METADATA.scope` matches normalized scope. For assessed reviews, `CODE_REVIEW_METADATA.review_decision` mirrors `Decision Summary` recommendation, summary, rationale. A terminal collection failure records `review_status=unavailable` with source findings not assessed and merge decision not made. A terminal close records `review_status=closed` plus the validated `close_decision`, with source findings not assessed and detailed review skipped. Both terminal shapes use exactly zero `critical`, `high`, `medium`, and `low` findings and omit normal recommendations/follow-up and assessed-review metadata. Every assessed non-`accept-as-is` PR and every `needs-more-work` result in another scope carries the validated canonical `Review Findings and Merge Blocks` table in `review-notes.md`; terminal unavailable and closed results use their canonical plain prose and no table. An assessed review with unavailable thread-resolution evidence includes the canonical thread confidence gap and unresolved/deferred closure rationale. `CODE_REVIEW_METADATA.confidence_recovery` mirrors `Confidence Calibration` and includes `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, `remaining_limits`. `CODE_REVIEW_METADATA.confidence_gap_closures` has one closure per non-empty `confidence_gaps`, with `status=closed|unresolved|deferred` and matching evidence/rationale.
 
 ## Fail-fast Rules
 
@@ -352,7 +362,7 @@ Follow `../../shared/helper-cli-contract.md` and authoritative help. Write with 
 06. Missing T0 scope classification => fail.
 07. Detailed-review routing signals, triggered roles, manifest roles, and specialist files disagree => fail.
 08. Detailed review triggers an axis without spawned/explicit substitute output => fail.
-09. Detailed review is missing review routing or its schema-v2 specialist manifest => fail.
+09. Detailed review is missing review routing or its schema-v3 specialist manifest => fail.
 10. `BROAD` or `HIGH_RISK` review returning `status=pass` with substituted required specialists => fail.
 11. Result artifact validator failure => fail.
 12. An assessed review is missing required `review-notes.md` sections, or a terminal result violates its exact prose shape => fail.
@@ -368,7 +378,8 @@ Follow `../../shared/helper-cli-contract.md` and authoritative help. Write with 
 22. An assessed non-`accept-as-is` PR or `needs-more-work` result is missing a complete actionable `Review Findings and Merge Blocks` table => fail.
 23. A terminal core T0 PR collection failure emits any Markdown table or merge recommendation, omits its plain process diagnostic/recovery/evidence prose, or does not explicitly mark source findings `not assessed` and merge decision `not made` => fail.
 24. A terminal close lacks one valid close code, two distinct evidence sources, a counterevidence check, verified-head binding, `confidence >= 0.90`, or advisory-only/no-mutation state => fail.
-25. A terminal close emits findings, a normal recommendation/follow-up, any Markdown table, review routing, specialist artifacts, or detailed-review claims => fail.
+25. A spawned pass lacks the frozen shared execution plan/manifest, exact role/context/output correspondence, host-bound terminal evidence, truthful execution label, or parent runtime metadata mirror => fail.
+26. A terminal close emits findings, a normal recommendation/follow-up, any Markdown table, review routing, specialist artifacts, or detailed-review claims => fail.
 
 ## Quality Gates
 

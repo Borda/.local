@@ -1377,10 +1377,8 @@ def run_selftests(run: CalibrationRun) -> None:
         selftest_select_git_remote(run, selftest_dir)
     if run.paths.live_ab_runner.exists() and run.paths.live_route_policy.exists():
         selftest_live_ab_contract(run, selftest_dir)
-    if run.paths.layout == "source" and run.paths.code_review_validate_artifacts.exists():
+    if run.paths.code_review_validate_artifacts.exists():
         selftest_review_validator(run, selftest_dir)
-    elif run.paths.layout == "plugin":
-        run.append_check("review-validator-selftest=not-applicable:source-agent-config-required")
 
     if is_executable(run.paths.find_review_report):
         selftest_find_review_report(run, selftest_dir)
@@ -1747,6 +1745,8 @@ def selftest_review_validator(run: CalibrationRun, selftest_dir: Path) -> None:
     diff = out / "diff.patch"
     diff.write_text("diff --git a/src/runtime.py b/src/runtime.py\n", encoding="utf-8")
     review_input_sha = hashlib.sha256(diff.read_bytes()).hexdigest()
+    role_card = run.paths.code_review_validate_artifacts.resolve().parents[2] / "roles" / "qa-specialist" / "ROLE.md"
+    role_card_sha = hashlib.sha256(role_card.read_bytes()).hexdigest()
     context = specialists / "qa-specialist-context.md"
     context.write_text("# QA context\n\nInspect the runtime behavior change.\n", encoding="utf-8")
     context_sha = hashlib.sha256(context.read_bytes()).hexdigest()
@@ -1763,46 +1763,127 @@ def selftest_review_validator(run: CalibrationRun, selftest_dir: Path) -> None:
     child_id = "child-selftest"
     turn_id = "turn-selftest"
     event_id = "event-selftest"
+    spawn_call_id = "spawn-selftest"
+    task_started = 1_800_000_000
+    task_completed = task_started + 5
     parent_rows = [
+        {"type": "session_meta", "payload": {"id": parent_id}},
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "spawn_agent",
+                "call_id": spawn_call_id,
+                "arguments": json.dumps(
+                    {
+                        "agent_type": "qa-specialist",
+                        "fork_turns": "3",
+                        "message": "Synthetic role-bound QA context.",
+                        "task_name": agent_name,
+                    }
+                ),
+            },
+        },
         {
             "type": "event_msg",
             "payload": {
-                "type": "sub_agent_activity",
-                "event_id": event_id,
-                "agent_thread_id": child_id,
-                "agent_path": agent_path,
-                "kind": "started",
+                "type": "item_completed",
+                "thread_id": parent_id,
+                "turn_id": "parent-turn",
+                "started_at_ms": task_started * 1000,
+                "completed_at_ms": task_started * 1000 + 100,
+                "item": {
+                    "type": "SubAgentActivity",
+                    "id": event_id,
+                    "agent_thread_id": child_id,
+                    "agent_path": agent_path,
+                    "kind": "started",
+                },
             },
-        }
+        },
+        {
+            "timestamp": datetime.fromtimestamp(task_completed, timezone.utc).isoformat(),
+            "type": "response_item",
+            "payload": {
+                "type": "agent_message",
+                "id": "join-selftest",
+                "author": agent_path,
+                "recipient": "/root",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "\n".join(
+                            (
+                                "Message Type: FINAL_ANSWER",
+                                "Task name: /root",
+                                f"Sender: {agent_path}",
+                                "Payload:",
+                                message,
+                            )
+                        ),
+                    }
+                ],
+            },
+        },
     ]
     (sessions / f"rollout-{parent_id}.jsonl").write_text(
         "".join(json.dumps(row) + "\n" for row in parent_rows), encoding="utf-8"
     )
     child_rows = [
-        {"type": "session_meta", "payload": {"id": parent_id}},
         {
             "type": "session_meta",
             "payload": {
                 "id": child_id,
                 "agent_path": agent_path,
+                "agent_role": "qa-specialist",
                 "source": {
                     "subagent": {
                         "thread_spawn": {
                             "parent_thread_id": parent_id,
                             "agent_path": agent_path,
-                            "agent_role": None,
+                            "agent_role": "qa-specialist",
                         }
                     }
                 },
             },
         },
         {
+            "type": "event_msg",
+            "payload": {
+                "type": "thread_settings_applied",
+                "thread_settings": {
+                    "model": DEFAULT_MODEL,
+                    "reasoning_effort": "high",
+                    "approval_policy": "never",
+                    "permission_profile": {
+                        "type": "managed",
+                        "file_system": {"type": "restricted", "entries": []},
+                        "network": "restricted",
+                    },
+                },
+            },
+        },
+        {
             "type": "turn_context",
-            "payload": {"turn_id": turn_id, "model": DEFAULT_MODEL, "effort": "high"},
+            "payload": {
+                "turn_id": turn_id,
+                "model": DEFAULT_MODEL,
+                "effort": "high",
+                "approval_policy": "never",
+                "sandbox_policy": {"type": "read-only"},
+                "permission_profile": {"type": "managed", "network": "restricted"},
+            },
         },
         {
             "type": "event_msg",
-            "payload": {"type": "task_complete", "turn_id": turn_id, "last_agent_message": message},
+            "payload": {
+                "type": "task_complete",
+                "turn_id": turn_id,
+                "started_at": task_started,
+                "completed_at": task_completed,
+                "duration_ms": (task_completed - task_started) * 1000,
+                "last_agent_message": message,
+            },
         },
     ]
     child_rollout = sessions / f"rollout-{child_id}.jsonl"
@@ -1860,6 +1941,7 @@ def selftest_review_validator(run: CalibrationRun, selftest_dir: Path) -> None:
     }
     specialist_pass = {
         "role": "qa-specialist",
+        "role_card_sha256": role_card_sha,
         "axis": "tests",
         "mode": "spawned",
         "trigger": "behavior_change",
@@ -1869,11 +1951,104 @@ def selftest_review_validator(run: CalibrationRun, selftest_dir: Path) -> None:
         "attempts": [attempt],
         "selected_attempt": 1,
     }
-    manifest = {
+    execution_plan = out / "execution-plan.json"
+    execution_plan.write_text(
+        json.dumps(
+            {
+                "review_run_id": "selftest-review",
+                "capability_policy": {"task_sensitivity": "non-sensitive"},
+                "token_budgets": [
+                    {
+                        "wave_id": "review-wave",
+                        "ceiling_tokens": 500,
+                        "node_order": ["qa-specialist"],
+                        "reservations": {"qa-specialist": 400},
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    read_only_controls = {
+        "sandbox_mode": "read-only",
+        "write_paths": [],
+        "network": "restricted",
+        "credentials": "unverified",
+    }
+    execution = {
         "schema_version": 2,
+        "run_id": "selftest-review",
+        "plan_sha256": hashlib.sha256(execution_plan.read_bytes()).hexdigest(),
+        "claimed_mode": "serial",
+        "configured_limit": 4,
+        "write_approval": None,
+        "capability_evidence": {
+            "tier": "portable",
+            "task_sensitivity": "non-sensitive",
+            "network": {
+                "mode": "restricted",
+                "approval_policy": "never",
+                "external_events": [],
+            },
+            "credentials": {
+                "context_scan": "passed",
+                "filesystem_isolation": "unverified",
+            },
+        },
+        "stages": [
+            {
+                "stage_id": "review",
+                "depends_on": [],
+                "wave_id": "review-wave",
+                "nodes": [
+                    {
+                        "node_id": "qa-specialist",
+                        "role_id": "qa-specialist",
+                        "role_card_sha256": role_card_sha,
+                        "context_path": "specialists/qa-specialist-context.md",
+                        "context_sha256": context_sha,
+                        "mutation": "read-only",
+                        "owned_paths": [],
+                        "resource_locks": [],
+                        "requested_controls": read_only_controls,
+                        "observed_controls": {**read_only_controls, "enforced": True},
+                        "attempts": [
+                            {
+                                "attempt": 1,
+                                "status": "completed",
+                                "error_type": None,
+                                "agent_path": agent_path,
+                                "agent_thread_id": child_id,
+                                "spawn_call_id": spawn_call_id,
+                                "turn_id": turn_id,
+                                "start_event": {"event_id": event_id, "sequence": 1},
+                                "terminal_event": {"event_id": turn_id, "sequence": 2},
+                                "output_path": "specialists/qa-specialist.md",
+                                "output_sha256": output_sha,
+                            }
+                        ],
+                        "selected_attempt": 1,
+                        "verifier_status": "passed",
+                        "unresolved": [],
+                        "join_event": {"event_id": "join-selftest", "sequence": 3},
+                    }
+                ],
+            }
+        ],
+    }
+    execution_manifest = out / "execution-manifest.json"
+    execution_manifest.write_text(json.dumps(execution, indent=2) + "\n", encoding="utf-8")
+    manifest = {
+        "schema_version": 3,
         "review_run_id": "selftest-review",
         "parent_thread_id": parent_id,
         "review_input_sha256": review_input_sha,
+        "runtime_execution": {
+            "manifest_path": execution_manifest.name,
+            "manifest_sha256": hashlib.sha256(execution_manifest.read_bytes()).hexdigest(),
+            "plan_path": execution_plan.name,
+        },
         "passes": [specialist_pass],
     }
     manifest_path = out / "specialist-manifest.json"
@@ -1921,6 +2096,9 @@ def selftest_review_validator(run: CalibrationRun, selftest_dir: Path) -> None:
         "fanout_substituted": False,
         "independence_satisfied": True,
         "independence_required": True,
+        "execution_mode": "serial",
+        "execution_evidence_level": "portable-read-restricted",
+        "write_parallel_eligible": False,
     }
     result_path = out / "result.json"
     result_path.write_text(

@@ -12,11 +12,25 @@ from pathlib import Path
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_SAFE_TEST_SELECTION = (
+    "tests/test_parallel_execution.py",
+    "tests/test_parallel_telemetry.py",
+    "tests/test_parallel_worktrees.py",
     "tests/test_app_server_denial_protocol.py",
     "tests/test_networked_cli_approval_contract.py",
     "tests/test_code_review_pr_failure_output_contract.py",
     "tests/test_plugin_only_release.py::test_calibration_model_stall_fixture_observations_are_scored",
 )
+INSTALLED_PACKAGE_SELECTION_TIMEOUT_SECONDS = 180
+
+
+def test_installed_package_selection_includes_parallel_write_lifecycle() -> None:
+    """Require native CI to exercise the write lifecycle from the installed payload."""
+    assert "tests/test_parallel_worktrees.py" in PACKAGE_SAFE_TEST_SELECTION
+
+
+def test_installed_package_selection_timeout_is_bounded_for_native_windows() -> None:
+    """Keep the installed lifecycle budget finite while allowing Windows Git setup."""
+    assert 60 < INSTALLED_PACKAGE_SELECTION_TIMEOUT_SECONDS <= 300
 
 
 def package_payload_paths() -> tuple[str, ...]:
@@ -43,9 +57,11 @@ def copied_package_root(tmp_path: Path) -> Path:
 def test_installed_package_runs_the_explicit_package_safe_selection(tmp_path: Path) -> None:
     """Prevent checkout-only tests from being mistaken for installed-package coverage.
 
-    The selected tests cover the denial protocol/client, all seven network approval
-    briefs, the complete PR collector boundary, and calibration scoring. A separate
-    source-checkout suite retains the valid sync, CI-harness, and Git metadata contracts.
+    The selected tests cover staged execution manifests, privacy-minimized telemetry,
+    the parallel-write lifecycle, the denial protocol/client, all seven network
+    approval briefs, the complete PR collector boundary, and calibration scoring. A
+    separate source-checkout suite retains the valid sync, CI-harness, and Git
+    metadata contracts.
     """
     installed_root = copied_package_root(tmp_path)
     payload_paths = set(package_payload_paths())
@@ -67,7 +83,7 @@ def test_installed_package_runs_the_explicit_package_safe_selection(tmp_path: Pa
         capture_output=True,
         text=True,
         env=env,
-        timeout=60,
+        timeout=INSTALLED_PACKAGE_SELECTION_TIMEOUT_SECONDS,
     )
 
     assert result.returncode == 0, result.stdout + result.stderr

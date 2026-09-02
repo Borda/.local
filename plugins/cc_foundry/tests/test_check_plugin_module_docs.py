@@ -21,6 +21,15 @@ def test_requires_a_module_docstring_for_every_plugin(tmp_path: Path) -> None:
     assert checker.run(plugins) == ["cc_example/bin/entry.py: missing module docstring"]
 
 
+def test_ignores_generated_report_modules(tmp_path: Path) -> None:
+    """Do not classify ignored calibration evidence as shipped plugin modules."""
+    plugins = tmp_path / "plugins"
+    _write_module(plugins / "cc_example" / "bin" / "entry.py", "print('missing')\n")
+    _write_module(plugins / "codex-rig" / ".reports" / "calibration" / "fixture.py", "print('generated')\n")
+
+    assert checker.run(plugins) == ["cc_example/bin/entry.py: missing module docstring"]
+
+
 def test_enforces_codex_rig_rich_docs_inside_the_general_scan(tmp_path: Path) -> None:
     """Codex Rig's documented six-section policy is retained without a plugin-only hook."""
     plugins = tmp_path / "plugins"

@@ -9,7 +9,7 @@
     "capabilities": [
       "13 workflow skills and 1 legacy-shim lifecycle manager",
       "15 specialist role cards",
-      "Parallel blank-agent role injection",
+      "Staged execution manifest validation",
       "Authenticated cleanup for prior agent shims",
       "Optional SessionStart health diagnostic",
       "Built-in and inline role fallback",
@@ -24,12 +24,12 @@
     ],
     "developerName": "Borda",
     "displayName": "Codex Rig",
-    "longDescription": "Run thirteen evidence-first Codex workflows with shared gates, reviewable artifacts, canonical role cards, runtime blank-agent injection where available, disclosed inline fallback, and authenticated cleanup for prior thin shims.",
+    "longDescription": "Run thirteen evidence-first Codex workflows with shared gates, reviewable artifacts, canonical role cards, staged specialist execution manifest validation, disclosed inline fallback, and authenticated cleanup for prior thin shims.",
     "shortDescription": "Evidence-first Codex workflows and role cards"
   },
   "license": "Apache-2.0",
   "name": "codex-rig",
   "repository": "https://github.com/Borda/AI-Rig",
   "skills": "./skills/",
-  "version": "0.12.1"
+  "version": "0.13.0"
 }

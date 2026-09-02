@@ -33,7 +33,7 @@ import json
 import re
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from _package_identity import verify_package
@@ -112,13 +112,23 @@ def validate_semantics() -> None:
 
 
 def validate_publication_payload() -> None:
-    """Reject machine-local paths and obvious credential material in runtime payloads."""
-    for path in PACKAGE_ROOT.rglob("*"):
-        if not path.is_file() or "tests" in path.parts or "__pycache__" in path.parts:
+    """Reject machine-local paths and credentials in exact manifest-declared payload files."""
+    records = load_json(PACKAGE_ROOT / "package-manifest.json").get("files")
+    if not isinstance(records, list):
+        raise ValueError("publication manifest files invalid")
+    for record in records:
+        relative_value = record.get("path") if isinstance(record, dict) else None
+        relative = PurePosixPath(relative_value) if isinstance(relative_value, str) else PurePosixPath(".")
+        if not relative_value or relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+            raise ValueError("publication manifest path invalid")
+        if "tests" in relative.parts:
             continue
+        path = PACKAGE_ROOT.joinpath(*relative.parts)
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"publication payload missing: {relative.as_posix()}")
         payload = path.read_bytes()
         if PRIVATE_PATH_PATTERN.search(payload) or PRIVATE_KEY_MARKER in payload:
-            raise ValueError(f"private material in payload: {path.relative_to(PACKAGE_ROOT)}")
+            raise ValueError(f"private material in payload: {relative.as_posix()}")
 
 
 def parse_args() -> argparse.Namespace:

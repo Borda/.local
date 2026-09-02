@@ -64,7 +64,7 @@ def _metadata() -> dict[str, object]:
             "sources": [
                 {
                     "kind": "report",
-                    "source_id": "R1",
+                    "source_id": ".reports/codex/investigate/run/root-cause.md:42",
                     "location": "src/guard.py:12",
                     "body": "The report says the boundary guard is missing.",
                     "evidence": "findings-input.txt",
@@ -85,7 +85,7 @@ def _metadata() -> dict[str, object]:
             "sources": [
                 {
                     "kind": "report",
-                    "source_id": "R2",
+                    "source_id": ".reports/codex/investigate/run/root-cause.md:57",
                     "location": "src/guard.py:12",
                     "body": "The report repeats the boundary guard finding.",
                     "evidence": "findings-input.txt",
@@ -144,16 +144,22 @@ def _write_action_items(metadata: dict[str, object], out_dir: Path) -> None:
     items = table["items"]
     assert isinstance(items, list)
     rows = []
-    for item in items:
-        sources = "<br>".join(
-            "{kind} [{source_id}] @ {location} — {body} — {evidence}".format(**source) for source in item["sources"]
+    expanded_sources = []
+    table_details = []
+    for position, item in enumerate(items, start=1):
+        sources = " ".join("{kind} [{source_id}]".format(**source) for source in item["sources"])
+        expanded_sources.extend(
+            "- {kind} [{source_id}] @ {location} — {body} — {evidence}".format(**source) for source in item["sources"]
         )
-        row_values = {**item, "sources": sources}
+        row_values = {**item, "sources": sources, "resolved_how": f"[O{position}]", "evidence": f"[E{position}]"}
+        table_details.extend((f"[O{position}] {item['resolved_how']}", f"[E{position}] {item['evidence']}"))
         rows.append(
             "| {input_item_id} | {item_name} | {item_type} | {sources} | {triage_status} | "
             "{resolution_status} | {owner_status} | {resolved_how} | {evidence} |".format(**row_values)
         )
     rendered_rows = "\n".join(rows)
+    rendered_table_details = "\n".join(table_details)
+    rendered_sources = "\n".join(expanded_sources)
     (out_dir / "action-items.md").write_text(
         f"""# Action Items
 
@@ -162,6 +168,12 @@ def _write_action_items(metadata: dict[str, object], out_dir: Path) -> None:
 | Input item | Item name | Item type | Sources | Triage status | Resolution | Owner/status | Resolved how | Evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 {rendered_rows}
+
+{rendered_table_details}
+
+## Expanded Source Details
+
+{rendered_sources}
 
 ## Final Resolution Summary
 
@@ -242,8 +254,8 @@ def test_markdown_disposition_must_match_machine_item(tmp_path: Path) -> None:
         VALIDATOR._validate_code_remediate_final_resolution_table(metadata, tmp_path)
 
 
-def test_grouped_item_requires_every_source_body_in_durable_table(tmp_path: Path) -> None:
-    """Reject a grouped disposition whose visible row hides its contributing comments."""
+def test_grouped_item_requires_every_source_detail_in_expanded_ledger(tmp_path: Path) -> None:
+    """Reject a compact grouped row when its expanded source detail is incomplete."""
     metadata = _metadata()
     table = metadata["final_resolution_table"]
     assert isinstance(table, dict)
@@ -254,8 +266,201 @@ def test_grouped_item_requires_every_source_body_in_durable_table(tmp_path: Path
         encoding="utf-8",
     )
 
-    with pytest.raises(SystemExit, match="code-remediate-final-table-markdown-source-body-missing"):
+    with pytest.raises(SystemExit, match="code-remediate-final-table-expanded-source-detail-missing"):
         VALIDATOR._validate_code_remediate_final_resolution_table(metadata, tmp_path)
+
+
+def test_durable_source_cells_use_only_compact_references(tmp_path: Path) -> None:
+    """Keep source provenance readable while expanded records retain full detail."""
+    metadata = _metadata()
+    _write_action_items(metadata, tmp_path)
+
+    headers, rows = VALIDATOR._parse_markdown_table(tmp_path / "action-items.md", "Review Item Resolution Table")
+    source_index = headers.index("sources")
+
+    assert rows[0][source_index] == "report [.reports/codex/investigate/run/root-cause.md:42]"
+    assert (
+        rows[1][source_index]
+        == "report [.reports/codex/investigate/run/root-cause.md:57] online [thread-991/comment-27]"
+    )
+    VALIDATOR._validate_code_remediate_final_resolution_table(metadata, tmp_path)
+
+
+def test_report_source_requires_a_resolvable_pointer(tmp_path: Path) -> None:
+    """Reject report IDs that cannot locate the originating finding."""
+    metadata = _metadata()
+    table = metadata["final_resolution_table"]
+    assert isinstance(table, dict)
+    items = table["items"]
+    assert isinstance(items, list)
+    items[0]["sources"][0]["source_id"] = "R1"
+    _write_action_items(metadata, tmp_path)
+
+    with pytest.raises(SystemExit, match="code-remediate-final-table-report-source-id-invalid"):
+        VALIDATOR._validate_code_remediate_final_resolution_table(metadata, tmp_path)
+
+
+def test_report_source_accepts_a_json_item_pointer(tmp_path: Path) -> None:
+    """Accept a report JSON path paired with its stable finding ID."""
+    metadata = _metadata()
+    table = metadata["final_resolution_table"]
+    assert isinstance(table, dict)
+    items = table["items"]
+    assert isinstance(items, list)
+    items[0]["sources"][0]["source_id"] = ".reports/codex/review/result.json#investigate:H1"
+    _write_action_items(metadata, tmp_path)
+
+    VALIDATOR._validate_code_remediate_final_resolution_table(metadata, tmp_path)
+
+
+def test_online_source_rejects_a_url(tmp_path: Path) -> None:
+    """Reject links when a stable online review ID is the source pointer."""
+    metadata = _metadata()
+    table = metadata["final_resolution_table"]
+    assert isinstance(table, dict)
+    items = table["items"]
+    assert isinstance(items, list)
+    items[1]["sources"][1]["source_id"] = "https://github.com/example/repo/pull/1#discussion_r27"
+    _write_action_items(metadata, tmp_path)
+
+    with pytest.raises(SystemExit, match="code-remediate-final-table-online-source-id-invalid"):
+        VALIDATOR._validate_code_remediate_final_resolution_table(metadata, tmp_path)
+
+
+def test_durable_table_rejects_missing_symbol_detail(tmp_path: Path) -> None:
+    """Reject a compact outcome whose complete text is absent below the table."""
+    metadata = _metadata()
+    _write_action_items(metadata, tmp_path)
+    path = tmp_path / "action-items.md"
+    path.write_text(path.read_text(encoding="utf-8").replace("[O1] Added the missing guard.", "[O1]"), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="code-remediate-final-table-symbol-detail-missing:O1"):
+        VALIDATOR._validate_code_remediate_final_resolution_table(metadata, tmp_path)
+
+
+def test_scope_selection_accepts_compact_grouped_source_references(tmp_path: Path) -> None:
+    """Accept report and online IDs without source bodies or URLs in scope selection."""
+    (tmp_path / "resolution-scope.md").write_text(
+        """## Resolution Scope Selection
+
+selectable: 1
+selected: 1
+deferred: 0
+
+| Index | Severity | Item id or source location | Source | Summary | Expected closure evidence |
+| --- | --- | --- | --- | --- | --- |
+| 1 | high | R2 | report [.reports/codex/investigate/run/root-cause.md:57] online [thread-991/comment-27] | [S1] | [C1] |
+
+[S1] Add guard at the request boundary.
+[C1] Focused guard test passes.
+""",
+        encoding="utf-8",
+    )
+    metadata = {
+        "resolution_scope": {
+            "selection_source": "explicit-input",
+            "prompt_presented": False,
+            "selection_confirmed_by_user": True,
+            "selected_indexes": [1],
+            "deferred_indexes": [],
+            "selected_severity_groups": [],
+        }
+    }
+
+    VALIDATOR._validate_code_remediate_scope_selection(metadata, tmp_path)
+
+
+def test_scope_selection_rejects_terminal_visible_html_separator(tmp_path: Path) -> None:
+    """Reject grouped source pointers that would print a literal HTML tag."""
+    (tmp_path / "resolution-scope.md").write_text(
+        """## Resolution Scope Selection
+
+selectable: 1
+selected: 1
+deferred: 0
+
+| Index | Severity | Item id or source location | Source | Summary | Expected closure evidence |
+| --- | --- | --- | --- | --- | --- |
+| 1 | high | R2 | report [.reports/codex/investigate/run/root-cause.md:57]<br>online [thread-991/comment-27] | [S1] | [C1] |
+
+[S1] Add guard at the request boundary.
+[C1] Focused guard test passes.
+""",
+        encoding="utf-8",
+    )
+    metadata = {
+        "resolution_scope": {
+            "selection_source": "explicit-input",
+            "prompt_presented": False,
+            "selection_confirmed_by_user": True,
+            "selected_indexes": [1],
+            "deferred_indexes": [],
+            "selected_severity_groups": [],
+        }
+    }
+
+    with pytest.raises(SystemExit, match="code-remediate-scope-source-not-compact"):
+        VALIDATOR._validate_code_remediate_scope_selection(metadata, tmp_path)
+
+
+def test_scope_selection_rejects_expanded_source_content(tmp_path: Path) -> None:
+    """Reject the noisy source-body format before a remediation prompt is shown."""
+    (tmp_path / "resolution-scope.md").write_text(
+        """## Resolution Scope Selection
+
+selectable: 1
+selected: 1
+deferred: 0
+
+| Index | Severity | Item id or source location | Source | Summary | Expected closure evidence |
+| --- | --- | --- | --- | --- | --- |
+| 1 | high | R1 | report [.reports/codex/investigate/run/root-cause.md:42] @ metadata.review_decision — full body — findings-input.txt | Add guard | Focused test passes |
+""",
+        encoding="utf-8",
+    )
+    metadata = {
+        "resolution_scope": {
+            "selection_source": "explicit-input",
+            "prompt_presented": False,
+            "selection_confirmed_by_user": True,
+            "selected_indexes": [1],
+            "deferred_indexes": [],
+            "selected_severity_groups": [],
+        }
+    }
+
+    with pytest.raises(SystemExit, match="code-remediate-scope-source-not-compact"):
+        VALIDATOR._validate_code_remediate_scope_selection(metadata, tmp_path)
+
+
+def test_scope_selection_rejects_long_text_inside_table(tmp_path: Path) -> None:
+    """Require summary and closure detail symbols in the initial selection table."""
+    (tmp_path / "resolution-scope.md").write_text(
+        """## Resolution Scope Selection
+
+selectable: 1
+selected: 1
+deferred: 0
+
+| Index | Severity | Item id or source location | Source | Summary | Expected closure evidence |
+| --- | --- | --- | --- | --- | --- |
+| 1 | high | R1 | report [.reports/codex/investigate/run/root-cause.md:42] | Add the missing request-boundary guard | Focused test passes |
+""",
+        encoding="utf-8",
+    )
+    metadata = {
+        "resolution_scope": {
+            "selection_source": "explicit-input",
+            "prompt_presented": False,
+            "selection_confirmed_by_user": True,
+            "selected_indexes": [1],
+            "deferred_indexes": [],
+            "selected_severity_groups": [],
+        }
+    }
+
+    with pytest.raises(SystemExit, match="code-remediate-scope-detail-reference-invalid"):
+        VALIDATOR._validate_code_remediate_scope_selection(metadata, tmp_path)
 
 
 def test_final_handoff_cells_are_value_bound_to_resolution_items() -> None:
@@ -266,13 +471,11 @@ def test_final_handoff_cells_are_value_bound_to_resolution_items() -> None:
     items = table["items"]
     assert isinstance(items, list)
     rows = []
+    details = []
     source_records = []
-    for item in items:
+    for position, item in enumerate(items, start=1):
         source_ids = [f"{source['kind']}:{source['source_id']}" for source in item["sources"]]
-        rendered_sources = [
-            f"{source['kind']} [{source['source_id']}] @ {source['location']} — {source['body']} — {source['evidence']}"
-            for source in item["sources"]
-        ]
+        rendered_sources = [f"{source['kind']} [{source['source_id']}]" for source in item["sources"]]
         rows.append(
             {
                 "id": item["input_item_id"],
@@ -281,17 +484,23 @@ def test_final_handoff_cells_are_value_bound_to_resolution_items() -> None:
                     item["severity"],
                     item["item_name"],
                     "\n".join(rendered_sources),
-                    f"{item['resolution_status']} — {item['resolved_how']}",
-                    f"{item['evidence']} — owner/status: {item['owner_status']}",
+                    f"{item['resolution_status']} — [O{position}]",
+                    f"[E{position}] — owner/status: {item['owner_status']}",
                 ],
                 "source_ids": source_ids,
             }
+        )
+        details.extend(
+            (
+                {"id": f"O{position}", "text": item["resolved_how"]},
+                {"id": f"E{position}", "text": item["evidence"]},
+            )
         )
         source_records.extend(
             {"id": source_id, "evidence": source["evidence"]}
             for source_id, source in zip(source_ids, item["sources"], strict=True)
         )
-    handoff = {"tables": [{"rows": rows}], "source_records": source_records}
+    handoff = {"tables": [{"rows": rows, "details": details}], "source_records": source_records}
     result = {"metadata": metadata}
 
     VALIDATOR._validate_code_remediate_final_handoff(result, handoff)

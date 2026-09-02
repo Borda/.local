@@ -22,6 +22,38 @@ Run linear implementation with strict gates.
 }
 ```
 
+## Parallel Adoption (Disabled During P4)
+
+This is a consumer declaration, not an enabled execution route. The shipped default remains `serial`; `--execution`, `CODEX_RIG_EXECUTION`, natural-language requests, or `auto` cannot opt this skill into parallel execution during this stage.
+
+### Safe parallel work
+
+The future candidate is read-only evidence, acceptance, and documentation-impact passes with immutable disjoint context packs and separate outputs. Source, test, documentation, configuration, calibration, cache, generated-output, artifact, and result writes are outside this portable candidate.
+
+### Required barrier
+
+Before any future dispatch, freeze the goal, mode, `done_when`, baseline, ownership DAG, context packs, role-card hashes, checks, resource locks, and plan digest. Dispatch at most one fixed dependency-ready wave, then join every terminal handoff before implementation, integration, gates, or acceptance; changed scope requires a new plan.
+
+### Serial parent decisions
+
+The parent owns all implementation, test, and documentation writes; shared files and dependency chains; integration and conflict handling; calibration, artifacts, and result writes; canonical quality gates; verdict; and promotion. Never expand the wave dynamically or dispatch dependent work early.
+
+### Resource conflicts
+
+Declare only validated resource locks such as `git-index`, `cache:<path>`, `generated:<path>`, and `test-env:<name>`. Shared paths, indexes, caches, generated outputs, test environments, ports, devices, or undeclared resources force serial execution or re-planning.
+
+### Fallback
+
+Unavailable or unsafe fan-out uses equal-gate `serial-fallback` from the same frozen plan with the same quality gates and retained evidence. Never label fallback as parallel or weaken checks because dispatch was unavailable.
+
+### Acceptance
+
+P3b exact-candidate native Linux/Windows evidence, separate user promotion, and this skill's shared runtime matrix must pass before any runtime opt-in. Acceptance must prove freeze, complete join, truthful execution label, resource compatibility, equal gates, and unchanged serial parent authority.
+
+### Stop rule
+
+During P4, generic parallel writes remain disabled. Stop without dispatch on missing promotion, mutable packs, ownership or resource overlap, sensitive or unproven controls, missing terminal evidence, or an incomplete join; no declaration authorizes writes or changes the phase default.
+
 ## Workflow (Exact Commands)
 
 ### 01: Create run directory
@@ -179,7 +211,7 @@ Conditional checks:
 Update calibration when implementation routing or output expectations change:
 
 - benchmark patterns: `implement`
-- behavioral cases: symptom-first routing, specialist substitution, config behavior changes, missing acceptance probe, feature demo gate bypass, missing project docstring-style detection, missing function docstrings, overlong docstrings masking complex code, long code blocks not factored, deep branching without guard clauses, low-value argument-remapping wrappers, pre-definition comments that should be docstrings, missing explanatory inline comments, low-confidence recovery loop, objective confidence evidence, artifact validator bypass
+- behavioral cases: symptom-first routing, specialist substitution, config behavior changes, premature P4 parallel adoption, missing acceptance probe, feature demo gate bypass, missing project docstring-style detection, missing function docstrings, overlong docstrings masking complex code, long code blocks not factored, deep branching without guard clauses, low-value argument-remapping wrappers, pre-definition comments that should be docstrings, missing explanatory inline comments, low-confidence recovery loop, objective confidence evidence, artifact validator bypass
 
 ## Output Contract
 

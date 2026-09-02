@@ -6,10 +6,11 @@ Purpose:
     assertions on individual plugin test suites.
 
 Scope:
-    Walk non-test Python modules below each directory in ``--scan-dir``. Every
-    module needs a top-level docstring. Codex Rig additionally keeps its published
-    six-section maintainer-documentation contract, which its package validation
-    and author guidance already define.
+    Walk shipped Python modules below each directory in ``--scan-dir``, excluding
+    tests, caches, and generated report evidence. Every module needs a top-level
+    docstring. Codex Rig additionally keeps its published six-section maintainer-
+    documentation contract, which its package validation and author guidance
+    already define.
 
 Usage:
     Run ``python plugins/cc_foundry/bin/check_plugin_module_docs.py`` locally or
@@ -38,13 +39,12 @@ from pathlib import Path
 RICH_DOC_PLUGIN = "codex-rig"
 RICH_DOC_SECTIONS = ("## Purpose", "## Scope", "## Usage", "## Outputs", "## Failure", "## Used by")
 RICH_DOC_MINIMUM_CHARACTERS = 700
+EXCLUDED_DIRECTORY_NAMES = frozenset({"tests", "__pycache__", ".reports"})
 
 
 def production_modules(plugins_dir: Path) -> list[Path]:
-    """Return shipped plugin modules, excluding test and cache directories."""
-    return sorted(
-        path for path in plugins_dir.rglob("*.py") if "tests" not in path.parts and "__pycache__" not in path.parts
-    )
+    """Return shipped plugin modules, excluding tests, caches, and generated reports."""
+    return sorted(path for path in plugins_dir.rglob("*.py") if not EXCLUDED_DIRECTORY_NAMES.intersection(path.parts))
 
 
 def findings_for_module(module: Path, plugins_dir: Path) -> list[str]:

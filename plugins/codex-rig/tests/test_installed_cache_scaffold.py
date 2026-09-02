@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
@@ -10,6 +11,7 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -25,6 +27,16 @@ MARKETPLACE_PATH = REPO_ROOT / ".agents" / "plugins" / "marketplace.json"
 def sha256(path: Path) -> str:
     """Return the lowercase SHA-256 digest for one file."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_package_builder() -> Any:
+    """Load the package builder that owns publication file discovery."""
+    path = PLUGIN_ROOT / "scripts" / "build_package.py"
+    spec = importlib.util.spec_from_file_location("codex_rig_cache_package_builder", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_scaffold_has_stable_role_card_release_identity() -> None:
@@ -102,16 +114,11 @@ def test_package_manifest_covers_regular_payloads_and_modes() -> None:
 
     recorded = {item["path"]: (item["sha256"], int(item["mode"], 8)) for item in records}
     discovered: dict[str, tuple[str, int]] = {}
-    for path in PLUGIN_ROOT.rglob("*"):
-        if path.name in {".coverage", "package-manifest.json"} or any(
-            part in {"__pycache__", ".pytest_cache"} for part in path.parts
-        ):
-            continue
+    for path in load_package_builder().iter_payload_files():
         assert not path.is_symlink()
-        if path.is_file():
-            relative = path.relative_to(PLUGIN_ROOT).as_posix()
-            assert ".." not in Path(relative).parts
-            discovered[relative] = (sha256(path), stat.S_IMODE(path.stat().st_mode))
+        relative = path.relative_to(PLUGIN_ROOT).as_posix()
+        assert ".." not in Path(relative).parts
+        discovered[relative] = (sha256(path), stat.S_IMODE(path.stat().st_mode))
     assert recorded == discovered
 
 
@@ -369,9 +376,12 @@ def test_verifier_ignores_hostile_path_lookup(tmp_path: Path) -> None:
 
 def test_committed_runtime_payload_has_no_private_machine_paths() -> None:
     """Prevent local cache paths and obvious secret material from publication."""
-    for path in PLUGIN_ROOT.rglob("*"):
-        if not path.is_file() or "tests" in path.parts or "__pycache__" in path.parts:
+    manifest = json.loads((PLUGIN_ROOT / "package-manifest.json").read_text(encoding="utf-8"))
+    for record in manifest["files"]:
+        relative = Path(record["path"])
+        if "tests" in relative.parts:
             continue
+        path = PLUGIN_ROOT / relative
         payload = path.read_bytes()
         assert b"/Users/" not in payload
         assert b"/home/" not in payload

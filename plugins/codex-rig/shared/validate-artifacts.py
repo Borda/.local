@@ -121,6 +121,8 @@ CODE_REMEDIATE_FINAL_TABLE_REQUIRED_COLUMNS = {
 }
 CODE_REMEDIATE_SOURCE_KINDS = {"report", "online"}
 CODE_REMEDIATE_SOURCE_STRING_FIELDS = {"source_id", "location", "body", "evidence"}
+CODE_REMEDIATE_REPORT_SOURCE_ID = re.compile(r"(?:.+:[1-9]\d*|.+\.json#[^#\r\n]+)", re.IGNORECASE)
+CODE_REMEDIATE_ONLINE_SOURCE_ID = re.compile(r"(?!https?://)\S+", re.IGNORECASE)
 CODE_REMEDIATE_FINAL_ITEM_STRING_FIELDS = {
     "input_item_id",
     "item_name",
@@ -372,8 +374,9 @@ def _validate_code_remediate_final_handoff(result: dict[str, Any], handoff: dict
         raise SystemExit("code-remediate-final-handoff-table-invalid")
     expected_items = resolution_table["items"]
     expected_rows = []
+    expected_details = []
     expected_source_records = []
-    for item in expected_items:
+    for position, item in enumerate(expected_items, start=1):
         if not isinstance(item, dict):
             raise SystemExit("code-remediate-final-handoff-resolution-item-invalid")
         sources = item.get("sources")
@@ -386,10 +389,7 @@ def _validate_code_remediate_final_handoff(result: dict[str, Any], handoff: dict
                 raise SystemExit("code-remediate-final-handoff-resolution-source-invalid")
             source_id = f"{source.get('kind')}:{source.get('source_id')}"
             source_ids.append(source_id)
-            rendered_sources.append(
-                f"{source.get('kind')} [{source.get('source_id')}] @ {source.get('location')} — "
-                f"{source.get('body')} — {source.get('evidence')}"
-            )
+            rendered_sources.append(f"{source.get('kind')} [{source.get('source_id')}]")
             expected_source_records.append({"id": source_id, "evidence": source.get("evidence")})
         expected_rows.append(
             {
@@ -399,13 +399,19 @@ def _validate_code_remediate_final_handoff(result: dict[str, Any], handoff: dict
                     item.get("severity"),
                     item.get("item_name"),
                     "\n".join(rendered_sources),
-                    f"{item.get('resolution_status')} — {item.get('resolved_how')}",
-                    f"{item.get('evidence')} — owner/status: {item.get('owner_status')}",
+                    f"{item.get('resolution_status')} — [O{position}]",
+                    f"[E{position}] — owner/status: {item.get('owner_status')}",
                 ],
                 "source_ids": source_ids,
             }
         )
-    if rows != expected_rows:
+        expected_details.extend(
+            (
+                {"id": f"O{position}", "text": item.get("resolved_how")},
+                {"id": f"E{position}", "text": item.get("evidence")},
+            )
+        )
+    if rows != expected_rows or tables[0].get("details") != expected_details:
         raise SystemExit("code-remediate-final-handoff-row-coverage-mismatch")
     expected_sources = {
         f"{source.get('kind')}:{source.get('source_id')}"
@@ -445,11 +451,47 @@ def _validate_code_review_final_handoff(result: dict[str, Any], handoff: dict[st
     tables = handoff.get("tables")
     if not isinstance(tables, list):
         raise SystemExit("code-review-final-handoff-tables-invalid")
-    headings = {table.get("heading") for table in tables if isinstance(table, dict)}
+    tables_by_heading = {
+        table.get("heading"): table
+        for table in tables
+        if isinstance(table, dict) and isinstance(table.get("heading"), str)
+    }
+    headings = set(tables_by_heading)
     if expected_branch in {"unavailable", "closed"} and tables:
         raise SystemExit("code-review-terminal-final-handoff-table-forbidden")
     if expected_branch == "assessed" and metadata.get("scope") == "pr" and "PR Snapshot" not in headings:
         raise SystemExit("code-review-final-handoff-pr-snapshot-missing")
+    if expected_branch == "assessed" and metadata.get("scope") == "pr":
+        snapshot = tables_by_heading["PR Snapshot"]
+        rows = snapshot.get("rows")
+        expected_fields = ("PR", "Author", "CI", "Type", "Suggestion")
+        if (
+            not isinstance(rows, list)
+            or tuple(
+                row["cells"][0]
+                if isinstance(row, dict) and isinstance(row.get("cells"), list) and len(row["cells"]) == 2
+                else None
+                for row in rows
+            )
+            != expected_fields
+        ):
+            raise SystemExit("code-review-final-handoff-pr-snapshot-fields-mismatch")
+        decision = metadata.get("review_decision")
+        recommendation = decision.get("recommendation") if isinstance(decision, dict) else None
+        suggestions = {
+            "accept-as-is": "approve",
+            "minor-changes": "minor changes",
+            "needs-more-work": "needs work",
+            "reject": "reject",
+            "not-aligned": "not aligned",
+        }
+        suggestion_cells = rows[-1].get("cells")
+        if (
+            not isinstance(suggestion_cells, list)
+            or len(suggestion_cells) != 2
+            or suggestion_cells[1] != suggestions.get(recommendation)
+        ):
+            raise SystemExit("code-review-final-handoff-pr-snapshot-suggestion-mismatch")
     finding_total = sum(result["findings"].values())
     if expected_branch == "assessed" and finding_total and "Review Findings and Merge Blocks" not in headings:
         raise SystemExit("code-review-final-handoff-findings-table-missing")
@@ -816,6 +858,245 @@ def _validate_code_remediate_scope_selection(metadata: dict[str, Any], out_dir: 
         raise SystemExit("code-remediate-explicit-selection-not-confirmed")
     if has_selectable and selection_source not in {"explicit-input", "user-prompt"}:
         raise SystemExit("code-remediate-selection-required")
+    if not has_selectable:
+        return
+
+    headers, rows = _parse_markdown_table(out_dir / "resolution-scope.md", "Resolution Scope Selection")
+    expected_headers = [
+        "index",
+        "severity",
+        "item id or source location",
+        "source",
+        "summary",
+        "expected closure evidence",
+    ]
+    if headers != expected_headers or not rows:
+        raise SystemExit("code-remediate-scope-table-invalid")
+    source_index = headers.index("source")
+    normalized_scope_lines = {
+        re.sub(r"\s+", " ", line.replace(r"\|", "|")).strip()
+        for line in (out_dir / "resolution-scope.md").read_text(encoding="utf-8").splitlines()
+    }
+    for row in rows:
+        source_cell = row[source_index]
+        source_refs = re.findall(r"(?:report|online) \[[^\]\r\n]+\]", source_cell)
+        if not source_refs or " ".join(source_refs) != source_cell:
+            raise SystemExit("code-remediate-scope-source-not-compact")
+        for source_ref in source_refs:
+            kind, source_id = source_ref.split(" [", maxsplit=1)
+            source_id = source_id.removesuffix("]")
+            if kind == "report" and not CODE_REMEDIATE_REPORT_SOURCE_ID.fullmatch(source_id):
+                raise SystemExit("code-remediate-scope-report-source-id-invalid")
+            if kind == "online" and not CODE_REMEDIATE_ONLINE_SOURCE_ID.fullmatch(source_id):
+                raise SystemExit("code-remediate-scope-online-source-id-invalid")
+        index = row[headers.index("index")]
+        summary_ref = f"[S{index}]"
+        closure_ref = f"[C{index}]"
+        if (
+            row[headers.index("summary")] != summary_ref
+            or row[headers.index("expected closure evidence")] != closure_ref
+        ):
+            raise SystemExit("code-remediate-scope-detail-reference-invalid")
+        if not any(line.startswith(f"{summary_ref} ") for line in normalized_scope_lines) or not any(
+            line.startswith(f"{closure_ref} ") for line in normalized_scope_lines
+        ):
+            raise SystemExit("code-remediate-scope-symbol-detail-missing")
+
+
+def _code_remediate_run_path(out_dir: Path, value: object, error_code: str) -> Path:
+    """Resolve one run-relative production artifact without accepting symlink components."""
+    if not isinstance(value, str) or not value or "\\" in value or value.startswith("/") or ":" in value:
+        raise SystemExit(error_code)
+    parts = PurePosixPath(value).parts
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise SystemExit(error_code)
+    current = out_dir
+    for part in parts:
+        current = current / part
+        if current.is_symlink():
+            raise SystemExit(error_code)
+    path = out_dir.joinpath(*parts)
+    try:
+        path.resolve().relative_to(out_dir.resolve())
+    except (OSError, ValueError) as error:
+        raise SystemExit(error_code) from error
+    return path
+
+
+def _validate_code_remediate_production_lifecycle(
+    workplan: dict[str, Any], bucket_plan: dict[str, Any], out_dir: Path, bucket_plan_sha256: str
+) -> None:
+    """Reconcile completed parallel remediation with its schema-v2 lifecycle evidence."""
+    reference = workplan.get("production_lifecycle")
+    if not isinstance(reference, dict):
+        raise SystemExit("code-remediate-production-lifecycle-required")
+    if set(reference) != {"path", "sha256", "status"} or reference.get("status") != "completed":
+        raise SystemExit("code-remediate-production-lifecycle-reference-invalid")
+    value = reference.get("path")
+    lifecycle_path = _code_remediate_run_path(out_dir, value, "code-remediate-production-lifecycle-path-invalid")
+    if not lifecycle_path.is_file():
+        raise SystemExit("code-remediate-production-lifecycle-evidence-missing")
+    digest = reference.get("sha256")
+    if not isinstance(digest, str) or digest != hashlib.sha256(lifecycle_path.read_bytes()).hexdigest():
+        raise SystemExit("code-remediate-production-lifecycle-digest-mismatch")
+    lifecycle = _load_json(lifecycle_path)
+    if lifecycle.get("schema_version") != 2 or lifecycle.get("consumer") != "code-remediate":
+        raise SystemExit("code-remediate-production-lifecycle-schema-invalid")
+    if lifecycle.get("status") != "completed" or lifecycle.get("plan_sha256") != bucket_plan_sha256:
+        raise SystemExit("code-remediate-production-lifecycle-plan-mismatch")
+    if bucket_plan.get("schema_version") != 2 or bucket_plan.get("consumer") != "code-remediate":
+        raise SystemExit("code-remediate-production-lifecycle-plan-schema-invalid")
+    if bucket_plan.get("write_parallel_promoted") is not False:
+        raise SystemExit("code-remediate-production-lifecycle-promotion-invalid")
+    buckets = bucket_plan.get("work_buckets")
+    if not isinstance(buckets, list) or not 2 <= len(buckets) <= 4:
+        raise SystemExit("code-remediate-production-lifecycle-bucket-count-invalid")
+    expected_nodes = [bucket.get("bucket_id") for bucket in buckets if isinstance(bucket, dict)]
+    expected_paths = sorted({path for bucket in buckets for path in bucket["owned_paths"]})
+    evidence_root = lifecycle.get("evidence_root")
+    evidence_parts = PurePosixPath(evidence_root).parts if isinstance(evidence_root, str) else ()
+    if (
+        not isinstance(evidence_root, str)
+        or not evidence_root
+        or "\\" in evidence_root
+        or evidence_root.startswith("/")
+        or evidence_parts[:3] != (".reports", "codex", "code-remediate")
+        or len(evidence_parts) != 4
+        or any(part == ".." for part in evidence_parts)
+        or ":" in evidence_root
+    ):
+        raise SystemExit("code-remediate-production-lifecycle-evidence-root-invalid")
+    planned_state = bucket_plan.get("state_path")
+    if (
+        not isinstance(planned_state, str)
+        or not planned_state
+        or "/" in planned_state
+        or "\\" in planned_state
+        or lifecycle.get("state_path") != f"{evidence_root}/{planned_state}"
+    ):
+        raise SystemExit("code-remediate-production-lifecycle-state-path-mismatch")
+    if (
+        bucket_plan.get("verification_gate") != "code-remediate-shared-quality-gates"
+        or lifecycle.get("verification_gate") != "code-remediate-shared-quality-gates"
+    ):
+        raise SystemExit("code-remediate-production-lifecycle-verification-gate-mismatch")
+    for bucket in buckets:
+        context_path = _code_remediate_run_path(
+            out_dir,
+            bucket.get("context_pack_path"),
+            "code-remediate-production-lifecycle-context-path-invalid",
+        )
+        context_digest = bucket.get("context_sha256")
+        if (
+            not context_path.is_file()
+            or not isinstance(context_digest, str)
+            or context_digest != hashlib.sha256(context_path.read_bytes()).hexdigest()
+        ):
+            raise SystemExit("code-remediate-production-lifecycle-context-mismatch")
+    recorded_nodes = lifecycle.get("nodes")
+    if (
+        not isinstance(recorded_nodes, list)
+        or [node.get("node_id") for node in recorded_nodes if isinstance(node, dict)] != expected_nodes
+    ):
+        raise SystemExit("code-remediate-production-lifecycle-node-mismatch")
+    for node, bucket in zip(recorded_nodes, buckets, strict=True):
+        output = bucket.get("output")
+        if (
+            not isinstance(node, dict)
+            or node.get("owned_paths") != bucket["owned_paths"]
+            or not isinstance(output, str)
+            or not output
+            or "/" in output
+            or "\\" in output
+            or node.get("patch_path") != f"{evidence_root}/{output}"
+        ):
+            raise SystemExit("code-remediate-production-lifecycle-child-patch-path-invalid")
+        patch_path = _code_remediate_run_path(
+            out_dir, output, "code-remediate-production-lifecycle-child-patch-path-invalid"
+        )
+        if (
+            patch_path.is_symlink()
+            or not patch_path.is_file()
+            or node.get("patch_sha256") != hashlib.sha256(patch_path.read_bytes()).hexdigest()
+        ):
+            raise SystemExit("code-remediate-production-lifecycle-child-patch-mismatch")
+    nodes = lifecycle.get("joined_nodes")
+    if (
+        not isinstance(nodes, list)
+        or [node.get("node_id") for node in nodes if isinstance(node, dict)] != expected_nodes
+    ):
+        raise SystemExit("code-remediate-production-lifecycle-node-mismatch")
+    for node, recorded, bucket in zip(nodes, recorded_nodes, buckets, strict=True):
+        if (
+            not isinstance(node, dict)
+            or node.get("owned_paths") != bucket["owned_paths"]
+            or not isinstance(node.get("patch_sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", node["patch_sha256"]) is None
+            or node["patch_sha256"] != recorded["patch_sha256"]
+        ):
+            raise SystemExit("code-remediate-production-lifecycle-node-mismatch")
+    integration = lifecycle.get("integration")
+    if not isinstance(integration, dict) or integration != {
+        "status": "structurally-verified",
+        "order": expected_nodes,
+        "paths": expected_paths,
+    }:
+        raise SystemExit("code-remediate-production-lifecycle-integration-mismatch")
+    source = lifecycle.get("source")
+    if (
+        not isinstance(source, dict)
+        or source.get("baseline_head") != bucket_plan.get("baseline_head")
+        or source.get("baseline_tree") != bucket_plan.get("baseline_tree")
+        or source.get("applied_head") != source.get("baseline_head")
+    ):
+        raise SystemExit("code-remediate-production-lifecycle-source-mismatch")
+    for key in ("preimage_sha256", "postimage_sha256"):
+        hashes = source.get(key)
+        if (
+            not isinstance(hashes, dict)
+            or sorted(hashes) != expected_paths
+            or any(
+                not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None for value in hashes.values()
+            )
+        ):
+            raise SystemExit("code-remediate-production-lifecycle-source-hash-mismatch")
+    application = lifecycle.get("source_application")
+    if (
+        not isinstance(application, dict)
+        or application.get("status") != "applied"
+        or application.get("applied_paths") != expected_paths
+    ):
+        raise SystemExit("code-remediate-production-lifecycle-source-application-mismatch")
+    source_patch_path = _code_remediate_run_path(
+        out_dir,
+        application.get("patch_path"),
+        "code-remediate-production-lifecycle-source-patch-path-invalid",
+    )
+    if (
+        source_patch_path.is_symlink()
+        or not source_patch_path.is_file()
+        or application.get("patch_sha256") != hashlib.sha256(source_patch_path.read_bytes()).hexdigest()
+    ):
+        raise SystemExit("code-remediate-production-lifecycle-source-patch-mismatch")
+    rollback_path = _code_remediate_run_path(
+        out_dir,
+        application.get("rollback_patch_path"),
+        "code-remediate-production-lifecycle-rollback-path-invalid",
+    )
+    if (
+        rollback_path.is_symlink()
+        or not rollback_path.is_file()
+        or application.get("rollback_patch_sha256") != hashlib.sha256(rollback_path.read_bytes()).hexdigest()
+    ):
+        raise SystemExit("code-remediate-production-lifecycle-rollback-mismatch")
+    cleanup = lifecycle.get("cleanup")
+    if not isinstance(cleanup, dict) or cleanup.get("status") != "removed" or cleanup.get("force") is not False:
+        raise SystemExit("code-remediate-production-lifecycle-cleanup-mismatch")
+    if lifecycle.get("containment") != {
+        "mode": "parent-authoritative-worktrees",
+        "capability_sandbox_verified": False,
+    }:
+        raise SystemExit("code-remediate-production-lifecycle-containment-mismatch")
 
 
 def _validate_code_remediate_workplan(metadata: dict[str, Any], out_dir: Path) -> None:
@@ -895,7 +1176,9 @@ def _validate_code_remediate_workplan(metadata: dict[str, Any], out_dir: Path) -
     approval_path = out_dir / "parallel-approval.json"
     bucket_plan = _load_json(bucket_plan_path)
     approval = _load_json(approval_path)
-    if bucket_plan.get("schema_version") != 1 or bucket_plan.get("work_buckets") != work_buckets:
+    if bucket_plan.get("work_buckets") != work_buckets:
+        raise SystemExit("code-remediate-work-bucket-plan-content-mismatch")
+    if bucket_plan.get("schema_version") not in {1, 2}:
         raise SystemExit("code-remediate-work-bucket-plan-content-mismatch")
     observed_plan_sha256 = hashlib.sha256(bucket_plan_path.read_bytes()).hexdigest()
     if bucket_plan_sha256 != observed_plan_sha256:
@@ -1081,6 +1364,10 @@ def _validate_code_remediate_workplan(metadata: dict[str, Any], out_dir: Path) -
     for bucket_id in bucket_ids:
         if bucket_id.casefold() not in workplan_text:
             raise SystemExit("code-remediate-workplan-bucket-id-missing")
+    if execution_mode == "parallel-specialists":
+        if bucket_plan.get("schema_version") != 2 or bucket_plan.get("consumer") != "code-remediate":
+            raise SystemExit("code-remediate-production-lifecycle-required")
+        _validate_code_remediate_production_lifecycle(workplan, bucket_plan, out_dir, bucket_plan_sha256)
 
 
 def _count_out_of_scope_items(action_text: str) -> int:
@@ -1340,6 +1627,11 @@ def _validate_code_remediate_final_resolution_table(metadata: dict[str, Any], ou
                 value = source.get(field)
                 if not isinstance(value, str) or not value.strip():
                     raise SystemExit(f"code-remediate-final-table-source-{field}-invalid:{position}:{source_position}")
+            source_id = source["source_id"].strip()
+            if kind == "report" and not CODE_REMEDIATE_REPORT_SOURCE_ID.fullmatch(source_id):
+                raise SystemExit("code-remediate-final-table-report-source-id-invalid")
+            if kind == "online" and not CODE_REMEDIATE_ONLINE_SOURCE_ID.fullmatch(source_id):
+                raise SystemExit("code-remediate-final-table-online-source-id-invalid")
             source_key = (kind, source["source_id"].strip())
             if source_key in observed_source_keys:
                 raise SystemExit("code-remediate-final-table-source-id-duplicate")
@@ -1413,23 +1705,40 @@ def _validate_code_remediate_final_resolution_table(metadata: dict[str, Any], ou
         "triage_status": "triage status",
         "resolution_status": "resolution",
         "owner_status": "owner/status",
-        "resolved_how": "resolved how",
-        "evidence": "evidence",
     }
-    for item in items:
+    normalized_action_text = re.sub(r"\s+", " ", action_text.replace(r"\|", "|"))
+    normalized_action_lines = {
+        re.sub(r"\s+", " ", line.replace(r"\|", "|")).strip()
+        for line in (out_dir / "action-items.md").read_text(encoding="utf-8").splitlines()
+    }
+    for position, item in enumerate(items, start=1):
         row = rows_by_id[item["input_item_id"].strip()]
         for field, column in field_to_column.items():
             if row[header_indexes[column]] != item[field].strip():
                 raise SystemExit(f"code-remediate-final-table-markdown-{field}-mismatch")
-        source_cell = re.sub(r"\s+", " ", row[header_indexes["sources"]].replace("<br>", " ")).strip()
+        for detail_id, field, column in (
+            (f"O{position}", "resolved_how", "resolved how"),
+            (f"E{position}", "evidence", "evidence"),
+        ):
+            if row[header_indexes[column]] != f"[{detail_id}]":
+                raise SystemExit(f"code-remediate-final-table-markdown-{field}-mismatch")
+            expected_detail = re.sub(r"\s+", " ", f"[{detail_id}] {item[field]}").strip()
+            if expected_detail not in normalized_action_lines:
+                raise SystemExit(f"code-remediate-final-table-symbol-detail-missing:{detail_id}")
+        expected_source_cell = " ".join(f"{source['kind']} [{source['source_id']}]" for source in item["sources"])
+        if row[header_indexes["sources"]] != expected_source_cell:
+            raise SystemExit(f"code-remediate-final-table-compact-source-mismatch:{item['input_item_id']}")
         for source in item["sources"]:
-            for field in ("kind", "source_id", "location", "body", "evidence"):
-                expected = re.sub(r"\s+", " ", source[field]).strip()
-                if expected not in source_cell:
-                    raise SystemExit(
-                        f"code-remediate-final-table-markdown-source-{field}-missing:"
-                        f"{item['input_item_id']}:{source['source_id']}"
-                    )
+            expanded_detail = (
+                f"{source['kind']} [{source['source_id']}] @ {source['location']} — "
+                f"{source['body']} — {source['evidence']}"
+            )
+            normalized_detail = re.sub(r"\s+", " ", expanded_detail).casefold()
+            if normalized_detail not in normalized_action_text:
+                raise SystemExit(
+                    f"code-remediate-final-table-expanded-source-detail-missing:"
+                    f"{item['input_item_id']}:{source['source_id']}"
+                )
 
 
 def _validate_code_remediate_unresolved_summary(metadata: dict[str, Any], out_dir: Path) -> None:

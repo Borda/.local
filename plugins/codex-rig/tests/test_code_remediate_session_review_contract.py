@@ -43,13 +43,19 @@ def test_final_summary_includes_all_ingested_items_with_outcomes() -> None:
     assert "Unresolved —" in skill
 
 
-def test_grouped_outcomes_preserve_report_and_online_source_bodies() -> None:
-    """Keep grouped duplicate findings auditable without reopening raw PR artifacts."""
+def test_visible_tables_use_compact_sources_without_dropping_details() -> None:
+    """Keep selection and outcome tables readable without weakening the full ledger."""
     skill = CODE_REMEDIATE_SKILL.read_text(encoding="utf-8")
     assert "Item | Severity | Finding | Sources | Outcome | Evidence / next action" in skill
     assert "category `report|online`" in skill
     assert "complete body without truncation" in skill
-    assert "grouped rows must show all contributing sources" in skill
+    assert (
+        "`report [<report-file>:<line>]`, `report [<report-json>#<finding-id>]`, or `online [<comment|thread|review-id>]`"
+        in skill
+    )
+    assert "initial selection, durable resolution, and final outcome tables" in skill
+    assert "Full source details stay in machine metadata and expanded item records" in skill
+    assert "symbol definitions immediately below each table" in skill
     assert "omitted_source_records_total" in skill
 
 
@@ -65,17 +71,50 @@ def test_work_buckets_bound_parallel_remediation_overhead() -> None:
     assert "approved_plan_sha256" in skill
 
 
-def test_scope_selection_question_has_one_rendering_owner() -> None:
-    """Prevent the scope question appearing in prose and its interactive control."""
+def test_parallel_specialists_require_verified_production_lifecycle() -> None:
+    """Prevent approved work buckets from masquerading as completed parallel writes."""
+    skill = CODE_REMEDIATE_SKILL.read_text(encoding="utf-8")
+    assert "Production Parallel Lifecycle" in skill
+    assert "`parallel-specialists` is planning-only until" in skill
+    assert "`schema_version=2`" in skill
+    assert "parent-authoritative operational postcondition containment" in skill
+    assert "`capability_sandbox_verified=false`" in skill
+    assert "parent re-derives" in skill
+    assert "lexical bucket ID order" in skill
+    assert "durable reverse patch" in skill
+    assert "non-force cleanup" in skill
+    assert "generic `write_parallel_promoted` remains `false`" in skill
+    assert "`code-remediate-shared-quality-gates`" in skill
+    assert "records `structurally-verified`" in skill
+    assert "does not execute or claim plan-provided commands" in skill
+    assert "Re-hash every context pack at preparation and each authority transition" in skill
+    assert "without passing shared-gate evidence" in skill
+
+
+def test_parallel_child_verification_preserves_zero_output_boundary() -> None:
+    """Prevent required child checks from producing hidden worktree output."""
+    skill = CODE_REMEDIATE_SKILL.read_text(encoding="utf-8")
+    assert "zero ignored or untracked output" in skill
+    assert "exact no-cache or no-output verification commands" in skill
+    assert "Before hashing the plan, execute every exact child verification command" in skill
+    assert "Freeze only byte-identical command text that passed preflight" in skill
+    assert "requires a new plan digest and approval" in skill
+    assert "must not delete verification output after the command" in skill
+    assert "re-plan that bucket as parent-owned or sequential" in skill
+
+
+def test_scope_selection_question_keeps_options_with_visible_context() -> None:
+    """Prevent selectable context and its question splitting across UI surfaces."""
     skill = CODE_REMEDIATE_SKILL.read_text(encoding="utf-8")
     scope_contract = skill.split("### Terminal Scope Context Contract", maxsplit=1)[1].split(
         "Record in `<run-directory>/resolution-scope.md`", maxsplit=1
     )[0]
 
     assert scope_contract.count("Which findings should I remediate?") == 1
-    assert "The scope-selection control is the sole owner of this question and its choices." in scope_contract
-    assert "must not contain the selection question or its choices" in scope_contract
-    assert "ask once in plain text instead of opening the control" in scope_contract
+    assert "exactly one user-visible assistant message containing, in order" in scope_contract
+    assert "the exact unabridged `resolution-scope.md` content" in scope_contract
+    assert "Do not open a second scope-selection control" in scope_contract
+    assert "collapsed output" in scope_contract
 
 
 def test_parallel_approval_question_has_one_rendering_owner() -> None:

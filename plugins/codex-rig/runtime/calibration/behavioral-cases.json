@@ -1409,14 +1409,122 @@
       "id": "sync-host-scope-lifecycle",
       "prompt": "Assess a repository sync where selecting Codex avoids the default uninstall-before-install lifecycle used by Claude, an existing local marketplace causes refresh to be skipped, and --no-clean suppresses both uninstall and source refresh instead of only opting out of uninstall.",
       "target": "sync"
+    },
+    {
+      "expected_findings": [
+        "portable-network-overclaim",
+        "sensitive-task-policy-unbound",
+        "external-capability-event-unchecked",
+        "credential-output-scan-missing"
+      ],
+      "id": "challenger-portable-parallel-capability-overclaim",
+      "prompt": "Stress-test a portable read-only parallel-runtime artifact that turns restricted networking into network=false, accepts task_sensitivity=non-sensitive without a frozen parent policy, ignores browser or connector response items, and hash-validates child output without scanning it for common credential material.",
+      "target": "challenger"
+    },
+    {
+      "expected_findings": [
+        "git-environment-redirection-unchecked",
+        "mutable-lifecycle-authority-trusted",
+        "authoritative-action-join-evidence-missing",
+        "unsafe-patch-shape-accepted",
+        "prior-attempt-fingerprint-missing"
+      ],
+      "id": "challenger-parallel-write-lifecycle-authority",
+      "prompt": "Stress-test a generated-fixture parallel-write proof that inherits GIT_DIR or GIT_WORK_TREE, trusts mutable lifecycle paths, accepts caller booleans for joins, permits staged, mode, or deletion changes, and claims a retained prior attempt was untouched without fingerprints.",
+      "target": "challenger"
+    },
+    {
+      "expected_findings": [
+        "production-lifecycle-evidence-missing",
+        "parent-source-application-evidence-missing",
+        "non-force-cleanup-evidence-missing",
+        "capability-sandbox-overclaimed",
+        "context-pack-digest-unbound",
+        "lifecycle-state-output-unbound",
+        "rollback-preimage-unverified",
+        "retained-patch-evidence-unverified",
+        "structural-integration-overclaimed"
+      ],
+      "id": "code-remediate-parallel-production-lifecycle",
+      "prompt": "Assess a completed parallel remediation whose schema-v2 lifecycle does not bind the approved plan and baseline with SHA-256, accepts unhashed or drifted context packs, allows caller-selected or pre-existing state/output paths, lacks terminal child join evidence, integrates child patches without parent re-derivation and lexical structural verification, or mislabels structural integration as executable verification. The parent applies source changes without pre/post hashes, a durable forward and rollback patch, exact source postconditions, or verified restored preimages; cleanup uses force. The result validator trusts retained child/forward patch hash fields without rehashing run-root-confined files. It describes containment as a child capability sandbox even though capability_sandbox_verified=false, rather than parent-authoritative operational postcondition containment, and claims generic write promotion.",
+      "target": "code-remediate"
+    },
+    {
+      "expected_findings": [
+        "p4-runtime-opt-in-before-p3b",
+        "generic-parallel-write-enabled",
+        "freeze-join-contract-missing",
+        "parent-serial-implementation-bypassed",
+        "quality-gate-parallelism-unproven"
+      ],
+      "id": "implement-p4-premature-parallel-adoption",
+      "prompt": "Assess an Implement workflow that treats its P4 declaration as an enabled parallel route before P3b native evidence or separate promotion, lets children edit source, tests, and documentation, starts from mutable context packs without a complete terminal join, runs canonical quality gates concurrently through shared caches, and claims an execution flag authorizes generic parallel writes.",
+      "target": "implement"
+    },
+    {
+      "expected_findings": [
+        "p4-runtime-opt-in-before-p3b",
+        "generic-parallel-write-enabled",
+        "freeze-join-contract-missing",
+        "parent-serial-management-bypassed",
+        "quality-gate-parallelism-unproven"
+      ],
+      "id": "manage-p4-premature-parallel-adoption",
+      "prompt": "Assess a Manage workflow that treats its P4 declaration as an enabled parallel route before P3b native evidence or separate promotion, delegates create, rename, delete, permission, policy, and calibration mutations, starts from mutable inventory packs without a complete terminal join, runs canonical quality gates concurrently through shared state, and claims an environment value authorizes generic parallel writes.",
+      "target": "manage"
+    },
+    {
+      "expected_findings": [
+        "parallel-token-budget-missing",
+        "parallel-token-reservation-overflow",
+        "provider-token-cap-overclaimed",
+        "completed-work-replay",
+        "active-child-budget-cancellation"
+      ],
+      "id": "delegation-lead-parallel-token-admission-bypass",
+      "prompt": "Assess a parallel wave that starts before the parent freezes a positive token ceiling and per-node reservations, admits work beyond the ceiling, claims the reservation limit caps actual provider tokens, replays completed nodes during serial recovery, and cancels active children solely because the admission budget is exhausted.",
+      "target": "delegation-lead"
+    },
+    {
+      "expected_findings": [
+        "mutable-action-reference",
+        "action-pin-provenance-missing",
+        "action-pin-regression-gate-missing"
+      ],
+      "id": "cicd-steward-mutable-action-pins",
+      "prompt": "Assess CI workflows that use third-party action major tags or branches, replace them with unverified hexadecimal values without upstream ref evidence, and lack a repository check that rejects mutable or malformed action references.",
+      "target": "cicd-steward"
+    },
+    {
+      "expected_findings": [
+        "raw-parallel-evidence-retained",
+        "runtime-identifier-not-hmaced",
+        "retention-expiry-unbounded",
+        "unresolved-diagnostics-expired"
+      ],
+      "id": "challenger-parallel-evidence-retention-leak",
+      "prompt": "Stress-test retained parallel telemetry that accepts unknown fields, stores raw wave identifiers, prompts, messages, paths, environments, or credentials, gives successful diagnostics no expiry, and deletes unresolved failure or conflict diagnostics before resolution.",
+      "target": "challenger"
+    },
+    {
+      "expected_findings": [
+        "parallel-rollback-plan-drift",
+        "parallel-rollback-evidence-discarded",
+        "parallel-rollback-gates-weakened",
+        "completed-work-replay",
+        "parallel-ga-overclaimed"
+      ],
+      "id": "challenger-parallel-rollback-ga-overclaim",
+      "prompt": "Stress-test a parallel rollback that changes the frozen plan, discards terminal evidence and joins, reruns completed nodes, weakens serial quality gates, cleans conflicted worktrees despite ambiguous state, and declares general availability from local configuration without exact native evidence or separate promotion.",
+      "target": "challenger"
     }
   ],
   "thresholds": {
     "max_confidence_mae": 0.2,
     "max_mean_overconfidence": 0.15,
-    "min_observations": 69,
+    "min_observations": 73,
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.22"
+  "version": "1.23"
 }

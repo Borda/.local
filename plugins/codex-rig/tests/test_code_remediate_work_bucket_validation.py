@@ -40,7 +40,9 @@ def _write_workplan(metadata: dict[str, object], out_dir: Path) -> None:
     for bucket in buckets:
         assert isinstance(bucket, dict)
         if bucket["owner"] != "parent":
-            (out_dir / str(bucket["context_pack_path"])).write_text("# Context\n", encoding="utf-8")
+            context_path = out_dir / str(bucket["context_pack_path"])
+            context_path.write_text("# Context\n", encoding="utf-8")
+            bucket["context_sha256"] = hashlib.sha256(context_path.read_bytes()).hexdigest()
 
     plan_path = out_dir / "work-bucket-plan.json"
     plan_path.write_text(
@@ -130,7 +132,10 @@ def _parallel_metadata() -> dict[str, object]:
                     "owner": "sw-engineer",
                     "verifier": "qa-specialist",
                     "context_pack_path": "specialists/b1-context.md",
+                    "context_sha256": "a" * 64,
                     "owned_paths": ["src/feature.py"],
+                    "resource_locks": [],
+                    "output": "b1.patch",
                     "execution_mode": "parallel",
                 },
                 {
@@ -139,7 +144,10 @@ def _parallel_metadata() -> dict[str, object]:
                     "owner": "doc-scribe",
                     "verifier": "parent",
                     "context_pack_path": "specialists/b2-context.md",
+                    "context_sha256": "b" * 64,
                     "owned_paths": ["docs/feature.md"],
+                    "resource_locks": [],
+                    "output": "b2.patch",
                     "execution_mode": "parallel",
                 },
             ],
@@ -148,12 +156,159 @@ def _parallel_metadata() -> dict[str, object]:
     }
 
 
-def test_parallel_work_buckets_accept_bounded_disjoint_approved_plan(tmp_path: Path) -> None:
-    """Accept useful fan-out only when coverage, ownership, and approval reconcile."""
+def _write_completed_production_lifecycle(metadata: dict[str, object], out_dir: Path) -> Path:
+    """Write one truthful schema-v2 completed lifecycle projection for approved buckets."""
+    _write_workplan(metadata, out_dir)
+    workplan = metadata["resolution_workplan"]
+    assert isinstance(workplan, dict)
+    buckets = workplan["work_buckets"]
+    assert isinstance(buckets, list)
+    plan_path = out_dir / "work-bucket-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "consumer": "code-remediate",
+                "write_parallel_promoted": False,
+                "source_repository": "authoritative-repository",
+                "worktree_root": ".codex-rig-worktrees/example",
+                "baseline_head": "a" * 40,
+                "baseline_tree": "b" * 40,
+                "rollback_policy": "approved-paths-if-preapply-baseline-matches",
+                "cleanup_policy": "non-force-after-durable-source-application",
+                "state_path": "production-lifecycle.json",
+                "verification_gate": "code-remediate-shared-quality-gates",
+                "work_buckets": buckets,
+                "status": "frozen-awaiting-explicit-approval",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    plan_sha256 = hashlib.sha256(plan_path.read_bytes()).hexdigest()
+    workplan["bucket_plan_sha256"] = plan_sha256
+    workplan["approved_plan_sha256"] = plan_sha256
+    approval_path = out_dir / "parallel-approval.json"
+    approval_path.write_text(
+        json.dumps(
+            {
+                "plan_sha256": plan_sha256,
+                "prompt_presented": workplan["parallel_prompt_presented"],
+                "response": "approve",
+                "source": workplan["parallel_approval_source"],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    workplan_path = out_dir / "resolution-workplan.md"
+    old_digest = next(
+        digest for digest in workplan_path.read_text(encoding="utf-8").split() if len(digest.removesuffix(".")) == 64
+    ).removesuffix(".")
+    workplan_path.write_text(
+        workplan_path.read_text(encoding="utf-8").replace(old_digest, plan_sha256), encoding="utf-8"
+    )
+    evidence_root = ".reports/codex/code-remediate/fixture"
+    nodes: list[dict[str, object]] = []
+    for position, bucket in enumerate(buckets):
+        assert isinstance(bucket, dict)
+        patch_path = out_dir / str(bucket["output"])
+        patch_path.write_text(
+            f"diff --git a/{bucket['output']} b/{bucket['output']}\n",
+            encoding="utf-8",
+        )
+        nodes.append(
+            {
+                "node_id": bucket["bucket_id"],
+                "owned_paths": bucket["owned_paths"],
+                "patch_path": f"{evidence_root}/{bucket['output']}",
+                "patch_sha256": hashlib.sha256(patch_path.read_bytes()).hexdigest(),
+            }
+        )
+    source_patch_path = out_dir / "source-application.patch"
+    source_patch_path.write_text("diff --git a/src/feature.py b/src/feature.py\n", encoding="utf-8")
+    rollback_path = out_dir / "rollback.patch"
+    rollback_path.write_text("diff --git a/src/feature.py b/src/feature.py\n", encoding="utf-8")
+    lifecycle_path = out_dir / "production-lifecycle.json"
+    lifecycle_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "consumer": "code-remediate",
+                "status": "completed",
+                "plan_sha256": plan_sha256,
+                "state_path": f"{evidence_root}/production-lifecycle.json",
+                "verification_gate": "code-remediate-shared-quality-gates",
+                "source": {
+                    "baseline_head": "a" * 40,
+                    "baseline_tree": "b" * 40,
+                    "applied_head": "a" * 40,
+                    "preimage_sha256": {"docs/feature.md": "c" * 64, "src/feature.py": "d" * 64},
+                    "postimage_sha256": {"docs/feature.md": "e" * 64, "src/feature.py": "f" * 64},
+                },
+                "evidence_root": evidence_root,
+                "nodes": nodes,
+                "joined_nodes": [
+                    {
+                        "node_id": node["node_id"],
+                        "owned_paths": node["owned_paths"],
+                        "patch_sha256": node["patch_sha256"],
+                    }
+                    for node in nodes
+                ],
+                "integration": {
+                    "status": "structurally-verified",
+                    "order": [bucket["bucket_id"] for bucket in buckets],
+                    "paths": ["docs/feature.md", "src/feature.py"],
+                },
+                "source_application": {
+                    "status": "applied",
+                    "applied_paths": ["docs/feature.md", "src/feature.py"],
+                    "patch_path": source_patch_path.name,
+                    "patch_sha256": hashlib.sha256(source_patch_path.read_bytes()).hexdigest(),
+                    "rollback_patch_path": "rollback.patch",
+                    "rollback_patch_sha256": hashlib.sha256(rollback_path.read_bytes()).hexdigest(),
+                },
+                "cleanup": {"status": "removed", "force": False},
+                "containment": {
+                    "mode": "parent-authoritative-worktrees",
+                    "capability_sandbox_verified": False,
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    workplan["production_lifecycle"] = {
+        "path": lifecycle_path.name,
+        "sha256": hashlib.sha256(lifecycle_path.read_bytes()).hexdigest(),
+        "status": "completed",
+    }
+    return lifecycle_path
+
+
+def _refresh_production_lifecycle_digest(metadata: dict[str, object], lifecycle_path: Path) -> None:
+    """Rebind fixture metadata after one deliberate lifecycle mutation."""
+    workplan = metadata["resolution_workplan"]
+    assert isinstance(workplan, dict)
+    reference = workplan["production_lifecycle"]
+    assert isinstance(reference, dict)
+    reference["sha256"] = hashlib.sha256(lifecycle_path.read_bytes()).hexdigest()
+
+
+def test_parallel_work_buckets_reject_planning_only_approval_without_runtime_lifecycle(tmp_path: Path) -> None:
+    """Prevent a schema-v1 approved bucket proposal from masquerading as completed production execution."""
     metadata = _parallel_metadata()
     _write_workplan(metadata, tmp_path)
 
-    VALIDATOR._validate_code_remediate_workplan(metadata, tmp_path)
+    with pytest.raises(SystemExit, match="code-remediate-production-lifecycle-required"):
+        VALIDATOR._validate_code_remediate_workplan(metadata, tmp_path)
 
 
 def test_low_volume_selection_stays_in_one_agent_scope(tmp_path: Path) -> None:
@@ -285,4 +440,113 @@ def test_parallel_approval_is_bound_to_the_approved_plan_digest(tmp_path: Path) 
     workplan["approved_plan_sha256"] = "0" * 64
 
     with pytest.raises(SystemExit, match="code-remediate-parallel-approved-plan-not-bound"):
+        VALIDATOR._validate_code_remediate_workplan(metadata, tmp_path)
+
+
+def test_completed_parallel_remediation_accepts_matching_production_lifecycle(tmp_path: Path) -> None:
+    """Accept completion only when schema-v2 lifecycle evidence reconciles approval, apply, rollback, and cleanup."""
+    metadata = _parallel_metadata()
+    _write_completed_production_lifecycle(metadata, tmp_path)
+
+    VALIDATOR._validate_code_remediate_workplan(metadata, tmp_path)
+
+
+def test_completed_parallel_remediation_rejects_missing_production_lifecycle(tmp_path: Path) -> None:
+    """Prevent a completed fan-out result from bypassing durable source-application evidence."""
+    metadata = _parallel_metadata()
+    lifecycle_path = _write_completed_production_lifecycle(metadata, tmp_path)
+    lifecycle_path.unlink()
+
+    with pytest.raises(SystemExit, match="code-remediate-production-lifecycle-evidence-missing"):
+        VALIDATOR._validate_code_remediate_workplan(metadata, tmp_path)
+
+
+def test_completed_parallel_remediation_rejects_lifecycle_bound_to_other_plan(tmp_path: Path) -> None:
+    """Reject a truthful-looking completed lifecycle copied from a different approved bucket plan."""
+    metadata = _parallel_metadata()
+    lifecycle_path = _write_completed_production_lifecycle(metadata, tmp_path)
+    lifecycle = json.loads(lifecycle_path.read_text(encoding="utf-8"))
+    lifecycle["plan_sha256"] = "0" * 64
+    lifecycle_path.write_text(json.dumps(lifecycle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    workplan = metadata["resolution_workplan"]
+    assert isinstance(workplan, dict)
+    production_lifecycle = workplan["production_lifecycle"]
+    assert isinstance(production_lifecycle, dict)
+    production_lifecycle["sha256"] = hashlib.sha256(lifecycle_path.read_bytes()).hexdigest()
+
+    with pytest.raises(SystemExit, match="code-remediate-production-lifecycle-plan-mismatch"):
+        VALIDATOR._validate_code_remediate_workplan(metadata, tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error"),
+    [
+        ("missing-child-path", "code-remediate-production-lifecycle-child-patch-path-invalid"),
+        ("escaped-child-path", "code-remediate-production-lifecycle-child-patch-path-invalid"),
+        ("mismatched-child-patch", "code-remediate-production-lifecycle-child-patch-mismatch"),
+        ("missing-source-path", "code-remediate-production-lifecycle-source-patch-path-invalid"),
+        ("escaped-source-path", "code-remediate-production-lifecycle-source-patch-path-invalid"),
+        ("mismatched-source-patch", "code-remediate-production-lifecycle-source-patch-mismatch"),
+        ("mismatched-rollback-patch", "code-remediate-production-lifecycle-rollback-mismatch"),
+    ],
+)
+def test_completed_parallel_remediation_rejects_unbound_patch_evidence(
+    tmp_path: Path, mutation: str, error: str
+) -> None:
+    """Reject absent, escaping, or rehashed child and source patch evidence."""
+    metadata = _parallel_metadata()
+    lifecycle_path = _write_completed_production_lifecycle(metadata, tmp_path)
+    lifecycle = json.loads(lifecycle_path.read_text(encoding="utf-8"))
+    nodes = lifecycle["nodes"]
+    assert isinstance(nodes, list) and isinstance(nodes[0], dict)
+    application = lifecycle["source_application"]
+    assert isinstance(application, dict)
+
+    if mutation == "missing-child-path":
+        nodes[0].pop("patch_path")
+    elif mutation == "escaped-child-path":
+        nodes[0]["patch_path"] = "../outside.patch"
+    elif mutation == "mismatched-child-patch":
+        (tmp_path / "b1.patch").write_text("tampered\n", encoding="utf-8")
+    elif mutation == "missing-source-path":
+        application.pop("patch_path")
+    elif mutation == "escaped-source-path":
+        application["patch_path"] = "../outside.patch"
+    else:
+        patch_name = "rollback.patch" if mutation == "mismatched-rollback-patch" else "source-application.patch"
+        (tmp_path / patch_name).write_text("tampered\n", encoding="utf-8")
+
+    lifecycle_path.write_text(json.dumps(lifecycle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _refresh_production_lifecycle_digest(metadata, lifecycle_path)
+
+    with pytest.raises(SystemExit, match=error):
+        VALIDATOR._validate_code_remediate_workplan(metadata, tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error"),
+    [
+        ("context-tamper", "code-remediate-production-lifecycle-context-mismatch"),
+        ("state-path-drift", "code-remediate-production-lifecycle-state-path-mismatch"),
+        ("gate-drift", "code-remediate-production-lifecycle-verification-gate-mismatch"),
+    ],
+)
+def test_completed_parallel_remediation_reconciles_context_state_and_gate(
+    tmp_path: Path, mutation: str, error: str
+) -> None:
+    """Reject completed evidence detached from context bytes, state location, or parent gate semantics."""
+    metadata = _parallel_metadata()
+    lifecycle_path = _write_completed_production_lifecycle(metadata, tmp_path)
+    lifecycle = json.loads(lifecycle_path.read_text(encoding="utf-8"))
+
+    if mutation == "context-tamper":
+        (tmp_path / "specialists" / "b1-context.md").write_text("tampered\n", encoding="utf-8")
+    elif mutation == "state-path-drift":
+        lifecycle["state_path"] = ".reports/codex/code-remediate/fixture/other.json"
+    else:
+        lifecycle["verification_gate"] = "unverified-plan-command"
+    lifecycle_path.write_text(json.dumps(lifecycle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _refresh_production_lifecycle_digest(metadata, lifecycle_path)
+
+    with pytest.raises(SystemExit, match=error):
         VALIDATOR._validate_code_remediate_workplan(metadata, tmp_path)

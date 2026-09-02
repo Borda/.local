@@ -14,7 +14,7 @@ Validation covers normal reviewed results, explicitly unavailable-review results
 ## Usage
 
 run this validator from the code-review workflow after all evidence and draft result files have been written.
-Provide the review output directory and candidate ``result.json`` through the CLI, together with the project root when provenance needs the local agent configuration.
+Provide the review output directory and candidate ``result.json`` through the CLI. ``--project-root`` remains accepted for command-line compatibility, but role policy comes only from installed role cards.
 
 ## Used by
 
@@ -46,9 +46,14 @@ from typing import Any
 
 # Keep the installed skill helper importable when pytest loads this validator by file path.
 SKILL_DIRECTORY = Path(__file__).resolve().parent
+PLUGIN_ROOT = SKILL_DIRECTORY.parents[1]
 if str(SKILL_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(SKILL_DIRECTORY))
+SHARED_DIRECTORY = PLUGIN_ROOT / "shared"
+if str(SHARED_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(SHARED_DIRECTORY))
 
+from parallel_execution import validate_read_only_runtime  # noqa: E402
 from review_routing import derive_mechanical_risk  # noqa: E402
 
 REQUIRED_SECTIONS = (
@@ -94,6 +99,7 @@ ALL_MANIFEST_ROLES = {
 INDEPENDENT_PASS_TIERS = {"BROAD", "HIGH_RISK"}
 VALID_MODES = {"spawned", "substituted"}
 TRANSIENT_RETRY_ERRORS = {"rate_limited", "timeout", "transport_error"}
+SOL_ROLES = {"solution-architect", "security-auditor"}
 UNAVAILABLE_NOTE_LINES = (
     "PR Review Availability: unavailable",
     "Source findings: not assessed",
@@ -161,12 +167,69 @@ UNAVAILABLE_RECOVERY_ACTIONS = {
 CHECKOUT_STATE_RECOVERY_SUFFIX = " Inspect the local checkout state before retrying."
 
 
-def _agent_string_setting(path: Path, key: str) -> str:
-    """Read one required top-level quoted string from a managed agent file."""
-    match = re.search(rf'^\s*{re.escape(key)}\s*=\s*"([^"]+)"\s*$', path.read_text(encoding="utf-8"), re.MULTILINE)
-    if not match:
-        raise SystemExit(f"provenance-role-setting-missing:{path.name}:{key}")
-    return match.group(1)
+def _load_role_card(roles_dir: Path, role: str) -> dict[str, str]:
+    """Load the flat installed role-card contract and bind it to its exact bytes."""
+    path = roles_dir / role / "ROLE.md"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as error:
+        raise SystemExit(f"role-card-missing:{role}") from error
+    if not lines or lines[0] != "---":
+        raise SystemExit(f"role-card-frontmatter-invalid:{role}")
+    try:
+        closing_index = lines.index("---", 1)
+    except ValueError as error:
+        raise SystemExit(f"role-card-frontmatter-invalid:{role}") from error
+    fields: dict[str, str] = {}
+    for line in lines[1:closing_index]:
+        key, separator, value = line.partition(":")
+        if not separator or not key or not value.strip() or key in fields:
+            raise SystemExit(f"role-card-frontmatter-invalid:{role}")
+        fields[key] = value.strip()
+    required = ("role_id", "model", "model_reasoning_effort", "approval_policy", "sandbox_mode")
+    if fields.get("role_id") != role or any(field not in fields for field in required):
+        raise SystemExit(f"role-card-contract-invalid:{role}")
+    return {
+        "role_id": role,
+        "role_card_sha256": _sha256(path),
+        "model": fields["model"],
+        "model_reasoning_effort": fields["model_reasoning_effort"],
+        "approval_policy": fields["approval_policy"],
+        "sandbox_mode": fields["sandbox_mode"],
+    }
+
+
+def _validate_sol_selections(payload: dict[str, Any], roles: set[str], *, label: str) -> dict[str, dict[str, str]]:
+    """Validate immutable explicit-user-selection records for every routed Sol role."""
+    selected_roles = SOL_ROLES & roles
+    raw_selections = payload.get("sol_selection")
+    if not selected_roles:
+        if raw_selections not in (None, {}):
+            raise SystemExit(f"{label}-unexpected")
+        return {}
+    if not isinstance(raw_selections, dict):
+        missing = sorted(selected_roles)[0]
+        raise SystemExit(f"{label}-missing:{missing}")
+    if set(raw_selections) != selected_roles:
+        missing = sorted(selected_roles - set(raw_selections))
+        if missing:
+            raise SystemExit(f"{label}-missing:{missing[0]}")
+        raise SystemExit(f"{label}-unexpected")
+    selections: dict[str, dict[str, str]] = {}
+    for role in sorted(selected_roles):
+        selection = raw_selections.get(role)
+        if (
+            not isinstance(selection, dict)
+            or selection.get("source") != "explicit-user-selection"
+            or not isinstance(selection.get("parent_event_id"), str)
+            or not selection["parent_event_id"].strip()
+            or not isinstance(selection.get("selection_sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", selection["selection_sha256"]) is None
+            or set(selection) != {"source", "parent_event_id", "selection_sha256"}
+        ):
+            raise SystemExit(f"{label}-invalid:{role}")
+        selections[role] = selection
+    return selections
 
 
 ROUTING_SIGNALS = {
@@ -259,13 +322,35 @@ def _find_rollout(codex_home: Path, thread_id: str) -> Path:
 
 def _event_payloads(rows: list[dict[str, Any]], event_type: str) -> list[dict[str, Any]]:
     """Select event-message payloads of one type."""
-    return [
+    payloads = [
         row["payload"]
         for row in rows
         if row.get("type") == "event_msg"
         and isinstance(row.get("payload"), dict)
         and row["payload"].get("type") == event_type
     ]
+    if event_type != "sub_agent_activity":
+        return payloads
+    for row in rows:
+        payload = row.get("payload")
+        if row.get("type") != "event_msg" or not isinstance(payload, dict):
+            continue
+        item = payload.get("item")
+        if payload.get("type") != "item_completed" or not isinstance(item, dict):
+            continue
+        if item.get("type") != "SubAgentActivity":
+            continue
+        payloads.append(
+            {
+                "event_id": item.get("id"),
+                "kind": item.get("kind"),
+                "agent_path": item.get("agent_path"),
+                "agent_thread_id": item.get("agent_thread_id"),
+                "started_at_ms": payload.get("started_at_ms"),
+                "completed_at_ms": payload.get("completed_at_ms"),
+            }
+        )
+    return payloads
 
 
 def _validate_routing(out_dir: Path, risk_tier: str) -> set[str]:
@@ -319,14 +404,19 @@ def _validate_routing(out_dir: Path, risk_tier: str) -> set[str]:
         triggered.add("challenger")
     triggered.update(role for role, signal in CONDITIONAL_SIGNALS.items() if signals[signal])
 
+    _validate_sol_selections(routing, triggered, label="review-routing-sol-selection")
+
     declared = routing.get("triggered_roles")
     if not isinstance(declared, list) or declared != sorted(triggered):
         raise SystemExit("review-routing-triggered-role-mismatch")
     reasons = routing.get("trigger_reasons")
     if not isinstance(reasons, dict) or set(reasons) != triggered:
         raise SystemExit("review-routing-trigger-reason-mismatch")
-    if not all(isinstance(value, list) and value for value in reasons.values()):
-        raise SystemExit("review-routing-trigger-reason-empty")
+    if not all(
+        isinstance(value, list) and value and all(isinstance(item, str) and item.strip() for item in value)
+        for value in reasons.values()
+    ):
+        raise SystemExit("review-routing-trigger-reason-values-invalid")
     return triggered
 
 
@@ -807,6 +897,88 @@ def _manifest_passes(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     return normalized
 
 
+def _validate_review_runtime(
+    out_dir: Path,
+    manifest: dict[str, Any],
+    passes: list[dict[str, Any]],
+    codex_home: Path,
+    parent_thread_id: str,
+) -> dict[str, object]:
+    """Bind spawned review passes to the shared read-only runtime validator."""
+    spawned = [item for item in passes if item.get("mode") == "spawned"]
+    if not spawned:
+        if manifest.get("runtime_execution") is not None:
+            raise SystemExit("review-runtime-execution-unexpected")
+        return {}
+    runtime = manifest.get("runtime_execution")
+    if not isinstance(runtime, dict) or set(runtime) != {"manifest_path", "manifest_sha256", "plan_path"}:
+        raise SystemExit("review-runtime-execution-missing")
+    execution_path = _resolve_path(out_dir, runtime.get("manifest_path"))
+    plan_path = _resolve_path(out_dir, runtime.get("plan_path"))
+    if not execution_path.is_file() or _sha256(execution_path) != runtime.get("manifest_sha256"):
+        raise SystemExit("review-runtime-execution-hash-mismatch")
+    execution = _load_json(execution_path)
+    stages = execution.get("stages")
+    if not isinstance(stages, list):
+        raise SystemExit("review-runtime-execution-role-mismatch")
+    nodes = [node for stage in stages if isinstance(stage, dict) for node in stage.get("nodes", [])]
+    if any(not isinstance(node, dict) for node in nodes):
+        raise SystemExit("review-runtime-execution-role-mismatch")
+    nodes_by_role: dict[str, dict[str, Any]] = {}
+    for node in nodes:
+        role = node.get("role_id")
+        if not isinstance(role, str) or role in nodes_by_role:
+            raise SystemExit("review-runtime-execution-role-mismatch")
+        nodes_by_role[role] = node
+    passes_by_role = {str(item.get("role")): item for item in spawned}
+    if set(nodes_by_role) != set(passes_by_role):
+        raise SystemExit("review-runtime-execution-role-mismatch")
+    for role, item in passes_by_role.items():
+        selected = item.get("selected_attempt")
+        attempts = item.get("attempts")
+        node = nodes_by_role[role]
+        node_selected = node.get("selected_attempt")
+        node_attempts = node.get("attempts")
+        if (
+            not isinstance(selected, int)
+            or not isinstance(attempts, list)
+            or not 1 <= selected <= len(attempts)
+            or not isinstance(node_selected, int)
+            or not isinstance(node_attempts, list)
+            or not 1 <= node_selected <= len(node_attempts)
+            or not isinstance(attempts[selected - 1], dict)
+            or not isinstance(node_attempts[node_selected - 1], dict)
+        ):
+            raise SystemExit(f"review-runtime-execution-attempt-mismatch:{role}")
+        if _resolve_path(out_dir, item.get("output_path")) != _resolve_path(
+            out_dir, node_attempts[node_selected - 1].get("output_path")
+        ) or _resolve_path(out_dir, attempts[selected - 1].get("context_path")) != _resolve_path(
+            out_dir, node.get("context_path")
+        ):
+            raise SystemExit(f"review-runtime-execution-evidence-mismatch:{role}")
+    try:
+        summary = validate_read_only_runtime(
+            execution,
+            manifest_path=execution_path,
+            plan_path=plan_path,
+            parent_rollout=_find_rollout(codex_home, parent_thread_id),
+            sessions_dir=codex_home / "sessions",
+            run_dir=out_dir,
+            roles_dir=PLUGIN_ROOT / "roles",
+        )
+    except ValueError as error:
+        raise SystemExit(f"review-runtime-execution-invalid:{error}") from error
+    if (
+        summary.get("evidence_level") != "portable-read-restricted"
+        or summary.get("network_mode") != "restricted"
+        or summary.get("approval_policy") != "never"
+        or summary.get("filesystem_credential_isolation") != "unverified"
+        or summary.get("write_parallel_eligible") is not False
+    ):
+        raise SystemExit("review-runtime-execution-evidence-invalid")
+    return summary
+
+
 def _validate_spawn_attempts(
     out_dir: Path,
     item: dict[str, Any],
@@ -814,7 +986,9 @@ def _validate_spawn_attempts(
     codex_home: Path,
     parent_rows: list[dict[str, Any]],
     used_threads: set[str],
-    project_root: Path,
+    role_card: dict[str, str],
+    used_context_paths: set[Path],
+    used_output_paths: set[Path],
 ) -> None:
     """Bind a spawned specialist output to parent and child rollout evidence."""
     role = str(item["role"])
@@ -841,6 +1015,9 @@ def _validate_spawn_attempts(
         if not all(isinstance(value, str) and value for value in (thread_id, event_id, agent_path)):
             raise SystemExit(f"manifest-attempt-identity-missing:{role}")
         context_path = _resolve_path(out_dir, attempt.get("context_path"))
+        if context_path in used_context_paths:
+            raise SystemExit("manifest-reused-context-path")
+        used_context_paths.add(context_path)
         context_sha256 = attempt.get("context_sha256")
         if not context_path.exists() or _sha256(context_path) != context_sha256:
             raise SystemExit(f"provenance-context-hash-mismatch:{role}")
@@ -900,10 +1077,9 @@ def _validate_spawn_attempts(
         context = contexts[0]
         if context.get("model") != attempt.get("model") or context.get("effort") != attempt.get("effort"):
             raise SystemExit(f"provenance-model-effort-mismatch:{thread_id}")
-        config_path = project_root / ".codex" / "agents" / f"{role}.toml"
-        if context.get("model") != _agent_string_setting(config_path, "model"):
+        if context.get("model") != role_card["model"]:
             raise SystemExit(f"provenance-role-model-policy-mismatch:{role}:{thread_id}")
-        if context.get("effort") != _agent_string_setting(config_path, "model_reasoning_effort"):
+        if context.get("effort") != role_card["model_reasoning_effort"]:
             raise SystemExit(f"provenance-role-effort-policy-mismatch:{role}:{thread_id}")
         completions = [
             event for event in _event_payloads(child_rows, "task_complete") if event.get("turn_id") == turn_id
@@ -912,6 +1088,9 @@ def _validate_spawn_attempts(
             raise SystemExit(f"provenance-task-complete-mismatch:{thread_id}")
 
         output_path = _resolve_path(out_dir, attempt.get("output_path"))
+        if output_path in used_output_paths:
+            raise SystemExit("manifest-reused-output-path")
+        used_output_paths.add(output_path)
         if not output_path.exists() or _sha256(output_path) != attempt.get("output_sha256"):
             raise SystemExit(f"provenance-output-hash-mismatch:{role}")
         message = completions[0]["last_agent_message"].strip()
@@ -942,7 +1121,8 @@ def _validate_manifest_entries(
     parent_thread_id: str,
     project_root: Path,
 ) -> dict[str, dict[str, Any]]:
-    if manifest.get("schema_version") != 2:
+    schema_version = manifest.get("schema_version")
+    if schema_version not in {2, 3}:
         raise SystemExit("manifest-schema-version")
     for key in ("review_run_id", "parent_thread_id", "review_input_sha256"):
         if not isinstance(manifest.get(key), str) or not manifest[key]:
@@ -952,9 +1132,12 @@ def _validate_manifest_entries(
     review_input = out_dir / "diff.patch"
     if not review_input.exists() or _sha256(review_input) != manifest["review_input_sha256"]:
         raise SystemExit("manifest-review-input-hash-mismatch")
-    parent_rows = _read_jsonl(_find_rollout(codex_home, parent_thread_id))
+    parent_rows: list[dict[str, Any]] | None = None
     used_threads: set[str] = set()
+    used_context_paths: set[Path] = set()
+    used_output_paths: set[Path] = set()
     by_role: dict[str, dict[str, Any]] = {}
+    _validate_sol_selections(manifest, triggered_roles, label="manifest-sol-selection")
     for item in passes:
         role = item.get("role")
         axis = item.get("axis")
@@ -966,6 +1149,9 @@ def _validate_manifest_entries(
             raise SystemExit(f"manifest-invalid-role:{role!r}")
         if role in by_role:
             raise SystemExit(f"manifest-duplicate-role:{role}")
+        role_card = _load_role_card(PLUGIN_ROOT / "roles", role)
+        if schema_version == 3 and item.get("role_card_sha256") != role_card["role_card_sha256"]:
+            raise SystemExit(f"manifest-role-card-hash-mismatch:{role}")
         if not isinstance(axis, str) or not axis.strip():
             raise SystemExit(f"manifest-missing-axis:{role}")
         if mode not in VALID_MODES:
@@ -980,9 +1166,31 @@ def _validate_manifest_entries(
         if not output_path.exists():
             raise SystemExit(f"manifest-missing-output:{role}:{output_path}")
         if mode == "spawned":
-            _validate_spawn_attempts(out_dir, item, manifest, codex_home, parent_rows, used_threads, project_root)
+            if parent_rows is None:
+                parent_rows = _read_jsonl(_find_rollout(codex_home, parent_thread_id))
+            _validate_spawn_attempts(
+                out_dir,
+                item,
+                manifest,
+                codex_home,
+                parent_rows,
+                used_threads,
+                role_card,
+                used_context_paths,
+                used_output_paths,
+            )
         elif item.get("attempts") not in (None, []):
             raise SystemExit(f"manifest-substitute-has-attempts:{role}")
+        else:
+            if output_path in used_output_paths:
+                raise SystemExit("manifest-reused-output-path")
+            used_output_paths.add(output_path)
+            try:
+                substitute_output = output_path.read_text(encoding="utf-8").strip()
+            except OSError as error:
+                raise SystemExit(f"manifest-substitute-output-not-role-bound:{role}") from error
+            if not substitute_output or role not in substitute_output:
+                raise SystemExit(f"manifest-substitute-output-not-role-bound:{role}")
         by_role[role] = item
 
     if set(by_role) != triggered_roles:
@@ -1003,15 +1211,21 @@ def _validate_manifest_preflight(
         raise SystemExit(f"invalid-risk-tier:{risk_tier!r}")
     triggered_roles = _validate_routing(out_dir, risk_tier)
     manifest = _load_json(out_dir / "specialist-manifest.json")
+    routing = _load_json(out_dir / "review-routing.json")
+    if manifest.get("sol_selection") != routing.get("sol_selection"):
+        raise SystemExit("manifest-sol-selection-routing-mismatch")
+    passes = _manifest_passes(manifest)
     _validate_manifest_entries(
         out_dir,
         manifest,
-        _manifest_passes(manifest),
+        passes,
         triggered_roles,
         codex_home,
         parent_thread_id,
         project_root,
     )
+    if manifest.get("schema_version") == 3:
+        _validate_review_runtime(out_dir, manifest, passes, codex_home, parent_thread_id)
 
 
 def _validate_result(
@@ -1183,6 +1397,9 @@ def _validate_result(
     triggered_roles = _validate_routing(out_dir, risk_tier)
     manifest_path = _resolve_path(out_dir, metadata.get("specialist_manifest"))
     manifest = _load_json(manifest_path)
+    routing = _load_json(out_dir / "review-routing.json")
+    if manifest.get("sol_selection") != routing.get("sol_selection"):
+        raise SystemExit("manifest-sol-selection-routing-mismatch")
     passes = _manifest_passes(manifest)
     by_role = _validate_manifest_entries(
         out_dir,
@@ -1193,6 +1410,19 @@ def _validate_result(
         parent_thread_id,
         project_root,
     )
+    runtime_summary = (
+        _validate_review_runtime(out_dir, manifest, passes, codex_home, parent_thread_id)
+        if manifest.get("schema_version") == 3
+        else {}
+    )
+    if runtime_summary:
+        for key, expected in (
+            ("execution_mode", runtime_summary.get("actual_mode")),
+            ("execution_evidence_level", runtime_summary.get("evidence_level")),
+            ("write_parallel_eligible", False),
+        ):
+            if metadata.get(key) != expected:
+                raise SystemExit(f"metadata-{key.replace('_', '-')}-mismatch")
     if metadata.get("review_run_id") != manifest.get("review_run_id"):
         raise SystemExit("metadata-review-run-id-mismatch")
     if metadata.get("review_input_sha256") != manifest.get("review_input_sha256"):
@@ -1217,6 +1447,7 @@ def _validate_result(
             "axis",
             "trigger",
             "mode",
+            "role_card_sha256",
             "output_path",
             "confidence",
             "blocking_findings",
@@ -1265,7 +1496,12 @@ def main() -> int:
         default=Path(codex_home) if codex_home else Path.home() / ".codex",
         help="Codex home containing rollout session logs.",
     )
-    parser.add_argument("--project-root", type=Path, default=Path.cwd(), help="Project root containing .codex agents.")
+    parser.add_argument(
+        "--project-root",
+        type=Path,
+        default=Path.cwd(),
+        help="Accepted for CLI compatibility; role policy uses installed role cards.",
+    )
     parser.add_argument(
         "--parent-thread-id",
         default=os.environ.get("CODEX_THREAD_ID", ""),

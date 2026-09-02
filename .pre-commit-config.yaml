@@ -344,9 +344,13 @@ repos:
       - id: no-hardcoded-user-paths
         name: 🚫 No hardcoded user paths
         language: pygrep
-        # Matches /Users/<realname>/ or /home/<realname>/ — alphanumeric usernames only.
+        # Matches /Users/<realname> or /home/<realname> — alphanumeric usernames only.
         # Placeholder docs like /Users/<name>/ are not flagged (< is not alphanumeric).
-        entry: /Users/[a-zA-Z0-9_-]+/|/home/[a-zA-Z0-9_-]+/
+        # Case-insensitive, trailing slash optional: catches lowercase "/users/jirka/"
+        # and end-of-line "/Users/jirka" (no trailing slash) — both missed by the old
+        # strict form. Leading slash stays required — dropping it false-positived on
+        # prose like "users/endpoints", "users/devs", and "$HOME/path" doc mentions.
+        entry: (?i)/(users|home)/[a-zA-Z0-9_-]+/?
         # Plugin source (agents/skills/rules/hooks + manifest json) is the real install
         # surface; a hardcoded path there breaks on every other machine. .claude/state
         # runtime dirs are gitignored and excluded from the pattern by not matching.

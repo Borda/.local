@@ -152,6 +152,7 @@ def _validate_tables(payload: dict[str, Any], skill: str, branch: str) -> tuple[
         rows = table.get("rows")
         if not isinstance(rows, list) or not rows:
             raise HandoffError(f"table-rows-empty:{heading}")
+        table_cells: list[str] = []
         for row_index, raw_row in enumerate(rows):
             row = _require_object(raw_row, f"table-row:{heading}:{row_index}")
             row_id = _require_string(row.get("id"), f"table-row-id:{heading}:{row_index}")
@@ -161,6 +162,7 @@ def _validate_tables(payload: dict[str, Any], skill: str, branch: str) -> tuple[
             cells = _require_string_list(row.get("cells"), f"table-row-cells:{row_id}", allow_empty=False)
             if len(cells) != len(columns):
                 raise HandoffError(f"table-row-width-mismatch:{row_id}")
+            table_cells.extend(cells)
             row_sources = _require_string_list(
                 row.get("source_ids"), f"table-row-source-ids:{row_id}", allow_empty=False
             )
@@ -168,6 +170,22 @@ def _validate_tables(payload: dict[str, Any], skill: str, branch: str) -> tuple[
                 if source_id in source_ids:
                     raise HandoffError(f"source-id-represented-twice:{source_id}")
                 source_ids.add(source_id)
+        details = table.get("details", [])
+        if not isinstance(details, list):
+            raise HandoffError(f"table-details-not-list:{heading}")
+        detail_ids: set[str] = set()
+        rendered_cells = "\n".join(table_cells)
+        for detail_index, raw_detail in enumerate(details):
+            detail = _require_object(raw_detail, f"table-detail:{heading}:{detail_index}")
+            if set(detail) != {"id", "text"}:
+                raise HandoffError(f"table-detail-fields-invalid:{heading}:{detail_index}")
+            detail_id = _require_string(detail.get("id"), f"table-detail-id:{heading}:{detail_index}")
+            _require_string(detail.get("text"), f"table-detail-text:{detail_id}")
+            if detail_id in detail_ids:
+                raise HandoffError(f"table-detail-id-duplicate:{detail_id}")
+            if f"[{detail_id}]" not in rendered_cells:
+                raise HandoffError(f"table-detail-unreferenced:{detail_id}")
+            detail_ids.add(detail_id)
     return row_ids, source_ids
 
 
@@ -338,12 +356,18 @@ def _table_cell(value: str) -> str:
 
 
 def _render_table(table: dict[str, Any]) -> list[str]:
-    """Render one validated table with deterministic separators."""
+    """Render one validated table and its symbol details deterministically."""
     columns = table["columns"]
     lines = [f"**{table['heading']}**", "", "| " + " | ".join(columns) + " |"]
     lines.append("| " + " | ".join("---" for _ in columns) + " |")
     for row in table["rows"]:
         lines.append("| " + " | ".join(_table_cell(cell) for cell in row["cells"]) + " |")
+    if table.get("details"):
+        lines.append("")
+        lines.extend(
+            f"[{detail['id']}] {detail['text'].replace(chr(13) + chr(10), '<br>').replace(chr(10), '<br>')}"
+            for detail in table["details"]
+        )
     return lines
 
 

@@ -132,6 +132,34 @@ def test_standard_handoff_renders_complete_deterministic_markdown() -> None:
     assert finalizer.render_handoff(handoff_payload()) == rendered
 
 
+def test_handoff_renders_symbol_details_immediately_below_table() -> None:
+    """Keep long table text readable through validated under-table references."""
+    finalizer = load_finalizer()
+    payload = handoff_payload()
+    tables = payload["tables"]
+    assert isinstance(tables, list)
+    table = tables[0]
+    table["rows"][0]["cells"][4] = "implemented — [O1]"
+    table["details"] = [{"id": "O1", "text": "Guarded multiline input without changing valid requests."}]
+
+    rendered = finalizer.render_handoff(payload)
+
+    table_end = "| CR-2 | medium | Run external CI | report [CR-2] | Unresolved — external runner unavailable | CI owner must rerun |"
+    assert f"{table_end}\n\n[O1] Guarded multiline input without changing valid requests." in rendered
+
+
+def test_handoff_rejects_unreferenced_table_detail() -> None:
+    """Reject detail text that has no compact symbol in its owning table."""
+    finalizer = load_finalizer()
+    payload = handoff_payload()
+    tables = payload["tables"]
+    assert isinstance(tables, list)
+    tables[0]["details"] = [{"id": "O1", "text": "No table cell refers to this detail."}]
+
+    with pytest.raises(finalizer.HandoffError, match="table-detail-unreferenced:O1"):
+        finalizer.validate_handoff(payload)
+
+
 def test_handoff_rejects_an_omitted_source_even_when_counts_are_rewritten() -> None:
     """Reject a table that hides one declared source behind self-consistent aggregate counts."""
     finalizer = load_finalizer()

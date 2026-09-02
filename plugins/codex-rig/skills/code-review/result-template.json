@@ -65,6 +65,8 @@
       ],
       "status": "shared-confidence-band-status"
     },
+    "execution_evidence_level": "portable-read-restricted",
+    "execution_mode": "parallel|independent-spawned|serial|serial-fallback",
     "fanout_substituted": false,
     "final_handoff": {
       "branch": "assessed|unavailable|closed|caller-contract",
@@ -112,10 +114,12 @@
         "mode": "spawned|substituted",
         "output_path": ".reports/codex/code-review/<timestamp>/specialists/qa-specialist.md",
         "role": "qa-specialist",
+        "role_card_sha256": "sha256 of installed ROLE.md",
         "selected_attempt": 1,
         "trigger": "explicit risk reason from review-routing.json"
       }
-    ]
+    ],
+    "write_parallel_eligible": false
   },
   "schema_version": 2,
   "status": "pass|fail|timeout"

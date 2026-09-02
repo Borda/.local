@@ -20,6 +20,38 @@ The installed plugin tree is immutable input. Resolve requested targets against 
 }
 ```
 
+## Parallel Adoption (Disabled During P4)
+
+This is a consumer declaration, not an enabled execution route. The shipped default remains `serial`; `--execution`, `CODEX_RIG_EXECUTION`, natural-language requests, or `auto` cannot opt this skill into parallel execution during this stage.
+
+### Safe parallel work
+
+The future candidate is read-only inventory, reference, ownership, and policy-impact scans over immutable disjoint targets with separate outputs. Disjoint propagation is not enabled; config, policy, documentation, calibration, cache, generated-output, artifact, and result writes remain outside this portable candidate.
+
+### Required barrier
+
+Before any future dispatch, freeze the intent, target, baseline, ownership map, exact references, calibration and routing impact, context packs, role-card hashes, checks, resource locks, and plan digest. Dispatch at most one fixed dependency-ready wave, then join every terminal scan before edits, propagation, gates, or acceptance; changed scope requires a new plan.
+
+### Serial parent decisions
+
+The parent owns all create, update, delete, rename, and permission mutations; same-file policy or config changes; shared `AGENTS.md`, README, and config edits; calibration version advancement; propagation; artifacts and result writes; canonical quality gates; verdict; and promotion. Installed plugin-root and generated `codex-rig-*.toml` safety decisions remain serial and unchanged.
+
+### Resource conflicts
+
+Declare only validated resource locks such as `git-index`, `cache:<path>`, `generated:<path>`, and `test-env:<name>`. Shared targets, paths, indexes, caches, generated outputs, test environments, ports, devices, or undeclared resources force serial execution or re-planning.
+
+### Fallback
+
+Unavailable or unsafe fan-out uses equal-gate `serial-fallback` from the same frozen plan with the same quality gates and retained evidence. Never label fallback as parallel or weaken checks because dispatch was unavailable.
+
+### Acceptance
+
+P3b exact-candidate native Linux/Windows evidence, separate user promotion, and this skill's shared runtime matrix must pass before any runtime opt-in. Acceptance must prove freeze, complete join, truthful execution label, resource compatibility, equal gates, and unchanged serial parent authority.
+
+### Stop rule
+
+During P4, generic parallel writes remain disabled. Stop without dispatch on missing promotion, mutable packs, ownership or resource overlap, sensitive or unproven controls, missing terminal evidence, or an incomplete join; no declaration authorizes writes or changes the phase default.
+
 ## Workflow
 
 ### 01: Create run directory
@@ -101,6 +133,8 @@ Conditional:
 ## Calibration Hooks
 
 Behavior-changing management edits update or explicitly review the owning project's configuration, tests, documentation, routing, and calibration fixtures. Codex Rig maintainers use `PLUGIN_ROOT/runtime/calibration/` and `PLUGIN_ROOT/shared/native-skill-contract.md`; an installed plugin cache remains immutable.
+
+Calibration must reject premature P4 runtime opt-in, generic write authorization, mutable or unjoined scan packs, delegated management mutations, and quality-gate parallelism without executable resource-isolation evidence.
 
 For versioned calibration artifact changes, calculate version from last commit, not dirty worktree. If `HEAD` has `1.3`, all next-commit uncommitted edits stay `1.3` or `1.4`: one version step only; do not bump to `1.5`, `1.6`, etc. before a commit.
 
