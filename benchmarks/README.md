@@ -593,10 +593,12 @@ python benchmarks/generate-tasks-bench.py --repo-path ./<repo-dir>
 # Validate single task
 python benchmarks/generate-tasks-bench.py --repo-path ./<repo-dir> --task SE-01
 
-# Refresh AST-oracle-backed ground truth (fn/br/rv; overwrites tasks-bench.json)
+# Refresh AST-oracle-backed ground truth (fn/br/rv/cq — every code_quality check now has an
+# independent AST oracle; overwrites tasks-bench.json)
 python benchmarks/generate-tasks-bench.py --repo-path ./<repo-dir> --update --verbose
 
-# Also refresh scan-query-derived fields (cq uncovered/xrefs) — circular; prints warning + oracle diff
+# Also refresh the remaining scan-query-derived fields (symbol line ranges, coupled) — circular;
+# prints warning + oracle diff
 python benchmarks/generate-tasks-bench.py --repo-path ./<repo-dir> --update --update-from-tool --verbose
 ```
 

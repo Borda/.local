@@ -76,6 +76,53 @@ class TaskType(str, Enum):
 # excludes the same test modules scan-query does. Matched against repo-relative paths.
 _TEST_PATH_RE = re.compile(r"(^|/)tests?/|/test_[^/]+\.py$|/[^/]+_test\.py$|/conftest\.py$")
 
+# ---- XREF ORACLE CONSTANTS — mirror scan-index/scan-query verbatim, never import them (see
+# ``_xrefs_broken_via_ast``: importing the scanner would share its bugs and make the oracle
+# circular again). Each constant carries the exact source line it mirrors so a scanner change
+# breaks the comment instead of silently desyncing the oracle. ----
+
+# mirrors scanner.py:1740 (_SPHINX_XREF_RE)
+_XREF_ROLE_RE = re.compile(r":(?P<role>[a-z]+):`(?P<target>[^`]+)`")
+# mirrors scanner.py:1744 (_SPHINX_RESOLVABLE_ROLES) — roles a docstring role is normalized for
+_XREF_RESOLVABLE_ROLES: frozenset[str] = frozenset({"func", "class", "meth", "mod", "attr", "data", "exc"})
+# mirrors query.py:3777 (_SYMBOL_ROLES) — subset actually checked for brokenness; mod/attr/data excluded
+_XREF_SYMBOL_ROLES: frozenset[str] = frozenset({"func", "class", "meth", "exc", "mkdocs"})
+# mirrors scanner.py:1747 / :1749 (_MKDOCS_NAMED_RE / _MKDOCS_BACKTICK_RE)
+_MKDOCS_NAMED_RE = re.compile(r"\[(?:[^\]]+)\]\[([A-Za-z_][A-Za-z0-9_.]*)\]")
+_MKDOCS_TICK_RE = re.compile(r"\[`([A-Za-z_][A-Za-z0-9_.]*)`\]\[\]")
+# mirrors scanner.py:50-76 (SKIP_DIRS) — wider than PY_WALK_SKIP; xref scan must match the indexer
+_XREF_SKIP_DIRS: frozenset[str] = frozenset(
+    {
+        ".git",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".tox",
+        "dist",
+        "build",
+        ".eggs",
+        "node_modules",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "htmlcov",
+        ".claude",
+        ".codex",
+        ".experiments",
+        ".temp",
+        ".developments",
+        ".cache",
+        ".plans",
+        ".reports",
+        ".notes",
+        ".reference",
+        "site",
+        "_site",
+    }
+)
+# mirrors scanner.py:520 (_MAX_FILE_SIZE_BYTES)
+_XREF_MAX_FILE_BYTES = 10 * 1024 * 1024
+
 # Kept in sync with ``scan-query --help`` by the benchmark test suite.  Query
 # contracts are execution metadata, so an unsupported command must fail before
 # a B/C preflight or paid coordinate starts.
@@ -982,6 +1029,397 @@ def _uncovered_via_ast(repo: Path, module: str | None = None) -> tuple[set[str],
     return uncovered, None
 
 
+# ---- XREF ORACLE — independent reimplementation of scan-index's Sphinx/MkDocs cross-reference
+# extraction (scanner.py:1740-2075) and scan-query's ``xrefs --broken`` check (query.py:3777-3859).
+# Reimplemented rather than imported: sharing the scanner's resolver would reproduce any resolver
+# bug on both sides of the comparison and launder the circularity this oracle exists to break. ----
+
+
+def _xref_normalize_raw(raw_target: str, current_module: str) -> str | None:
+    """Strip Sphinx prefix markers and resolve a relative (leading-dot) raw target.
+
+    Mirrors the shared prefix of scan-index ``_resolve_xref_target`` (scanner.py:1794-1811),
+    before role dispatch.
+
+    Args:
+        raw_target: Target string captured from the role markup.
+        current_module: Dotted module name anchoring bare/relative names.
+
+    Returns:
+        Normalized target string, or None when empty after stripping.
+    """
+    target = raw_target.strip()
+    if not target:
+        return None
+    if target[:1] in ("~", "!"):
+        target = target[1:]
+    if not target:
+        return None
+    if target.startswith("."):
+        stripped = target.lstrip(".")
+        package = current_module.rsplit(".", 1)[0] if "." in current_module else current_module
+        target = f"{package}.{stripped}" if stripped else package
+        if not target:
+            return None
+    return target
+
+
+def _xref_resolve_meth(target: str, current_module: str) -> str:
+    """Resolve a ``meth`` role target to ``module::Cls.method`` (mirrors scanner.py:1815-1826).
+
+    Args:
+        target: Normalized target string (post :func:`_xref_normalize_raw`).
+        current_module: Dotted module name anchoring bare/2-part names.
+
+    Returns:
+        Canonical ``module::name`` symbol key.
+    """
+    parts = target.split(".")
+    if len(parts) >= 3:
+        module_part = ".".join(parts[:-2])
+        attr_part = ".".join(parts[-2:])
+        return f"{module_part}::{attr_part}"
+    return f"{current_module}::{target}" if current_module else target
+
+
+def _xref_resolve_target(role: str, raw_target: str, current_module: str) -> str | None:
+    """Resolve a Sphinx role target to a ``module::name`` symbol key (mirrors scanner.py:1752-1832).
+
+    Args:
+        role: Sphinx role name (e.g. ``"func"``).
+        raw_target: Target string captured from the role markup.
+        current_module: Dotted module name anchoring bare/relative names.
+
+    Returns:
+        Canonical symbol key (``module::name``, or the bare module name for ``mod``), or None
+        when *role* is not in :data:`_XREF_RESOLVABLE_ROLES` or *raw_target* normalizes to empty.
+    """
+    if role not in _XREF_RESOLVABLE_ROLES:
+        return None
+    target = _xref_normalize_raw(raw_target, current_module)
+    if target is None:
+        return None
+    if role == "mod":
+        return target
+    if role == "meth":
+        return _xref_resolve_meth(target, current_module)
+    if "." in target:
+        module_part, name_part = target.rsplit(".", 1)
+        return f"{module_part}::{name_part}"
+    return f"{current_module}::{target}" if current_module else target
+
+
+def _xref_source_files(repo: Path) -> list[Path]:
+    """Enumerate ``.py``/``.pyi`` source files an xref scan should cover.
+
+    Mirrors scan-index's own walk (``SKIP_DIRS``, symlink skip, oversize skip) rather than the
+    narrower ``_resolve_module_files``/``walk_py_modules`` helpers the other oracles use —
+    scan-index indexes test modules too, and xref brokenness is checked repo-wide (see
+    :data:`_XREF_SKIP_DIRS`).
+
+    Args:
+        repo: Repository root directory.
+
+    Returns:
+        Absolute paths of every eligible ``.py``/``.pyi`` file under *repo*.
+    """
+    files: list[Path] = []
+    for root, dirs, names in os.walk(repo):
+        dirs[:] = [d for d in dirs if d not in _XREF_SKIP_DIRS and not d.startswith(".")]
+        for name in names:
+            if not (name.endswith(".py") or name.endswith(".pyi")):
+                continue
+            fpath = Path(root) / name
+            if fpath.is_symlink():
+                continue
+            try:
+                if fpath.stat().st_size > _XREF_MAX_FILE_BYTES:
+                    continue
+            except OSError:
+                continue
+            files.append(fpath)
+    return files
+
+
+def _xref_parse(fpath: Path) -> ast.Module | None:
+    """Parse *fpath* as Python source, returning None for any scan-index ``degraded`` reason.
+
+    Strict UTF-8 read (unlike the other oracles' ``errors="ignore"``) so a genuine decode failure
+    is treated as degraded, mirroring scan-index's own strict read (scanner.py:2838/2847/2896),
+    which excludes a degraded module's symbols *and* its xrefs alike. Skipping the whole file here
+    reproduces both halves of that behavior in one place.
+
+    Args:
+        fpath: Absolute path to the source file.
+
+    Returns:
+        Parsed module, or None when the file cannot be decoded or does not parse.
+    """
+    try:
+        text = fpath.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    try:
+        return ast.parse(text, filename=str(fpath))
+    except SyntaxError:
+        return None
+
+
+def _xref_module_symbols(tree: ast.Module, module: str) -> set[str]:
+    """Return the exact symbol-map keys scan-index emits for *tree* (mirrors ``extract_symbols``).
+
+    Deliberately narrow: top-level classes, their *direct* method children, and top-level
+    functions only — no module/class-level assignments, no nested classes or functions
+    (scanner.py:1340-1382). A broader map resolves targets scan-query reports broken: verified
+    empirically, widening this set flips a known-broken reference to resolvable.
+
+    Args:
+        tree: Parsed module AST.
+        module: Dotted module name (the map key's ``module::`` prefix).
+
+    Returns:
+        Set of ``module::qualified_name`` keys, matching scan-query's ``build_symbol_map``.
+    """
+    keys: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            keys.add(f"{module}::{node.name}")
+            for child in node.body:
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    keys.add(f"{module}::{node.name}.{child.name}")
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            keys.add(f"{module}::{node.name}")
+    return keys
+
+
+def _xref_docstring_nodes(tree: ast.Module) -> list[tuple[ast.AST, int]]:
+    """Yield ``(node, base_line)`` for every docstring-bearing node (mirrors scanner.py:1835-1856).
+
+    Args:
+        tree: Parsed module AST.
+
+    Returns:
+        List of ``(node, base_line)`` — the module docstring plus every class/function/
+        async-function docstring anywhere in the tree, ``base_line`` being the docstring
+        literal's opening line.
+    """
+    results: list[tuple[ast.AST, int]] = []
+    if tree.body and isinstance(tree.body[0], ast.Expr) and isinstance(tree.body[0].value, ast.Constant):
+        if isinstance(tree.body[0].value.value, str):
+            results.append((tree, tree.body[0].lineno))
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        body = getattr(node, "body", [])
+        if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+            if isinstance(body[0].value.value, str):
+                results.append((node, body[0].lineno))
+    return results
+
+
+def _xref_entries_for_module(tree: ast.Module, rel: str, module: str) -> list[dict]:
+    """Extract Sphinx role cross-references from every docstring in *tree* (mirrors scanner.py:1859-1901).
+
+    Args:
+        tree: Parsed module AST.
+        rel: Repo-relative POSIX path stored in each entry.
+        module: Dotted module name anchoring bare/relative role targets.
+
+    Returns:
+        List of ``{"role", "target", "file", "line", "source": "sphinx"}`` dicts.
+    """
+    entries: list[dict] = []
+    for node, base_line in _xref_docstring_nodes(tree):
+        doc = ast.get_docstring(node, clean=False)
+        if not doc:
+            continue
+        for match in _XREF_ROLE_RE.finditer(doc):
+            target = _xref_resolve_target(match.group("role"), match.group("target"), module)
+            if target is None:
+                continue
+            entries.append(
+                {"role": match.group("role"), "target": target, "file": rel, "line": base_line, "source": "sphinx"}
+            )
+    return entries
+
+
+def _xref_resolve_mkdocs_identifier(identifier: str) -> str | None:
+    """Convert a mkdocstrings identifier to a ``module::name`` key (mirrors scanner.py:1948-1977).
+
+    Args:
+        identifier: Dotted identifier captured from autorefs markup.
+
+    Returns:
+        Canonical symbol key, or None for a dotless identifier (a page anchor, not a Python path).
+    """
+    if "." not in identifier:
+        return None
+    parts = identifier.split(".")
+    if len(parts) >= 3 and parts[-2][:1].isupper():
+        module_part, attr_part = ".".join(parts[:-2]), ".".join(parts[-2:])
+    else:
+        module_part, attr_part = ".".join(parts[:-1]), parts[-1]
+    return f"{module_part}::{attr_part}"
+
+
+def _xref_rst_entries(path: Path, rel: str) -> list[dict]:
+    """Scan one ``.rst`` file for Sphinx role cross-references (mirrors scanner.py:1904-1945).
+
+    The anchor is empty because ``.rst`` files belong to no Python module — bare role targets
+    stay bare and can never match a ``module::name`` symbol key.
+
+    Args:
+        path: Filesystem path to the ``.rst`` file.
+        rel: Repo-relative POSIX path stored in each entry.
+
+    Returns:
+        List of ``{"role", "target", "file", "line", "source": "sphinx"}`` dicts.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    entries: list[dict] = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        for match in _XREF_ROLE_RE.finditer(line):
+            target = _xref_resolve_target(match.group("role"), match.group("target"), "")
+            if target is None:
+                continue
+            entries.append(
+                {"role": match.group("role"), "target": target, "file": rel, "line": lineno, "source": "sphinx"}
+            )
+    return entries
+
+
+def _xref_mkdocs_entries(path: Path, rel: str) -> list[dict]:
+    """Scan one Markdown file for mkdocstrings autorefs (mirrors scanner.py:1980-2045).
+
+    Args:
+        path: Filesystem path to the ``.md`` file.
+        rel: Repo-relative POSIX path stored in each entry.
+
+    Returns:
+        List of ``{"role": "mkdocs", "target", "file", "line", "source": "mkdocs"}`` dicts,
+        deduplicated on ``(target, line)`` (the backtick form also matches the named regex).
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    entries: list[dict] = []
+    seen: set[tuple[str, int]] = set()
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        for pattern in (_MKDOCS_TICK_RE, _MKDOCS_NAMED_RE):
+            for match in pattern.finditer(line):
+                target = _xref_resolve_mkdocs_identifier(match.group(1))
+                if target is None or (target, lineno) in seen:
+                    continue
+                seen.add((target, lineno))
+                entries.append({"role": "mkdocs", "target": target, "file": rel, "line": lineno, "source": "mkdocs"})
+    return entries
+
+
+def _xref_doc_file_entries(repo: Path) -> list[dict]:
+    """Return doc-file (``.rst``/``docs/**.md``) cross-reference entries (mirrors scanner.py:2048-2075).
+
+    ``.rst`` files anywhere under *repo* are scanned; ``.md`` files only under a top-level
+    ``docs/`` subtree, mirroring scan-index's own restriction (excludes README/CHANGELOG-style
+    files that drive no mkdocstrings autorefs).
+
+    Args:
+        repo: Repository root directory.
+
+    Returns:
+        Pooled list of doc-file xref entries in ``{"role", "target", "file", "line", "source"}`` shape.
+    """
+    entries: list[dict] = []
+    for root, dirs, names in os.walk(repo):
+        dirs[:] = [d for d in dirs if d not in _XREF_SKIP_DIRS and not d.startswith(".")]
+        rel_root = Path(root).relative_to(repo)
+        under_docs = bool(rel_root.parts) and rel_root.parts[0] == "docs"
+        for name in names:
+            fpath = Path(root) / name
+            rel = fpath.relative_to(repo).as_posix()
+            if name.endswith(".rst"):
+                entries.extend(_xref_rst_entries(fpath, rel))
+            elif name.endswith(".md") and under_docs:
+                entries.extend(_xref_mkdocs_entries(fpath, rel))
+    return entries
+
+
+def _xrefs_broken_via_ast(repo: Path, module: str | None = None) -> tuple[list[dict], str | None]:
+    """Independent AST oracle for the ``xrefs_broken`` check: unresolved Sphinx/MkDocs cross-refs.
+
+    Reimplements scan-index's docstring/doc-file xref extraction (:func:`_xref_entries_for_module`,
+    :func:`_xref_doc_file_entries`) and scan-query's ``xrefs --broken`` check (query.py:3824-3836):
+    a repo-wide symbol map (:func:`_xref_module_symbols`), a role filter (:data:`_XREF_SYMBOL_ROLES`),
+    target-prefix scoping, membership test, dedup on ``(target, file, line, role)``, sort on
+    ``(target, file, line)``.
+
+    Scoping mirrors scan-query exactly: the whole repo is always scanned for both symbols and
+    docstring/doc-file xrefs — *module* filters the *resolved target's* prefix, not which files
+    are scanned (a queried module's own broken refs can originate in a docstring anywhere in the
+    repo, or in an unrelated ``.rst``/``.md`` doc file).
+
+    Args:
+        repo: Repository root directory.
+        module: Optional dotted module name to scope broken targets to (``f"{module}::"`` prefix);
+            None checks every target in the repo.
+
+    Returns:
+        (broken_entries, error_reason) — entries in ``{"target", "role", "file", "line", "source"}``
+        shape, sorted by ``(target, file, line)``; error is None on success, a short message when
+        a requested ``module`` cannot be resolved to a file.
+
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     repo = Path(d)
+        ...     _ = (repo / "m.py").write_text("def f():\\n    'See :func:`m.missing`.'\\n    pass\\n")
+        ...     broken, err = _xrefs_broken_via_ast(repo)
+        >>> [(b["target"], b["role"]) for b in broken], err
+        ([('m::missing', 'func')], None)
+    """
+    if module is not None:
+        _, error = _resolve_module_files(repo, module)
+        if error:
+            return [], error
+    src_root = _detect_src_root(repo)
+    symbols: set[str] = set()
+    raw_entries: list[dict] = []
+    for fpath in _xref_source_files(repo):
+        tree = _xref_parse(fpath)
+        if tree is None:
+            continue
+        mod_name = _module_name_for(fpath, repo, src_root)
+        rel = fpath.relative_to(repo).as_posix()
+        symbols |= _xref_module_symbols(tree, mod_name)
+        raw_entries.extend(_xref_entries_for_module(tree, rel, mod_name))
+    raw_entries.extend(_xref_doc_file_entries(repo))
+
+    prefix = f"{module}::" if module else ""
+    seen: set[tuple[str, str, int, str]] = set()
+    broken: list[dict] = []
+    for entry in raw_entries:
+        role, target = entry["role"], entry["target"]
+        if role not in _XREF_SYMBOL_ROLES:
+            continue
+        if prefix and not target.startswith(prefix):
+            continue
+        if target in symbols:
+            continue
+        key = (target, entry["file"], entry["line"], role)
+        if key in seen:
+            continue
+        seen.add(key)
+        broken.append(
+            {"target": target, "role": role, "file": entry["file"], "line": entry["line"], "source": entry["source"]}
+        )
+    broken.sort(key=lambda b: (b["target"], b["file"], b["line"]))
+    return broken, None
+
+
 def _module_imports(tree: ast.Module) -> set[str]:
     """Return the dotted import targets of a module (mirrors scan-index ``extract_imports``).
 
@@ -1322,6 +1760,37 @@ def _warn_ast_divergence(task_id: str, kind: str, ast_only: list[str], scan_only
     print(bar)
 
 
+def _attach_oracle_views(live_gt: dict[str, Any], views: dict[str, Any], views_key: str | None) -> None:
+    """Attach an oracle-views block to ``live_gt``, nesting under *views_key* when combining checks.
+
+    ``combined_health`` runs both the undocumented and uncovered AST validators against the same
+    ``live_gt``; without nesting, the second call's ``oracle_views`` assignment would silently
+    overwrite the first. Pure single-check validators pass ``views_key=None`` so their output shape
+    stays byte-identical to before this helper existed — the scorer and remediation-contract tests
+    read that top-level shape directly.
+
+    Args:
+        live_gt: Live ground-truth dict, mutated in place.
+        views: The ``{"independent_ast": {...}, "codemap_static": {...}}`` block to attach.
+        views_key: None to attach at the top level; a slice name (``"undocumented"``, ``"uncovered"``)
+            to nest under ``live_gt["oracle_views"][views_key]`` instead.
+
+    Examples:
+        >>> live_gt = {}
+        >>> _attach_oracle_views(live_gt, {"independent_ast": {"count": 1}}, None)
+        >>> live_gt
+        {'oracle_views': {'independent_ast': {'count': 1}}}
+        >>> live_gt2 = {}
+        >>> _attach_oracle_views(live_gt2, {"independent_ast": {"count": 2}}, "uncovered")
+        >>> live_gt2
+        {'oracle_views': {'uncovered': {'independent_ast': {'count': 2}}}}
+    """
+    if views_key is None:
+        live_gt["oracle_views"] = views
+        return
+    live_gt.setdefault("oracle_views", {})[views_key] = views
+
+
 def _validate_fn(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:
     """Validate fn_call_graph task ground truth.
 
@@ -1631,6 +2100,8 @@ def _validate_undocumented_ast(
     scan_syms: list[str],
     repo: Path,
     live_gt: dict[str, Any],
+    *,
+    views_key: str | None = None,
 ) -> tuple[list[str], str]:
     """Validate a pure ``undocumented`` check against the independent AST oracle.
 
@@ -1646,6 +2117,9 @@ def _validate_undocumented_ast(
         scan_syms: Symbol list reported by scan-query (diagnostic).
         repo: Repository root directory.
         live_gt: Live ground-truth dict, mutated in place.
+        views_key: Forwarded to :func:`_attach_oracle_views` — None (default) for a pure
+            ``undocumented`` check, ``"undocumented"`` when called as one slice of a
+            ``combined_health`` check so the two slices' views nest instead of colliding.
 
     Returns:
         (problems, error_reason). ``error_reason`` is non-empty only when the AST oracle
@@ -1659,17 +2133,21 @@ def _validate_undocumented_ast(
     live_gt["undocumented_symbols"] = live_syms
     live_gt["undocumented_count_scan"] = scan_count
     live_gt["undocumented_symbols_scan"] = scan_syms
-    live_gt["oracle_views"] = {
-        "independent_ast": {
-            "count": len(live_syms),
-            "semantics": "Unique public qualified names without docstrings under the independent AST oracle.",
-            "symbols": live_syms,
+    _attach_oracle_views(
+        live_gt,
+        {
+            "independent_ast": {
+                "count": len(live_syms),
+                "semantics": "Unique public qualified names without docstrings under the independent AST oracle.",
+                "symbols": live_syms,
+            },
+            "codemap_static": {
+                "count": scan_count,
+                "semantics": "Declaration findings reported by Codemap; repeated qualified names may remain.",
+            },
         },
-        "codemap_static": {
-            "count": scan_count,
-            "semantics": "Declaration findings reported by Codemap; repeated qualified names may remain.",
-        },
-    }
+        views_key,
+    )
     scan_set = set(scan_syms)
     _warn_ast_divergence(
         task.get("id", "?"), "undocumented symbols", sorted(ast_syms - scan_set), sorted(scan_set - ast_syms)
@@ -1696,6 +2174,8 @@ def _validate_uncovered_ast(
     scan_syms: list[str],
     repo: Path,
     live_gt: dict[str, Any],
+    *,
+    views_key: str | None = None,
 ) -> tuple[list[str], str]:
     """Validate a pure ``uncovered`` check against the independent AST oracle.
 
@@ -1711,6 +2191,9 @@ def _validate_uncovered_ast(
         scan_syms: Symbol list reported by scan-query (diagnostic).
         repo: Repository root directory.
         live_gt: Live ground-truth dict, mutated in place.
+        views_key: Forwarded to :func:`_attach_oracle_views` — None (default) for a pure
+            ``uncovered`` check, ``"uncovered"`` when called as one slice of a
+            ``combined_health`` check so the two slices' views nest instead of colliding.
 
     Returns:
         (problems, error_reason). ``error_reason`` is non-empty only when the AST oracle could not
@@ -1724,17 +2207,21 @@ def _validate_uncovered_ast(
     live_gt["uncovered_symbols"] = live_syms
     live_gt["uncovered_count_scan"] = scan_count
     live_gt["uncovered_symbols_scan"] = scan_syms
-    live_gt["oracle_views"] = {
-        "independent_ast": {
-            "count": len(live_syms),
-            "semantics": "Unique symbols without test coverage under the independent AST oracle.",
-            "symbols": live_syms,
+    _attach_oracle_views(
+        live_gt,
+        {
+            "independent_ast": {
+                "count": len(live_syms),
+                "semantics": "Unique symbols without test coverage under the independent AST oracle.",
+                "symbols": live_syms,
+            },
+            "codemap_static": {
+                "count": scan_count,
+                "semantics": "Static uncovered findings reported by Codemap; repeated declaration-level findings may remain.",
+            },
         },
-        "codemap_static": {
-            "count": scan_count,
-            "semantics": "Static uncovered findings reported by Codemap; repeated declaration-level findings may remain.",
-        },
-    }
+        views_key,
+    )
     scan_set = set(scan_syms)
     _warn_ast_divergence(
         task.get("id", "?"), "uncovered symbols", sorted(ast_syms - scan_set), sorted(scan_set - ast_syms)
@@ -1749,6 +2236,80 @@ def _validate_uncovered_ast(
         problems.append(
             f"uncovered_symbols (AST oracle) mismatch: missing={sorted(expected_syms - ast_syms)[:3]}, "
             f"extra={sorted(ast_syms - expected_syms)[:3]}"
+        )
+    return problems, ""
+
+
+def _validate_xrefs_ast(
+    task: dict,
+    gt: dict,
+    module: str | None,
+    scan_count: int,
+    scan_targets: list[dict],
+    repo: Path,
+    live_gt: dict[str, Any],
+) -> tuple[list[str], str]:
+    """Validate an ``xrefs_broken`` check against the independent AST oracle.
+
+    Mirrors :func:`_validate_undocumented_ast`/:func:`_validate_uncovered_ast`: the AST oracle
+    (:func:`_xrefs_broken_via_ast`) is authoritative; scan-query output is stored under ``*_scan``
+    diagnostic keys only. Mutates ``live_gt`` in place and warns loudly on divergence.
+
+    Args:
+        task: Task dict (used for its id in divergence warnings).
+        gt: Existing ground_truth to compare against.
+        module: Dotted module name to scope broken targets to, or None for repo-wide.
+        scan_count: ``count`` reported by scan-query (diagnostic).
+        scan_targets: Broken-target list (``[{"target", "line"}]``) reported by scan-query (diagnostic).
+        repo: Repository root directory.
+        live_gt: Live ground-truth dict, mutated in place.
+
+    Returns:
+        (problems, error_reason). ``error_reason`` is non-empty only when the AST oracle could
+        not resolve the requested module (caller returns a hard failure).
+    """
+    ast_broken, ast_err = _xrefs_broken_via_ast(repo, module)
+    if ast_err:
+        return [], f"xrefs_broken AST oracle failed: {ast_err}"
+    live_targets = [{"target": b["target"], "line": b["line"]} for b in ast_broken]
+    live_gt["broken_count"] = len(live_targets)
+    live_gt["broken_targets"] = live_targets
+    live_gt["broken_count_scan"] = scan_count
+    live_gt["broken_targets_scan"] = scan_targets
+    _attach_oracle_views(
+        live_gt,
+        {
+            "independent_ast": {
+                "count": len(live_targets),
+                "semantics": "Broken Sphinx/MkDocs cross-reference targets under the independent AST oracle.",
+                "targets": live_targets,
+            },
+            "codemap_static": {
+                "count": scan_count,
+                "semantics": "Broken cross-reference findings reported by Codemap.",
+            },
+        },
+        None,
+    )
+
+    ast_set = {(t["target"], t["line"]) for t in live_targets}
+    scan_set = {(t.get("target", ""), t.get("line", 0)) for t in scan_targets}
+    _warn_ast_divergence(
+        task.get("id", "?"),
+        "xrefs broken targets",
+        [f"{t}:{ln}" for t, ln in sorted(ast_set - scan_set)],
+        [f"{t}:{ln}" for t, ln in sorted(scan_set - ast_set)],
+    )
+
+    problems: list[str] = []
+    expected_count = gt.get("broken_count", 0)
+    expected_targets = {(t["target"], t["line"]) for t in gt.get("broken_targets", [])}
+    if len(live_targets) != expected_count:
+        problems.append(f"broken_count (AST oracle): expected {expected_count}, got {len(live_targets)}")
+    if ast_set != expected_targets:
+        problems.append(
+            f"broken_targets (AST oracle) mismatch: missing={sorted(expected_targets - ast_set)[:3]}, "
+            f"extra={sorted(ast_set - expected_targets)[:3]}"
         )
     return problems, ""
 
@@ -1792,21 +2353,16 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
         scan_syms = [e.get("qualified_name", "") for e in data.get("undocumented", [])]
         if scan_count != len(scan_syms):
             return False, None, "undocumented total conflicts with symbol count"
-        if check == "undocumented":
-            # AST oracle is authoritative — scan-query is the tool under test.
-            module = _query_module_arg(q.get("args", []))
-            undoc_problems, undoc_err = _validate_undocumented_ast(
-                task, gt, module, scan_count, scan_syms, repo, live_gt
-            )
-            if undoc_err:
-                return False, None, undoc_err
-            problems.extend(undoc_problems)
-        else:
-            # TODO: combined_health undocumented/uncovered GT still scan-query-derived
-            # (circular) — needs the independent AST oracle wired the same way as the pure
-            # `undocumented` check above.
-            live_gt["undocumented_count"] = scan_count
-            live_gt["undocumented_symbols"] = scan_syms
+        # AST oracle is authoritative — scan-query is the tool under test. combined_health nests
+        # this slice's views under "undocumented" so the uncovered slice below doesn't overwrite it.
+        module = _query_module_arg(q.get("args", []))
+        views_key = None if check == "undocumented" else "undocumented"
+        undoc_problems, undoc_err = _validate_undocumented_ast(
+            task, gt, module, scan_count, scan_syms, repo, live_gt, views_key=views_key
+        )
+        if undoc_err:
+            return False, None, undoc_err
+        problems.extend(undoc_problems)
 
     if check in ("uncovered", "combined_health"):
         q = next((q for q in expected_queries if q["cmd"] == "uncovered"), None)
@@ -1827,37 +2383,16 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
         expected_scan_symbols = min(scan_count, top_limit) if top_limit is not None else scan_count
         if len(scan_syms) != expected_scan_symbols:
             return False, None, "uncovered total conflicts with symbol count"
-        if check == "uncovered":
-            # AST oracle is authoritative — scan-query is the tool under test.
-            module = _query_module_arg(q.get("args", []))
-            uncov_problems, uncov_err = _validate_uncovered_ast(task, gt, module, scan_count, scan_syms, repo, live_gt)
-            if uncov_err:
-                return False, None, uncov_err
-            problems.extend(uncov_problems)
-        else:
-            # TODO: combined_health bundles undocumented+uncovered and its
-            # uncovered slice is still scan-query-derived (circular). The pure `uncovered` check
-            # above is now oracle-backed; combined_health refreshes only via ``--update-from-tool``.
-            live_gt["uncovered_count"] = scan_count
-            live_gt["uncovered_symbols"] = scan_syms
-
-    if check == "combined_health":
-        # Validate both counts and symbol sets together
-        for field_prefix in ("undocumented", "uncovered"):
-            expected_count = gt.get(f"{field_prefix}_count", 0)
-            expected_syms = gt.get(f"{field_prefix}_symbols", [])
-            live_count = live_gt.get(f"{field_prefix}_count", -1)
-            live_syms = live_gt.get(f"{field_prefix}_symbols", [])
-            if live_count != expected_count:
-                problems.append(f"{field_prefix}_count: expected {expected_count}, got {live_count}")
-            if set(live_syms) != set(expected_syms):
-                exp_set = set(expected_syms)
-                live_set_items = set(live_syms)
-                problems.append(
-                    f"{field_prefix}_symbols mismatch: "
-                    f"missing={sorted(exp_set - live_set_items)[:3]}, "
-                    f"extra={sorted(live_set_items - exp_set)[:3]}"
-                )
+        # AST oracle is authoritative — scan-query is the tool under test. combined_health nests
+        # this slice's views under "uncovered" so it doesn't overwrite the undocumented slice above.
+        module = _query_module_arg(q.get("args", []))
+        views_key = None if check == "uncovered" else "uncovered"
+        uncov_problems, uncov_err = _validate_uncovered_ast(
+            task, gt, module, scan_count, scan_syms, repo, live_gt, views_key=views_key
+        )
+        if uncov_err:
+            return False, None, uncov_err
+        problems.extend(uncov_problems)
 
     if check == "coupled":
         q = expected_queries[0]
@@ -1903,17 +2438,6 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
             )
 
     if check == "xrefs_broken":
-        # TODO: xrefs_broken GT remains scan-query-derived (circular). A faithful
-        # independent oracle is out of scope here because scan-query reads `sphinx_xrefs[*].target`
-        # values that scan-index ALREADY resolved to `module::name` keys at index-build time (parsing
-        # `:func:`/`:class:`/`:meth:`/`:exc:`/`mkdocs` roles, stripping `~`, and resolving references relative to the
-        # current module). Reproducing that normalization independently means re-implementing scan-index's
-        # `_SPHINX_RESOLVABLE_ROLES` extraction + target resolution against an AST-built symbol map — a
-        # different (likely divergent) normalization would make the oracle non-comparable rather than
-        # independent. What is missing precisely: (1) an AST docstring-role parser emitting raw targets;
-        # (2) a faithful re-implementation of scan-index's raw-target → `module::name` normalization;
-        # (3) an AST symbol-map builder to resolve `broken = target not in symbol_map`. Until (1)-(3)
-        # exist, xrefs_broken stays behind ``--update-from-tool`` (see _update_is_oracle_backed).
         q = expected_queries[0]
         data = run_scan_query(sq, ["xrefs"] + q.get("args", []), index, repo)
         if data is None:
@@ -1923,27 +2447,19 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
             return False, None, "xrefs broken result is not a list"
         if any(not isinstance(b, dict) for b in broken):
             return False, None, "xrefs broken result contains non-object entries"
-        live_count = data.get("count", len(broken))
-        if not isinstance(live_count, int):
+        scan_count = data.get("count", len(broken))
+        if not isinstance(scan_count, int):
             return False, None, "xrefs broken count is not an int"
-        if live_count != len(broken):
+        if scan_count != len(broken):
             return False, None, "xrefs broken count conflicts with target count"
-        live_targets = [{"target": b.get("target", ""), "line": b.get("line", 0)} for b in broken]
-        live_gt["broken_count"] = live_count
-        live_gt["broken_targets"] = live_targets
+        scan_targets = [{"target": b.get("target", ""), "line": b.get("line", 0)} for b in broken]
 
-        expected_count = gt.get("broken_count", 0)
-        if live_count != expected_count:
-            problems.append(f"broken_count: expected {expected_count}, got {live_count}")
-
-        expected_targets = {(t["target"], t["line"]) for t in gt.get("broken_targets", [])}
-        live_target_set = {(t["target"], t["line"]) for t in live_targets}
-        if live_target_set != expected_targets:
-            problems.append(
-                f"broken_targets mismatch: "
-                f"missing={sorted(expected_targets - live_target_set)[:3]}, "
-                f"extra={sorted(live_target_set - expected_targets)[:3]}"
-            )
+        # AST oracle is authoritative — scan-query is the tool under test.
+        module = _query_module_arg(q.get("args", []))
+        xref_problems, xref_err = _validate_xrefs_ast(task, gt, module, scan_count, scan_targets, repo, live_gt)
+        if xref_err:
+            return False, None, xref_err
+        problems.extend(xref_problems)
 
     return (not problems), live_gt, "; ".join(problems)
 
@@ -2428,7 +2944,7 @@ _ORACLE_BACKED_TYPES: frozenset[TaskType] = frozenset(
 )
 
 # code_quality checks with a dedicated independent AST oracle.
-_ORACLE_BACKED_CQ_CHECKS: frozenset[str] = frozenset({"undocumented", "uncovered"})
+_ORACLE_BACKED_CQ_CHECKS: frozenset[str] = frozenset({"undocumented", "uncovered", "combined_health", "xrefs_broken"})
 
 
 def _update_is_oracle_backed(task: dict) -> bool:
@@ -2438,15 +2954,16 @@ def _update_is_oracle_backed(task: dict) -> bool:
     develop_blast_radius (qualified AST caller oracle) plus the diff_impact / graph_central /
     graph_path / graph_fn_blast / module_blast_radius / debug_from_trace series (AST-oracle-only by
     construction) — along with review-assistance tasks whose every command has an AST oracle, and the
-    ``undocumented`` (AST docstring oracle) and ``uncovered`` (AST test-reference oracle) code_quality
-    checks.
+    ``undocumented`` (AST docstring oracle), ``uncovered`` (AST test-reference oracle),
+    ``combined_health`` (both of the above, nested) and ``xrefs_broken`` (AST cross-reference oracle,
+    :func:`_xrefs_broken_via_ast`) code_quality checks.
 
-    Everything else is excluded, but not all for the same reason. Symbol line ranges, coupled /
-    xrefs_broken / combined_health, and historical real_issue provenance are genuinely
-    scan-query-derived or static. ``feature_scaffolding`` is not: :func:`_validate_feature` opens with
-    ``del sq, index`` and validates purely against the local source AST. It is held back from plain
-    ``--update`` as conservatism, not because its provenance is circular — so its exclusion is safe to
-    revisit, while the others are not.
+    Everything else is excluded, but not all for the same reason. Symbol line ranges, coupled, and
+    historical real_issue provenance are genuinely scan-query-derived or static.
+    ``feature_scaffolding`` is not: :func:`_validate_feature` opens with ``del sq, index`` and
+    validates purely against the local source AST. It is held back from plain ``--update`` as
+    conservatism, not because its provenance is circular — so its exclusion is safe to revisit,
+    while the others are not.
 
     Examples:
         >>> _update_is_oracle_backed({"type": "fn_call_graph"})
@@ -2456,6 +2973,10 @@ def _update_is_oracle_backed(task: dict) -> bool:
         >>> _update_is_oracle_backed({"type": "code_quality", "ground_truth": {"check": "uncovered"}})
         True
         >>> _update_is_oracle_backed({"type": "code_quality", "ground_truth": {"check": "xrefs_broken"}})
+        True
+        >>> _update_is_oracle_backed({"type": "code_quality", "ground_truth": {"check": "combined_health"}})
+        True
+        >>> _update_is_oracle_backed({"type": "code_quality", "ground_truth": {"check": "coupled"}})
         False
         >>> _update_is_oracle_backed({"type": "review_assistance", "expected_queries": [{"cmd": "rdeps"}]})
         True
@@ -2556,9 +3077,9 @@ def main(
         index_path: Path to pre-built index JSON.
         task: Validate only this task ID (e.g. SE-01).
         update: Refresh ground truth from independent (AST) oracles only. fn_call_graph /
-            develop_blast_radius and the ``undocumented`` / ``uncovered`` code_quality checks refresh;
-            scan-query-derived types (symbol lines, review_assistance, coupled / xrefs_broken /
-            combined_health) are skipped unless ``update_from_tool`` is also set.
+            develop_blast_radius and the ``undocumented`` / ``uncovered`` / ``combined_health`` /
+            ``xrefs_broken`` code_quality checks refresh; scan-query-derived types (symbol lines,
+            most review_assistance, coupled) are skipped unless ``update_from_tool`` is also set.
         update_from_tool: Also refresh scan-query-derived ground truth (circular — the tool
             under test grades itself). Prints a loud circularity warning and an existing→live
             diff per task before writing. Use only for deliberate re-baselining.

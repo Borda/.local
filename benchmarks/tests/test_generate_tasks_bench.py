@@ -1034,6 +1034,10 @@ class TestValidateOss:
             },
         }
 
+    def _write_xref_source(self, repo: Path, filename: str, source: str) -> None:
+        """Write *source* to ``repo/filename`` for the xrefs AST oracle (:func:`_xrefs_broken_via_ast`) to scan."""
+        (repo / filename).write_text(source)
+
     def _write_undoc(self, repo: Path, names: list[str]) -> None:
         """Write a module whose public classes ``names`` all lack docstrings.
 
@@ -1253,26 +1257,40 @@ class TestValidateOss:
         assert "top_modules" in reason
 
     def test_xrefs_passes_on_match(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Return (True, ...) when broken cross-reference count and targets match GT.
+        """Return (True, ...) when the AST oracle's broken cross-reference set matches GT.
 
-        Scenario: check='xrefs_broken'; live broken refs match GT exactly.
+        Scenario: check='xrefs_broken'; one module docstring holds a single unresolvable
+        ``:func:`` role reference and the independent AST oracle agrees with the stored GT
+        (and, incidentally, with the diagnostic scan-query snapshot).
         """
-        targets = [{"target": "mod::Fn", "line": 42}]
+        source = 'def f():\n    """See :func:`mod.missing`."""\n    pass\n'
+        self._write_xref_source(tmp_path, "mod.py", source)
+        targets = [{"target": "mod::missing", "line": 2}]
         task = self._task_xrefs(1, targets)
-        payload = {"broken": [{"target": "mod::Fn", "line": 42}], "count": 1}
+        payload = {"broken": targets, "count": 1}
 
         with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
             ok, _, reason = script_gen_bench._validate_oss(task, MagicMock(), tmp_path / "idx.json", tmp_path)
 
-        assert ok is True
+        assert ok is True, reason
 
     def test_xrefs_fails_on_broken_count_mismatch(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Return failure when broken_count differs from GT.
+        """Return failure when the AST oracle's broken count differs from GT.
 
-        Scenario: additional broken reference introduced; count changed.
+        Scenario: a second unresolvable ``:func:`` reference was introduced after GT was
+        captured; the oracle now finds two broken targets where GT still expects one.
         """
-        task = self._task_xrefs(1, [{"target": "mod::Fn", "line": 10}])
-        payload = {"broken": [{"target": "mod::Fn", "line": 10}, {"target": "other::X", "line": 5}], "count": 2}
+        source = (
+            "def f():\n"
+            '    """See :func:`mod.missing`."""\n'
+            "    pass\n\n\n"
+            "def g():\n"
+            '    """See :func:`mod.also_missing`."""\n'
+            "    pass\n"
+        )
+        self._write_xref_source(tmp_path, "mod.py", source)
+        task = self._task_xrefs(1, [{"target": "mod::missing", "line": 2}])
+        payload = {"broken": [{"target": "mod::missing", "line": 2}], "count": 1}
 
         with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
             ok, _, reason = script_gen_bench._validate_oss(task, MagicMock(), tmp_path / "idx.json", tmp_path)
@@ -1363,9 +1381,19 @@ class TestValidateOss:
     def test_combined_health_validates_both_counts(self, script_gen_bench: Any, tmp_path: Path) -> None:
         """Validates both undocumented and uncovered fields for combined_health check.
 
-        Scenario: check='combined_health'; both sub-checks must match GT;
-        single count mismatch causes overall failure.
+        Scenario: check='combined_health'; A and B lack docstrings (undocumented) but are
+        test-referenced (covered); C has a docstring (documented) but no test reference
+        (uncovered). Both independent AST oracle slices must match GT for an overall pass —
+        exercises the ``oracle_views`` nesting that keeps the two slices from overwriting
+        each other (see ``_attach_oracle_views``).
         """
+        (tmp_path / "m.py").write_text(
+            "class A:\n    pass\n\n\nclass B:\n    pass\n\n\ndef C():\n    'Has a docstring.'\n    pass\n"
+        )
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "test_m.py").write_text("def test_it():\n    A()\n    B()\n")
+
         task = {
             "type": "code_quality",
             "expected_queries": [
@@ -1394,10 +1422,12 @@ class TestValidateOss:
             return None  # type: ignore[return-value]
 
         with patch.object(script_gen_bench, "run_scan_query", side_effect=sq_side_effect):
-            ok, _, reason = script_gen_bench._validate_oss(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+            ok, live_gt, reason = script_gen_bench._validate_oss(task, MagicMock(), tmp_path / "idx.json", tmp_path)
 
-        assert ok is True
+        assert ok is True, reason
         assert call_counter["n"] == 2  # both queries fired
+        assert live_gt["oracle_views"]["undocumented"]["independent_ast"]["count"] == 2
+        assert live_gt["oracle_views"]["uncovered"]["independent_ast"]["count"] == 1
 
 
 # ===========================================================================
@@ -2358,6 +2388,144 @@ class TestUncoveredViaAst:
         assert syms == {"solo"}
 
 
+class TestXrefsBrokenViaAst:
+    """Independent AST oracle for unresolved Sphinx/MkDocs cross-references (mirrors scan-index/scan-query)."""
+
+    def test_bare_meth_role_broken_without_matching_top_level_function(
+        self, script_gen_bench: Any, tmp_path: Path
+    ) -> None:
+        """A bare ``:meth:`name`` `` role with no matching top-level function is broken."""
+        source = "class Cls:\n    def method(self):\n        'See :meth:`missing`.'\n        pass\n"
+        (tmp_path / "mod.py").write_text(source)
+        broken, err = script_gen_bench._xrefs_broken_via_ast(tmp_path)
+        assert err is None
+        assert [(b["target"], b["role"]) for b in broken] == [("mod::missing", "meth")]
+
+    def test_bare_meth_role_resolves_to_matching_top_level_function(
+        self, script_gen_bench: Any, tmp_path: Path
+    ) -> None:
+        """A bare ``:meth:`name`` `` role matching a real top-level function is NOT broken.
+
+        Regression guard for the same name as :meth:`test_bare_meth_role_broken_without_matching_top_level_function`
+        — proves brokenness depends on the symbol map, not on the role text alone.
+        """
+        source = (
+            "class Cls:\n"
+            "    def method(self):\n"
+            "        'See :meth:`helper`.'\n"
+            "        pass\n\n\n"
+            "def helper():\n"
+            "    pass\n"
+        )
+        (tmp_path / "mod.py").write_text(source)
+        broken, err = script_gen_bench._xrefs_broken_via_ast(tmp_path)
+        assert err is None
+        assert broken == []
+
+    def test_dotted_func_role_attributed_to_target_module(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A dotted target is scoped by the TARGET's module, not the docstring's home module.
+
+        Mirrors scan-query's own scoping (``query.py:3826-3828``): ``--broken <module>`` filters on the resolved
+        target's prefix, so a broken reference living in one file's docstring is attributed to a different module
+        entirely.
+        """
+        (tmp_path / "a.py").write_text("def f():\n    'See :func:`b.missing`.'\n    pass\n")
+        (tmp_path / "b.py").write_text("def present():\n    pass\n")
+        broken, err = script_gen_bench._xrefs_broken_via_ast(tmp_path, module="b")
+        assert err is None
+        assert [(b["target"], b["file"]) for b in broken] == [("b::missing", "a.py")]
+
+    def test_module_level_assignment_target_stays_broken(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A module-level assignment is outside the narrow symbol map, so a reference to it stays broken.
+
+        Regression guard for the symbol-map-breadth risk: a broader map (module/class-level
+        assignments included) would resolve this and silently under-report broken targets —
+        verified empirically to flip a known-broken scan-query reference to resolvable.
+        """
+        source = "X = 1\n\n\ndef f():\n    'See :func:`mod.X`.'\n    pass\n"
+        (tmp_path / "mod.py").write_text(source)
+        broken, err = script_gen_bench._xrefs_broken_via_ast(tmp_path)
+        assert err is None
+        assert [(b["target"], b["role"]) for b in broken] == [("mod::X", "func")]
+
+    @pytest.mark.parametrize("role", ["attr", "data", "mod"])
+    def test_role_excluded_from_symbol_role_filter(self, script_gen_bench: Any, tmp_path: Path, role: str) -> None:
+        """``attr``/``data``/``mod`` roles are extracted but never checked for brokenness.
+
+        Mirrors ``query.py`` ``_SYMBOL_ROLES``, which deliberately omits these three roles.
+        """
+        source = f"def f():\n    'See :{role}:`mod.missing`.'\n    pass\n"
+        (tmp_path / "mod.py").write_text(source)
+        broken, err = script_gen_bench._xrefs_broken_via_ast(tmp_path)
+        assert err is None
+        assert broken == []
+
+    def test_line_is_docstring_opening_line_for_multiline_docstring(
+        self, script_gen_bench: Any, tmp_path: Path
+    ) -> None:
+        """The reported line is the docstring literal's opening line, not the matched-role line.
+
+        Mirrors scan-index's documented approximation (``scanner.py:1866-1868``): AST docstring nodes only expose the
+        opening literal's ``lineno``, so per-role-match line offsets are not tracked.
+        """
+        source = "def f():\n    '''First line.\n\n    See :func:`mod.missing` on a later line.\n    '''\n    pass\n"
+        (tmp_path / "mod.py").write_text(source)
+        broken, err = script_gen_bench._xrefs_broken_via_ast(tmp_path)
+        assert err is None
+        assert broken[0]["line"] == 2
+
+    def test_rst_dotted_ref_to_existing_symbol_not_broken(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A dotted ``.rst`` role resolving to a real symbol is not reported broken."""
+        (tmp_path / "mod.py").write_text("def present():\n    pass\n")
+        (tmp_path / "index.rst").write_text("See :func:`mod.present`.\n")
+        broken, err = script_gen_bench._xrefs_broken_via_ast(tmp_path)
+        assert err is None
+        assert broken == []
+
+    def test_rst_dotted_ref_to_missing_symbol_is_broken(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A dotted ``.rst`` role with no matching symbol is reported broken, with a real line number."""
+        (tmp_path / "index.rst").write_text("Intro.\nSee :func:`mod.missing`.\n")
+        broken, err = script_gen_bench._xrefs_broken_via_ast(tmp_path)
+        assert err is None
+        assert [(b["target"], b["file"], b["line"]) for b in broken] == [("mod::missing", "index.rst", 2)]
+
+    def test_rst_bare_ref_never_resolves(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A bare (dotless) ``.rst`` role target has no ``::`` and can never match the symbol map.
+
+        ``.rst`` files anchor to no Python module (``current_module=""``); a bare role target
+        resolves to the raw string unchanged (scan-index's own docstring claims such targets are
+        "dropped", but the code does not do that — verified directly against
+        ``codemap_py.scanner._resolve_xref_target``). Reproducing the actual behavior, not the
+        stale docstring, is the whole point of an independent oracle.
+        """
+        (tmp_path / "index.rst").write_text("See :func:`missing_bare`.\n")
+        broken, err = script_gen_bench._xrefs_broken_via_ast(tmp_path)
+        assert err is None
+        assert [b["target"] for b in broken] == ["missing_bare"]
+
+    def test_mkdocs_ref_under_docs_dir_counted(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A dotted mkdocstrings autoref under ``docs/`` is scanned and can be broken."""
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "api.md").write_text("See [`mod.missing`][].\n")
+        broken, err = script_gen_bench._xrefs_broken_via_ast(tmp_path)
+        assert err is None
+        assert [(b["target"], b["source"]) for b in broken] == [("mod::missing", "mkdocs")]
+
+    def test_mkdocs_ref_outside_docs_dir_not_scanned(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """The identical autoref in a repo-root README.md is NOT scanned (scan-index restricts .md to docs/)."""
+        (tmp_path / "README.md").write_text("See [`mod.missing`][].\n")
+        broken, err = script_gen_bench._xrefs_broken_via_ast(tmp_path)
+        assert err is None
+        assert broken == []
+
+    def test_unresolvable_module_argument_returns_error(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """An unresolvable module argument is a hard failure, not a silent zero-broken pass."""
+        broken, err = script_gen_bench._xrefs_broken_via_ast(tmp_path, module="nope.missing")
+        assert broken == []
+        assert err is not None
+
+
 class TestValidateFnAstAuthoritative:
     """Treat the independent syntax-tree oracle as authoritative during function validation."""
 
@@ -2406,7 +2574,8 @@ class TestUpdateGating:
             ({"type": "develop_blast_radius"}, True),
             ({"type": "code_quality", "ground_truth": {"check": "undocumented"}}, True),
             ({"type": "code_quality", "ground_truth": {"check": "uncovered"}}, True),
-            ({"type": "code_quality", "ground_truth": {"check": "xrefs_broken"}}, False),
+            ({"type": "code_quality", "ground_truth": {"check": "combined_health"}}, True),
+            ({"type": "code_quality", "ground_truth": {"check": "xrefs_broken"}}, True),
             ({"type": "code_quality", "ground_truth": {"check": "coupled"}}, False),
             ({"type": "review_assistance"}, False),
             ({"type": "symbol_extraction"}, False),

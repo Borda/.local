@@ -2847,10 +2847,12 @@ def run_suite_health(
 ) -> list[ScenarioResult]:
     """Suite H: undocumented/uncovered count self-consistency / determinism check.
 
-    Runs each code_quality task using ``undocumented`` / ``uncovered`` and checks
-    the returned ``total`` against the ground-truth count (exact).  Counts in
-    tasks-bench.json are frozen scan-query- or bench-generator-derived, so this is
-    a regression/determinism check — self-consistency track, EXCLUDED from the verdict.
+    Runs each code_quality task using ``undocumented`` / ``uncovered`` and checks the returned
+    ``total`` against the ground-truth ``*_count_scan`` diagnostic (the frozen scan-query snapshot
+    recorded alongside the now-independent AST-oracle GT — see generate-tasks-bench.py
+    ``_validate_undocumented_ast``/``_validate_uncovered_ast``). This is a regression/determinism
+    check against scan-query's own prior output, not independent correctness — self-consistency
+    track, EXCLUDED from the verdict.
 
     Args:
         scan_query_bin: Path to the scan-query executable.
@@ -2883,12 +2885,17 @@ def run_suite_health(
             args = [cmd] + q.get("args", [])
             sq = run_scan_query_result(scan_query_bin, args, index_path, repo_path)
 
+            # ``*_count`` is now the independent AST oracle's authoritative value (see
+            # generate-tasks-bench.py _validate_undocumented_ast / _validate_uncovered_ast); this
+            # suite checks scan-query determinism against its OWN prior output, so it reads the
+            # ``*_count_scan`` diagnostic field, falling back to ``*_count`` for older task entries
+            # that predate the oracle migration and never got a ``*_count_scan`` field written.
             if cmd == "undocumented":
-                expected_count = gt.get("undocumented_count", gt.get("count", 0))
+                expected_count = gt.get("undocumented_count_scan", gt.get("undocumented_count", gt.get("count", 0)))
                 suite_key = "H1"
                 undoc_tasks_total += 1
             else:
-                expected_count = gt.get("uncovered_count", gt.get("count", 0))
+                expected_count = gt.get("uncovered_count_scan", gt.get("uncovered_count", gt.get("count", 0)))
                 suite_key = "H2"
                 uncov_tasks_total += 1
 
@@ -2968,10 +2975,12 @@ def run_suite_xrefs(
 ) -> list[ScenarioResult]:
     """Suite X: ``xrefs --broken`` self-consistency / determinism check.
 
-    Runs ``xrefs --broken`` for each OSS task with ``check == "xrefs_broken"`` and
-    confirms both the broken count and the broken target/line pairs.  Ground truth
-    is frozen scan-query-derived, so this validates determinism, not correctness —
-    self-consistency track, EXCLUDED from the primary verdict.
+    Runs ``xrefs --broken`` for each OSS task with ``check == "xrefs_broken"`` and confirms both
+    the broken count and the broken target/line pairs against the ground-truth ``broken_*_scan``
+    diagnostic (the frozen scan-query snapshot recorded alongside the now-independent AST-oracle
+    GT — see generate-tasks-bench.py ``_validate_xrefs_ast``). This validates scan-query
+    determinism against its own prior output, not independent correctness — self-consistency
+    track, EXCLUDED from the primary verdict.
 
     Args:
         scan_query_bin: Path to the scan-query executable.
@@ -2996,8 +3005,13 @@ def run_suite_xrefs(
     for task in tasks:
         task_id = task["id"]
         gt = task.get("ground_truth", {})
-        expected_count = gt.get("broken_count", 0)
-        expected_targets = {(t["target"], t["line"]) for t in gt.get("broken_targets", [])}
+        # broken_count/broken_targets are now the AST oracle's authoritative value; this suite
+        # checks scan-query against its OWN prior output, so it reads the *_scan diagnostic,
+        # falling back for older task entries that predate the oracle migration.
+        expected_count = gt.get("broken_count_scan", gt.get("broken_count", 0))
+        expected_targets = {
+            (t["target"], t["line"]) for t in gt.get("broken_targets_scan", gt.get("broken_targets", []))
+        }
         expected_queries = task.get("expected_queries", [])
 
         q = next((q for q in expected_queries if q.get("cmd") == "xrefs"), None)

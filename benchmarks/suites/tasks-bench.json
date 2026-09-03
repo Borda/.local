@@ -581,7 +581,6 @@
           "cmd": "uncovered"
         }
       ],
-      "id": "RV-05",
       "ground_truth": {
         "oracle_views": {
           "codemap_static": {
@@ -601,6 +600,7 @@
           }
         }
       },
+      "id": "RV-05",
       "primary_module": "lightning.pytorch.utilities.model_summary.model_summary",
       "prompt": "You are reviewing a PR that adds 3 new public functions to `lightning.pytorch.utilities.model_summary.model_summary` without adding tests. Before merging, assess the current test coverage of the module. The benchmark's independent AST oracle defines an uncovered symbol as a unique public declaration (no qualified-name component begins with `_`) whose simple name is absent from every AST `Name` and `Attribute` identifier in test files and from the final dotted component of every string argument to `patch(...)`, `patch.object(...)`, or `mock.patch(...)`. This independent view is distinct from Codemap's static `uncovered` findings, which can differ. Answer the following sub-questions.",
       "scoreable": true,
@@ -645,10 +645,6 @@
       ],
       "ground_truth": {
         "check": "undocumented",
-        "required_answer_components": [
-          "independent_ast_count",
-          "independent_ast_symbols"
-        ],
         "oracle_views": {
           "codemap_static": {
             "count": 11,
@@ -668,6 +664,10 @@
             ]
           }
         },
+        "required_answer_components": [
+          "independent_ast_count",
+          "independent_ast_symbols"
+        ],
         "undocumented_count": 7,
         "undocumented_count_scan": 11,
         "undocumented_symbols": [
@@ -718,10 +718,6 @@
       ],
       "ground_truth": {
         "check": "uncovered",
-        "required_answer_components": [
-          "independent_ast_count",
-          "independent_ast_symbols"
-        ],
         "oracle_views": {
           "codemap_static": {
             "count": 25,
@@ -745,6 +741,10 @@
             ]
           }
         },
+        "required_answer_components": [
+          "independent_ast_count",
+          "independent_ast_symbols"
+        ],
         "uncovered_count": 11,
         "uncovered_count_scan": 25,
         "uncovered_symbols": [
@@ -885,39 +885,126 @@
       "expected_queries": [
         {
           "args": [
-            "lightning.pytorch.loggers.tensorboard"
+            "lightning.pytorch.callbacks.progress.progress_bar"
           ],
           "cmd": "undocumented"
         },
         {
           "args": [
-            "lightning.pytorch.loggers.tensorboard"
+            "lightning.pytorch.callbacks.progress.progress_bar"
           ],
           "cmd": "uncovered"
         }
       ],
       "ground_truth": {
         "check": "combined_health",
-        "uncovered_count": 7,
+        "oracle_views": {
+          "uncovered": {
+            "codemap_static": {
+              "count": 20,
+              "semantics": "Static uncovered findings reported by Codemap; repeated declaration-level findings may remain."
+            },
+            "independent_ast": {
+              "count": 9,
+              "semantics": "Unique symbols without test coverage under the independent AST oracle.",
+              "symbols": [
+                "ProgressBar.has_dataloader_changed",
+                "ProgressBar.predict_description",
+                "ProgressBar.reset_dataloader_idx_tracker",
+                "ProgressBar.sanity_check_description",
+                "ProgressBar.test_description",
+                "ProgressBar.total_predict_batches_current_dataloader",
+                "ProgressBar.total_test_batches_current_dataloader",
+                "ProgressBar.total_val_batches_current_dataloader",
+                "get_standard_metrics"
+              ]
+            }
+          },
+          "undocumented": {
+            "codemap_static": {
+              "count": 9,
+              "semantics": "Declaration findings reported by Codemap; repeated qualified names may remain."
+            },
+            "independent_ast": {
+              "count": 9,
+              "semantics": "Unique public qualified names without docstrings under the independent AST oracle.",
+              "symbols": [
+                "ProgressBar.has_dataloader_changed",
+                "ProgressBar.predict_description",
+                "ProgressBar.reset_dataloader_idx_tracker",
+                "ProgressBar.sanity_check_description",
+                "ProgressBar.setup",
+                "ProgressBar.test_description",
+                "ProgressBar.train_description",
+                "ProgressBar.trainer",
+                "ProgressBar.validation_description"
+              ]
+            }
+          }
+        },
+        "uncovered_count": 9,
+        "uncovered_count_scan": 20,
         "uncovered_symbols": [
-          "TensorBoardLogger.log_graph",
-          "TensorBoardLogger.log_dir",
-          "TensorBoardLogger.save",
-          "TensorBoardLogger.after_save_checkpoint",
-          "TensorBoardLogger.root_dir",
-          "TensorBoardLogger.save_dir",
-          "TensorBoardLogger.finalize"
+          "ProgressBar.has_dataloader_changed",
+          "ProgressBar.predict_description",
+          "ProgressBar.reset_dataloader_idx_tracker",
+          "ProgressBar.sanity_check_description",
+          "ProgressBar.test_description",
+          "ProgressBar.total_predict_batches_current_dataloader",
+          "ProgressBar.total_test_batches_current_dataloader",
+          "ProgressBar.total_val_batches_current_dataloader",
+          "get_standard_metrics"
         ],
-        "undocumented_count": 3,
+        "uncovered_symbols_scan": [
+          "ProgressBar",
+          "ProgressBar.get_metrics",
+          "get_standard_metrics",
+          "ProgressBar.total_val_batches",
+          "ProgressBar.total_test_batches_current_dataloader",
+          "ProgressBar.total_val_batches_current_dataloader",
+          "ProgressBar.total_train_batches",
+          "ProgressBar.enable",
+          "ProgressBar.total_predict_batches_current_dataloader",
+          "ProgressBar.has_dataloader_changed",
+          "ProgressBar.setup",
+          "ProgressBar.trainer",
+          "ProgressBar.disable",
+          "ProgressBar.print",
+          "ProgressBar.predict_description",
+          "ProgressBar.reset_dataloader_idx_tracker",
+          "ProgressBar.sanity_check_description",
+          "ProgressBar.test_description",
+          "ProgressBar.train_description",
+          "ProgressBar.validation_description"
+        ],
+        "undocumented_count": 9,
+        "undocumented_count_scan": 9,
         "undocumented_symbols": [
-          "TensorBoardLogger.log_graph",
-          "TensorBoardLogger.save",
-          "TensorBoardLogger.finalize"
+          "ProgressBar.has_dataloader_changed",
+          "ProgressBar.predict_description",
+          "ProgressBar.reset_dataloader_idx_tracker",
+          "ProgressBar.sanity_check_description",
+          "ProgressBar.setup",
+          "ProgressBar.test_description",
+          "ProgressBar.train_description",
+          "ProgressBar.trainer",
+          "ProgressBar.validation_description"
+        ],
+        "undocumented_symbols_scan": [
+          "ProgressBar.has_dataloader_changed",
+          "ProgressBar.setup",
+          "ProgressBar.trainer",
+          "ProgressBar.predict_description",
+          "ProgressBar.reset_dataloader_idx_tracker",
+          "ProgressBar.sanity_check_description",
+          "ProgressBar.test_description",
+          "ProgressBar.train_description",
+          "ProgressBar.validation_description"
         ]
       },
       "id": "CQ-05",
-      "primary_module": "lightning.pytorch.loggers.tensorboard",
-      "prompt": "Generate a health snapshot for `lightning.pytorch.loggers.tensorboard` for the release notes. Report: (1) how many public symbols lack docstrings and (2) how many public symbols are not covered by tests. Use exactly this conclusion format:\n## Answer\nundocumented_count: <N>\nuncovered_count: <N>.",
+      "primary_module": "lightning.pytorch.callbacks.progress.progress_bar",
+      "prompt": "Generate a health snapshot for `lightning.pytorch.callbacks.progress.progress_bar` for the release notes. Report: (1) how many unique public qualified symbols lack docstrings and (2) how many unique public qualified symbols are not covered by tests, deduplicating repeated declaration-level findings. Use exactly this conclusion format:\n## Answer\nundocumented_count: <N>\nuncovered_count: <N>.",
       "self_consistency": true,
       "type": "code_quality",
       "workflow_subtype": "pre_implementation_research",
@@ -1393,6 +1480,15 @@
     },
     {
       "difficulty": "extreme",
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.exceptions::MisconfigurationException",
+            "--exclude-tests"
+          ],
+          "cmd": "fn-rdeps"
+        }
+      ],
       "fanin_tier": "high",
       "ground_truth": {
         "exclude_tests": true,
@@ -1505,15 +1601,6 @@
         "raw_caller_count": 102,
         "unique_caller_count": 102
       },
-      "expected_queries": [
-        {
-          "args": [
-            "lightning.fabric.utilities.exceptions::MisconfigurationException",
-            "--exclude-tests"
-          ],
-          "cmd": "fn-rdeps"
-        }
-      ],
       "id": "BR-09",
       "primary_fn": "lightning.fabric.utilities.exceptions::MisconfigurationException",
       "primary_module": "lightning.fabric.utilities.exceptions",
@@ -1986,6 +2073,22 @@
     },
     {
       "difficulty": "medium",
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.apply_func::convert_tensors_to_scalars",
+            "--exclude-tests"
+          ],
+          "cmd": "fn-rdeps"
+        },
+        {
+          "args": [
+            "lightning.fabric.utilities.apply_func"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
+      "expected_query_policy": "all_required",
       "ground_truth": {
         "fn_callers": [
           "lightning.fabric.fabric::Fabric.log_dict",
@@ -2003,22 +2106,6 @@
         ],
         "unique_caller_count": 5
       },
-      "expected_queries": [
-        {
-          "args": [
-            "lightning.fabric.utilities.apply_func::convert_tensors_to_scalars",
-            "--exclude-tests"
-          ],
-          "cmd": "fn-rdeps"
-        },
-        {
-          "args": [
-            "lightning.fabric.utilities.apply_func"
-          ],
-          "cmd": "rdeps"
-        }
-      ],
-      "expected_query_policy": "all_required",
       "id": "DI-01",
       "primary_fn": "lightning.fabric.utilities.apply_func::convert_tensors_to_scalars",
       "primary_module": "lightning.fabric.utilities.apply_func",
@@ -2040,6 +2127,22 @@
     },
     {
       "difficulty": "medium",
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.cloud_io::get_filesystem",
+            "--exclude-tests"
+          ],
+          "cmd": "fn-rdeps"
+        },
+        {
+          "args": [
+            "lightning.fabric.utilities.cloud_io"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
+      "expected_query_policy": "all_required",
       "ground_truth": {
         "fn_callers": [
           "lightning.fabric.loggers.csv_logs::CSVLogger.__init__",
@@ -2077,22 +2180,6 @@
         ],
         "unique_caller_count": 22
       },
-      "expected_queries": [
-        {
-          "args": [
-            "lightning.fabric.utilities.cloud_io::get_filesystem",
-            "--exclude-tests"
-          ],
-          "cmd": "fn-rdeps"
-        },
-        {
-          "args": [
-            "lightning.fabric.utilities.cloud_io"
-          ],
-          "cmd": "rdeps"
-        }
-      ],
-      "expected_query_policy": "all_required",
       "id": "DI-02",
       "primary_fn": "lightning.fabric.utilities.cloud_io::get_filesystem",
       "primary_module": "lightning.fabric.utilities.cloud_io",
@@ -2111,6 +2198,22 @@
     },
     {
       "difficulty": "hard",
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.pytorch.utilities.model_helpers::is_overridden",
+            "--exclude-tests"
+          ],
+          "cmd": "fn-rdeps"
+        },
+        {
+          "args": [
+            "lightning.pytorch.utilities.model_helpers"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
+      "expected_query_policy": "all_required",
       "ground_truth": {
         "fn_callers": [
           "examples.fabric.build_your_own_trainer.trainer::MyCustomTrainer.val_loop",
@@ -2151,22 +2254,6 @@
         ],
         "unique_caller_count": 26
       },
-      "expected_queries": [
-        {
-          "args": [
-            "lightning.pytorch.utilities.model_helpers::is_overridden",
-            "--exclude-tests"
-          ],
-          "cmd": "fn-rdeps"
-        },
-        {
-          "args": [
-            "lightning.pytorch.utilities.model_helpers"
-          ],
-          "cmd": "rdeps"
-        }
-      ],
-      "expected_query_policy": "all_required",
       "id": "DI-03",
       "primary_fn": "lightning.pytorch.utilities.model_helpers::is_overridden",
       "primary_module": "lightning.pytorch.utilities.model_helpers",
@@ -2185,6 +2272,22 @@
     },
     {
       "difficulty": "medium",
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.distributed::_distributed_is_initialized",
+            "--exclude-tests"
+          ],
+          "cmd": "fn-rdeps"
+        },
+        {
+          "args": [
+            "lightning.fabric.utilities.distributed"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
+      "expected_query_policy": "all_required",
       "ground_truth": {
         "fn_callers": [
           "lightning.fabric.strategies.ddp::DDPStrategy.barrier",
@@ -2220,22 +2323,6 @@
         ],
         "unique_caller_count": 18
       },
-      "expected_queries": [
-        {
-          "args": [
-            "lightning.fabric.utilities.distributed::_distributed_is_initialized",
-            "--exclude-tests"
-          ],
-          "cmd": "fn-rdeps"
-        },
-        {
-          "args": [
-            "lightning.fabric.utilities.distributed"
-          ],
-          "cmd": "rdeps"
-        }
-      ],
-      "expected_query_policy": "all_required",
       "id": "DI-04",
       "primary_fn": "lightning.fabric.utilities.distributed::_distributed_is_initialized",
       "primary_module": "lightning.fabric.utilities.distributed",
@@ -2254,6 +2341,22 @@
     },
     {
       "difficulty": "hard",
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.rank_zero::_get_rank",
+            "--exclude-tests"
+          ],
+          "cmd": "fn-rdeps"
+        },
+        {
+          "args": [
+            "lightning.fabric.utilities.rank_zero"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
+      "expected_query_policy": "all_required",
       "ground_truth": {
         "fn_callers": [
           "lightning.fabric.utilities.seed::seed_everything",
@@ -2272,22 +2375,6 @@
         ],
         "unique_caller_count": 2
       },
-      "expected_queries": [
-        {
-          "args": [
-            "lightning.fabric.utilities.rank_zero::_get_rank",
-            "--exclude-tests"
-          ],
-          "cmd": "fn-rdeps"
-        },
-        {
-          "args": [
-            "lightning.fabric.utilities.rank_zero"
-          ],
-          "cmd": "rdeps"
-        }
-      ],
-      "expected_query_policy": "all_required",
       "id": "DI-05",
       "primary_fn": "lightning.fabric.utilities.rank_zero::_get_rank",
       "primary_module": "lightning.fabric.utilities.rank_zero",
@@ -2306,6 +2393,22 @@
     },
     {
       "difficulty": "medium",
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.apply_func::move_data_to_device",
+            "--exclude-tests"
+          ],
+          "cmd": "fn-rdeps"
+        },
+        {
+          "args": [
+            "lightning.fabric.utilities.apply_func"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
+      "expected_query_policy": "all_required",
       "ground_truth": {
         "fn_callers": [
           "lightning.fabric.fabric::Fabric.to_device",
@@ -2330,22 +2433,6 @@
         ],
         "unique_caller_count": 12
       },
-      "expected_queries": [
-        {
-          "args": [
-            "lightning.fabric.utilities.apply_func::move_data_to_device",
-            "--exclude-tests"
-          ],
-          "cmd": "fn-rdeps"
-        },
-        {
-          "args": [
-            "lightning.fabric.utilities.apply_func"
-          ],
-          "cmd": "rdeps"
-        }
-      ],
-      "expected_query_policy": "all_required",
       "id": "DI-06",
       "primary_fn": "lightning.fabric.utilities.apply_func::move_data_to_device",
       "primary_module": "lightning.fabric.utilities.apply_func",
@@ -2364,6 +2451,16 @@
     },
     {
       "difficulty": "medium",
+      "expected_queries": [
+        {
+          "args": [
+            "--top",
+            "10",
+            "--exclude-tests"
+          ],
+          "cmd": "central"
+        }
+      ],
       "ground_truth": {
         "central_modules": [
           "lightning.pytorch",
@@ -2425,16 +2522,6 @@
         "note": "GT independently computed against the locked target tree by --update (AST central oracle, in-degree ranking).",
         "top": 10
       },
-      "expected_queries": [
-        {
-          "args": [
-            "--top",
-            "10",
-            "--exclude-tests"
-          ],
-          "cmd": "central"
-        }
-      ],
       "id": "GR-01",
       "profiles": [
         "dev"
@@ -2447,6 +2534,15 @@
     },
     {
       "difficulty": "medium",
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.pytorch.trainer.trainer",
+            "lightning.fabric.utilities.rank_zero"
+          ],
+          "cmd": "path"
+        }
+      ],
       "ground_truth": {
         "exclude_tests": true,
         "gt_pending": false,
@@ -2461,15 +2557,6 @@
         "source": "lightning.pytorch.trainer.trainer",
         "target": "lightning.fabric.utilities.rank_zero"
       },
-      "expected_queries": [
-        {
-          "args": [
-            "lightning.pytorch.trainer.trainer",
-            "lightning.fabric.utilities.rank_zero"
-          ],
-          "cmd": "path"
-        }
-      ],
       "id": "GR-02",
       "prompt": "Find an import path from `lightning.pytorch.trainer.trainer` to `lightning.fabric.utilities.rank_zero` \u2014 the chain of modules where each step directly imports the next. Report the chain under a `## Path` heading, one dotted module name per line in order from source to target.",
       "scoreable": true,
@@ -2479,6 +2566,14 @@
     },
     {
       "difficulty": "hard",
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.cloud_io::get_filesystem"
+          ],
+          "cmd": "fn-blast"
+        }
+      ],
       "ground_truth": {
         "blast_callers": [
           "lightning.fabric.loggers.csv_logs::CSVLogger.__init__",
@@ -2519,14 +2614,6 @@
         "gt_source": "ast-fn-blast-oracle",
         "note": "GT independently computed against the locked target tree by --update (AST fn-blast oracle, depth-N closure)."
       },
-      "expected_queries": [
-        {
-          "args": [
-            "lightning.fabric.utilities.cloud_io::get_filesystem"
-          ],
-          "cmd": "fn-blast"
-        }
-      ],
       "id": "GR-03",
       "primary_fn": "lightning.fabric.utilities.cloud_io::get_filesystem",
       "primary_module": "lightning.fabric.utilities.cloud_io",
@@ -2541,6 +2628,16 @@
     },
     {
       "difficulty": "medium",
+      "expected_queries": [
+        {
+          "args": [
+            "--top",
+            "15",
+            "--exclude-tests"
+          ],
+          "cmd": "central"
+        }
+      ],
       "ground_truth": {
         "central_modules": [
           "lightning.pytorch",
@@ -2627,16 +2724,6 @@
         "note": "GT independently computed against the locked target tree by --update (AST central oracle, in-degree ranking).",
         "top": 15
       },
-      "expected_queries": [
-        {
-          "args": [
-            "--top",
-            "15",
-            "--exclude-tests"
-          ],
-          "cmd": "central"
-        }
-      ],
       "id": "GR-04",
       "prompt": "List the 15 most-imported modules in the codebase (the modules imported by the most other modules). Put them under a `## Modules` heading, one dotted module name per line (e.g. `lightning.pytorch.trainer.trainer`).",
       "scoreable": true,
@@ -2646,6 +2733,15 @@
     },
     {
       "difficulty": "medium",
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.pytorch.utilities.exceptions",
+            "--exclude-tests"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
       "ground_truth": {
         "exclude_tests": true,
         "gt_pending": false,
@@ -2703,15 +2799,6 @@
           "lightning.pytorch.utilities.data"
         ]
       },
-      "expected_queries": [
-        {
-          "args": [
-            "lightning.pytorch.utilities.exceptions",
-            "--exclude-tests"
-          ],
-          "cmd": "rdeps"
-        }
-      ],
       "id": "MB-01",
       "primary_module": "lightning.pytorch.utilities.exceptions",
       "profiles": [
@@ -2725,6 +2812,15 @@
     },
     {
       "difficulty": "medium",
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.types",
+            "--exclude-tests"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
       "ground_truth": {
         "exclude_tests": true,
         "gt_pending": false,
@@ -2803,15 +2899,6 @@
           "lightning.pytorch.utilities.types"
         ]
       },
-      "expected_queries": [
-        {
-          "args": [
-            "lightning.fabric.utilities.types",
-            "--exclude-tests"
-          ],
-          "cmd": "rdeps"
-        }
-      ],
       "id": "MB-02",
       "primary_module": "lightning.fabric.utilities.types",
       "profiles": [
@@ -2825,6 +2912,15 @@
     },
     {
       "difficulty": "medium",
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.pytorch.utilities.rank_zero",
+            "--exclude-tests"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
       "ground_truth": {
         "exclude_tests": true,
         "gt_pending": false,
@@ -2893,15 +2989,6 @@
           "lightning.pytorch.utilities.parsing"
         ]
       },
-      "expected_queries": [
-        {
-          "args": [
-            "lightning.pytorch.utilities.rank_zero",
-            "--exclude-tests"
-          ],
-          "cmd": "rdeps"
-        }
-      ],
       "id": "MB-03",
       "primary_module": "lightning.pytorch.utilities.rank_zero",
       "profiles": [
@@ -2915,6 +3002,15 @@
     },
     {
       "difficulty": "medium",
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.imports",
+            "--exclude-tests"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
       "ground_truth": {
         "exclude_tests": true,
         "gt_pending": false,
@@ -2956,15 +3052,6 @@
           "lightning.pytorch.utilities.model_summary.model_summary"
         ]
       },
-      "expected_queries": [
-        {
-          "args": [
-            "lightning.fabric.utilities.imports",
-            "--exclude-tests"
-          ],
-          "cmd": "rdeps"
-        }
-      ],
       "id": "MB-04",
       "primary_module": "lightning.fabric.utilities.imports",
       "profiles": [
@@ -2978,6 +3065,15 @@
     },
     {
       "difficulty": "medium",
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.pytorch.trainer.states",
+            "--exclude-tests"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
       "ground_truth": {
         "exclude_tests": true,
         "gt_pending": false,
@@ -3010,15 +3106,6 @@
           "lightning.pytorch.utilities.data"
         ]
       },
-      "expected_queries": [
-        {
-          "args": [
-            "lightning.pytorch.trainer.states",
-            "--exclude-tests"
-          ],
-          "cmd": "rdeps"
-        }
-      ],
       "id": "MB-05",
       "primary_module": "lightning.pytorch.trainer.states",
       "profiles": [
