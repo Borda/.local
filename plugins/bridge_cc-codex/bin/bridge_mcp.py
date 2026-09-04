@@ -38,6 +38,7 @@ from bridge_call import (  # noqa: E402
     DEFAULT_TIMEOUTS,
     Request,
     run_request,
+    validate_request_transport_budget,
 )
 
 
@@ -247,7 +248,7 @@ def _request_from_arguments(verb: str, arguments: dict[str, Any], trusted_worksp
             "write-capable bridge calls need a project workspace; the MCP host launched this server "
             "from the user home or a filesystem root"
         )
-    return Request(
+    request = Request(
         verb,
         task,
         arguments.get("model", DEFAULT_MODEL),
@@ -262,6 +263,8 @@ def _request_from_arguments(verb: str, arguments: dict[str, Any], trusted_worksp
         None,
         tuple(supported),
     )
+    validate_request_transport_budget(request)
+    return request
 
 
 def _refused_write_roots(workspace: Path) -> set[Path]:

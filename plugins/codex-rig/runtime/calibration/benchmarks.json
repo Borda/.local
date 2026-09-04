@@ -387,6 +387,9 @@
       "approved_plan_sha256",
       "work_buckets",
       "schema-v2",
+      "Only when evaluating or executing `parallel-specialists`",
+      "parent-owned and sequential routes do not load it",
+      "references/parallel-lifecycle.md",
       "exact plan and approval digests",
       "matching baseline HEAD/tree",
       "joins all required terminal handovers",
@@ -486,6 +489,11 @@
       "helper-cli-contract.md"
     ],
     "code-review": [
+      "review-host-controls-unavailable-before-dispatch",
+      "find-review-report.py --complete-run",
+      "Review handoff blocked",
+      "review_findings",
+      "operational_blockers",
       "## Input Schema",
       "T0 mechanical scope gate",
       "collect_diff.py",

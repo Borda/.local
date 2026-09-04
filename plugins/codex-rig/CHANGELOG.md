@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.14.1
+
+- Preserve incomplete/unpromoted review barriers across later collection failures; reject approving recommendations with failed or incomplete quality gates and reject non-string finding severities without a traceback.
+
+- Gate review completion through both validators and exact downstream discovery before emitting final text. Detect identified notes-only reviews as incomplete and block stale fallback after newer incomplete/malformed results; preserve preliminary evidence and show blocked-first diagnostics instead of a normal verdict with a promotion disclaimer.
+
+- Reject review dispatch preflight when the current launcher cannot supply the declared read-only/never child controls; keep authoritative post-run validation and existing role permissions unchanged.
+
+- Require stable schema-v2 assessed finding IDs/severities with exact count and notes/final-action coverage, plus separately declared operational blockers; retain historical schema-v1 reading.
+
+- Bind assessed review approval/minor recommendations to finding severity, require unique action-table identities, and enforce canonical final outcome wording that agrees with the structured recommendation.
+
+- Bind schema-v2 artifact paths to the run's final `result.json` through candidate promotion; reject blank/duplicate confidence gaps and missing, duplicate, or undeclared closures while retaining schema-v1 read compatibility.
+
+- Separate unchanged-baseline command/output-boundary preflight from passing postimplementation verification in the production parallel remediation route, preserving exact-command approval and parent integration gates.
+
+- Load optional parallel lifecycle mechanics only when evaluating or executing that route; retain common obligations in the remediation entrypoint, with contract/calibration and independent followability coverage. This reduces ordinary-route instruction bytes; live token or latency savings are not established.
+
 ## 0.14.0
 
 - Store assessed PR reviews under stable PR-number namespaces with monotonic numeric run indexes: collection starts in a timestamped temporary run until authoritative `pr.json` identifies the PR, then promotes the complete run to `.reports/codex/code-review/pr-<number>/run-<NNN>/` and uses that path for every later artifact. Keep local reviews timestamped, retain pre-identity failures as unavailable diagnostics, and preserve discovery of legacy flat review artifacts without migration.

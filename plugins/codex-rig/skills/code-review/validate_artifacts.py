@@ -76,6 +76,7 @@ REQUIRED_SECTIONS = (
 )
 REQUIRED_ROLES = {"qa-specialist", "challenger"}
 VALID_RECOMMENDATIONS = {"accept-as-is", "minor-changes", "needs-more-work", "reject", "not-aligned"}
+FINDING_SEVERITIES = ("critical", "high", "medium", "low")
 CLOSE_CODES = {
     "FALSE_GOAL",
     "BREAKING_CONDUCT",
@@ -436,7 +437,64 @@ def _require_notes_sections(notes_path: Path) -> None:
         raise SystemExit("missing-review-note-sections:" + ",".join(missing))
 
 
-def _validate_review_decision(metadata: dict[str, Any]) -> None:
+def _review_finding_identities(metadata: dict[str, Any], result: dict[str, Any]) -> set[str] | None:
+    """Validate schema-v2 finding records and return their stable identities.
+
+    Schema-v1 results retain their historical severity-count-only shape. Schema-v2 assessed results must supply the
+    records that make those counts actionable.
+    """
+    schema_version = result.get("schema_version", 1)
+    if schema_version == 1:
+        return None
+    if schema_version != 2:
+        raise SystemExit("unsupported-result-schema-version")
+
+    records = metadata.get("review_findings")
+    if not isinstance(records, list):
+        raise SystemExit("review-findings-records-missing")
+    counts = {severity: 0 for severity in FINDING_SEVERITIES}
+    identities: set[str] = set()
+    for index, record in enumerate(records, start=1):
+        if not isinstance(record, dict) or set(record) != {"id", "severity"}:
+            raise SystemExit(f"review-finding-record-invalid:{index}")
+        identity = record["id"]
+        severity = record["severity"]
+        if not isinstance(identity, str) or not identity.strip():
+            raise SystemExit(f"review-finding-id-invalid:{index}")
+        if not isinstance(severity, str) or severity not in counts:
+            raise SystemExit(f"review-finding-severity-invalid:{index}")
+        if identity in identities:
+            raise SystemExit(f"review-finding-id-duplicate:{identity}")
+        identities.add(identity)
+        counts[severity] += 1
+
+    findings = result["findings"]
+    for severity in FINDING_SEVERITIES:
+        if counts[severity] != findings[severity]:
+            raise SystemExit(f"review-findings-severity-count-mismatch:{severity}")
+    return identities
+
+
+def _operational_blocker_identities(metadata: dict[str, Any], finding_ids: set[str]) -> set[str]:
+    """Validate optional non-finding action identities kept separate from review findings."""
+    blockers = metadata.get("operational_blockers", [])
+    if not isinstance(blockers, list):
+        raise SystemExit("review-operational-blockers-invalid")
+    identities: set[str] = set()
+    for index, blocker in enumerate(blockers, start=1):
+        if not isinstance(blocker, dict) or set(blocker) != {"id"}:
+            raise SystemExit(f"review-operational-blocker-invalid:{index}")
+        identity = blocker["id"]
+        if not isinstance(identity, str) or not identity.strip():
+            raise SystemExit(f"review-operational-blocker-id-invalid:{index}")
+        if identity in finding_ids or identity in identities:
+            raise SystemExit(f"review-operational-blocker-id-duplicate:{identity}")
+        identities.add(identity)
+    return identities
+
+
+def _validate_review_decision(metadata: dict[str, Any], result: dict[str, Any]) -> None:
+    """Bind an assessed review recommendation to finding severities and quality-gate status."""
     decision = metadata.get("review_decision")
     if not isinstance(decision, dict):
         raise SystemExit("result-missing-review-decision")
@@ -447,6 +505,24 @@ def _validate_review_decision(metadata: dict[str, Any]) -> None:
         value = decision.get(key)
         if not isinstance(value, str) or not value.strip():
             raise SystemExit(f"review-decision-missing-{key}")
+    findings = result.get("findings")
+    if (
+        not isinstance(findings, dict)
+        or set(findings) != set(FINDING_SEVERITIES)
+        or any(not isinstance(findings[level], int) or findings[level] < 0 for level in FINDING_SEVERITIES)
+    ):
+        raise SystemExit("review-findings-invalid")
+    finding_ids = _review_finding_identities(metadata, result)
+    if finding_ids is not None:
+        _operational_blocker_identities(metadata, finding_ids)
+    if recommendation == "accept-as-is" and sum(findings.values()) != 0:
+        raise SystemExit("review-accept-with-findings")
+    if recommendation == "minor-changes" and (findings["critical"] or findings["high"]):
+        raise SystemExit("review-minor-with-blocking-findings")
+    if recommendation in {"accept-as-is", "minor-changes"} and (
+        result.get("status") != "pass" or result.get("checks_failed")
+    ):
+        raise SystemExit("review-approval-with-failed-gates")
 
 
 def _table_cells(line: str) -> list[str] | None:
@@ -487,11 +563,24 @@ def _validate_action_table(notes_path: Path, result: dict[str, Any], metadata: d
     action_rows = rows[2:]
     if not action_rows:
         raise SystemExit("review-findings-action-table-empty")
+    finding_ids = _review_finding_identities(metadata, result)
+    blocker_ids = _operational_blocker_identities(metadata, finding_ids or set()) if finding_ids is not None else set()
+    action_identities: set[str] = set()
     for index, row in enumerate(action_rows, start=1):
         if not all(row):
             raise SystemExit(f"review-findings-action-table-cell-empty:{index}")
+        identity = row[0]
+        if identity in action_identities:
+            raise SystemExit(f"review-findings-action-table-identity-duplicate:{identity}")
+        action_identities.add(identity)
         if row[3].casefold() == "implemented":
             raise SystemExit(f"review-findings-action-table-status-closed:{index}")
+        if finding_ids is not None and identity not in (finding_ids | blocker_ids):
+            raise SystemExit(f"review-findings-action-table-identity-unbound:{identity}")
+    if finding_ids is not None:
+        missing = sorted((finding_ids | blocker_ids) - action_identities)
+        if missing:
+            raise SystemExit("review-findings-action-table-identity-coverage-mismatch:" + ",".join(missing))
     findings = result.get("findings")
     if isinstance(findings, dict):
         reported_count = sum(value for value in findings.values() if isinstance(value, int) and value >= 0)
@@ -792,11 +881,17 @@ def _validate_pr_fallback_confidence(
 
 def _validate_confidence_gap_closures(metadata: dict[str, Any], confidence_gaps: list[str]) -> None:
     """Validate that every review confidence gap has closure evidence or carry-forward state."""
-    active_gaps = [gap.strip() for gap in confidence_gaps if gap.strip()]
+    active_gaps = [gap.strip() for gap in confidence_gaps]
+    if any(not gap for gap in active_gaps):
+        raise SystemExit("review-invalid-confidence-gap")
+    if len(active_gaps) != len(set(active_gaps)):
+        raise SystemExit("review-duplicate-confidence-gap")
+    closures = metadata.get("confidence_gap_closures")
     if not active_gaps:
+        if closures not in (None, []):
+            raise SystemExit("review-confidence-gap-closure-undeclared")
         return
 
-    closures = metadata.get("confidence_gap_closures")
     if not isinstance(closures, list):
         raise SystemExit("review-missing-confidence-gap-closures")
 
@@ -816,7 +911,12 @@ def _validate_confidence_gap_closures(metadata: dict[str, Any], confidence_gaps:
             raise SystemExit(f"review-confidence-gap-closure-missing-evidence:{index}")
         if status in {"unresolved", "deferred"} and not (isinstance(rationale, str) and rationale.strip()):
             raise SystemExit(f"review-confidence-gap-closure-missing-rationale:{index}")
-        closed_gaps.add(gap.strip())
+        normalized_gap = gap.strip()
+        if normalized_gap not in active_gaps:
+            raise SystemExit(f"review-confidence-gap-closure-undeclared:{index}")
+        if normalized_gap in closed_gaps:
+            raise SystemExit(f"review-confidence-gap-closure-duplicate:{normalized_gap}")
+        closed_gaps.add(normalized_gap)
 
     missing = sorted(set(active_gaps) - closed_gaps)
     if missing:
@@ -1277,7 +1377,7 @@ def _validate_result(
 
     notes_path = out_dir / "review-notes.md"
     _require_notes_sections(notes_path)
-    _validate_review_decision(metadata)
+    _validate_review_decision(metadata, result)
     _validate_action_table(notes_path, result, metadata, scope)
     _validate_confidence_gaps(result, metadata)
     _validate_confidence_recovery(result, metadata)

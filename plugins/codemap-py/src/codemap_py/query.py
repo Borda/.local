@@ -93,6 +93,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from codemap_py import index_paths, rwgate
+from codemap_py.scanner import INDEXED_PATHSPEC
 
 # Transitional seam: exclusion rules live in codemap_py.scanner, but this
 # module still reaches them through the old bare-name ``_exclusions`` import
@@ -588,7 +589,7 @@ _GIT_TIMEOUT_S = 10  # max seconds for any git subprocess (H78: hung process gua
 # left a file_shas-less index claiming freshness. Spelled ONCE here and consumed by
 # :func:`_resolve_current_file_shas` and :func:`check_staleness` so the two paths
 # cannot drift apart again.
-_INDEXED_PATHSPEC: tuple[str, ...] = ("*.py", "*.pyi", "*.rst", "docs/**/*.md")
+_INDEXED_PATHSPEC = INDEXED_PATHSPEC
 
 
 def _git_cwd_kwargs() -> dict[str, str]:
@@ -1897,7 +1898,13 @@ def cmd_import_types(index: dict, module: str) -> None:
     )
 
 
-def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False, entity: EntityType | None = None) -> None:
+def cmd_rdeps(
+    index: dict,
+    module: str,
+    exclude_tests: bool = False,
+    entity: EntityType | None = None,
+    limit: int = 0,
+) -> None:
     """Print all modules that import a given module as JSON.
 
     Includes static importers (``imported_by``), dynamic importers
@@ -1909,6 +1916,7 @@ def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False, entity: Ent
         module: dotted module name whose reverse dependencies are queried.
         exclude_tests: if True, exclude test modules from static results.
         entity: if set, restrict importers to this :class:`EntityType`.
+        limit: maximum static importers to return; 0 keeps the exhaustive default.
     """
     modules_list = index.get("modules", [])
     if exclude_tests:
@@ -1916,6 +1924,10 @@ def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False, entity: Ent
     if entity:
         modules_list = [m for m in modules_list if _entity_type(m) == entity]
     result = sorted(m["name"] for m in modules_list if module in m.get("direct_imports", []))
+    total_available = len(result)
+    truncated = limit > 0 and total_available > limit
+    if truncated:
+        result = result[:limit]
     module_map = build_module_map(index)
     entry = module_map.get(module, {})
     dynamic = entry.get("dynamic_imported_by", [])
@@ -1927,6 +1939,16 @@ def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False, entity: Ent
     # (it shows up in result/dynamic/config even though it has no own module entry).
     if module not in module_map and not (result or dynamic or config):
         _die_module_not_indexed(index, module)
+    coverage = _cmd_coverage(
+        index,
+        query_target=module,
+        method="import-graph",
+        not_covered=_IMPORT_GRAPH_NOT_COVERED,
+        **({"confidence": "partial"} if truncated else {}),
+    )
+    if truncated:
+        coverage["truncated"] = True
+        coverage["total_available"] = total_available
     _print(
         json.dumps(
             {
@@ -1934,9 +1956,7 @@ def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False, entity: Ent
                 "imported_by": result,
                 "dynamic_imported_by": dynamic,
                 "config_refs": config,
-                "index": _cmd_coverage(
-                    index, query_target=module, method="import-graph", not_covered=_IMPORT_GRAPH_NOT_COVERED
-                ),
+                "index": coverage,
             }
         )
     )
@@ -4626,6 +4646,13 @@ def _add_module_subparsers(sub: argparse._SubParsersAction) -> None:
         choices=[e.value for e in EntityType],
         help="Restrict importers to this entity type (requires v5.5+ index for docs/example).",
     )
+    p_rdeps.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Preview at most N static importers; 0 returns every importer (default).",
+    )
 
     p_central = sub.add_parser("central", help="Most-imported modules (highest blast radius).")
     p_central.add_argument("--top", type=int, default=10, metavar="N")
@@ -5015,7 +5042,8 @@ def _resolve_index_path(args: argparse.Namespace) -> Path:
     """Resolve the index JSON path from ``--index``, else auto-discover it.
 
     An explicit ``--index`` is guarded against path traversal — it must resolve
-    inside the CWD or the git root — before being trusted.
+    inside the CWD, git root, or an exact resolver-selected target for an
+    explicit ``--root`` before being trusted.
 
     Args:
         args: parsed top-level namespace (``args.index`` may be ``None``).
@@ -5035,7 +5063,18 @@ def _resolve_index_path(args: argparse.Namespace) -> Path:
         ).resolve()
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         git_root = cwd
-    if not (resolved.is_relative_to(cwd) or resolved.is_relative_to(git_root)):
+    configured_index = (
+        index_paths.resolve_index(root=args.root).index_path if os.environ.get("CODEMAP_INDEX_DIR") else None
+    )
+    default_root_index = (
+        index_paths.resolve_index(root=args.root, index_dir_override=None).index_path if args.root is not None else None
+    )
+    if not (
+        resolved.is_relative_to(cwd)
+        or resolved.is_relative_to(git_root)
+        or resolved == configured_index
+        or resolved == default_root_index
+    ):
         # emit a parseable JSON error (not just a bare stderr + exit) so a
         # caller sees the guard rejection in the same channel as every other failure.
         _print(f"scan-query: --index path outside project root: {resolved}", file=sys.stderr)
@@ -5055,6 +5094,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     """
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if args.command == "rdeps" and args.limit < 0:
+        parser.error("rdeps --limit must be 0 or a positive integer")
     global _CMD, _force_compact_coverage, _verbose_coverage  # noqa: PLW0603
     _CMD = args.command
     _verbose_coverage = args.verbose_coverage
@@ -5114,7 +5155,9 @@ _COMMAND_HANDLERS: dict[str, Callable[[dict, argparse.Namespace, Path], None]] =
     "deps": lambda i, a, r: cmd_deps(  # noqa: ARG005 (r unused — shared handler signature)
         i, a.module, stdlib_only=a.stdlib, third_party_only=a.third_party, internal_only=a.internal
     ),
-    "rdeps": lambda i, a, r: cmd_rdeps(i, a.module, exclude_tests=a.exclude_tests, entity=_as_entity(a.entity)),  # noqa: ARG005
+    "rdeps": lambda i, a, r: cmd_rdeps(  # noqa: ARG005
+        i, a.module, exclude_tests=a.exclude_tests, entity=_as_entity(a.entity), limit=a.limit
+    ),
     "central": lambda i, a, r: cmd_central(i, a.top, exclude_tests=a.exclude_tests, entity=_as_entity(a.entity)),  # noqa: ARG005
     "coupled": lambda i, a, r: cmd_coupled(i, a.top, exclude_tests=a.exclude_tests, entity=_as_entity(a.entity)),  # noqa: ARG005
     "path": lambda i, a, r: cmd_path(i, a.frm, a.to),  # noqa: ARG005

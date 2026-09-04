@@ -350,7 +350,7 @@ def test_write_result_closed_review_omits_remediation_fields(tmp_path: Path) -> 
     result_path = _write_closed_artifact(tmp_path)
     result = json.loads(result_path.read_text(encoding="utf-8"))
     candidate_path = tmp_path / "result.candidate.json"
-    result["metadata"]["final_handoff"] = _write_closed_final_handoff(tmp_path, candidate_path, result["metadata"])
+    result["metadata"]["final_handoff"] = _write_closed_final_handoff(tmp_path, result_path, result["metadata"])
 
     completed = subprocess.run(
         [
@@ -367,7 +367,7 @@ def test_write_result_closed_review_omits_remediation_fields(tmp_path: Path) -> 
             "--confidence",
             "0.95",
             "--artifact-path",
-            str(candidate_path),
+            str(result_path),
             "--metadata",
             json.dumps(result["metadata"]),
             "--recommendations",

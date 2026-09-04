@@ -124,6 +124,11 @@ _QUERY_PATH_BASE_SNIPPETS = (
     "never skill-relative",
     "do not re-query/read/grep",
 )
+_CUSTOM_ROOT_INDEX_SNIPPETS = (
+    "--index <emitted-index-path>",
+    "--root <same-root>",
+    "path resolution only",
+)
 
 
 def _direct_caller_routing_violations(skill_text: str) -> list[str]:
@@ -412,6 +417,14 @@ def test_claude_query_code_limits_bash_to_the_query_cli() -> None:
     skill_text = (_CLAUDE_SKILLS_DIR / "query-code" / "SKILL.md").read_text(encoding="utf-8")
 
     assert _claude_query_frontmatter_violations(skill_text) == []
+
+
+@pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))
+def test_custom_root_scan_followup_selects_the_emitted_index(runtime_dir: Path) -> None:
+    """Custom-root guidance preserves query path resolution while selecting its index."""
+    scan_text = (runtime_dir / "scan-codebase" / "SKILL.md").read_text(encoding="utf-8").lower()
+
+    assert all(snippet in scan_text for snippet in _CUSTOM_ROOT_INDEX_SNIPPETS)
 
 
 def test_claude_query_permission_pattern_matches_the_literal_path_launcher() -> None:

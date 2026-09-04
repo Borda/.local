@@ -42,4 +42,6 @@ Result lifecycle:
 5. `validate-artifacts.py` validates the shared and skill-specific artifact contract, reruns `final_handoff.py check`, and reconciles the handoff with gates, confidence, and workflow evidence.
 6. Rename only the validated candidate to `result.json`, then emit the validated `final.md` bytes verbatim.
 
+For code-review, step 6 finishes through `find-review-report.py --complete-run <run-directory>`: both artifact validators rerun against the canonical promoted result; assessed PR lookup must select that exact result before any final bytes are emitted. A failed handoff reports blocked-first process status and retained evidence, not a normal assessed-final verdict. This command is read-only and does not repair or promote candidates.
+
 Never hand-write `result.json`, promote an unvalidated candidate, manually reconstruct validated final text, or infer flags from stale examples. See `final-handoff-contract.md`.

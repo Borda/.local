@@ -133,38 +133,48 @@ def wide_reverse_graph(tmp_path: Path, scan_index: Path) -> tuple[Path, Path, se
     return root, _scan(scan_index, root), expected_modules, expected_callers
 
 
-@pytest.mark.parametrize(
-    ("args", "expected_error"),
-    [
-        pytest.param(("rdeps", "leaf", "--limit", "0"), "unrecognized arguments: --limit 0", id="rdeps"),
-        pytest.param(
-            ("fn-rdeps", "leaf::target", "--limit", "0"),
-            "unrecognized arguments: --limit 0",
-            id="fn-rdeps",
-        ),
-    ],
-)
-def test_reverse_query_rejects_unsupported_limit_argument(
+def test_rdeps_limit_zero_preserves_the_exhaustive_result(
     wide_reverse_graph: tuple[Path, Path, set[str], set[str]],
     scan_query: Path,
-    args: tuple[str, ...],
-    expected_error: str,
 ) -> None:
-    """Reverse queries reject ``--limit`` because their default contract is exhaustive.
+    """Rdeps accepts ``--limit 0`` as the byte-identical exhaustive route.
 
-    Prevents the documentation/integration layer from implying an unsupported cap. The parser assertion is exact, so
-    accidentally accepting and ignoring the option cannot pass.
+    Prevents the preview option from changing the established default result when explicitly disabled. Exact output
+    equality catches an omitted importer or any unrequested metadata change.
     """
+    root, index_path, expected_modules, _expected_callers = wide_reverse_graph
+    default = subprocess.run(
+        [sys.executable, str(scan_query), "--index", str(index_path), "rdeps", "leaf"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    explicit = subprocess.run(
+        [sys.executable, str(scan_query), "--index", str(index_path), "rdeps", "leaf", "--limit", "0"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+
+    assert default.returncode == explicit.returncode == 0, explicit.stderr
+    assert explicit.stdout == default.stdout
+    assert set(json.loads(explicit.stdout)["imported_by"]) == expected_modules
+
+
+def test_fn_rdeps_rejects_unsupported_limit_argument(
+    wide_reverse_graph: tuple[Path, Path, set[str], set[str]], scan_query: Path
+) -> None:
+    """Fn-rdeps rejects the rdeps-only preview option rather than ignoring it."""
     root, index_path, _expected_modules, _expected_callers = wide_reverse_graph
     result = subprocess.run(
-        [sys.executable, str(scan_query), "--index", str(index_path), *args],
+        [sys.executable, str(scan_query), "--index", str(index_path), "fn-rdeps", "leaf::target", "--limit", "0"],
         cwd=root,
         capture_output=True,
         text=True,
     )
 
     assert result.returncode == 2
-    assert expected_error in result.stderr
+    assert "unrecognized arguments: --limit 0" in result.stderr
 
 
 def test_reverse_queries_return_all_names_without_a_limit(

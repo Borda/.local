@@ -191,6 +191,13 @@ Routing rules:
 - `BROAD` and `HIGH_RISK`: always real QA and challenger passes.
 - Non-Sol conditional role only when matching `axis_<role>` signal is true. `solution-architect` and `security-auditor` additionally require valid explicit-user-selection evidence; an axis signal alone fails routing and never selects Sol.
 
+Before every spawned route:
+
+1. Check launcher compatibility before preparing specialist context. Role-card defaults, requested profiles, parent controls, or unsupported overrides do not establish compatible child controls. If unavailable, stop with `review-host-controls-unavailable-before-dispatch`; never launch work hoping to repair provenance afterward.
+2. For a compatible launcher, prepare/hash the context, freeze the execution plan with `review_host={"source":"runtime-tool-contract","sandbox_mode":"read-only","approval_policy":"never"}` transcribed from that actual launcher's supported child controls, and run `parallel_execution.py preflight --consumer code-review` using its documented arguments before dispatch.
+3. Missing or incompatible declarations fail preflight. Preflight is compatibility admission, not runtime evidence; authoritative post-run checks stay mandatory. Do not mutate the frozen plan after this check.
+4. An explicit serial route with no children may use genuine in-main passes only where independence gates allow them. HIGH_RISK/BROAD review must not be silently downgraded.
+
 For every triggered pass:
 
 - Create `<run-directory>/specialists` and one markdown output per triggered spawned/substituted pass.
@@ -327,7 +334,9 @@ For every assessed non-`accept-as-is` PR decision and any `needs-more-work` deci
 | -- | -- | -- | -- |
 | Finding ID/title and owning area, or an operational blocker | Concrete action that closes the finding or decision condition | File, command, gate, review thread, or other observed evidence | Required, Minor change, Verify, Implemented; verify, Required verification, Reject, or Not aligned |
 
-Include one non-empty row for every reported finding, unresolved blocker, failed or missing gate, and required verification. The first cell names the finding ID/title or clearly states the operational area. `Status` must make clear whether the row is required, minor, verification-only, rejected, or not aligned; `Implemented` alone is not an open action. Do not collapse distinct findings into a generic row. This table is mandatory evidence only after source assessment: an assessed non-`accept-as-is` PR artifact or any `needs-more-work` artifact fails validation when it is missing, malformed, empty, or contains a non-actionable status. The terminal review-unavailable output gate forbids tables and uses plain process diagnostic prose.
+Include one non-empty row for every reported finding, unresolved blocker, failed or missing gate, and required verification. Schema-v2 first cells use the exact declared finding or operational-blocker IDs; the validator checks unique, complete identity coverage as specified below. Historical schema-v1 has only count-based coverage; the parent must cross-check its source identities.
+
+`Status` must distinguish required, minor, verification-only, rejected, or not aligned; `Implemented` alone is not an open action. Do not collapse distinct findings into a generic row. This table is mandatory after assessment for every non-`accept-as-is` PR and any `needs-more-work` review; missing, malformed, empty, or non-actionable rows fail validation. Terminal review-unavailable output forbids tables and uses plain process diagnostic prose.
 
 ### 10: Run confidence calibration and recovery before any user-facing output
 
@@ -412,11 +421,20 @@ Before writing the result candidate, follow `../../shared/final-handoff-contract
 
 Use `../../shared/quality-gates.md`.
 
+Completion checkpoint:
+
+1. Run `python PLUGIN_ROOT/shared/find-review-report.py --complete-run <run-directory>`; inspect `--help` for explicit parent-thread/rollout arguments. It requires the promoted canonical result, reruns both validators, and for assessed PRs verifies that consumer lookup selects that exact result. Emit only successful stdout verbatim; these are the bound final bytes.
+2. On preflight, validation, promotion, or lookup failure, lead with `Review handoff blocked`, report the exact process error and retained run path, and state `Review not complete`. Never emit a normal assessed verdict/table with a buried promotion disclaimer.
+3. Preserve preliminary notes without treating them as validated `+review` input. Do not claim findings were lost, fabricate runtime evidence, relabel spawned work as inline, or offer online-only intake as equivalent recovery. A blocked process message does not claim a canonical terminal result or misuse the pre-assessment `unavailable` branch.
+
 Final chat follows the shared ordered frame with these review-specific branches.
 
 For an assessed review:
 
-- `Outcome` starts with compact `Review Decision Summary`: recommendation, blockers, and required next work.
+- New schema-v2 results require `CODE_REVIEW_METADATA.review_findings`: one exact `{"id":"<stable finding ID>","severity":"critical|high|medium|low"}` record per source finding, or `[]` for none. Derive IDs from assessed source findings before writing action rows, never reconstruct them from the table. Per-severity totals must equal `findings`.
+- Optional `operational_blockers` contains exact `{"id":"<stable blocker ID>"}` records for non-finding actions, separate from severity totals. IDs must be nonblank, unique and disjoint. Every required notes action table and final findings table uses those exact IDs as its first cell and covers the complete declared set once—no missing, duplicate or unknown action.
+- Historical schema-v1 count-only artifacts remain readable; new reviews must not downgrade to v1 to avoid identity checks. Terminal unavailable/closed results omit both assessed identity lists.
+- For schema-v2 assessed handoffs, `outcome` is exactly `{"title": "Review Decision", "summary": "Recommendation: <recommendation>."}` with the recommendation copied from `CODE_REVIEW_METADATA.review_decision.recommendation`. Keep rationale, blockers, and required next work in the decision summary and result rows; never replace the canonical outcome with an unbound approval statement.
 - `Results` reproduces the fresh `PR Snapshot` immediately after the summary and before any findings for every assessed PR. It also reproduces the canonical `Review Findings and Merge Blocks` table for every assessed non-`accept-as-is` PR and every `needs-more-work` decision in another scope; this table is mandatory decision handoff.
 - Apply the shared `Verification`, `Remaining`, `Next steps`, `Confidence`, and supplemental `Artifact` rules; name reviewed evidence, checks, unresolved blocks, owners, and material limits.
 

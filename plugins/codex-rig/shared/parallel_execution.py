@@ -849,6 +849,15 @@ def resolve_consumer_execution_mode(
         read_parallel_promoted=True,
         write_parallel_promoted=False,
     )
+    if consumer_id == "code-review" and resolution["effective_mode"] == "parallel-read":
+        # Role defaults are requests, not proof the current launcher can select review-safe children.
+        # This admission declaration never replaces the authoritative post-run child-control checks.
+        if plan.get("review_host") != {
+            "source": "runtime-tool-contract",
+            "sandbox_mode": "read-only",
+            "approval_policy": "never",
+        }:
+            raise ValueError("review-host-controls-unavailable-before-dispatch")
     return {
         **resolution,
         **consumer_policy,

@@ -71,7 +71,9 @@ def test_work_buckets_bound_parallel_remediation_overhead() -> None:
 
 def test_parallel_specialists_require_verified_production_lifecycle() -> None:
     """Prevent approved work buckets from masquerading as completed parallel writes."""
-    skill = CODE_REMEDIATE_SKILL.read_text(encoding="utf-8")
+    skill = CODE_REMEDIATE_SKILL.read_text(encoding="utf-8") + (
+        CODE_REMEDIATE_SKILL.parent / "references" / "parallel-lifecycle.md"
+    ).read_text(encoding="utf-8")
     assert "Production Parallel Lifecycle" in skill
     assert "`parallel-specialists` is planning-only until" in skill
     assert "`schema_version=2`" in skill
@@ -91,14 +93,47 @@ def test_parallel_specialists_require_verified_production_lifecycle() -> None:
 
 def test_parallel_child_verification_preserves_zero_output_boundary() -> None:
     """Prevent required child checks from producing hidden worktree output."""
-    skill = CODE_REMEDIATE_SKILL.read_text(encoding="utf-8")
+    skill = (CODE_REMEDIATE_SKILL.parent / "references" / "parallel-lifecycle.md").read_text(encoding="utf-8")
     assert "zero ignored or untracked output" in skill
     assert "exact no-cache or no-output verification commands" in skill
-    assert "Before hashing the plan, execute every exact child verification command" in skill
+    assert "Before hashing the plan, preflight every exact child verification command" in skill
     assert "Freeze only byte-identical command text that passed preflight" in skill
     assert "requires a new plan digest and approval" in skill
     assert "must not delete verification output after the command" in skill
     assert "re-plan that bucket as parent-owned or sequential" in skill
+
+
+def test_parallel_preflight_does_not_require_future_implementation() -> None:
+    """Permit planning a novel fix before postimages or passing regression assertions exist."""
+    reference = CODE_REMEDIATE_SKILL.parent / "references" / "parallel-lifecycle.md"
+    lifecycle = (reference if reference.exists() else CODE_REMEDIATE_SKILL).read_text(encoding="utf-8")
+    baseline = lifecycle.index("against the unchanged baseline")
+    freeze = lifecycle.index("Freeze only byte-identical command text")
+    postimage = lifecycle.index("After implementation and before handover")
+    assert baseline < freeze < postimage
+    assert "expected baseline regression failures" in lifecycle
+    assert "Do not create planned postimages before approval" in lifecycle
+    assert "require exit zero on every exact approved child check" in lifecycle
+    assert "must not delete verification output" in lifecycle
+
+
+def test_parallel_details_load_only_for_a_selected_parallel_route() -> None:
+    """Keep optional production mechanics out of the parent-only instruction load."""
+    skill = CODE_REMEDIATE_SKILL.read_text(encoding="utf-8")
+    reference = "references/parallel-lifecycle.md"
+    assert "read [parallel-lifecycle.md]" in skill
+    assert reference in skill
+    assert "Only when evaluating or executing `parallel-specialists`" in skill
+    assert "parent-owned and sequential routes do not load it" in skill
+    assert "Only the parent may apply the integrated bundle" not in skill
+    lifecycle = (CODE_REMEDIATE_SKILL.parent / reference).read_text(encoding="utf-8")
+    for invariant in (
+        "durable reverse patch",
+        "rollback-ambiguous",
+        "non-force cleanup",
+        "capability_sandbox_verified=false",
+    ):
+        assert invariant in lifecycle
 
 
 def test_scope_selection_question_keeps_options_with_visible_context() -> None:

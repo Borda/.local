@@ -98,7 +98,7 @@ def test_write_result_unavailable_review_emits_validator_accepted_candidate(tmp_
             "--confidence",
             "0.9",
             "--artifact-path",
-            str(candidate_path),
+            str(tmp_path / "result.json"),
             "--metadata",
             json.dumps(metadata),
         ],

@@ -127,11 +127,17 @@ def require_string_list(payload: dict[str, Any], key: str) -> list[str]:
 
 def validate_confidence_gap_closures(metadata: dict[str, Any], confidence_gaps: list[str]) -> None:
     """Validate that each active confidence gap has closure evidence or rationale."""
-    active_gaps = [gap.strip() for gap in confidence_gaps if gap.strip()]
+    active_gaps = [gap.strip() for gap in confidence_gaps]
+    if any(not gap for gap in active_gaps):
+        raise SystemExit("invalid-confidence-gap")
+    if len(active_gaps) != len(set(active_gaps)):
+        raise SystemExit("duplicate-confidence-gap")
+    closures = metadata.get("confidence_gap_closures")
     if not active_gaps:
+        if closures not in (None, []):
+            raise SystemExit("confidence-gap-closure-undeclared")
         return
 
-    closures = metadata.get("confidence_gap_closures")
     if not isinstance(closures, list):
         raise SystemExit("missing-confidence-gap-closures")
 
@@ -152,7 +158,12 @@ def validate_confidence_gap_closures(metadata: dict[str, Any], confidence_gaps: 
         unclosed = {ClosureStatus.UNRESOLVED, ClosureStatus.DEFERRED}
         if closure_status in unclosed and not (isinstance(rationale, str) and rationale.strip()):
             raise SystemExit(f"confidence-gap-closure-missing-rationale:{index}")
-        closed_gaps.add(gap.strip())
+        normalized_gap = gap.strip()
+        if normalized_gap not in active_gaps:
+            raise SystemExit(f"confidence-gap-closure-undeclared:{index}")
+        if normalized_gap in closed_gaps:
+            raise SystemExit(f"confidence-gap-closure-duplicate:{normalized_gap}")
+        closed_gaps.add(normalized_gap)
 
     missing = sorted(set(active_gaps) - closed_gaps)
     if missing:
@@ -307,11 +318,24 @@ def validate_result_invariants(args: argparse.Namespace, checks_run: list[str], 
         raise SystemExit("timeout-without-failed-check")
 
 
+def validate_artifact_path(out_path: Path, artifact_path: str) -> None:
+    """Require schema-v2 output to name its run's final result before promotion."""
+    declared = Path(artifact_path)
+    run_root = out_path.parent.resolve()
+    expected = (out_path.parent / "result.json").resolve()
+    if not expected.is_relative_to(run_root):
+        raise SystemExit("result-artifact-path-mismatch")
+    candidates = [declared] if declared.is_absolute() else [out_path.parent / declared, declared]
+    if not any(candidate.resolve() == expected for candidate in candidates):
+        raise SystemExit("result-artifact-path-mismatch")
+
+
 def build_payload(args: argparse.Namespace) -> dict[str, Any]:
     """Build and validate the canonical result payload from parsed arguments."""
     checks_run = split_csv(args.checks_run)
     checks_failed = split_csv(args.checks_failed)
     validate_result_invariants(args, checks_run, checks_failed)
+    validate_artifact_path(args.out, args.artifact_path)
     validate_gate_evidence(args, checks_run, checks_failed)
     metadata = parse_metadata(args.metadata)
     status = ResultStatus(args.status)

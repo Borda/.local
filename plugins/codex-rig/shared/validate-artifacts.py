@@ -323,6 +323,20 @@ def _resolve_final_handoff_path(out_dir: Path, raw_path: object, key: str) -> Pa
     raise SystemExit(f"final-handoff-path-mismatch:{key}")
 
 
+def _validate_result_artifact_path(out_dir: Path, raw_path: object) -> None:
+    """Require schema-v2 results to bind the canonical final path before promotion."""
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise SystemExit("result-artifact-path-mismatch")
+    declared = Path(raw_path)
+    run_root = out_dir.resolve()
+    expected = (out_dir / "result.json").resolve()
+    if not expected.is_relative_to(run_root):
+        raise SystemExit("result-artifact-path-mismatch")
+    candidates = [declared] if declared.is_absolute() else [out_dir / declared, declared]
+    if not any(candidate.resolve() == expected for candidate in candidates):
+        raise SystemExit("result-artifact-path-mismatch")
+
+
 def _validate_final_handoff_confidence(result: dict[str, Any], handoff: dict[str, Any], skill: str) -> None:
     """Reconcile rendered confidence gaps and limits with canonical result metadata."""
     confidence = handoff.get("confidence")
@@ -337,8 +351,11 @@ def _validate_final_handoff_confidence(result: dict[str, Any], handoff: dict[str
     closures = metadata.get("confidence_gap_closures")
     if not isinstance(gap_entries, list) or not isinstance(declared_gaps, list) or not isinstance(closures, list):
         raise SystemExit(f"{skill}-final-handoff-confidence-gaps-invalid")
+    normalized_gaps = [gap.strip() for gap in declared_gaps if isinstance(gap, str)]
+    if len(normalized_gaps) != len(declared_gaps) or len(normalized_gaps) != len(set(normalized_gaps)):
+        raise SystemExit(f"{skill}-final-handoff-confidence-gaps-invalid")
     handoff_gaps = {entry.get("gap") for entry in gap_entries if isinstance(entry, dict)}
-    if handoff_gaps != set(declared_gaps):
+    if handoff_gaps != set(normalized_gaps):
         raise SystemExit(f"{skill}-final-handoff-confidence-gaps-mismatch")
     closure_by_gap = {entry.get("gap"): entry for entry in closures if isinstance(entry, dict)}
     for entry in gap_entries:
@@ -460,6 +477,15 @@ def _validate_code_review_final_handoff(result: dict[str, Any], handoff: dict[st
     expected_branch = review_status if review_status in {"unavailable", "closed"} else "assessed"
     if handoff.get("branch") != expected_branch:
         raise SystemExit("code-review-final-handoff-branch-mismatch")
+    if expected_branch == "assessed":
+        decision = metadata.get("review_decision")
+        recommendation = decision.get("recommendation") if isinstance(decision, dict) else None
+        expected_outcome = {
+            "title": "Review Decision",
+            "summary": f"Recommendation: {recommendation}.",
+        }
+        if handoff.get("outcome") != expected_outcome:
+            raise SystemExit("code-review-final-handoff-outcome-mismatch")
     tables = handoff.get("tables")
     if not isinstance(tables, list):
         raise SystemExit("code-review-final-handoff-tables-invalid")
@@ -507,6 +533,22 @@ def _validate_code_review_final_handoff(result: dict[str, Any], handoff: dict[st
     finding_total = sum(result["findings"].values())
     if expected_branch == "assessed" and finding_total and "Review Findings and Merge Blocks" not in headings:
         raise SystemExit("code-review-final-handoff-findings-table-missing")
+    if expected_branch == "assessed" and result.get("schema_version") == 2:
+        records = metadata.get("review_findings")
+        blockers = metadata.get("operational_blockers", [])
+        if not isinstance(records, list) or not isinstance(blockers, list):
+            raise SystemExit("code-review-final-handoff-finding-records-missing")
+        identities = [record.get("id") if isinstance(record, dict) else None for record in records + blockers]
+        if any(not isinstance(identity, str) or not identity.strip() for identity in identities):
+            raise SystemExit("code-review-final-handoff-finding-records-invalid")
+        table = tables_by_heading.get("Review Findings and Merge Blocks", {})
+        rows = table.get("rows", [])
+        row_identities = [
+            row["cells"][0] if isinstance(row, dict) and isinstance(row.get("cells"), list) and row["cells"] else None
+            for row in rows
+        ]
+        if len(row_identities) != len(identities) or set(row_identities) != set(identities):
+            raise SystemExit("code-review-final-handoff-finding-identity-mismatch")
 
 
 def _validate_final_handoff(result: dict[str, Any], skill: str, out_dir: Path, gates: dict[str, Any]) -> None:
@@ -516,6 +558,7 @@ def _validate_final_handoff(result: dict[str, Any], skill: str, out_dir: Path, g
         return
     if schema_version != RESULT_SCHEMA_VERSION:
         raise SystemExit("unsupported-result-schema-version")
+    _validate_result_artifact_path(out_dir, result.get("artifact_path"))
     metadata = result.get("metadata")
     if not isinstance(metadata, dict):
         raise SystemExit(f"{skill}-missing-metadata")
@@ -694,11 +737,17 @@ def _validate_pr_fallback_confidence(
 
 def _validate_confidence_gap_closures(metadata: dict[str, Any], confidence_gaps: list[str], skill: str) -> None:
     """Validate that every confidence gap is closed or explicitly carried forward."""
-    active_gaps = [gap.strip() for gap in confidence_gaps if gap.strip()]
+    active_gaps = [gap.strip() for gap in confidence_gaps]
+    if any(not gap for gap in active_gaps):
+        raise SystemExit(f"{skill}-invalid-confidence-gap")
+    if len(active_gaps) != len(set(active_gaps)):
+        raise SystemExit(f"{skill}-duplicate-confidence-gap")
+    closures = metadata.get("confidence_gap_closures")
     if not active_gaps:
+        if closures not in (None, []):
+            raise SystemExit(f"{skill}-confidence-gap-closure-undeclared")
         return
 
-    closures = metadata.get("confidence_gap_closures")
     if not isinstance(closures, list):
         raise SystemExit(f"{skill}-missing-confidence-gap-closures")
 
@@ -718,7 +767,12 @@ def _validate_confidence_gap_closures(metadata: dict[str, Any], confidence_gaps:
             raise SystemExit(f"{skill}-confidence-gap-closure-missing-evidence:{index}")
         if status in {"unresolved", "deferred"} and not (isinstance(rationale, str) and rationale.strip()):
             raise SystemExit(f"{skill}-confidence-gap-closure-missing-rationale:{index}")
-        closed_gaps.add(gap.strip())
+        normalized_gap = gap.strip()
+        if normalized_gap not in active_gaps:
+            raise SystemExit(f"{skill}-confidence-gap-closure-undeclared:{index}")
+        if normalized_gap in closed_gaps:
+            raise SystemExit(f"{skill}-confidence-gap-closure-duplicate:{normalized_gap}")
+        closed_gaps.add(normalized_gap)
 
     missing = sorted(set(active_gaps) - closed_gaps)
     if missing:

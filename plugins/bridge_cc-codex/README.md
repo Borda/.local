@@ -251,14 +251,16 @@ Model and effort selection:
 
 Budget and result states:
 
-| Item        | Contract                                                                                                                                                             |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Soft budget | Two minutes for `advise`, five minutes for `review`, and ten minutes for `implement`. A callee receives the budget in-band and is expected to scope its work to fit. |
-| Hard cutoff | 1.2× the soft budget.                                                                                                                                                |
-| `partial`   | Valid work with explicit `remaining`.                                                                                                                                |
-| `blocked`   | Names the permission, authentication, or input blocker.                                                                                                              |
-| `timeout`   | Identifies a cutoff.                                                                                                                                                 |
-| `refused`   | Identifies recursion protection or another deliberate refusal.                                                                                                       |
+| Item            | Contract                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Soft budget     | Two minutes for `advise`, five minutes for `review`, and ten minutes for `implement`. A callee receives the budget in-band and is expected to scope its work to fit.                                                                                                                                                                                                                   |
+| Hard cutoff     | 1.2× the soft budget.                                                                                                                                                                                                                                                                                                                                                                  |
+| Transport input | MCP accepts at most 16,384 task characters and Bridge rejects task UTF-8 over 16 KiB or a constructed prompt over 20 KiB before creating artifacts or launching a peer. Bridge resolves each peer executable and measures the full argv with Windows `list2cmdline` UTF-16 semantics; `.cmd`/`.bat` shims use a conservative 8,000-unit ceiling below Cmd.exe's 8,191-character limit. |
+| Child output    | Bridge retains at most 256 KiB combined stdout/stderr and writes at most 256 KiB per raw transcript; overflow terminates the peer tree and returns a blocked `output-limit` incident.                                                                                                                                                                                                  |
+| `partial`       | Valid work with explicit `remaining`.                                                                                                                                                                                                                                                                                                                                                  |
+| `blocked`       | Names the permission, authentication, or input blocker.                                                                                                                                                                                                                                                                                                                                |
+| `timeout`       | Identifies a cutoff.                                                                                                                                                                                                                                                                                                                                                                   |
+| `refused`       | Identifies recursion protection or another deliberate refusal.                                                                                                                                                                                                                                                                                                                         |
 
 Depth and correlation:
 
@@ -287,6 +289,7 @@ Artifact handling:
 
 - Incident records do not persist child command arguments or environment data. They preserve the classified fault, reason, model, effort, verb, budget, transcript path, and—when a write-capable process is killed—the observed worktree delta.
 - The health log records direction, verb, model, effort, cost/tokens when reported by the host, duration, status, depth, and `run_id`.
+- The predictable `health.jsonl` member is opened without following links or reparse points, then its opened descriptor must be a regular single-link file. A prepared symlink, reparse point, or hard link returns a contained blocked result and does not write its target. This does not provide universal containment if an attacker creates a new hard link after the descriptor check.
 - Setup summarizes blocked/timeout/refused counts, their latest timestamps, and reported cost by direction, verb, and model; static CLI findings are reported separately.
 
 > Artifacts are evidence, not authority. Read the envelope, source changes, tests, permissions, and remaining limits before accepting consequential work. Delete `.temp/bridge/` only under your project's normal retention policy and only after preserving any incident or review evidence you still need.
@@ -301,6 +304,7 @@ Safety boundaries:
 - `implement` can modify the current worktree under the host's normal permission policy.
 - Setup configuration and repair are state-changing operations bound to an exact approval digest.
 - Authentication failures, permission denials, unsupported models, and unknown faults are surfaced as structured results or incidents.
+- Timeout and cancellation give POSIX peer groups a two-second cooperative grace, then force termination even when the group leader already exited. Windows invokes `taskkill /T /F` before a leader can exit and orphan its tree; native Windows reparse and tree behavior still require native-host verification.
 - Provider login output is never captured, and rollback never touches credentials.
 
 > The bridge never bypasses host permission prompts, invents a credential, retries a write-capable timeout, or silently replaces a requested effort tier.

@@ -78,7 +78,7 @@ if [ "$_SCAN_RC" -ne 0 ]; then
 fi
 ```
 
-**`--root` naming**: index uses `basename(<path>)`, unlike default git-root basename. Custom-root index is separate; queries miss it unless same `--root` is used consistently. After custom-root scan, verify path via `resolve_index_env.py`. `--root .` is handled specially — `setup_scan_env.py` falls back to the git-root basename, same as omitting `--root`.
+**`--root` naming**: index uses `basename(<path>)`, unlike default git-root basename. After a custom-root scan, retain the exact path printed by the scanner as `<emitted-index-path>`; a later query must use `--index <emitted-index-path> --root <same-root>`. `--root` is path resolution only and does not select the index. After custom-root scan, verify path via `resolve_index_env.py`. `--root .` is handled specially — `setup_scan_env.py` falls back to the git-root basename, same as omitting `--root`.
 
 Writes `<root>/.cache/codemap/<project>.json`, or `$CODEMAP_INDEX_DIR/<project>.json` when set; prints:
 

@@ -7,10 +7,12 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 import time
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -40,6 +42,23 @@ def _supports_directory_symlinks() -> bool:
 
 
 DIRECTORY_SYMLINKS_SUPPORTED = _supports_directory_symlinks()
+
+
+def _supports_hardlinks() -> bool:
+    """Probe hard-link capability at collection time for health-artifact containment."""
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        target = root / "target"
+        link = root / "link"
+        target.write_text("probe\n", encoding="utf-8")
+        try:
+            os.link(target, link)
+        except OSError:
+            return False
+        return link.stat().st_nlink == 2
+
+
+HARDLINKS_SUPPORTED = _supports_hardlinks()
 
 
 def _request(tmp_path: Path, **overrides: Any) -> bridge_call.Request:
@@ -180,6 +199,118 @@ def test_artifact_store_rejects_a_preexisting_temp_symlink_before_any_write(tmp_
         bridge_call.run_request(_request(tmp_path, effort="bogus"))
 
     assert not (outside / "bridge").exists()
+
+
+@pytest.mark.skipif(not DIRECTORY_SYMLINKS_SUPPORTED, reason="requires file symlink creation capability")
+def test_health_symlink_returns_a_contained_failure_without_writing_its_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prevent a predictable health artifact from following a workspace-prepared link."""
+    paths = bridge_call.BridgePaths(tmp_path)
+    paths.prepare()
+    outside = tmp_path.parent / f"{tmp_path.name}-health-target.jsonl"
+    outside.write_text("unchanged\n", encoding="utf-8")
+    (paths.root / "health.jsonl").symlink_to(outside)
+    monkeypatch.setattr(bridge_call, "_run_child", lambda *args: _outcome(core=_core()))
+
+    result = bridge_call.run_request(_request(tmp_path))
+
+    assert result["status"] == "blocked"
+    assert "health artifact" in result["verdict"]
+    assert outside.read_text(encoding="utf-8") == "unchanged\n"
+
+
+@pytest.mark.skipif(not HARDLINKS_SUPPORTED, reason="requires same-filesystem hard-link creation capability")
+def test_health_hard_link_returns_a_contained_failure_without_writing_its_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prevent a predictable health artifact from appending through a workspace-prepared hard link."""
+    paths = bridge_call.BridgePaths(tmp_path)
+    paths.prepare()
+    outside = tmp_path.parent / f"{tmp_path.name}-health-hard-link-target.jsonl"
+    outside.write_text("unchanged\n", encoding="utf-8")
+    os.link(outside, paths.root / "health.jsonl")
+    monkeypatch.setattr(bridge_call, "_run_child", lambda *args: _outcome(core=_core()))
+
+    result = bridge_call.run_request(_request(tmp_path))
+
+    assert result["status"] == "blocked"
+    assert "health artifact" in result["verdict"]
+    assert outside.read_text(encoding="utf-8") == "unchanged\n"
+
+
+def test_regular_health_member_appends_after_descriptor_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keep ordinary health telemetry writable after link-count containment checks."""
+    monkeypatch.setattr(bridge_call, "_run_child", lambda *args: _outcome(core=_core()))
+
+    result = bridge_call.run_request(_request(tmp_path))
+    health = tmp_path / ".temp" / "bridge" / "health.jsonl"
+
+    assert result["status"] == "complete"
+    assert json.loads(health.read_text(encoding="utf-8"))["run_id"] == "run-fixed"
+
+
+def test_windows_health_descriptor_rejects_hard_link_after_nofollow_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prevent Windows no-follow opening from bypassing common descriptor link-count validation."""
+    health = tmp_path / "health.jsonl"
+    health.write_text("unchanged\n", encoding="utf-8")
+    descriptor = 91
+    closed: list[int] = []
+    create_file_calls: list[tuple[str, int]] = []
+
+    def create_file(
+        path: str, access: int, share: int, security: object, disposition: int, flags: int, template: object
+    ) -> int:
+        """Capture the Windows no-follow open and return its owned descriptor handle."""
+        create_file_calls.append((path, flags))
+        return descriptor
+
+    def fstat(opened: int) -> SimpleNamespace:
+        """Prove common validation inspects the exact descriptor opened by CreateFile."""
+        assert opened == descriptor
+        return SimpleNamespace(st_mode=stat.S_IFREG, st_nlink=2)
+
+    def close_handle(handle: int) -> None:
+        """Fail if the external API closes a handle already owned by the descriptor layer."""
+        pytest.fail(f"unexpected handle close: {handle}")
+
+    fake_ctypes = SimpleNamespace(
+        c_void_p=lambda value: SimpleNamespace(value=value),
+        windll=SimpleNamespace(kernel32=SimpleNamespace(CreateFileW=create_file, CloseHandle=close_handle)),
+    )
+    fake_msvcrt = SimpleNamespace(open_osfhandle=lambda handle, flags: descriptor)
+    fake_os = SimpleNamespace(
+        name="nt",
+        O_WRONLY=os.O_WRONLY,
+        O_APPEND=os.O_APPEND,
+        fstat=fstat,
+        close=closed.append,
+        fdopen=lambda *args, **kwargs: pytest.fail("hard-linked descriptor reached fdopen"),
+    )
+    monkeypatch.setitem(sys.modules, "ctypes", fake_ctypes)
+    monkeypatch.setitem(sys.modules, "msvcrt", fake_msvcrt)
+    monkeypatch.setattr(bridge_call, "os", fake_os)
+
+    with pytest.raises(bridge_call.ArtifactBoundaryError, match="must be a regular file"):
+        bridge_call._open_regular_append(health)
+
+    assert create_file_calls == [(str(health), 0x00000080 | 0x00200000)]
+    assert closed == [descriptor]
+
+
+def test_reparse_point_health_member_is_rejected_before_the_windows_open_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent Windows reparse metadata from being treated as a regular health file."""
+    monkeypatch.setattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400, raising=False)
+
+    class Metadata:
+        st_mode = stat.S_IFREG
+        st_file_attributes = 0x400
+
+    assert bridge_call._is_link_or_reparse_point(Metadata()) is True
 
 
 @pytest.mark.skipif(not DIRECTORY_SYMLINKS_SUPPORTED, reason="requires directory symlink creation capability")
@@ -339,6 +470,142 @@ def test_budget_prompt_and_timeout_terminate_held_process(tmp_path: Path) -> Non
 
     assert outcome.timed_out is True
     assert outcome.returncode is not None
+
+
+@pytest.mark.parametrize(
+    "emitter",
+    (
+        "import sys, time; sys.stdout.buffer.write(b'x' * 400000); sys.stdout.flush(); time.sleep(30)",
+        "import sys, time; sys.stderr.buffer.write(b'x' * 400000); sys.stderr.flush(); time.sleep(30)",
+        "import sys, time; sys.stdout.buffer.write(b'x' * 200000); sys.stderr.buffer.write(b'y' * 200000); "
+        "sys.stdout.flush(); sys.stderr.flush(); time.sleep(30)",
+    ),
+    ids=("stdout", "stderr", "combined"),
+)
+def test_child_output_limit_stops_a_noisy_peer_and_caps_its_transcript(tmp_path: Path, emitter: str) -> None:
+    """Prevent a verbose peer from growing supervisor memory or transcript storage without a bound."""
+    outcome = bridge_call._run_child([sys.executable, "-c", emitter], tmp_path, timeout=5.0)
+    paths = bridge_call.BridgePaths(tmp_path)
+    paths.prepare()
+    transcript = bridge_call._write_transcript(paths, outcome.stdout, outcome.stderr)
+    transcript_bytes = (tmp_path / transcript).read_bytes()
+
+    assert outcome.output_limited is True
+    assert outcome.returncode is not None
+    assert (
+        len(outcome.stdout.encode("utf-8")) + len(outcome.stderr.encode("utf-8")) <= bridge_call.MAX_CHILD_OUTPUT_BYTES
+    )
+    assert len(transcript_bytes) <= bridge_call.MAX_CHILD_TRANSCRIPT_BYTES
+
+
+def test_output_limit_returns_a_terminal_envelope_and_classified_incident(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prevent an output-cap kill from degrading into an unclassified subprocess failure."""
+    monkeypatch.setattr(
+        bridge_call,
+        "_run_child",
+        lambda *args: bridge_call.ChildOutcome(
+            "partial output", "", -9, False, "child output exceeded 262144 byte capture limit", True
+        ),
+    )
+
+    result = bridge_call.run_request(_request(tmp_path))
+    incident = json.loads((tmp_path / result["incident"]).read_text(encoding="utf-8"))
+
+    assert result["status"] == "blocked"
+    assert result["blockers"] == ["child output exceeded 262144 byte capture limit"]
+    assert incident["fault"] == "output-limit"
+
+
+def test_normal_leader_exit_with_an_inherited_pipe_cannot_block_output_drain(tmp_path: Path) -> None:
+    """Prevent a completed leader's descendant from deadlocking the bounded output-drain cleanup."""
+    child_pid_path = tmp_path / "inherited-pipe-child.pid"
+    result_path = tmp_path / "inherited-pipe-result.txt"
+    parent = (
+        "import os, subprocess, sys\n"
+        "from pathlib import Path\n"
+        "child = subprocess.Popen([sys.executable, '-c', "
+        '\'import sys, time; time.sleep(0.1); sys.stdout.buffer.write(b\\"x\\" * 400000); '
+        "sys.stdout.flush(); time.sleep(60)'])\n"
+        "Path(os.environ['BRIDGE_TEST_CHILD_PID']).write_text(str(child.pid), encoding='utf-8')\n"
+    )
+    runner = (
+        "import sys\n"
+        f"sys.path.insert(0, {str(BIN_ROOT)!r})\n"
+        "import bridge_call\n"
+        "from pathlib import Path\n"
+        f"outcome = bridge_call._run_child([sys.executable, '-c', {parent!r}], Path({str(tmp_path)!r}), 1.0)\n"
+        f"Path({str(result_path)!r}).write_text(str(outcome.output_limited), encoding='utf-8')\n"
+    )
+    environment = {**os.environ, "BRIDGE_TEST_CHILD_PID": str(child_pid_path)}
+    child_pid: int | None = None
+    runner_process: subprocess.Popen[bytes] | None = None
+    try:
+        runner_process = subprocess.Popen(
+            [sys.executable, "-c", runner],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=environment,
+        )
+        runner_process.wait(timeout=5)
+        child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+
+        assert runner_process.returncode == 0
+        assert result_path.read_text(encoding="utf-8") == "True"
+    finally:
+        if runner_process is not None and runner_process.poll() is None:
+            runner_process.kill()
+            runner_process.wait()
+        if child_pid is None and child_pid_path.is_file():
+            child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+        if child_pid is not None and _process_exists(child_pid):
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(child_pid), "/T", "/F"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+            else:
+                os.kill(child_pid, bridge_call.signal.SIGKILL)
+
+
+def test_output_overflow_detected_while_draining_a_completed_leader_is_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prevent a late reader overflow from being returned as a successful child completion."""
+    captured: list[bridge_call._ChildOutputBuffer] = []
+    terminated: list[bool] = []
+
+    class Process:
+        stdout = object()
+        stderr = object()
+        returncode = 0
+
+        def poll(self) -> int:
+            return 0
+
+    monkeypatch.setattr(bridge_call.subprocess, "Popen", lambda *args, **kwargs: Process())
+    monkeypatch.setattr(
+        bridge_call,
+        "_start_output_readers",
+        lambda process, output: captured.append(output) or [],
+    )
+    monkeypatch.setattr(
+        bridge_call,
+        "_finish_output_readers",
+        lambda readers: captured[0].output_limited.set() or True,
+    )
+    monkeypatch.setattr(bridge_call, "_terminate_process_group", lambda process: terminated.append(True))
+
+    outcome = bridge_call._run_child(["fake-peer"], tmp_path, timeout=1.0)
+
+    assert outcome.output_limited is True
+    assert outcome.error == "child output exceeded 262144 byte capture limit"
+    assert terminated == [True]
 
 
 def test_timeout_retries_read_only_once_at_a_lower_tier_but_never_implement(
@@ -1230,6 +1497,69 @@ def test_mcp_rejects_nonfinite_timeout_before_provider_dispatch(
         assert response["error"]["code"] == -32602
 
 
+@pytest.mark.parametrize("task", ("a" * 70_000, "🙂" * 20_000), ids=("ascii", "multibyte"))
+def test_mcp_rejects_an_encoded_task_over_the_transport_budget_before_artifacts_or_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, task: str
+) -> None:
+    """Prevent an unlaunchable argv task from creating Bridge state or reaching a peer."""
+    monkeypatch.setattr(bridge_mcp, "run_request", lambda *args, **kwargs: pytest.fail("oversize task dispatched"))
+
+    response = bridge_mcp.handle_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "bridge_advise", "arguments": {"task": task}},
+        },
+        trusted_workspace=tmp_path,
+    )
+
+    assert response == {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {"code": -32602, "message": "task exceeds Bridge's encoded transport budget"},
+    }
+    assert not (tmp_path / ".temp" / "bridge").exists()
+
+
+@pytest.mark.parametrize(
+    "task",
+    ("a" * (16 * 1024), "🙂" * (4 * 1024)),
+    ids=("ascii-boundary", "multibyte-boundary"),
+)
+def test_transport_budget_accepts_all_host_safe_utf8_boundaries(tmp_path: Path, task: str) -> None:
+    """Keep accepted task text below the portable byte ceiling for both single- and multibyte input."""
+    request = _request(tmp_path, task=task)
+
+    bridge_call.validate_request_transport_budget(request)
+
+
+def test_windows_command_measurement_uses_list2cmdline_utf16_units() -> None:
+    """Prevent a Unicode task that is short in Python characters from exceeding Windows command transport."""
+    command = ["peer", 'quote " and emoji 🙂' * 8_000]
+
+    assert bridge_call._windows_command_utf16_units(command) > bridge_call.MAX_WINDOWS_COMMAND_UTF16_UNITS
+
+
+@pytest.mark.parametrize(
+    ("executable", "rejects"),
+    ((r"C:\\Bridge\\codex.cmd", True), (r"C:\\Bridge\\codex.exe", False)),
+    ids=("batch-shim", "native-executable"),
+)
+def test_windows_batch_shim_uses_a_stricter_resolved_command_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, executable: str, rejects: bool
+) -> None:
+    """Prevent a safe CreateProcess argv from exceeding Cmd.exe through an npm batch shim."""
+    monkeypatch.setattr(bridge_call.shutil, "which", lambda name: executable)
+    request = _request(tmp_path, task="a" * 7_800)
+
+    if rejects:
+        with pytest.raises(ValueError, match="encoded transport budget"):
+            bridge_call.validate_request_transport_budget(request)
+    else:
+        bridge_call.validate_request_transport_budget(request)
+
+
 def test_mcp_rejects_invalid_request_shapes_with_the_standard_error_code() -> None:
     """Prevent malformed JSON-RPC requests from being treated as unknown methods."""
     for message in (
@@ -1701,6 +2031,39 @@ def test_child_receives_incremented_trusted_depth(tmp_path: Path, monkeypatch: p
     assert environments == [{**os.environ, bridge_call.DEPTH_ENVIRONMENT_VARIABLE: "3"}]
 
 
+@pytest.mark.skipif(not hasattr(os, "killpg"), reason="requires POSIX process-group termination capability")
+def test_timeout_force_terminates_a_descendant_after_its_term_ignoring_leader_exits(tmp_path: Path) -> None:
+    """Prevent a timeout from returning while a TERM-ignoring descendant retains its inherited pipes."""
+    child_pid_path = tmp_path / "timeout-child.pid"
+    parent = (
+        "import os, subprocess, sys, time\n"
+        "from pathlib import Path\n"
+        "child = subprocess.Popen([sys.executable, '-c', "
+        "'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)'])\n"
+        "Path(os.environ['BRIDGE_TEST_CHILD_PID']).write_text(str(child.pid), encoding='utf-8')\n"
+        "time.sleep(60)\n"
+    )
+    child_pid: int | None = None
+    previous = os.environ.get("BRIDGE_TEST_CHILD_PID")
+    os.environ["BRIDGE_TEST_CHILD_PID"] = str(child_pid_path)
+    try:
+        outcome = bridge_call._run_child([sys.executable, "-c", parent], tmp_path, timeout=0.05)
+        child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+        deadline = time.monotonic() + 3.0
+        while _process_exists(child_pid) and time.monotonic() < deadline:
+            time.sleep(0.02)
+
+        assert outcome.timed_out is True
+        assert not _process_exists(child_pid)
+    finally:
+        if previous is None:
+            os.environ.pop("BRIDGE_TEST_CHILD_PID", None)
+        else:
+            os.environ["BRIDGE_TEST_CHILD_PID"] = previous
+        if child_pid is not None and _process_exists(child_pid):
+            os.kill(child_pid, bridge_call.signal.SIGKILL)
+
+
 def test_simulated_windows_child_launch_uses_a_new_process_group_without_posix_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1747,7 +2110,8 @@ def test_cancelling_detached_supervisor_terminates_its_real_child(
         "import subprocess\n"
         "import sys\n"
         "import time\n"
-        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        "child = subprocess.Popen([sys.executable, '-c', "
+        "'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)'])\n"
         "Path(os.environ['BRIDGE_TEST_CHILD_PID']).write_text(str(child.pid), encoding='utf-8')\n"
         "time.sleep(60)\n",
         encoding="utf-8",
@@ -1824,15 +2188,14 @@ def test_posix_termination_falls_back_when_killpg_is_unavailable(monkeypatch: py
     assert killed == [True]
 
 
-def test_simulated_windows_termination_uses_ctrl_break_then_tree_kill_fallback(
+def test_simulated_windows_termination_uses_tree_kill_before_the_leader_can_exit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Prevent a failed Windows Ctrl-Break from leaving descendants behind."""
+    """Prevent Windows group cleanup from losing descendants after Ctrl-Break ends their leader."""
     sent: list[int] = []
     killed: list[bool] = []
     tree_kills: list[list[str]] = []
     monkeypatch.setattr(bridge_call.os, "name", "nt")
-    monkeypatch.setattr(bridge_call.signal, "CTRL_BREAK_EVENT", 2468, raising=False)
     monkeypatch.setattr(
         bridge_call.subprocess,
         "run",
@@ -1842,20 +2205,14 @@ def test_simulated_windows_termination_uses_ctrl_break_then_tree_kill_fallback(
     class Process:
         pid = 42
 
-        def send_signal(self, signal_number: int) -> None:
-            sent.append(signal_number)
-
-        def wait(self, timeout: float) -> None:
-            raise subprocess.TimeoutExpired("fake", timeout)
-
         def kill(self) -> None:
             killed.append(True)
 
     bridge_call._terminate_process_group(Process())
 
-    assert sent == [2468]
     assert tree_kills == [["taskkill", "/PID", "42", "/T", "/F"]]
     assert killed == []
+    assert sent == []
 
 
 def test_simulated_windows_cancel_is_cooperative_without_posix_process_apis(

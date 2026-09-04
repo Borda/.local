@@ -93,7 +93,7 @@ Use the smallest route that answers the unresolved question:
 
 For an explicit request for structural context, query even when an edit looks small. A lifecycle boundary such as a callback, hook, cancellation path, cleanup path, or state transfer also needs source and the named test or oracle; a complete structural result does not prove runtime behavior.
 
-`rdeps` and `deps` answer opposite directions. Query names and paths are relative to the project being queried, not the installed plugin. A custom `--root` must be used consistently for scan and query.
+`rdeps` and `deps` answer opposite directions. Query names and paths are relative to the project being queried, not the installed plugin. After a custom-root scan, retain the emitted index path and query with `--index <emitted-index-path> --root <same-root>`: `--root` controls path resolution only and does not select the index.
 
 `fn-rdeps` reports incoming call edges; it does not discover inheritance or same-name override relationships. Use `find-symbol '<ClassSuffix>\.<method>$' --exclude-tests --limit 0` to gather same-name override candidates, then verify ancestry and package boundaries in source.
 
@@ -224,7 +224,8 @@ Index location and refresh rules:
 
 - Default index: `.cache/codemap/<project>.json`.
 - `CODEMAP_INDEX_DIR` changes only the parent directory and keeps the project basename as the filename.
-- A custom `--root` must be used consistently for scan and query.
+- After a custom-root scan, query with `--index <emitted-index-path> --root <same-root>`; `--root` is path resolution only and does not select the index. With an explicit root, the guard admits only that exact default or `CODEMAP_INDEX_DIR`-override emitted path outside the caller project; arbitrary sibling files remain rejected.
+- Prompt freshness runs its indexed dirty-path check from the Git root, so a nested session detects root-level `.py`, `.pyi`, `.rst`, and nested documentation Markdown changes before starting its bounded refresh.
 - Normal queries may perform a bounded incremental self-heal; `SCAN_NO_AUTOBUILD=1` makes a missing index a hard refusal and prevents implicit writes.
 
 Every query exposes an `index` block. Follow this sequence:
@@ -343,14 +344,14 @@ The query CLI reads an existing index and emits JSON. The complete subcommand su
 Additional query contracts:
 
 - The module group also includes `import-types <module>`.
-- `deps` accepts `--stdlib`, `--third-party`, or `--internal`; `rdeps`, `central`, and `coupled` accept `--entity TYPE` for indexed project, test, docs, or example entities.
+- `deps` accepts `--stdlib`, `--third-party`, or `--internal`; `rdeps`, `central`, and `coupled` accept `--entity TYPE` for indexed project, test, docs, or example entities. `rdeps --limit N` previews static `imported_by` only; `dynamic_imported_by` and `config_refs` remain exhaustive. Default `rdeps` and `rdeps --limit 0` return every static importer.
 - The path query returns exit 0 with a null path and reason `no-import-path` when known modules are disconnected; unknown-module and filesystem failures remain errors.
 - Symbol responses expose `stale` and `stale_reason` when recorded line ranges no longer match source.
 - Function results carry call-edge resolution (`import`, `local`, `self`, `star`, or `unresolved`), while `fn-rdeps` reports distinct caller count rather than raw call-site multiplicity.
 
 | Group                          | Commands and purpose                                                                                                                                                                            |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Modules                        | `deps <module>`, `rdeps <module>`, `path <from> <to>`, `central [--top N]`, `coupled [--top N]`, `list [--limit N]`, `packages`                                                                 |
+| Modules                        | `deps <module>`, `rdeps <module> [--limit N]`, `path <from> <to>`, `central [--top N]`, `coupled [--top N]`, `list [--limit N]`, `packages`                                                     |
 | Symbols                        | `symbol <name> [--limit N] [--exclude-tests] [--with-imports]`, `symbols <module>`, `find-symbol <regex> [--limit N] [--exclude-tests]`                                                         |
 | Calls                          | `fn-deps <module::symbol>`, `fn-rdeps <module::symbol> [--exclude-tests]`, `fn-central [--top N] [--exclude-tests]`, `fn-blast <module::symbol>`                                                |
 | Tests and edges                | `test-impact <module[::symbol]> [--no-mocks]`, `mock-rdeps <module[::symbol]>`, `fixture-rdeps <fixture>`, `fixture-graph <test-file>`, `subprocess-deps <module>`, `subprocess-rdeps <module>` |
@@ -387,7 +388,7 @@ Coverage metadata is intentionally dieted after the first query in a process. Ke
 - `query_complete` is direction-scoped graph coverage, not a guarantee that a list is untruncated.
 - Read `confidence`, `truncated`, and `total_available`.
 - `symbol`, `find-symbol`, and list-like commands default to bounded output and accept `--limit 0` where documented.
-- A complete graph with a capped display is still only a displayed slice.
+- A complete graph with a capped display is still only a displayed slice; a truncated `rdeps` preview never settles exhaustive callers.
 
 ```text
 codemap-py query --compact rdeps mypackage.auth --exclude-tests

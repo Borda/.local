@@ -54,6 +54,19 @@ assert _INJECT_SPEC and _INJECT_SPEC.loader
 _INJECT_MODULE = importlib.util.module_from_spec(_INJECT_SPEC)
 _INJECT_SPEC.loader.exec_module(_INJECT_MODULE)
 
+
+def _load_scanner_module():
+    """Return the scanner module that owns indexed-file discovery."""
+    src_dir = Path(__file__).parent.parent.parent / "src"
+    if str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
+    from codemap_py import scanner
+
+    return scanner
+
+
+_SCANNER_MODULE = _load_scanner_module()
+
 # These must mirror the constants baked into inject-preamble.py.
 _LOCK_TTL_MS = 10 * 60 * 1000  # LOCK_TTL_MS
 _SESSION_TTL_MS = 30 * 60 * 1000  # SESSION_TTL_MS
@@ -120,6 +133,7 @@ def _run_inject(
     plugin_root: Path,
     tmpdir: Path,
     *,
+    cwd: Path | None = None,
     prompt: str = "hello",
     runtime: str = "claude",
 ) -> subprocess.CompletedProcess:
@@ -140,7 +154,7 @@ def _run_inject(
         input=json.dumps({"prompt": prompt}),
         text=True,
         capture_output=True,
-        cwd=str(repo),
+        cwd=str(cwd or repo),
         env=env,
     )
 
@@ -298,7 +312,91 @@ class TestInjectPreambleCurrency:
 
         assert result.returncode == 0, result.stderr
         assert result.stdout == ""
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            pytest.param("api.pyi", id="stub"),
+            pytest.param("guide.rst", id="rst"),
+            pytest.param("docs/topic/guide.md", id="nested-docs-markdown"),
+        ],
+    )
+    def test_indexed_non_python_change_marks_index_stale_and_refreshes(self, tmp_path: Path, path: str) -> None:
+        """Every tracked indexed file kind makes an otherwise current index stale."""
+        repo = tmp_path / "proj"
+        _init_repo(repo)
+        changed = repo / path
+        changed.parent.mkdir(parents=True, exist_ok=True)
+        changed.write_text("indexed baseline\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "add indexed file")
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=str(repo), capture_output=True, text=True
+        ).stdout.strip()
+        idx_dir = tmp_path / "idx"
+        _write_index(idx_dir, repo.name, git_sha=head)
+        changed.write_text("indexed change\n")
+        marker = tmp_path / "spawned.marker"
+        plugin_root = _fake_plugin_root(tmp_path, with_scan_bin=True, marker=marker)
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+
+        result = _run_inject(repo, idx_dir, plugin_root, tmpdir)
+
+        assert result.returncode == 0, result.stderr
+        assert "stale" in result.stdout
+        assert _await_marker(marker)
+
+    def test_nested_cwd_detects_root_level_stub_change_and_refreshes(self, tmp_path: Path) -> None:
+        """A nested prompt detects a dirty indexed stub above its working directory."""
+        repo = tmp_path / "proj"
+        _init_repo(repo)
+        changed = repo / "api.pyi"
+        changed.write_text("def api() -> int: ...\n")
+        _git(repo, "add", "api.pyi")
+        _git(repo, "commit", "-q", "-m", "add stub")
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=str(repo), capture_output=True, text=True
+        ).stdout.strip()
+        idx_dir = tmp_path / "idx"
+        _write_index(idx_dir, repo.name, git_sha=head)
+        changed.write_text("def api() -> str: ...\n")
+        nested_cwd = repo / "pkg" / "feature"
+        nested_cwd.mkdir(parents=True)
+        marker = tmp_path / "spawned.marker"
+        plugin_root = _fake_plugin_root(tmp_path, with_scan_bin=True, marker=marker)
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+
+        result = _run_inject(repo, idx_dir, plugin_root, tmpdir, cwd=nested_cwd)
+
+        assert result.returncode == 0, result.stderr
+        assert "stale" in result.stdout
+        assert _await_marker(marker)
+
+    def test_unrelated_change_keeps_current_index_and_skips_refresh(self, tmp_path: Path) -> None:
+        """A non-indexed file must not make the refresh hook run."""
+        repo = tmp_path / "proj"
+        head = _init_repo(repo)
+        idx_dir = tmp_path / "idx"
+        _write_index(idx_dir, repo.name, git_sha=head)
+        (repo / "notes.txt").write_text("unrelated\n")
+        marker = tmp_path / "spawned.marker"
+        plugin_root = _fake_plugin_root(tmp_path, with_scan_bin=True, marker=marker)
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+
+        result = _run_inject(repo, idx_dir, plugin_root, tmpdir)
+
+        assert result.returncode == 0, result.stderr
+        assert "current" in result.stdout
         assert not marker.exists()
+
+    def test_hook_pathspec_matches_scanner_contract(self) -> None:
+        """Prompt freshness watches exactly the file kinds the scanner hashes."""
+        from codemap_py import query
+
+        assert _INJECT_MODULE._INDEXED_PATHSPEC == _SCANNER_MODULE.INDEXED_PATHSPEC == query._INDEXED_PATHSPEC
 
 
 # ── inject-preamble: bounded index-header read ────────────────────────────────────

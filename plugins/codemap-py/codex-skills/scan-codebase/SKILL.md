@@ -25,7 +25,7 @@ Parse only `--root <path>` and `--incremental`. For any other `--` token, report
 PLUGIN_ROOT/bin/codemap-py index [--root <path>] [--incremental]
 ```
 
-On Windows use `PLUGIN_ROOT\bin\codemap-py.cmd index ...`. `--root` names the index from `basename(<path>)`, unlike the default git-root basename; use the same `--root` on every later scan/query. The scanner writes `<root>/.cache/codemap/<project>.json` (or `$CODEMAP_INDEX_DIR/<project>.json`) and prints indexed/degraded counts. On non-zero exit, report it and stop; do not retry silently (`1` index/filesystem failure, `2` syntax).
+On Windows use `PLUGIN_ROOT\bin\codemap-py.cmd index ...`. `--root` names the index from `basename(<path>)`, unlike the default git-root basename. After a custom-root scan, retain the exact path printed by the scanner as `<emitted-index-path>`; a later query must use `--index <emitted-index-path> --root <same-root>`. `--root` is path resolution only and does not select the index. The scanner writes `<root>/.cache/codemap/<project>.json` (or `$CODEMAP_INDEX_DIR/<project>.json`) and prints indexed/degraded counts. On non-zero exit, report it and stop; do not retry silently (`1` index/filesystem failure, `2` syntax).
 
 ### 2. Report
 

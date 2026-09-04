@@ -2,6 +2,12 @@
 
 `codemap-py` is the renamed, direct successor to the `codemap` plugin. The maintained product and its SemVer history continue across the rename; only the plugin identity, repository directory, and skill namespace change. Pre-`0.25.0` history was recorded as `codemap` under `plugins/codemap/` — see the repository git history for that line; it is not reproduced here.
 
+## 0.32.0
+
+- Add opt-in `rdeps --limit N` static-importer previews with explicit truncation and total metadata; keep the default and `--limit 0` exhaustive, leave dynamic/config results uncapped, and prevent previews from arming the exhausted-query sentinel.
+- Carry the exact emitted `--index` path after custom-root scans in both host skills; with an explicit root, permit only its exact default or configured index-directory target when it resides outside the caller project.
+- Align prompt-hook freshness with indexed Python, stub, RST, and nested Markdown changes through a tested writer/query/hook pathspec contract, including a nested prompt session detecting a root-level dirty stub.
+
 ## 0.31.2
 
 - Restructure dense README integration, index-lifecycle, troubleshooting, query, rename, telemetry, and cross-plugin guidance into scannable lists and decision sequences while preserving every command, flag, exit/status meaning, benchmark caveat, completeness rule, and Claude/Codex boundary.

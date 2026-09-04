@@ -29,6 +29,8 @@ Skip Codemap when exact file + symbol localize edit and no caller, dependency, b
 codemap-py query --compact <subcommand> [arguments]
 ```
 
+For a custom-root index, pass `--index <emitted-index-path> --root <same-root>`; `--root` is path resolution only and does not select the index.
+
 Enabled plugin adds version-matched `bin/` to Bash `PATH`. If unavailable interactively, invoke installed plugin's absolute `bin/codemap-py` launcher as one standalone command and accept normal host permission prompt. Prepend no `cd`, `export`, or other shell command.
 
 | Goal | Query subcommand |
@@ -62,7 +64,7 @@ For method changes possibly affecting overrides, use `find-symbol '<ClassSuffix>
 
 Source request naming imports: use `symbol <name> --with-imports`. `query_complete: true` confirms index coverage, not requested optional fields.
 
-Table is a routing shortlist, not the parser's full surface. If need absent, read `codemap-py query --help`; never guess subcommand.
+Table is a routing shortlist, not the parser's full surface. If need absent, read `codemap-py query --help`; never guess subcommand. For exploratory module importer questions, `rdeps <module> --limit N` returns an explicit bounded preview of static `imported_by`; `dynamic_imported_by` and `config_refs` remain exhaustive. Default `rdeps <module>` and `rdeps <module> --limit 0` return every static importer. A truncated preview never settles exhaustive callers.
 
 ## Index and completeness contract
 

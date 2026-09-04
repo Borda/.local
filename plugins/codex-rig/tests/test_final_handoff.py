@@ -11,10 +11,13 @@ from typing import Any
 
 import pytest
 
+from _platform import SYMLINKS_AVAILABLE
+
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 FINALIZER = PLUGIN_ROOT / "shared" / "final_handoff.py"
 SHARED_VALIDATOR = PLUGIN_ROOT / "shared" / "validate-artifacts.py"
+RESULT_WRITER = PLUGIN_ROOT / "shared" / "write-result.py"
 REMEDIATION_COLUMNS = [
     "Item",
     "Severity",
@@ -38,6 +41,15 @@ def load_finalizer() -> Any:
 def load_shared_validator() -> Any:
     """Load the shared artifact validator without requiring a package import."""
     specification = importlib.util.spec_from_file_location("codex_rig_final_validator", SHARED_VALIDATOR)
+    assert specification is not None and specification.loader is not None
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
+
+
+def load_result_writer() -> Any:
+    """Load the standalone result writer without requiring a package import."""
+    specification = importlib.util.spec_from_file_location("codex_rig_result_writer", RESULT_WRITER)
     assert specification is not None and specification.loader is not None
     module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(module)
@@ -188,6 +200,43 @@ def test_terminal_code_review_close_forbids_tables() -> None:
         finalizer.validate_handoff(payload)
 
 
+def test_assessed_code_review_handoff_requires_a_canonical_outcome() -> None:
+    """Keep assessed review prose limited to its machine-bound recommendation."""
+    finalizer = load_finalizer()
+    payload = handoff_payload()
+    payload.update(
+        skill="code-review",
+        branch="assessed",
+        outcome={"title": "Review Decision", "summary": "Recommendation: needs-more-work."},
+        tables=[
+            {
+                "heading": "Review Findings and Merge Blocks",
+                "columns": ["Finding / area", "Required change", "Evidence", "Status"],
+                "rows": [
+                    {
+                        "id": "R1",
+                        "cells": ["R1", "Add a guard", "tests", "Required"],
+                        "source_ids": ["review:R1"],
+                    }
+                ],
+            }
+        ],
+        source_records=[{"id": "review:R1", "evidence": "tests"}],
+        source_coverage={
+            "source_records_total": 1,
+            "represented_source_records_total": 1,
+            "omitted_source_records_total": 0,
+        },
+        remaining=[{"row_id": "R1", "item": "Add a guard", "owner": "author", "next_action": "Implement it."}],
+        next_steps=["R1"],
+    )
+
+    finalizer.validate_handoff(payload)
+    payload["outcome"] = {"title": "Review Decision", "summary": "Approve this PR."}
+    with pytest.raises(finalizer.HandoffError, match="review-outcome-not-canonical"):
+        finalizer.validate_handoff(payload)
+
+
 def test_caller_contract_renders_exact_requested_bytes() -> None:
     """Keep an explicit strict output contract free of added workflow prose."""
     finalizer = load_finalizer()
@@ -295,6 +344,7 @@ def _write_schema_v2_change_analysis(tmp_path: Path) -> Path:
         json.dumps({"status": "pass", "checks_failed": [], "checks": checks}), encoding="utf-8"
     )
     result_path = tmp_path / "result.candidate.json"
+    canonical_result_path = tmp_path / "result.json"
     gap = "External production behavior was not exercised."
     handoff = {
         "schema_version": 1,
@@ -335,7 +385,7 @@ def _write_schema_v2_change_analysis(tmp_path: Path) -> Path:
             "limits": [gap],
             "gaps": [{"gap": gap, "status": "unresolved", "rationale": "No production host transcript exists."}],
         },
-        "artifacts": [{"label": "Result", "path": str(result_path)}],
+        "artifacts": [{"label": "Result", "path": str(canonical_result_path)}],
         "caller_contract": None,
     }
     handoff_path = tmp_path / "final-handoff.json"
@@ -351,7 +401,7 @@ def _write_schema_v2_change_analysis(tmp_path: Path) -> Path:
         "checks_failed": [],
         "findings": {"critical": 0, "high": 0, "medium": 0, "low": 0},
         "confidence": 0.95,
-        "artifact_path": str(result_path),
+        "artifact_path": str(canonical_result_path),
         "metadata": {
             "confidence_gaps": [gap],
             "confidence_gap_closures": [
@@ -390,6 +440,82 @@ def test_schema_v2_result_requires_digest_bound_final_output(tmp_path: Path) -> 
     (tmp_path / "final.md").write_text("truncated\n", encoding="utf-8")
     with pytest.raises(SystemExit, match="final-handoff-validation-failed:.*rendered-final-mismatch"):
         validator.validate("change-analysis", tmp_path, result_path)
+
+
+def test_schema_v2_candidate_promotes_to_the_canonical_result_path(tmp_path: Path) -> None:
+    """Allow a candidate to bind the final result path before its atomic promotion."""
+    candidate_path = _write_schema_v2_change_analysis(tmp_path)
+    result = json.loads(candidate_path.read_text(encoding="utf-8"))
+    canonical_path = tmp_path / "result.json"
+    result["artifact_path"] = str(canonical_path)
+    binding = result["metadata"]["final_handoff"]
+    handoff_path = Path(binding["handoff_path"])
+    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    handoff["artifacts"][0]["path"] = str(canonical_path)
+    handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
+    validation = load_finalizer().render_files(
+        handoff_path, Path(binding["rendered_path"]), Path(binding["validation_path"])
+    )
+    binding.update(handoff_sha256=validation["handoff_sha256"], rendered_sha256=validation["rendered_sha256"])
+    candidate_path.write_text(json.dumps(result), encoding="utf-8")
+
+    validator = load_shared_validator()
+    validator.validate("change-analysis", tmp_path, candidate_path)
+    candidate_path.replace(canonical_path)
+    validator.validate("change-analysis", tmp_path, canonical_path)
+
+
+@pytest.mark.parametrize("artifact_path", ["not-the-result.json", "../result.json"])
+def test_schema_v2_rejects_noncanonical_result_artifact_paths(tmp_path: Path, artifact_path: str) -> None:
+    """Keep digest-bound presentation from naming an unrelated result artifact."""
+    result_path = _write_schema_v2_change_analysis(tmp_path)
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    result["artifact_path"] = artifact_path
+    binding = result["metadata"]["final_handoff"]
+    handoff_path = Path(binding["handoff_path"])
+    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    handoff["artifacts"][0]["path"] = artifact_path
+    handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
+    validation = load_finalizer().render_files(
+        handoff_path, Path(binding["rendered_path"]), Path(binding["validation_path"])
+    )
+    binding.update(handoff_sha256=validation["handoff_sha256"], rendered_sha256=validation["rendered_sha256"])
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="result-artifact-path-mismatch"):
+        load_shared_validator().validate("change-analysis", tmp_path, result_path)
+
+
+@pytest.mark.skipif(not SYMLINKS_AVAILABLE, reason="host cannot create symlinks")
+def test_schema_v2_rejects_canonical_result_symlink_escaping_the_run_directory(tmp_path: Path) -> None:
+    """Prevent a canonical result name from resolving to evidence outside its run directory."""
+    result_path = _write_schema_v2_change_analysis(tmp_path)
+    escaped_result = tmp_path.parent / "escaped-result.json"
+    escaped_result.write_text("outside\n", encoding="utf-8")
+    canonical_result = tmp_path / "result.json"
+    canonical_result.symlink_to(escaped_result)
+
+    with pytest.raises(SystemExit, match="result-artifact-path-mismatch"):
+        load_result_writer().validate_artifact_path(result_path, str(canonical_result))
+    with pytest.raises(SystemExit, match="result-artifact-path-mismatch"):
+        load_shared_validator().validate("change-analysis", tmp_path, result_path)
+
+
+def test_schema_v2_rejects_duplicate_confidence_gaps_and_closures(tmp_path: Path) -> None:
+    """Reject ambiguous provenance rather than retaining an arbitrary last closure."""
+    result_path = _write_schema_v2_change_analysis(tmp_path)
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    metadata = result["metadata"]
+    gap = metadata["confidence_gaps"][0]
+    metadata["confidence_gaps"] = [gap, gap]
+    metadata["confidence_gap_closures"] = [
+        {"gap": gap, "status": "unresolved", "rationale": "First conflicting rationale."},
+        {"gap": gap, "status": "unresolved", "rationale": "Second conflicting rationale."},
+    ]
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="duplicate-confidence-gap"):
+        load_shared_validator().validate("change-analysis", tmp_path, result_path)
 
 
 def test_schema_v2_accepts_documented_workspace_relative_handoff_paths(

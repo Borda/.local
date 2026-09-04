@@ -437,6 +437,7 @@ def test_mcp_input_contract_rejects_unknown_or_incomplete_request_fields() -> No
         assert "background" not in definition["properties"]
         assert "session_id" not in definition["properties"]
         assert definition["properties"]["task"]["pattern"] == "\\S"
+        assert definition["properties"]["task"]["maxLength"] == 16_384
         assert {"trivial", "none"}.issubset(definition["properties"]["effort"]["enum"])
 
     _assert_value_matches_contract(

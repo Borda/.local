@@ -24,8 +24,10 @@ import os
 from pathlib import Path
 import shutil
 import signal
+import stat
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field as dataclass_field
@@ -47,6 +49,18 @@ MAX_SUMMARY_ITEMS = 8
 MAX_SUMMARY_ITEM_CHARS = 500
 MAX_DETAILS_ITEMS = 32
 MAX_DETAILS_ITEM_CHARS = 2_000
+# This leaves substantial headroom below the smallest audited process argument
+# limit after the Bridge prompt, schema, environment, and executable arguments.
+MAX_TASK_UTF8_BYTES = 16 * 1024
+MAX_PROMPT_UTF8_BYTES = 20 * 1024
+MAX_WINDOWS_COMMAND_UTF16_UNITS = 32_767
+MAX_WINDOWS_BATCH_COMMAND_UTF16_UNITS = 8_000
+MAX_CHILD_OUTPUT_BYTES = 256 * 1024
+MAX_CHILD_TRANSCRIPT_BYTES = 256 * 1024
+
+
+class ArtifactBoundaryError(ValueError):
+    """Report a rejected workspace artifact member without exposing its resolved destination."""
 
 
 @dataclass(frozen=True)
@@ -112,6 +126,36 @@ class Request:
     session_id: str | None = None
     origin_workspace: Path | None = None
     supported_efforts: tuple[str, ...] = ()
+
+
+def validate_request_transport_budget(request: Request) -> None:
+    """Reject task text whose encoded prompt cannot safely fit the local CLI transport."""
+    if len(request.task.encode("utf-8")) > MAX_TASK_UTF8_BYTES:
+        raise ValueError("task exceeds Bridge's encoded transport budget")
+    if len(_prompt_with_budget(request).encode("utf-8")) > MAX_PROMPT_UTF8_BYTES:
+        raise ValueError("task exceeds Bridge's encoded transport budget")
+    schema_path = Path(__file__).resolve().parents[1] / "schemas" / "envelope.schema.json"
+    command = (
+        build_claude_argv(request, schema_path)
+        if request.direction == "codex_to_claude"
+        else build_codex_argv(request, schema_path)
+    )
+    resolved_command = _resolved_command(command)
+    units = _windows_command_utf16_units(resolved_command)
+    if units > MAX_WINDOWS_COMMAND_UTF16_UNITS or (
+        _is_windows_batch_shim(resolved_command[0]) and units > MAX_WINDOWS_BATCH_COMMAND_UTF16_UNITS
+    ):
+        raise ValueError("task exceeds Bridge's encoded transport budget")
+
+
+def _windows_command_utf16_units(command: list[str]) -> int:
+    """Measure the Windows command line generated from one argv list, including its terminator."""
+    return len(subprocess.list2cmdline(command).encode("utf-16-le")) // 2 + 1
+
+
+def _is_windows_batch_shim(executable: str) -> bool:
+    """Identify a resolved Windows command shim whose Cmd.exe limit is lower than CreateProcess."""
+    return Path(executable).suffix.lower() in {".bat", ".cmd"}
 
 
 def validate_model_core(value: Any) -> dict[str, Any]:
@@ -323,6 +367,7 @@ def run_request(
     """Run one foreground request and return a fully validated public envelope."""
     if not math.isfinite(request.timeout_seconds) or request.timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be a finite positive number")
+    validate_request_transport_budget(request)
     paths = BridgePaths(request.workspace.resolve())
     paths.prepare()
     try:
@@ -366,6 +411,19 @@ def run_request(
     duration = time.monotonic() - started
     transcript = _write_transcript(paths, outcome.stdout, outcome.stderr)
     event_info = _parse_output(outcome.stdout, host)
+    if outcome.output_limited:
+        return _terminal_envelope(
+            effective_request,
+            paths,
+            "blocked",
+            outcome.error or "child output exceeded the Bridge capture limit",
+            transcript,
+            event_info.tokens,
+            event_info.session_id,
+            duration,
+            _recovery or substitution,
+            fault="output-limit",
+        )
     if outcome.timed_out:
         retry_effort = _lower_effort(effective_request.effort, effective_request.supported_efforts)
         if _attempt == 0 and effective_request.verb in {"advise", "review"} and retry_effort is not None:
@@ -487,7 +545,21 @@ def run_request(
         _recovery or substitution,
         _prior_incident,
     )
-    _append_health(paths, envelope)
+    try:
+        _append_health(paths, envelope)
+    except ArtifactBoundaryError as error:
+        return _terminal_envelope(
+            effective_request,
+            paths,
+            "blocked",
+            str(error),
+            transcript,
+            event_info.tokens,
+            event_info.session_id,
+            duration,
+            _recovery or substitution,
+            record_health=False,
+        )
     return envelope
 
 
@@ -520,6 +592,7 @@ class ChildOutcome:
     returncode: int | None
     timed_out: bool
     error: str | None
+    output_limited: bool = False
 
 
 @dataclass(frozen=True)
@@ -533,6 +606,37 @@ class ParsedOutput:
     error: str | None
 
 
+@dataclass
+class _ChildOutputBuffer:
+    """Collect a fixed combined byte budget from concurrent child output streams."""
+
+    stdout_parts: list[bytes] = dataclass_field(default_factory=list)
+    stderr_parts: list[bytes] = dataclass_field(default_factory=list)
+    captured_bytes: int = 0
+    output_limited: threading.Event = dataclass_field(default_factory=threading.Event)
+    lock: threading.Lock = dataclass_field(default_factory=threading.Lock)
+
+    def append(self, stream: str, chunk: bytes) -> None:
+        """Retain only the remaining combined output budget and signal overflow."""
+        with self.lock:
+            remaining = MAX_CHILD_OUTPUT_BYTES - self.captured_bytes
+            accepted = chunk[: max(remaining, 0)]
+            if accepted:
+                target = self.stdout_parts if stream == "stdout" else self.stderr_parts
+                target.append(accepted)
+                self.captured_bytes += len(accepted)
+            if len(chunk) > len(accepted):
+                self.output_limited.set()
+
+    def text(self) -> tuple[str, str]:
+        """Decode the retained byte budget after both readers have stopped."""
+        with self.lock:
+            return (
+                b"".join(self.stdout_parts).decode("utf-8", errors="replace"),
+                b"".join(self.stderr_parts).decode("utf-8", errors="replace"),
+            )
+
+
 def _run_child(command: list[str], workspace: Path, timeout: float, job_path: Path | None = None) -> ChildOutcome:
     """Run a child in its own process group with stdin closed from birth."""
     environment = os.environ.copy()
@@ -543,10 +647,6 @@ def _run_child(command: list[str], workspace: Path, timeout: float, job_path: Pa
         "stdin": subprocess.DEVNULL,
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
-        # Locale-independent decoding: npm-installed hosts emit UTF-8 JSON, and
-        # the Windows default codec is the active code page, not UTF-8.
-        "encoding": "utf-8",
-        "errors": "replace",
     }
     # Every peer owns a separate group so its supervisor can terminate the
     # complete peer tree without signalling the persistent supervisor itself.
@@ -558,22 +658,97 @@ def _run_child(command: list[str], workspace: Path, timeout: float, job_path: Pa
         process = subprocess.Popen(_resolved_command(command), **kwargs)  # noqa: S603 - fixed executables, explicit argv.
     except OSError as error:
         return ChildOutcome("", "", None, False, str(error))
+    if getattr(process, "stdout", None) is None or getattr(process, "stderr", None) is None:
+        # Test doubles and unusual subprocess adapters can omit pipe objects;
+        # production Popen always supplies them because both streams are PIPE.
+        stdout, stderr = process.communicate(timeout=timeout)
+        return ChildOutcome(stdout, stderr, process.returncode, False, None)
+    output = _ChildOutputBuffer()
+    readers = _start_output_readers(process, output)
     deadline = time.monotonic() + timeout
     while True:
+        if output.output_limited.is_set():
+            _terminate_process_group(process)
+            _finish_output_readers(readers)
+            stdout, stderr = output.text()
+            return ChildOutcome(
+                stdout,
+                stderr,
+                process.returncode,
+                False,
+                f"child output exceeded {MAX_CHILD_OUTPUT_BYTES} byte capture limit",
+                True,
+            )
         if job_path is not None and _job_cancel_requested(job_path):
             _terminate_process_group(process)
-            stdout, stderr = _drain_terminated_child(process)
+            _finish_output_readers(readers)
+            stdout, stderr = output.text()
             return ChildOutcome(stdout, stderr, process.returncode, False, "cancelled by job owner")
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             _terminate_process_group(process)
-            stdout, stderr = _drain_terminated_child(process)
+            _finish_output_readers(readers)
+            stdout, stderr = output.text()
             return ChildOutcome(stdout, stderr, process.returncode, True, None)
-        try:
-            stdout, stderr = process.communicate(timeout=min(0.2, remaining))
+        if process.poll() is not None:
+            drained = _finish_output_readers(readers)
+            if not drained:
+                # A completed leader is not enough to close inherited pipes:
+                # terminate the remaining group before returning its bounded output.
+                _terminate_process_group(process)
+                _finish_output_readers(readers)
+            stdout, stderr = output.text()
+            if output.output_limited.is_set():
+                _terminate_process_group(process)
+                return ChildOutcome(
+                    stdout,
+                    stderr,
+                    process.returncode,
+                    False,
+                    f"child output exceeded {MAX_CHILD_OUTPUT_BYTES} byte capture limit",
+                    True,
+                )
+            if not drained:
+                return ChildOutcome(
+                    stdout,
+                    stderr,
+                    process.returncode,
+                    False,
+                    "child output drain exceeded the Bridge cleanup grace",
+                )
             return ChildOutcome(stdout, stderr, process.returncode, False, None)
-        except subprocess.TimeoutExpired:
-            continue
+        time.sleep(min(0.05, remaining))
+
+
+def _start_output_readers(process: subprocess.Popen[bytes], output: _ChildOutputBuffer) -> list[threading.Thread]:
+    """Read both binary child streams concurrently so either pipe cannot deadlock the peer."""
+    readers: list[threading.Thread] = []
+    for name, stream in (("stdout", process.stdout), ("stderr", process.stderr)):
+        assert stream is not None
+        reader = threading.Thread(target=_read_child_stream, args=(name, stream, output), daemon=True)
+        reader.start()
+        readers.append(reader)
+    return readers
+
+
+def _read_child_stream(stream_name: str, stream: Any, output: _ChildOutputBuffer) -> None:
+    """Copy one child stream in bounded chunks until EOF or the global limit is reached."""
+    while not output.output_limited.is_set():
+        chunk = stream.read(8 * 1024)
+        if not chunk:
+            return
+        output.append(stream_name, chunk)
+
+
+def _finish_output_readers(readers: list[threading.Thread]) -> bool:
+    """Join output readers after child exit without letting inherited pipes extend the supervisor lifetime."""
+    deadline = time.monotonic() + 2.0
+    for reader in readers:
+        reader.join(timeout=max(0.0, deadline - time.monotonic()))
+    # Closing a BufferedReader while another thread is blocked in read() can
+    # wait on its internal lock forever. Callers terminate the owning group
+    # instead, then make one further bounded join attempt.
+    return not any(reader.is_alive() for reader in readers)
 
 
 def _resolved_command(command: list[str]) -> list[str]:
@@ -604,26 +779,36 @@ def _drain_terminated_child(process: subprocess.Popen[str]) -> tuple[str, str]:
 def _terminate_process_group(process: subprocess.Popen[str]) -> None:
     """Terminate the child group through native POSIX or Windows process-tree controls."""
     if os.name == "nt":
-        try:
-            process.send_signal(signal.CTRL_BREAK_EVENT)
-            process.wait(timeout=2)
-            return
-        except (OSError, subprocess.TimeoutExpired):
-            if not _terminate_windows_process_tree(process.pid):
-                process.kill()
-            return
+        if not _terminate_windows_process_tree(process.pid):
+            process.kill()
+        return
     kill_process_group = getattr(os, "killpg", None)
     if kill_process_group is None:
         process.kill()
         return
     try:
         kill_process_group(process.pid, signal.SIGTERM)
-        process.wait(timeout=2)
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError:
+        process.kill()
+        return
+    _wait_for_cleanup_grace(process)
+    try:
+        # The leader can exit during the grace period while descendants retain
+        # inherited pipes, so leader completion is never proof that its group ended.
+        kill_process_group(process.pid, signal.SIGKILL)
+    except OSError:
+        pass
+
+
+def _wait_for_cleanup_grace(process: subprocess.Popen[str]) -> None:
+    """Allow cooperative child-tree exit for a bounded interval before force termination."""
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
         try:
-            kill_process_group(process.pid, signal.SIGKILL)
-        except OSError:
-            process.kill()
+            process.wait(timeout=min(0.1, deadline - time.monotonic()))
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        time.sleep(0.01)
 
 
 def _terminate_windows_process_tree(pid: int) -> bool:
@@ -853,7 +1038,8 @@ def _next_bridge_depth() -> int:
 def _write_transcript(paths: BridgePaths, stdout: str, stderr: str) -> str:
     """Write one raw child transcript and return its workspace-relative path."""
     path = paths.root / f"raw-{time.time_ns()}-{uuid.uuid4().hex[:8]}.txt"
-    path.write_text(f"stdout:\n{stdout}\n\nstderr:\n{stderr}\n", encoding="utf-8", newline="\n")
+    payload = f"stdout:\n{stdout}\n\nstderr:\n{stderr}\n".encode("utf-8")
+    path.write_bytes(payload[:MAX_CHILD_TRANSCRIPT_BYTES])
     return paths.relative(path)
 
 
@@ -930,6 +1116,8 @@ def _terminal_envelope(
     substitution: dict[str, str] | None = None,
     workspace_delta: list[str] | None = None,
     prior_incident: str | None = None,
+    record_health: bool = True,
+    fault: str | None = None,
 ) -> dict[str, Any]:
     """Create, record, and return a harness-owned terminal result."""
     if transcript_path is None:
@@ -942,11 +1130,19 @@ def _terminal_envelope(
         "remaining": [],
         "blockers": [reason],
     }
-    incident = _write_incident(paths, request, status, reason, transcript_path, workspace_delta, prior_incident)
+    incident = _write_incident(
+        paths, request, fault or status, reason, transcript_path, workspace_delta, prior_incident
+    )
     envelope = _make_envelope(
         request, core, transcript_path, tokens, None, session_id, duration, substitution, incident
     )
-    _append_health(paths, envelope)
+    if record_health:
+        try:
+            _append_health(paths, envelope)
+        except ArtifactBoundaryError:
+            # A blocked result must remain readable even when the health member
+            # itself is hostile; no external telemetry write is an acceptable tradeoff.
+            pass
     return envelope
 
 
@@ -994,12 +1190,73 @@ def _append_health(paths: BridgePaths, envelope: dict[str, Any]) -> None:
         )
     }
     payload["ts"] = time.time()
-    with (paths.root / "health.jsonl").open("a", encoding="utf-8", newline="\n") as stream:
+    with _open_regular_append(paths.root / "health.jsonl") as stream:
         stream.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
+def _open_regular_append(path: Path) -> Any:
+    """Open a predictable health file only when its opened inode has one link."""
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        metadata = None
+    except OSError as error:
+        raise ArtifactBoundaryError("bridge health artifact could not be inspected") from error
+    if metadata is not None and _is_link_or_reparse_point(metadata):
+        raise ArtifactBoundaryError("bridge health artifact must be a regular file")
+    if os.name == "nt":
+        descriptor = _open_windows_nofollow_descriptor(path)
+    else:
+        flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(path, flags, 0o600)
+        except OSError as error:
+            raise ArtifactBoundaryError("bridge health artifact could not be opened safely") from error
+    try:
+        opened_metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(opened_metadata.st_mode) or opened_metadata.st_nlink != 1:
+            raise ArtifactBoundaryError("bridge health artifact must be a regular file")
+        return os.fdopen(descriptor, "a", encoding="utf-8", newline="\n")
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _is_link_or_reparse_point(metadata: os.stat_result) -> bool:
+    """Identify linked artifact members before using their predictable filename."""
+    reparse_attribute = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    return stat.S_ISLNK(metadata.st_mode) or bool(getattr(metadata, "st_file_attributes", 0) & reparse_attribute)
+
+
+def _open_windows_nofollow_descriptor(path: Path) -> int:
+    """Open one Windows health member without dereferencing a reparse point."""
+    import ctypes
+    import msvcrt
+
+    create_file = ctypes.windll.kernel32.CreateFileW
+    create_file.restype = ctypes.c_void_p
+    handle = create_file(
+        str(path),
+        0x40000000,
+        0x00000001 | 0x00000002 | 0x00000004,
+        None,
+        4,
+        0x00000080 | 0x00200000,
+        None,
+    )
+    if handle == ctypes.c_void_p(-1).value:
+        raise ArtifactBoundaryError("bridge health artifact could not be opened safely")
+    try:
+        descriptor = msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_APPEND)
+    except OSError as error:
+        ctypes.windll.kernel32.CloseHandle(handle)
+        raise ArtifactBoundaryError("bridge health artifact could not be opened safely") from error
+    return descriptor
 
 
 def start_background(request: Request) -> dict[str, Any]:
     """Start a detached supervisor and return its persistent job record."""
+    validate_request_transport_budget(request)
     paths = BridgePaths(request.workspace.resolve())
     paths.prepare()
     job_id = str(uuid.uuid4())
@@ -1305,7 +1562,7 @@ def _request_from_args(args: argparse.Namespace) -> Request:
         raise ValueError("--timeout-seconds must be a finite positive number")
     if args.effort is not None:
         normalize_effort(args.effort, "codex")
-    return Request(
+    request = Request(
         args.verb,
         task,
         args.model or DEFAULT_MODEL,
@@ -1319,6 +1576,8 @@ def _request_from_args(args: argparse.Namespace) -> Request:
         args.session_id,
         workspace if args.session_id else None,
     )
+    validate_request_transport_budget(request)
+    return request
 
 
 def _parser() -> argparse.ArgumentParser:

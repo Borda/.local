@@ -518,6 +518,10 @@ def _classify_entity(rel_path: Path, name: str) -> tuple[EntityType, str]:
 
 _GIT_TIMEOUT_S = 10  # max seconds to wait for any git subprocess (H78: hung process guard)
 _MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB per file — guard against auto-generated files causing OOM
+# One writer-owned contract for every tracked path that can change index content. Query
+# imports this value; the prompt hook mirrors it locally because importing the scanner on
+# every prompt would pull in the full scan engine. Its contract test pins that mirror.
+INDEXED_PATHSPEC: tuple[str, ...] = ("*.py", "*.pyi", "*.rst", "docs/**/*.md")
 
 
 def find_root() -> Path:
@@ -567,7 +571,7 @@ def _git_file_hashes(root: Path, exclusions: Exclusions) -> dict[str, str]:
             (e.g. a vendored copy named in ``.codemapignore``) never enter the index.
     """
     output = subprocess.check_output(
-        ["git", "ls-files", "-s", "-z", "--", "*.py", "*.pyi", "*.rst", "docs/**/*.md"],
+        ["git", "ls-files", "-s", "-z", "--", *INDEXED_PATHSPEC],
         cwd=str(root),
         stderr=subprocess.DEVNULL,
         timeout=_GIT_TIMEOUT_S,

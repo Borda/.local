@@ -47,7 +47,7 @@ def _result(recommendation: str) -> dict[str, object]:
     }
 
 
-def _handoff(suggestion: str) -> dict[str, object]:
+def _handoff(recommendation: str, suggestion: str) -> dict[str, object]:
     """Return one compact assessed PR snapshot with the supplied suggestion."""
     rows = [
         ("PR", "[#1399 — Pack targets](https://github.com/example/project/pull/1399)"),
@@ -58,6 +58,7 @@ def _handoff(suggestion: str) -> dict[str, object]:
     ]
     return {
         "branch": "assessed",
+        "outcome": {"title": "Review Decision", "summary": f"Recommendation: {recommendation}."},
         "tables": [
             {
                 "heading": "PR Snapshot",
@@ -74,7 +75,7 @@ def _handoff(suggestion: str) -> dict[str, object]:
 @pytest.mark.parametrize("malformed_fields", [("PR", "Author", "CI", "Type"), ("PR", "Author", "CI", "Type", "State")])
 def test_review_snapshot_rejects_missing_or_replaced_suggestion(malformed_fields: tuple[str, ...]) -> None:
     """Prevent a complete-looking PR summary from omitting its review outcome."""
-    handoff = _handoff("needs work")
+    handoff = _handoff("needs-more-work", "needs work")
     snapshot = handoff["tables"][0]
     snapshot["rows"] = [
         {"id": f"PR-{index}", "cells": [field, "value"], "source_ids": [f"source-{index}"]}
@@ -88,10 +89,40 @@ def test_review_snapshot_rejects_missing_or_replaced_suggestion(malformed_fields
 @pytest.mark.parametrize(("recommendation", "suggestion"), SUGGESTIONS.items())
 def test_review_snapshot_suggestion_is_bound_to_structured_decision(recommendation: str, suggestion: str) -> None:
     """Keep every user-facing suggestion synchronized with the validated decision."""
-    handoff = _handoff(suggestion)
+    handoff = _handoff(recommendation, suggestion)
 
     VALIDATOR._validate_code_review_final_handoff(_result(recommendation), handoff)
 
     handoff["tables"][0]["rows"][-1]["cells"][1] = "approve" if suggestion != "approve" else "needs work"
     with pytest.raises(SystemExit, match="code-review-final-handoff-pr-snapshot-suggestion-mismatch"):
         VALIDATOR._validate_code_review_final_handoff(_result(recommendation), handoff)
+
+
+def test_review_outcome_is_bound_to_the_canonical_recommendation() -> None:
+    """Prevent the prose outcome from approving a decision that needs more work."""
+    handoff = _handoff("needs-more-work", "needs work")
+    handoff["outcome"] = {"title": "Review Decision", "summary": "Recommendation: accept-as-is."}
+
+    with pytest.raises(SystemExit, match="code-review-final-handoff-outcome-mismatch"):
+        VALIDATOR._validate_code_review_final_handoff(_result("needs-more-work"), handoff)
+
+
+def test_review_handoff_rejects_replaced_finding_identity() -> None:
+    """A digest-bound final table must not replace the finding reviewed in the source notes."""
+    result = _result("needs-more-work")
+    result["schema_version"] = 2
+    result["findings"]["high"] = 1
+    result["metadata"]["review_findings"] = [{"id": "CR-1", "severity": "high"}]
+    handoff = _handoff("needs-more-work", "needs work")
+    handoff["tables"].append(
+        {
+            "heading": "Review Findings and Merge Blocks",
+            "rows": [{"id": "row-1", "cells": ["CR-2", "Fix", "source.py:1", "Required"]}],
+        }
+    )
+
+    with pytest.raises(SystemExit, match="code-review-final-handoff-finding-identity-mismatch"):
+        VALIDATOR._validate_code_review_final_handoff(result, handoff)
+
+    handoff["tables"][-1]["rows"][0]["cells"][0] = "CR-1"
+    VALIDATOR._validate_code_review_final_handoff(result, handoff)

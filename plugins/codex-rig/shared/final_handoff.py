@@ -63,6 +63,7 @@ STANDARD_COLUMNS = {
     "sync": ("Surface", "Outcome", "Verification", "Remaining limit"),
 }
 SUPPORTED_SKILLS = frozenset((*STANDARD_COLUMNS, "code-review"))
+REVIEW_RECOMMENDATIONS = frozenset({"accept-as-is", "minor-changes", "needs-more-work", "reject", "not-aligned"})
 REVIEW_TABLE_COLUMNS = {
     "PR Snapshot": ("Field", "Value"),
     "Review Findings and Merge Blocks": ("Finding / area", "Required change", "Evidence", "Status"),
@@ -352,8 +353,13 @@ def validate_handoff(payload: object) -> dict[str, Any]:
     outcome = _require_object(handoff.get("outcome"), "outcome")
     if set(outcome) != {"title", "summary"}:
         raise HandoffError("outcome-fields-invalid")
-    _require_string(outcome.get("title"), "outcome-title")
-    _require_string(outcome.get("summary"), "outcome-summary")
+    outcome_title = _require_string(outcome.get("title"), "outcome-title")
+    outcome_summary = _require_string(outcome.get("summary"), "outcome-summary")
+    if skill == "code-review" and branch == "assessed":
+        if outcome_title != "Review Decision" or outcome_summary not in {
+            f"Recommendation: {recommendation}." for recommendation in REVIEW_RECOMMENDATIONS
+        }:
+            raise HandoffError("review-outcome-not-canonical")
     row_ids, represented_sources = _validate_tables(handoff, skill, branch)
     _validate_source_coverage(handoff, branch, represented_sources)
     _validate_verification(handoff)

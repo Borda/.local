@@ -114,6 +114,18 @@ def test_non_exhaustive_writes_no_sentinel(tmp_path: Path) -> None:
     assert not (tmp_path / "codemap-exhausted-sess-nonexh").exists()
 
 
+def test_truncated_rdeps_preview_writes_no_sentinel(tmp_path: Path) -> None:
+    """A graph-complete display slice cannot suppress a later exhaustive caller query."""
+    preview = _response(
+        "mypackage.auth",
+        {"query_complete": True, "exhaustive": True, "truncated": True, "total_available": 1000},
+    )
+
+    _run('scan-query rdeps "mypackage.auth" --limit 20', preview, "sess-preview", tmp_path)
+
+    assert not (tmp_path / "codemap-exhausted-sess-preview").exists()
+
+
 def test_query_complete_alone_arms_sentinel(tmp_path: Path) -> None:
     """A forward-only result (query_complete, no legacy exhaustive) still arms the guard."""
     _run('scan-query rdeps "mypackage.auth"', _QUERY_COMPLETE_ONLY_RESPONSE, "sess-qc-only", tmp_path)

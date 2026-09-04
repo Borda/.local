@@ -1,0 +1,78 @@
+"""Regression checks for unambiguous confidence-gap closure provenance."""
+
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+from types import ModuleType
+
+import pytest
+
+
+PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+VALIDATOR_PATHS = {
+    "writer": PLUGIN_ROOT / "shared" / "write-result.py",
+    "shared": PLUGIN_ROOT / "shared" / "validate-artifacts.py",
+    "review": PLUGIN_ROOT / "skills" / "code-review" / "validate_artifacts.py",
+}
+
+
+def _load_validator(name: str, path: Path) -> ModuleType:
+    """Load one standalone validator by path without package installation."""
+    specification = importlib.util.spec_from_file_location(f"codex_rig_{name}_gap_validator", path)
+    assert specification is not None and specification.loader is not None
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
+
+
+def _validate(module: ModuleType, name: str, metadata: dict[str, object], gaps: list[str]) -> None:
+    """Call one validator's intentionally equivalent confidence-closure contract."""
+    if name == "shared":
+        module._validate_confidence_gap_closures(metadata, gaps, "change-analysis")
+    else:
+        module.validate_confidence_gap_closures(
+            metadata, gaps
+        ) if name == "writer" else module._validate_confidence_gap_closures(metadata, gaps)
+
+
+@pytest.mark.parametrize(
+    ("gaps", "closures"),
+    [
+        ([" "], []),
+        (["Environment missing", "Environment missing"], []),
+        (
+            ["Environment missing"],
+            [
+                {"gap": "Environment missing", "status": "unresolved", "rationale": "First state."},
+                {"gap": "Environment missing", "status": "unresolved", "rationale": "Second state."},
+            ],
+        ),
+        (["Environment missing"], [{"gap": "Other", "status": "unresolved", "rationale": "Not declared."}]),
+        (["Environment missing"], []),
+    ],
+)
+def test_every_validator_rejects_ambiguous_or_incomplete_confidence_closures(
+    gaps: list[str], closures: list[dict[str, str]]
+) -> None:
+    """Prevent blank, duplicate, undeclared, or missing closure provenance in every writer path."""
+    metadata: dict[str, object] = {"confidence_gap_closures": closures}
+    for name, path in VALIDATOR_PATHS.items():
+        with pytest.raises(SystemExit):
+            _validate(_load_validator(name, path), name, metadata, gaps)
+
+
+@pytest.mark.parametrize(
+    "closure",
+    [
+        {"gap": "Environment missing", "status": "closed", "evidence": "environment.log"},
+        {"gap": "Environment missing", "status": "unresolved", "rationale": "Host access is unavailable."},
+        {"gap": "Environment missing", "status": "deferred", "rationale": "The user deferred host access."},
+    ],
+)
+def test_every_validator_accepts_one_valid_closure_per_declared_gap(closure: dict[str, str]) -> None:
+    """Keep all three supported closure states usable when provenance is unambiguous."""
+    metadata: dict[str, object] = {"confidence_gap_closures": [closure]}
+    gaps = ["Environment missing"]
+    for name, path in VALIDATOR_PATHS.items():
+        _validate(_load_validator(name, path), name, metadata, gaps)

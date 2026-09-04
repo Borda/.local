@@ -1,6 +1,36 @@
 {
   "cases": [
     {
+      "expected_findings": ["review-host-admission-missing", "review-completion-before-promotion", "stale-review-fallback"],
+      "id": "code-review-completion-handoff",
+      "prompt": "Assess a workflow that spawns review specialists using incompatible host controls, retains assessed notes when promotion fails, emits a normal verdict with the failure buried at the end, and lets remediation select an older report because no current result exists. Host admission must precede dispatch; only validated promoted and discoverable results may complete review.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": ["review-finding-id-unbound", "review-finding-severity-count-mismatch"],
+      "id": "code-review-finding-identity",
+      "prompt": "Assess a schema-v2 review with one declared high finding CR-1, a medium severity total, and an action row for undeclared CR-2. Check source finding identities, severity totals, operational blocker separation, and exact notes/final row coverage rather than counting rows alone.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
+        "parallel-preapproval-postimages-required",
+        "parallel-postimage-verification-missing"
+      ],
+      "id": "code-remediate-parallel-preflight-order",
+      "prompt": "Assess a remediation workflow that requires the completed fix to pass tests before its plan is approved, then accepts the child handover without rerunning those exact approved checks on the actual edited files. Baseline preflight must distinguish expected regression failures from launch and output-boundary errors; passing postimage checks belong after implementation and before handover.",
+      "target": "code-remediate"
+    },
+    {
+      "expected_findings": [
+        "parallel-reference-load-guard-missing",
+        "conditional-lifecycle-obligation-lost"
+      ],
+      "id": "code-remediate-conditional-lifecycle",
+      "prompt": "Assess a remediation skill that moves optional parallel lifecycle rules into a reference, still requires parent-only runs to read that reference, and lets parallel runs skip rollback and cleanup requirements. Conditional loading must reduce only unused context while preserving all obligations on the selected route.",
+      "target": "code-remediate"
+    },
+    {
       "expected_findings": [
         "missing-regression-test",
         "api-doc-mismatch"

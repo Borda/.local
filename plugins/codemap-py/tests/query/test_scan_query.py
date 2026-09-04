@@ -86,6 +86,75 @@ class TestModuleQueries:
         data = query("rdeps", "gamma", "--entity", "pkg")
         assert set(data["imported_by"]) == {"alpha", "beta"}
 
+    def test_rdeps_preview_reports_a_bounded_slice_with_truthful_metadata(self, tmp_path, scan_query):
+        """An explicit limit previews a high-fan-in module without claiming exhaustion."""
+        root = tmp_path / "rdeps_preview"
+        root.mkdir()
+        index_path = root / "index.json"
+        importers = [f"caller_{number:04d}" for number in range(1000)]
+        index_path.write_text(
+            json.dumps(
+                {
+                    "scan_version": 11,
+                    "scan_root": str(root),
+                    "collisions": [],
+                    "modules": [
+                        {"name": "target", "status": "ok", "path": "target.py", "direct_imports": []},
+                        *[
+                            {
+                                "name": importer,
+                                "status": "ok",
+                                "path": f"{importer}.py",
+                                "direct_imports": ["target"],
+                            }
+                            for importer in importers
+                        ],
+                    ],
+                }
+            )
+        )
+
+        preview = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "rdeps", "target", "--limit", "20"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+
+        assert preview.returncode == 0, preview.stderr + preview.stdout
+        preview_data = json.loads(preview.stdout)
+        assert preview_data["imported_by"] == importers[:20]
+        assert preview_data["index"]["truncated"] is True
+        assert preview_data["index"]["total_available"] == len(importers)
+        assert preview_data["index"]["query_complete"] is True
+
+        full = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "rdeps", "target", "--limit", "0"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+
+        assert full.returncode == 0, full.stderr + full.stdout
+        full_data = json.loads(full.stdout)
+        assert full_data["imported_by"] == importers
+        assert "truncated" not in full_data["index"]
+        assert "total_available" not in full_data["index"]
+
+    def test_rdeps_preview_rejects_negative_limit(self, project, scan_query):
+        """Only zero and positive preview limits have defined output semantics."""
+        root, index_path = project
+
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "rdeps", "gamma", "--limit", "-1"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+
+        assert result.returncode == 2
+        assert "rdeps --limit must be 0 or a positive integer" in result.stderr
+
     def test_deps(self, query):
         """Alpha imports both beta and gamma."""
         data = query("deps", "alpha")
@@ -3366,6 +3435,87 @@ class TestRootMismatch:
         cov = json.loads(result.stdout)["index"]
         assert cov["root_mismatch"] is False
 
+    @pytest.mark.parametrize("use_override", [False, True], ids=["default-index", "index-directory-override"])
+    def test_custom_root_index_is_selected_from_sibling_project(
+        self, tmp_path, scan_index, scan_query, use_override: bool
+    ):
+        """An emitted sibling-root index remains selectable from the invoking project."""
+        caller = tmp_path / "caller"
+        selected_root = tmp_path / "selected-root"
+        caller.mkdir()
+        selected_root.mkdir()
+        (caller / "caller.py").write_text("VALUE = 'caller'\n")
+        (selected_root / "inner.py").write_text("VALUE = 'selected'\n")
+        scan_env = os.environ.copy()
+        if use_override:
+            index_dir = tmp_path / "index-dir"
+            scan_env["CODEMAP_INDEX_DIR"] = str(index_dir)
+            selected_index = index_dir / f"{selected_root.name}.json"
+        else:
+            scan_env.pop("CODEMAP_INDEX_DIR", None)
+            selected_index = selected_root / ".cache" / "codemap" / f"{selected_root.name}.json"
+        selected_scan = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(selected_root)],
+            capture_output=True,
+            text=True,
+            cwd=str(caller),
+            env=scan_env,
+        )
+        assert selected_scan.returncode == 0, selected_scan.stderr
+        assert selected_index.is_file()
+
+        query_result = subprocess.run(
+            [
+                sys.executable,
+                str(scan_query),
+                "--index",
+                str(selected_index),
+                "--root",
+                str(selected_root),
+                "--no-heal",
+                "rdeps",
+                "inner",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(caller),
+            env=scan_env,
+        )
+
+        assert query_result.returncode == 0, query_result.stderr + query_result.stdout
+        data = json.loads(query_result.stdout)
+        assert data["module"] == "inner"
+        assert data["index"]["index_path"] == str(selected_index)
+        assert data["index"]["root_mismatch"] is False
+
+    def test_index_guard_rejects_noncanonical_file_inside_explicit_sibling_root(self, tmp_path, scan_query):
+        """An explicit external root admits its one derived index, not any file below it."""
+        caller = tmp_path / "caller"
+        selected_root = tmp_path / "selected-root"
+        caller.mkdir()
+        selected_root.mkdir()
+        unexpected = selected_root / ".cache" / "codemap" / "unrelated.json"
+        unexpected.parent.mkdir(parents=True)
+        unexpected.write_text(json.dumps({"scan_version": 11, "modules": [], "collisions": []}))
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(scan_query),
+                "--index",
+                str(unexpected),
+                "--root",
+                str(selected_root),
+                "list",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(caller),
+        )
+
+        assert result.returncode == 2
+        assert json.loads(result.stdout)["error"] == "index path outside project root"
+
     def test_index_guard_rejection_emits_json(self, tmp_path, scan_query):
         """Verify command-line option behavior.
 
@@ -3385,6 +3535,35 @@ class TestRootMismatch:
         assert result.returncode == 2, result.stderr + result.stdout
         data = json.loads(result.stdout)
         assert data["error"] == "index path outside project root"
+
+    def test_index_guard_rejects_nonmatching_file_in_configured_override(self, tmp_path, scan_query, monkeypatch):
+        """Only the configured override's root-derived index filename may leave the project tree."""
+        root = tmp_path / "guarded"
+        root.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=str(root), check=True)
+        override = tmp_path / "index-dir"
+        override.mkdir()
+        unexpected = override / "other.json"
+        unexpected.write_text(json.dumps({"scan_version": 11, "modules": [], "collisions": []}))
+        monkeypatch.setenv("CODEMAP_INDEX_DIR", str(override))
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(scan_query),
+                "--index",
+                str(unexpected),
+                "--root",
+                str(root),
+                "list",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+
+        assert result.returncode == 2
+        assert json.loads(result.stdout)["error"] == "index path outside project root"
 
 
 # ── list ``--limit`` cap + total/shown disclosure ──────────────────────────────

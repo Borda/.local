@@ -124,6 +124,8 @@ def complete_for_target(response: object, target: str) -> bool:
     coverage = payload.get("index")
     if not isinstance(coverage, dict):
         return False
+    if coverage.get("truncated") is True:
+        return False
     return coverage.get("query_complete") is True or coverage.get("exhaustive") is True
 
 

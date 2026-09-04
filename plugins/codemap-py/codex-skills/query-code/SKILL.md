@@ -9,11 +9,11 @@ Test-impact split: one-off structural fact → `test-impact <target>` here; full
 
 ## Runtime note
 
-Codex exposes no plugin-root variable. Resolve the installed root as `PLUGIN_ROOT` once; shell state does not persist.
+No Codex plugin-root variable. Resolve installed root as `PLUGIN_ROOT`; no shell persistence.
 
 ## Workflow
 
-Exact-file+symbol local edit: skip Codemap only with no unresolved caller/dependency/blast-radius/test-impact/import/source slice. A lifecycle boundary (callback/hook, cancellation/exception, scheduling/cleanup, state transfer) requires inspect source plus named test/oracle; use `fn-rdeps` for caller or `fn-deps` for callee responsibility. Explicit structural/tool requirement overrides. Choose the smallest complete query set.
+Exact file+symbol local edit: skip Codemap only with no unresolved caller/dependency/blast-radius/test-impact/import/source slice. Lifecycle boundary (callback/hook, cancellation/exception, scheduling/cleanup, state transfer): inspect source plus named test/oracle; `fn-rdeps` for caller, `fn-deps` for callee. Explicit structural/tool requirement overrides. Choose the smallest complete query set.
 
 | Need | Query |
 | -- | -- |
@@ -25,12 +25,12 @@ Exact-file+symbol local edit: skip Codemap only with no unresolved caller/depend
 | transitive callers / function blast | `fn-blast <module::symbol>` |
 | broken Sphinx cross-references | `xrefs --broken <module>` |
 
-Routing shortlist, not the parser's full surface; read `PLUGIN_ROOT/bin/codemap-py query --help`, never guess. Direct/every/all/production/blast-radius callers → `fn-rdeps <module::symbol> --exclude-tests`; `fn-blast <module::symbol>` only for explicit transitive, closure, hops, or all-levels requests. Query first; no unconditional pre-scan/freshness probe. Use `test-impact` for test choice, not direct test-module imports. Direct test-module imports: `rdeps <module>`; filter/report tests. `test-impact <target>` selects transitive affected tests.
+Routing shortlist, not the parser's full surface; read `PLUGIN_ROOT/bin/codemap-py query --help`, never guess. Direct/every/all/production/blast-radius callers → `fn-rdeps <module::symbol> --exclude-tests`; `fn-blast <module::symbol>` only for explicit transitive, closure, hops, or all-levels requests. Query first; no automatic scan/freshness probe. `test-impact <target>` selects transitive affected tests, not direct test-module imports; for those, `rdeps <module>` then filter/report tests.
 
-`symbol <name>` accepts `authenticate` or `MyClass.method`; imports use `symbol <name> --with-imports`. `module::symbol` belongs to `fn-*` call-graph queries. Chain returned `module`+`qualified_name` → `<module>::<qualified_name>` (`mypackage.module::MyClass.method`). For a requested qualified extension method, query `symbol MyClass.add_feature`, not nearby `symbol MyClass`/`symbols <module>` listing.
+`symbol <name>` accepts `authenticate` or `MyClass.method`; imports use `symbol <name> --with-imports`; `module::symbol` belongs to `fn-*` call-graph queries. Chain `module`+`qualified_name` → `<module>::<qualified_name>` (`mypackage.module::MyClass.method`). For a requested qualified extension method, query `symbol MyClass.add_feature`, not nearby `symbol MyClass`/`symbols <module>` listing.
 
-`find-symbol '<ClassSuffix>\.<method>$' --exclude-tests --limit 0` finds same-name override candidates; names are candidates, not inheritance proof—verify ancestry/package boundaries in source. Run each compact query alone: `PLUGIN_ROOT/bin/codemap-py query --compact <subcommand> [arguments]`.
+`find-symbol '<ClassSuffix>\.<method>$' --exclude-tests --limit 0` finds same-name override candidates, not inheritance proof—verify ancestry/package boundaries in source. Run each compact query alone: `PLUGIN_ROOT/bin/codemap-py query --compact <subcommand> [arguments]`. Custom-root index: `--index <emitted-index-path> --root <same-root>`; `--root` is path resolution only.
 
-`fn-blast`: never `--depth`; never invent flags. A complete, untruncated result settles its graph fact: do not re-query/read/grep it. Complete-query paths are caller-repo-relative, never Skill-relative. Ordinary repository reads remain allowed for a distinct independent AST/oracle view or source-body implementation/runtime detail. Otherwise name the gap and target only it. Missing index: request $codemap-py:scan-codebase.
+`fn-blast`: never `--depth`; never invent flags. Complete untruncated results settle their graph fact: do not re-query/read/grep. Complete-query paths are caller-repo-relative, never Skill-relative. Ordinary repository reads remain allowed for a distinct independent AST/oracle view or source-body implementation/runtime detail. Else name/target only the gap. Missing index: request $codemap-py:scan-codebase.
 
-Truncation at 20 items is a real cap unless `--limit 0` is passed (`symbol`/`find-symbol` default). `query_complete` scores graph coverage only: true may mean 20-of-N. `index.confidence` is `exact` for the whole set and `partial` when capped/stale; `index.truncated`+`index.total_available` give N. Re-run capped lists with `--limit 0` before applying the stop rule.
+Truncation at 20 items is a real cap unless `--limit 0` (`symbol`/`find-symbol` default). `rdeps --limit N` previews static `imported_by`; `dynamic_imported_by` and `config_refs` stay exhaustive. Default `rdeps` or `rdeps --limit 0` returns every static importer. `query_complete` is graph coverage only: true may mean 20-of-N. `index.confidence` is `exact` for the whole set, `partial` when capped/stale; `index.truncated`+`index.total_available` give N. Re-run capped lists with `--limit 0`; truncated `rdeps` never settles exhaustive callers.

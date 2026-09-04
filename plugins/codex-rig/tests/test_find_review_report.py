@@ -109,6 +109,69 @@ class TestPrScopedReviewRuns:
 
         assert selected == assessed
 
+    def test_newer_notes_without_result_block_older_review(self, tmp_path: Path) -> None:
+        """Retained preliminary review evidence must not disappear behind an older verdict."""
+        finder = _load_finder()
+        _write_nested_report(tmp_path, "run-001")
+        incomplete = tmp_path / "pr-123" / "run-002"
+        incomplete.mkdir()
+        (incomplete / "pr.json").write_text(json.dumps({"number": 123}), encoding="utf-8")
+        (incomplete / "review-notes.md").write_text("Preliminary findings; promotion failed.", encoding="utf-8")
+
+        with pytest.raises(LookupError, match="matching-review-incomplete:"):
+            finder.find_latest_review_report("123", [tmp_path])
+
+    @pytest.mark.parametrize("incomplete_kind", ["notes", "candidate"])
+    def test_later_collection_failure_does_not_clear_incomplete_review(
+        self, tmp_path: Path, incomplete_kind: str
+    ) -> None:
+        """A failed collection cannot make an older assessment current again."""
+        finder = _load_finder()
+        _write_nested_report(tmp_path, "run-001")
+        if incomplete_kind == "notes":
+            pending = _write_nested_report(tmp_path, "run-002", result_name="review-notes.md")
+            diagnostic = "matching-review-incomplete:"
+        else:
+            pending = _write_nested_report(tmp_path, "run-002", result_name="result.candidate.json")
+            diagnostic = "matching-review-candidate-unpromoted:"
+        _write_nested_report(tmp_path, "run-003", review_status="unavailable")
+
+        with pytest.raises(LookupError, match=diagnostic) as error:
+            finder.find_latest_review_report("123", [tmp_path])
+
+        assert str(pending.parent) in str(error.value)
+
+    def test_completed_result_supersedes_earlier_incomplete_notes(self, tmp_path: Path) -> None:
+        """Recovery needs a newer completed review, not deletion of retained evidence."""
+        finder = _load_finder()
+        incomplete = tmp_path / "pr-123" / "run-001"
+        incomplete.mkdir(parents=True)
+        (incomplete / "pr.json").write_text(json.dumps({"number": 123}), encoding="utf-8")
+        (incomplete / "review-notes.md").write_text("Preliminary findings.", encoding="utf-8")
+        assessed = _write_nested_report(tmp_path, "run-002")
+
+        assert finder.find_latest_review_report("123", [tmp_path]) == assessed
+
+    def test_newer_malformed_result_does_not_resurrect_older_verdict(self, tmp_path: Path) -> None:
+        """A failed current handoff cannot silently fall back to a stale assessed review."""
+        finder = _load_finder()
+        _write_nested_report(tmp_path, "run-001")
+        broken = _write_nested_report(tmp_path, "run-002")
+        broken.write_text("{}", encoding="utf-8")
+        with pytest.raises(LookupError, match="invalid-review-report-rerun-code-review"):
+            finder.find_latest_review_report("123", [tmp_path])
+
+    def test_notes_only_report_is_incomplete_not_missing(self, tmp_path: Path) -> None:
+        """Diagnose an identified failed handoff independently of session continuity."""
+        finder = _load_finder()
+        run = tmp_path / "pr-123" / "run-001"
+        run.mkdir(parents=True)
+        (run / "pr.json").write_text(json.dumps({"number": 123}), encoding="utf-8")
+        (run / "review-notes.md").write_text("Retained findings.", encoding="utf-8")
+
+        with pytest.raises(LookupError, match="matching-review-incomplete:"):
+            finder.find_latest_review_report("123", [tmp_path])
+
     def test_orders_run_indexes_numerically(self, tmp_path: Path) -> None:
         """Prevent lexical ordering from making run 099 newer than run 100."""
         finder = _load_finder()

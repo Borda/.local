@@ -2114,7 +2114,17 @@ def selftest_review_validator(run: CalibrationRun, selftest_dir: Path) -> None:
     }
     result_path = out / "result.json"
     result_path.write_text(
-        json.dumps({"status": "pass", "checks_failed": [], "confidence": 0.95, "metadata": metadata}, indent=2) + "\n",
+        json.dumps(
+            {
+                "status": "pass",
+                "checks_failed": [],
+                "confidence": 0.95,
+                "findings": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+                "metadata": metadata,
+            },
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
     command: list[str | Path] = [
@@ -2611,6 +2621,10 @@ def run_benchmark_pattern_checks(run: CalibrationRun) -> None:
             )
         path = run.paths.skills_dir / skill / "SKILL.md"
         text = read_text(path)
+        if skill == "code-remediate":
+            # Calibration checks every route; ordinary skill execution still loads this
+            # reference only when evaluating or executing the parallel route.
+            text += "\n" + read_text(path.parent / "references" / "parallel-lifecycle.md")
         for pattern in patterns:
             if re.search(pattern, text, flags=re.IGNORECASE) is None:
                 run.append_leak(f"benchmark-skill-miss:{skill}:{pattern}")

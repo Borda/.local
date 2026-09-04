@@ -24,6 +24,10 @@ LOCK_TTL_MS = 10 * 60 * 1000
 HEADER_PEEK_BYTES = 8 * 1024
 NOINDEX_TTL_MS = 30 * 60 * 1000
 SESSION_TTL_MS = 30 * 60 * 1000
+# Keep this prompt-path tuple local: importing the scanner here would load its full AST
+# engine for every user prompt. tests/cli_support/test_hooks_py.py pins it to the
+# scanner-owned writer contract.
+_INDEXED_PATHSPEC: tuple[str, ...] = ("*.py", "*.pyi", "*.rst", "docs/**/*.md")
 
 #: Identity fields read out of the index header, compiled once at import. They used to be
 #: matched by a pattern built — and an ``import re`` executed — inside a nested closure,
@@ -344,7 +348,9 @@ def main() -> int:
         raw_root = fields["scan_root"]
         scan_root = Path(raw_root).resolve() if raw_root and Path(raw_root).is_absolute() else cwd
         head = git_output(["rev-parse", "HEAD"], cwd)
-        dirty = git_output(["status", "--porcelain", "--", "*.py"], cwd) if head and git_sha == head else ""
+        dirty = (
+            git_output(["status", "--porcelain", "--", *_INDEXED_PATHSPEC], root) if head and git_sha == head else ""
+        )
         currency = resolve_currency(head, git_sha, dirty)
         refresh_note = start_refresh(project, scan_root, cwd) if currency == "stale" else ""
         session_flag = tmp_dir() / f"codemap-preamble-{project}-{_hookutil.runtime()}"

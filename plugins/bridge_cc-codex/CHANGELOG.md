@@ -2,6 +2,12 @@
 
 All notable changes to `bridge_CC-Codex` are documented here.
 
+## 0.3.2
+
+- Terminate surviving POSIX peer-group descendants after timeout or cancellation even when the leader has already exited.
+- Reject symlinked, reparse-point, and pre-existing hard-linked health artifacts; use no-follow member opens plus opened-descriptor validation to contain predictable telemetry writes.
+- Bound encoded task input before dispatch and combined peer output during capture; reject oversized requests without launching a peer and classify output-limit termination while preserving capped diagnostics.
+
 ## 0.3.1
 
 - Restructure the README's setup, request, artifact, MCP, and safety guidance into concise lists, tables, and blockquotes while preserving every command, parameter, transport boundary, and evidentiary limit.
