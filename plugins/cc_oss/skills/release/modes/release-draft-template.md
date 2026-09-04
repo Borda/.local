@@ -77,7 +77,7 @@ If still `true`, write draft to `$SHEPHERD_DIR/draft.md`, then spawn:
 Agent(subagent_type="oss:shepherd", prompt="Review the full release draft at <$SHEPHERD_DIR/draft.md> for public-facing voice and tone. Apply shepherd voice guidelines: human and direct, no internal jargon, no staff names, no internal maintenance details. Write the revised content to <$SHEPHERD_DIR/shepherd-revised.md>. Return ONLY: {\"status\":\"done\",\"changes\":N,\"file\":\"<$SHEPHERD_DIR/shepherd-revised.md>\"}")
 ```
 
-If `oss:shepherd` not available, use draft content directly — skip shepherd review.
+If `oss:shepherd` not available, use draft content directly — skip shepherd review. Humanizer is independent of shepherd availability: still run a `foundry:humanizer` pass (requires `foundry` plugin) on the draft before writing to disk on this branch — shepherd's absence doesn't exempt the draft from it.
 
 Read `$SHEPHERD_DIR/shepherd-revised.md` → validate: `if [ -s "$SHEPHERD_DIR/shepherd-revised.md" ]; then SHEPHERD_REVISED_PATH="$SHEPHERD_DIR/shepherd-revised.md"; else echo "⚠ shepherd output empty or missing — using original draft"; SHEPHERD_REVISED_PATH="$SHEPHERD_DIR/draft.md"; fi`. Shepherd runs once per invocation.
 

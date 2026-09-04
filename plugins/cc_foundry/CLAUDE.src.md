@@ -11,8 +11,8 @@
 
 ### 2. Subagent Strategy
 
-- Use sub-agents liberally — keep main context clean
-- Prefer specialised agents over general-purpose; offload research + exploration
+- Spawn sub-agents for isolation-motivated work (distinct role/system-prompt, adversarial check, model tier, worktree) regardless of size, and for work-displacement past the measured ~73-tool-call break-even — see `rules/claude-config.md` §Agent/Skill Spawn Discipline. Below that threshold with no isolation need: do it inline, spawn nothing
+- Prefer specialised agents over general-purpose once a spawn is warranted; offload research + exploration when it clears the threshold above
 - **Always pass explicit `subagent_type` matching the task**, even when the right specialist is already named in your own spawn prompt — §Agent Teams (below) is a separate, narrower gate (formal multi-agent Team protocol only); it does NOT restrict picking a specialist for an ordinary single-agent spawn, ad-hoc or background included. Omitting `subagent_type` defaults to `general-purpose` and hides the spawn from 🤖 status tracking. (Telemetry evidence + worked failure example: `rules/_full/CLAUDE-full.md` §Subagent Strategy.)
 - Independent subtasks run parallel, not serial; one tack per sub-agent
 - **Context discipline**: spawn prompt = task inputs + instructions only. Include: working dir · input paths/vars · output target · return envelope format. Exclude: session history · prior-phase reasoning · inline file contents (pass path)

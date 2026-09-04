@@ -5049,6 +5049,6 @@
       "src": "skills/resolve/SKILL.md:127"
     }
   },
-  "plugin": "cc_oss@0.33.0",
+  "plugin": "cc_oss@0.33.1",
   "schema": 1
 }

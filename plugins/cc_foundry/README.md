@@ -687,7 +687,7 @@ ______________________________________________________________________
 | `communication.md`      | all                             | Re: anchor format, progress narration, tone, output routing, breaking-findings format, terminal colors, confidence display |
 | `quality-gates.md`      | all                             | Confidence block format, Internal Quality Loop, link verification, output routing (long output to file)                    |
 | `git-commit.md`         | all                             | Commit message format, diff-gathering before writing, co-author trailers, branch + push safety                             |
-| `claude-config.md`      | all                             | Bash timeouts (3x P90), directory navigation rules, no hardcoded absolute paths                                            |
+| `claude-config.md`      | all                             | Bash timeouts (3x P90), directory navigation rules, no hardcoded absolute paths, agent/skill spawn discipline              |
 | `artifact-lifecycle.md` | all                             | Canonical artifact layout (`.plans/`, `.reports/`, `.temp/`), run directory naming, TTL policy                             |
 | `external-data.md`      | all                             | Pagination rules: GitHub CLI, REST APIs, GraphQL, Cloud APIs — never work on partial result set                            |
 | `foundry-config.md`     | `.claude/**`                    | Plan-mode gate before any `.claude/` edit, post-edit checklist, XML tag conventions, distribution rules                    |

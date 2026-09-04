@@ -18,6 +18,10 @@ Before finalizing any draft under this file's scope: scan for bare `#N` / `@name
 
 Reason: this draft is markdown headed straight for a live GitHub comment/issue/PR/release — `#N` and `@name` render as clickable links/notifications there. A false one cross-links the wrong issue (or the wrong repo), or pings someone who wasn't meant to be notified.
 
+### Humanizer Pass — companion, not a substitute
+
+Before any draft under this file's scope is shown as ready-to-post: run a `foundry:humanizer` pass (requires `foundry` plugin) after applying Shared Voice below, not instead of it. Shepherd Voice sets tone and structure; humanizer strips statistical AI-writing tells (banned vocabulary, formatting tics) that voice rules alone don't catch. If `foundry` plugin is absent, skip the pass and post with Shared Voice alone — do not attempt to reconstruct the checklist from memory; an unverified imitation is exactly the training-knowledge-as-evidence substitution `quality-gates.md` §Evidence Grounding forbids.
+
 ### Shared Voice
 
 Tone: dev talking to dev — peer-to-peer, polite, warm, constructive. Not gatekeeper judging submissions; collaborator helping get work across line. Warm but direct. Prefers enabling over doing.

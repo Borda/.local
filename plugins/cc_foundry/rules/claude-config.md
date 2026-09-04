@@ -4,7 +4,7 @@ paths:
   - '**'
 ---
 
-> §Bash Timeouts per-operation-class table, §Directory Navigation Commands permission-matcher rationale + worktree notes, §TMPDIR Sentinel Scoping verified-token-facts / wrong-form examples / exemption list / migration-debt note have worked detail in `_full/claude-config.md`. Resolve + Read when that section's own trigger applies — not needed for routine work:
+> §Bash Timeouts per-operation-class table, §Directory Navigation Commands permission-matcher rationale + worktree notes, §TMPDIR Sentinel Scoping verified-token-facts / wrong-form examples / exemption list / migration-debt note, §Agent/Skill Spawn Discipline worked rationale + threshold derivation have worked detail in `_full/claude-config.md`. Resolve + Read when that section's own trigger applies — not needed for routine work:
 >
 > ```bash
 > RULE_FULL="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/rules/_full/claude-config.md 2>/dev/null | head -1)"; [ -z "$RULE_FULL" ] && RULE_FULL="plugins/cc_foundry/rules/_full/claude-config.md"  # timeout: 5000
@@ -87,6 +87,18 @@ When editing file with lettered/numbered list range labels (e.g. `**Close-scenar
 - After any edit adding/removing list items, update **all** range labels in file — not just edited section
 - Non-contiguous letter ranges: use explicit form `A–C, F–G`, not `A–G`, when items missing
 - Scan entire file after edits to catch stale range labels elsewhere
+
+## Agent/Skill Spawn Discipline
+
+Spawning an `Agent()` costs fixed overhead — measured ~120,851 tok (~73 tool-calls' worth) plus ~12.0 s per spawn, regardless of task size. The gate below applies **only to work-displacement spawns** — a spawn chosen purely to move tool-calls out of the caller's context. It does **not** apply to a spawn chosen for role isolation: a distinct system prompt, adversarial independence, a different model tier, or a worktree. Isolation has value the ~73-call figure does not price in, so isolation-motivated spawns are exempt from the threshold, not exceptions to it.
+
+- **Work-displacement spawn** (no isolation need — same role would do, just fewer tokens in caller context): estimate tool-calls first. Under ~73 → do it inline with native tools (Read/Grep/Glob/Edit/Bash), no spawn.
+- **Isolation-motivated spawn** (distinct role/system-prompt, adversarial check, different model tier, or worktree required) → spawn regardless of call count; the isolation is the point, not a byproduct. Named standing examples: `bridge:review`/`foundry:challenger` adversarial passes, `foundry:humanizer`'s haiku-tier prose pass, any role-specialist dispatch mandated by another rule.
+- One subagent per independent subtask, not one per trivial step — batch related work-displacement spawns into a single spawn instead of a spawn-per-file or spawn-per-check.
+- A specialist exists for the domain (`foundry:sw-engineer`, `foundry:curator`, etc.) → prefer it over `general-purpose` once a spawn is warranted under either bullet above.
+- Keep each spawned agent near ~55 tool-calls; past ~60 it risks stalling without returning an envelope, forcing reconstruction from disk — split oversized work across agents rather than spawning more small ones.
+- `Skill()` cost is **not** covered by the measured figure above — the regression measured `Agent()`-backed subagent transcripts only, no `Skill()` invocation. Treat `Skill()` overhead as unverified until measured separately; don't assume it shares `Agent()`'s constant, especially across model tiers.
+- Worked rationale + threshold derivation: `_full/claude-config.md`.
 
 ## Ask Before Acting on Unknown Cause
 
