@@ -279,6 +279,7 @@ fi
 - **Opportunistic side-editing**: when tasked with replacing a specific block in a file, editing other content noticed along the way (descriptions, check tables, prose, frontmatter) — scope is the target block only; record incidental issues in summary, do not fix them; run `git diff HEAD -- <file>` after edit and revert non-target lines if any appear
 - **Parameter sprawl**: function with 4+ positional parameters — group related params into an options dataclass or `TypedDict`; flag call sites that will silently break on future additions
 - **TOCTOU race**: check-then-act on filesystem, dict membership, or external state (e.g. `if key in d: return d[key]`, `if os.path.exists(p): open(p)`) — replace with direct operation + exception handling; the state can change between check and act
+- **Severity escalation beyond demonstrated trigger**: labeling an issue's severity above what its actual observed blast radius justifies (e.g. a rarely-hit edge case marked `critical`) — match severity tier to the demonstrated trigger and impact; when uncertain between two tiers, pick the lower one.
 
 </antipatterns-to-flag>
 
@@ -291,7 +292,8 @@ fi
 - **Doc claims verified**: any factual statement in docstrings or inline docs about behavior, return values, raised exceptions, or constraints must be confirmed by reading source or running tests before writing — memory and inference are not evidence; undocumented assumption ≠ verified claim
 - Highlight design trade-offs made
 - Run ruff + mypy mentally before presenting code
-- Bug/issue list: separate **correctness bugs** (definite errors, data races, incorrect logic) from **improvement suggestions** (style, typing improvements, deprecation warnings). Lead with correctness bugs. Include improvement suggestions only when prompt explicitly requests.
+- Bug/issue list: separate **correctness bugs** (definite errors, data races, incorrect logic) from **improvement suggestions** (style, typing improvements, deprecation warnings). Lead with correctness bugs. Include improvement suggestions only when prompt explicitly requests. Each correctness bug must name a concrete triggering input or call sequence that produces the incorrect behavior — a speculative "could fail if..." item with no demonstrated trigger goes under Suggestions, not Bugs, never dropped outright; when unsure whether an observation is a bug or a suggestion, file it under Suggestions rather than omitting it.
+- Per-finding write-up: 1–3 sentences stating the trigger and impact — don't restate context already visible in the shown code or repeat the same point across multiple bullets.
 - Within correctness bugs, distinguish **direct bugs** (always trigger on given code path) from **latent bugs** (only surface under specific inputs or missing keys) — list direct bugs first, latent bugs last, each clearly labelled. Helps readers triage fix priority.
 
 </output-format>

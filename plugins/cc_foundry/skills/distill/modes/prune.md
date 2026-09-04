@@ -20,7 +20,7 @@ else
     echo "PRUNE_FOUND"
     echo "$FOUND" | while IFS= read -r f; do
         slug=$(echo "$f" | sed 's|.*/projects/||;s|/memory/MEMORY.md||')
-        tokens=$(( $(wc -c < "$f" 2>/dev/null || echo 0) / 4 ))
+        tokens=$(( $(wc -c < "$f" 2>/dev/null || echo 0) / 3 ))
         echo "PRUNE_ENTRY: $slug | ${tokens}k tokens | $f"
     done
 fi

@@ -234,7 +234,7 @@
     },
     "0a706d45cc91ec6eb1fe43afe91efc6d8cd70a8a9f5b5de374b62f9f342133cd": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "0a9bb77039ce6d7bcf4ea0d4a132cd30d17cf63590188abd59b3f569fa739aed": {
       "kind": "command",
@@ -407,6 +407,10 @@
     "11623703cba0681219779f3958ec7b61b6d239f42ad7c8cad240bfad55378e43": {
       "kind": "command",
       "src": "skills/setup/SKILL.md:352"
+    },
+    "118720f7b3985d7c25e0ad63acea186d48ae0b5769a6251ce706888de23ff492": {
+      "kind": "block",
+      "src": "skills/distill/modes/prune.md:13"
     },
     "11f98a719893cf238fcbcb79900cd03c550b9ea13fbbca937e08d8b9d0670c82": {
       "kind": "command",
@@ -622,7 +626,7 @@
     },
     "1aeb991d6c5005829a8f5e379466bc1d3cac63e272dd68b0c1afd077dcc11535": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "1af63173dde8ace026787bbec403116253eae383d235964069e1db421f6a759f": {
       "kind": "command",
@@ -696,9 +700,13 @@
       "kind": "command",
       "src": "skills/setup/SKILL.md:68"
     },
+    "1ffd5305ca9acf1f4b5b91e36fc9c9e43b4d99546df97c4f42dcab85189a5514": {
+      "kind": "command",
+      "src": "skills/distill/modes/prune.md:13"
+    },
     "200f3308dd33ce3f2267f6c3407d4e8bf61ee71b66a98d10cc3c49a5b72cca08": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "2022a4c6897a39347b5a8a194ef1c07eb5cf0657c4a986619d705ef25bf2672c": {
       "kind": "command",
@@ -711,10 +719,6 @@
     "2073c0f99f587e3cb33d971358a0c60ce29bec33530d2e89b0c81c26bfab8780": {
       "kind": "command",
       "src": "skills/_shared/codex-prepass.md:3"
-    },
-    "20a7e7028ec11111653cd3ed96cf243a14eb2d6bbe80e48d0a46083f01e50a9e": {
-      "kind": "command",
-      "src": "skills/distill/modes/prune.md:13"
     },
     "20acd7301d024dbd91f1d5c6ec5502f838a4eaef27ebbe7c8b649b142479195a": {
       "kind": "command",
@@ -915,6 +919,10 @@
     "29c37c5639c6dfd070b35f58f4c5c0678afe9200adb412dd98250fed479c865c": {
       "kind": "command",
       "src": "skills/audit/SKILL.md:345"
+    },
+    "29c4d8ccc21f3f25d40905c66c0b1f9b8c49f96ece731b0dd20db0974597691e": {
+      "kind": "block",
+      "src": "skills/audit/templates/checks-setup.md:406"
     },
     "29e0ed61cbf5005e7b62c4ebca80fe7af42bf2bd580795dfdc8a3f0fbdcb4e1c": {
       "kind": "command",
@@ -1118,7 +1126,7 @@
     },
     "3586297311b145e14395eeb98519c25726382a103a39a56090e41816c26c9959": {
       "kind": "command",
-      "src": "skills/manage/SKILL.md:656"
+      "src": "skills/manage/SKILL.md:658"
     },
     "35b83472f03d1618c5f1bef25182bc1e134ffaa9d87f8736c3b76df10fcf27f7": {
       "kind": "command",
@@ -1162,7 +1170,7 @@
     },
     "3707e4d1f787dc4f3bca2334b22201a1c5d0cd3401ec0be2b7574c5e752bb101": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "370c5c1021fe92dbe59a346a3edcfb207f11195d6c8969142dd160271b2cafe0": {
       "kind": "command",
@@ -1238,7 +1246,7 @@
     },
     "39ec3c245139eef59ea2aba756f4aeb267e9be8f5c7a26bf8f644810c3742847": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "39fdb1acfd81f9c9cdc39492d9e195ddbe535f4f317717ef12ec77b4ea835e08": {
       "kind": "block",
@@ -1322,7 +1330,7 @@
     },
     "3d41448492943c4be4d056ec0a341a20979a291634363039da74d5725a893414": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "3d7f0b10b40b616551fd8c243b8cff3b4e8bc868ded9f4b7da5898f71e4865a7": {
       "kind": "command",
@@ -1346,7 +1354,7 @@
     },
     "3e81f5c9aa88c7e0ceffaa4464cef1660949018fde0c96c4a51440c8d2f3e187": {
       "kind": "block",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "3e87b9c51afb8989f3e968ad3c1851b025b8b0f7cfdb37c991a9f786ed63f396": {
       "kind": "command",
@@ -1366,7 +1374,7 @@
     },
     "3f0606d615d264f3b57bf53a4ef500c932fb3facc5c9e40dfb535fb666e0373d": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "3f2d3643f4ca6d1debb8e55fa9612331ec3a05b0c260eeec517dc34197913a3f": {
       "kind": "command",
@@ -1422,7 +1430,7 @@
     },
     "421185ca32f0cea532153b1b8c67d3fcf21af4997933f12d79a580b0ccfcceca": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "42134ede2f223712d52784d6f591bd16da6bf61779c23bff0bf3e2f2758d43a1": {
       "kind": "block",
@@ -1730,7 +1738,7 @@
     },
     "516d3824b3a1e01e66c3fc3246548481a2e725efcb69c9d00aef1e4156dafd01": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:21"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:23"
     },
     "5279737022f8eb682838de3b418b09536a7b3b00d8a0386cfd7dcc57b2f4cb4d": {
       "kind": "command",
@@ -1758,7 +1766,7 @@
     },
     "537fd0804b0b4826b7565c230fa0639ab5838bc7c4ef29fd47471eaf36559d5e": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "53c12eb946042ae3b9ba989052cf85e8cb2a0f8502c61b3f8429f78013cfc459": {
       "kind": "command",
@@ -1894,7 +1902,7 @@
     },
     "58f809963d0594ee59f9daf907473ffa8a2c5defe1c5a6a7b10edb50d9e69667": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "593d0d79a643c99ad559f87fd54da932622a7a08453cd1109018c6c2f775a076": {
       "kind": "command",
@@ -2094,7 +2102,7 @@
     },
     "60184aeecd804fc9ae7386603185d76bd85d2b3f3d13f3b8a6aad697520c6002": {
       "kind": "block",
-      "src": "skills/manage/SKILL.md:715"
+      "src": "skills/manage/SKILL.md:717"
     },
     "605075a3f6f6f6990441978939a8ac07aefd3df3ac831ae066859d78056902ce": {
       "kind": "command",
@@ -2304,9 +2312,13 @@
       "kind": "command",
       "src": "skills/audit/SKILL.md:471"
     },
+    "688b705e350107d9d7fe1d89fa907f4a8bb4d15a6ea12338a64cd70b689b0c26": {
+      "kind": "command",
+      "src": "skills/distill/modes/memory.md:13"
+    },
     "68e1908274101f9e23a8175a903ddc1487a49c23aad666f5ec3ad60c40d96039": {
       "kind": "block",
-      "src": "skills/manage/SKILL.md:656"
+      "src": "skills/manage/SKILL.md:658"
     },
     "68fee9881b3452765d01ac839767b237aaf8d30c400f6991b7f95424e774a108": {
       "kind": "command",
@@ -2362,7 +2374,7 @@
     },
     "6b50c071fea34894604ed28aaea3bdd02a70b59136a98ae45cdb758597e199fe": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "6b57829fd6d3570c4615c076db073ce96031adeaa7c8232ff53bc1603a64812d": {
       "kind": "command",
@@ -2512,10 +2524,6 @@
       "kind": "command",
       "src": "skills/setup/SKILL.md:68"
     },
-    "741584d2c19babc762a9b5a1a3ad5bb3fe7e242439b15ccb1be8fd78cb6e67b3": {
-      "kind": "block",
-      "src": "skills/distill/modes/memory.md:13"
-    },
     "749c4a3bae0f39deba37565f962d6323864651ec69ae59e15a0f60317feb4c42": {
       "kind": "command",
       "src": "skills/audit/templates/checks-skills.md:1034"
@@ -2558,7 +2566,7 @@
     },
     "76aae44bc6cb0e20f73b8d83100051d3d201c222072e81e058f11e6664660906": {
       "kind": "command",
-      "src": "skills/manage/SKILL.md:644"
+      "src": "skills/manage/SKILL.md:646"
     },
     "76be5d4516cd3ab08787d27e41a0d87e46c288fa7010c505c4248294834491eb": {
       "kind": "command",
@@ -2571,6 +2579,10 @@
     "770779ea72781832ba13fb0d38853507d299a59aa7360c31ef12c81274b97562": {
       "kind": "command",
       "src": "skills/audit/SKILL.md:107"
+    },
+    "7719d772048d254bbacf379f03c6ceb1e530f482ea970df658abbd90c0241fc7": {
+      "kind": "block",
+      "src": "skills/audit/templates/checks-shared.md:11"
     },
     "7728e470a1049936b0aab0f41113665e3514d0ee943d90b7825093377db1eca1": {
       "kind": "command",
@@ -2678,7 +2690,7 @@
     },
     "7bc44e0c622cc2b85b0c3b40f6777d5f90434c8727856abdb85bf903fd8b9efc": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "7bfb7db0c8890d97961aebb7974eb20aae62b1827714d3eb0faf9875accef980": {
       "kind": "command",
@@ -2806,7 +2818,7 @@
     },
     "82c7f36ec3dcd91a6996f836560b8441c7153cc47cf3ba2a0a3e59b75e8f088b": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "82c980446f0de10285638b9a78bb430b2e85c51d20d275205e4b3665d6e015a8": {
       "kind": "command",
@@ -2978,7 +2990,7 @@
     },
     "8987e54f7bc3dac28a1213bdd92b2d00688180fba71269a911a449e3337161a8": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "89b09fdc2893bd7956c5b19c4a028105d2243e63d518ceac0b89dc72ed8c33d9": {
       "kind": "command",
@@ -3022,7 +3034,7 @@
     },
     "8bb089214aa77887e678cc4af79f1a696c74e65fcc08ee53e2ed7ed445d79c6e": {
       "kind": "command",
-      "src": "skills/manage/SKILL.md:715"
+      "src": "skills/manage/SKILL.md:717"
     },
     "8c35dafcbaf3f6cd554476759143ebb6f8c4c0b074a8247f4f246532d59bf62c": {
       "kind": "command",
@@ -3062,7 +3074,7 @@
     },
     "8d116012ffbd08740f4199c8f6d0007c6dcaf7ba2d525928e162c52cb67d5986": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "8d2a215d2f303cfd1403c9655c4a2abcbec8d0a442b164f1261eb024985f7a9c": {
       "kind": "command",
@@ -3294,7 +3306,7 @@
     },
     "96e3bcb7ea0a491c5bb43b0f195ec938d2f89f942a1ae900c95c86a648df5526": {
       "kind": "command",
-      "src": "skills/manage/SKILL.md:656"
+      "src": "skills/manage/SKILL.md:658"
     },
     "96e4bb353295a87b77194457070c6c005ec1004cae42d7f6835cf65be9cf220b": {
       "kind": "command",
@@ -3416,10 +3428,6 @@
       "kind": "command",
       "src": "skills/calibrate/templates/routing-pipeline-prompt.md:16"
     },
-    "9da55336abfc17c85ede6204a4ba8e139274cb624685e2577083b8a1ea1c4610": {
-      "kind": "command",
-      "src": "skills/audit/templates/checks-shared.md:11"
-    },
     "9dc6c410147b72d2c5d1d48ff36afb93cdf05b039fc50e0f7dbe172e606c3e7d": {
       "kind": "block",
       "src": "skills/session/SKILL.md:302"
@@ -3438,7 +3446,7 @@
     },
     "9e4a3a53f3b0560eb12f5002072465806737c36f8b4da49dcdda3f1d986d237c": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "9e5d8cf354baa0524ca8887793d32a838da89ce33b67994590cb6d9fa46783fb": {
       "kind": "command",
@@ -3514,7 +3522,7 @@
     },
     "a18d04451d8e7e69450a1b56a6d6294acf5a40332725b284f0127a299602d7fb": {
       "kind": "block",
-      "src": "skills/distill/modes/memory.md:206"
+      "src": "skills/distill/modes/memory.md:208"
     },
     "a19affd6ba0b8ef5cc166b9ccdf0c7ed4a46f716aabe428e3bd0873d218992a2": {
       "kind": "command",
@@ -3746,7 +3754,7 @@
     },
     "aa61bf2f7f1d957789cd528b39e6a1925949ee8477db052269e4092cfdeaaa0f": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "aa82901ae1ffce40f8a0ac89fbc1aecc31589387378748d81e6e8c72e192f520": {
       "kind": "command",
@@ -3895,6 +3903,10 @@
     "af8dd71e25499a2463ae4d66ec036aae699add3ba103749527408f70d6709433": {
       "kind": "command",
       "src": "skills/audit/templates/checks-skills.md:9"
+    },
+    "af9cfbe9afa27372b08a932c985ed26928d05f4ffef5fc44971211329c91c1d8": {
+      "kind": "command",
+      "src": "skills/audit/templates/checks-shared.md:11"
     },
     "b01e7eb748ba14c5f13ecb3a5957e934b767b1bbb8c1dd78990c5f42e3c20750": {
       "kind": "command",
@@ -4066,7 +4078,7 @@
     },
     "b6054c525e753305852d49e3d8ad729add24b369e99816ed7ec74ab2dc8dfea2": {
       "kind": "block",
-      "src": "skills/manage/SKILL.md:644"
+      "src": "skills/manage/SKILL.md:646"
     },
     "b613acdb168e172c5aa5bf7700e2a69b1a350850decf4bc71fbd45b7c7e69407": {
       "kind": "command",
@@ -4127,10 +4139,6 @@
     "b8c0d3bc66a2f10db5c76432550fb6c5367767fa3c0ec2fb0cba381965073a40": {
       "kind": "command",
       "src": "skills/manage/SKILL.md:363"
-    },
-    "b8f69ee731090cc6fb818a6f57a3a505f805f9ec2ef4f2c57a891ed0e9114b1d": {
-      "kind": "command",
-      "src": "skills/distill/modes/memory.md:13"
     },
     "b95ad6a4234fe5c855b54abd47b7cb5c669731cb04e5c802d3325bd488f6963d": {
       "kind": "command",
@@ -4244,6 +4252,10 @@
       "kind": "command",
       "src": "skills/audit/templates/checks-shared.md:137"
     },
+    "bebbcbf9573983d5edbd85b8badfa859edb3f85071c5dc390fa122cd0b9011b9": {
+      "kind": "block",
+      "src": "skills/distill/modes/memory.md:13"
+    },
     "bebd800da5b4c5ae560d7612e3cede2a73857a23251fc8cfc95910918b1d8645": {
       "kind": "command",
       "src": "skills/audit/modes/efficiency.md:60"
@@ -4266,7 +4278,7 @@
     },
     "c0092557fbd805450e2a1bef450875dd2cd0cf1f4df6705387681dbb2daca3ff": {
       "kind": "command",
-      "src": "skills/distill/modes/memory.md:157"
+      "src": "skills/distill/modes/memory.md:159"
     },
     "c0551417e2813e5f980edea3de40f612f71f4a89326a3090fd4d3e1d2eedca57": {
       "kind": "command",
@@ -4382,7 +4394,7 @@
     },
     "c5bf619b680a5fb8884e68a56fd281bf5ea9cb143bb26e9a19e104f29eae8c3f": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "c5ce54ce30ced524b8dbde2bdf40c4f3b60438d313df42ca2a1fc51799a6c6e6": {
       "kind": "block",
@@ -4459,10 +4471,6 @@
     "c9d510608d7a36dd4c2140adb1f58323f4b7fac4be76ec83979b9587d0103bb6": {
       "kind": "block",
       "src": "skills/audit/templates/checks-shared.md:155"
-    },
-    "c9fe0266f5e3d71df358c01fa7438342ba37d62a96c7a06c6d2f7bb35bc9801c": {
-      "kind": "block",
-      "src": "skills/audit/templates/checks-shared.md:11"
     },
     "ca4d95faf3ab42dcc273cedcd24d886d935d423dedc954e320db0419b9aae68d": {
       "kind": "command",
@@ -4640,10 +4648,6 @@
       "kind": "command",
       "src": "skills/distill/modes/memory.md:37"
     },
-    "d257cc0a6d9da5279529663f15db44a4bb9df62e618c29c4e2d2ee448303d9b9": {
-      "kind": "block",
-      "src": "skills/audit/templates/checks-setup.md:406"
-    },
     "d2ad615869275e515453c06d29ade514a1c4291175fa3df7e5e097d44a89a2cd": {
       "kind": "command",
       "src": "skills/distill/modes/memory.md:37"
@@ -4662,7 +4666,7 @@
     },
     "d37479335d206eb299ac481fa28d90b622d1880de1cbd23658560da3f638011a": {
       "kind": "block",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:21"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:23"
     },
     "d3c15ca8224454032a23d6f0fe4a43e9b9e3b5c62f768d8ab5a4750de142c7cb": {
       "kind": "command",
@@ -4744,10 +4748,6 @@
       "kind": "block",
       "src": "skills/manage/SKILL.md:499"
     },
-    "d85e1936ffd0f7bfec45b0d67ef8bba107485d4317c03779453606658289c72d": {
-      "kind": "block",
-      "src": "skills/distill/modes/prune.md:13"
-    },
     "d8779322ec4bc1d3be58819380a6ae32cb74e5b9d19e36571c322d5ecd15f548": {
       "kind": "block",
       "src": "skills/audit/templates/checks-skills.md:579"
@@ -4766,7 +4766,7 @@
     },
     "d918abbabbec591cfce498b9bd2cadd369beae982b0c4212b364a2b2dd8cc619": {
       "kind": "command",
-      "src": "skills/manage/SKILL.md:715"
+      "src": "skills/manage/SKILL.md:717"
     },
     "d9196074dc49ddf8955be67fbbd8b192fb8b103036d8875433af9ea3e058497a": {
       "kind": "command",
@@ -4830,7 +4830,7 @@
     },
     "dcd6469c6c447ce7d350df39ca4406142e844338b6a98c8b5369b3a613a06b66": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:21"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:23"
     },
     "dd04efdc7df0177ce5c21e0594981fb918cbd1d815b2f8c83eeb6c0ca14ad293": {
       "kind": "command",
@@ -4854,7 +4854,7 @@
     },
     "de3f47367713b5827d7dd8d9c9d3232d31d98b60fbc24ea8e06bf29f796931d5": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "de99a6590cd467540b33dc162ad4082b9b2cefd5f919545ff44ad31b3c496460": {
       "kind": "command",
@@ -4866,7 +4866,7 @@
     },
     "dfed703cadca5d6131c2d060fc397dd7fabe78f6f07e952af78eb1767eaa7172": {
       "kind": "command",
-      "src": "skills/distill/modes/memory.md:157"
+      "src": "skills/distill/modes/memory.md:159"
     },
     "e02c1daea244303652b9ef88b3fe32054b8f2e6dfe39eb53ab8fc7940f7fd78b": {
       "kind": "command",
@@ -4886,7 +4886,7 @@
     },
     "e06d935349fb10ba4d45f0221beddbf19f51ca5f73dc1fbb1d4a6c706c00426f": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "e0ccd5ffe96027095b5fa5efe7fdfe080b21761ec3002a50d313b3c0090a9b2c": {
       "kind": "command",
@@ -4970,7 +4970,7 @@
     },
     "e482281b6958a9c34c50dec3c0201739f4d88cc799a0a341d9833fe8408f5e48": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "e4a4e9fe701405817d5bd79bb6df62e43372f49250138b7dabb0195b1bf18da1": {
       "kind": "command",
@@ -4978,7 +4978,7 @@
     },
     "e4eac3f9f432662c191331b91f41b2ef767bfc1f89e4429b4ac6dfd0a642791f": {
       "kind": "command",
-      "src": "skills/manage/SKILL.md:644"
+      "src": "skills/manage/SKILL.md:646"
     },
     "e529c1adc419d1904ac77e0fd6c7fb3b822059fc790daa236241f9939f6bddc8": {
       "kind": "command",
@@ -5234,7 +5234,7 @@
     },
     "f16163a63b6b45db18ad712a26fb34a389d4a5373043cd9803b97ce294d8952c": {
       "kind": "block",
-      "src": "skills/distill/modes/memory.md:157"
+      "src": "skills/distill/modes/memory.md:159"
     },
     "f1634dc260cdf25e045f469ddb353b92c3a4d54aebcf63cdbf5083a276b56233": {
       "kind": "command",
@@ -5282,7 +5282,7 @@
     },
     "f340919cfdf6b43451e9f2f7aee51950a99a8e8505b11b95c375041ed6f44600": {
       "kind": "command",
-      "src": "skills/manage/SKILL.md:715"
+      "src": "skills/manage/SKILL.md:717"
     },
     "f3600a48b032514bee93d71e5f05a639e18bb4b250a4c2db67a45e2a89998d07": {
       "kind": "command",
@@ -5370,7 +5370,7 @@
     },
     "f74869babb8b6281031b33c13bf9c480bbdd82a5bcc803611ff7d79799b7df11": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "f7995e061770d9e8add6b12036bb111489a39d7ef26ec9dca0a9873fb535bd61": {
       "kind": "command",
@@ -5466,7 +5466,7 @@
     },
     "fcefa42b07def9554afdc751c2a73f4735c6ea0b6a44bd686b2e724531394841": {
       "kind": "command",
-      "src": "skills/calibrate/templates/pipeline-prompt.md:35"
+      "src": "skills/calibrate/templates/pipeline-prompt.md:37"
     },
     "fcf10c666c2ac432806037d9f23bd15aec4dff758476ecce3bf9a0b3203b735e": {
       "kind": "command",
@@ -5553,6 +5553,6 @@
       "src": "skills/investigate/SKILL.md:100"
     }
   },
-  "plugin": "cc_foundry@0.51.2",
+  "plugin": "cc_foundry@0.51.3",
   "schema": 1
 }

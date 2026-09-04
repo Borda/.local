@@ -47,15 +47,19 @@ Every analysis agent **must** end with:
 
 ## Internal Quality Loop (analysis tasks only)
 
-Before returning: draft → self-evaluate (missed issues, unsupported claims, coverage gaps) → score. Score < 0.9: name the highest-impact gap concretely, address what you can — even info-access limits: document + add inferences/caveats; re-score; cap 2 passes. Score rises only when a **named, specific gap** is addressed — generic phrases ("re-checked, looks fine", "reviewed for completeness") don't count; the pass must name the gap (e.g. "Added versioning section missing from initial draft"). After 2 passes, report the real score — never inflate; `foundry:calibrate` catches bias.
+**No routine re-read pass.** Current models mostly catch their own errors without a mandated re-score cycle; forcing one anyway compounds token cost without reliably improving results. Write once, at full care.
+
+A second pass fires only on a **named, actionable gap** — a source not read, a claim not grounded, a section the ask required and the draft lacks. Address that specific gap, then record it under **Refinements**. Generic phrases ("re-checked, looks fine", "reviewed for completeness") are not gaps and never justify a pass or a score rise. Cap 2. Report the real score — never inflate; `foundry:calibrate` catches bias.
+
+Gaps that cannot be closed (info-access limits, tooling absent) are **documented in the Confidence block, not chased** — caveat and move on.
 
 ## Python Code Complexity (when writing or reviewing Python)
 
 Before delivering any Python function or class: cyclomatic complexity ≤12, required (no-default) arguments ≤7, branches ≤12, statements ≤50, return points ≤6. Violation → refactor before delivering. `# noqa: PLR...` / `# noqa: C901` permitted only when refactoring is genuinely impossible (generated code, protocol-mandated signature) — always paired with an inline comment explaining why. Verify: `ruff check --select C901,PLR`.
 
-## Pre-Handover Check (trigger: handing over analysis with confidence < 0.9)
+## Pre-Handover Check (trigger: a named gap the analysis itself cannot close)
 
-Confidence < 0.9 → push back before handover: proof per uncertain claim, re-examine assumptions from first principles. `bridge@borda-ai-rig` available → dispatch `bridge:review` with the exact-args template in `_full/quality-gates.md` §Pre-Handover Check (read it at this trigger; never pass placeholders or a workflow step label), incorporate findings; bridge absent/disabled → state the specific gap so the user can decide to re-run.
+Trigger is a **specific unproven claim**, not a score crossing a line: a premise no source was read for, a conclusion resting on one ambiguous signal, an alternative never examined. A low score with every gap already documented needs no dispatch — say so and hand over. When the trigger fires: proof per uncertain claim, re-examine assumptions from first principles. `bridge@borda-ai-rig` available → dispatch `bridge:review` with the exact-args template in `_full/quality-gates.md` §Pre-Handover Check (read it at this trigger; never pass placeholders or a workflow step label), incorporate findings; bridge absent/disabled → state the specific gap so the user can decide to re-run.
 
 ## Write-Delegation Checklist (trigger: any `bridge:implement` call)
 
@@ -87,7 +91,9 @@ Applies to: agent files, skill files, CLAUDE.md, any markdown.
 
 Applies to all agents; compression tier by destination. Cap is a **soft compression target, not a truncation trigger** — never drop evidence, findings, or CRITICAL/HIGH content to force a file under cap. Compress prose (articles, filler, hedging, verbose framing) first; still over cap after full compression → let it run over rather than lose substance. Structurally large artifacts (multi-agent aggregates, batch reports) legitimately exceed the target — that's a signal the content warrants its size. Only LOW/Nitpick-severity items are droppable for space; CRITICAL and HIGH always survive intact.
 
-Size estimate: `$(( $(wc -c < file) / 4 ))` tokens.
+The soft-cap escape is not licence to run long. Written deliverables skew longer on current models than the caps assume, so match document length to what the task needs: cover the substance, and add no filler sections, redundant summaries, restated findings, or boilerplate. Length earned by evidence is fine; length earned by padding is not.
+
+Size estimate: `$(( $(wc -c < file) / 3 ))` tokens — `/4` predates the current tokenizer and under-reports by roughly 30%.
 
 - `.reports/` (human review) — **normal caveman**, ~10K tokens (~500 lines) target: drop articles/filler/hedging; full sentences where clarity demands; fragments OK for terse findings
 - `.temp/` (consolidator handover) — **ultra caveman**, ~10K tokens (~500 lines) target: fragments only, zero filler, shortest synonyms, ~30–40% tighter than normal caveman; full evidence coverage still required — compress prose, not substance
@@ -108,6 +114,7 @@ _Outcome legend_: `✓` = approved/ready/clean · `⚠` = needs-attention/needs-
 
 ## Reporting Findings
 
+- **Coverage at the finding stage, filtering downstream**: report every issue found, including low-confidence and low-severity ones; attach confidence and severity so a later stage can rank. Severity words in output-routing rules ("omit medium/low detail") govern the **printed summary**, never what gets investigated or recorded — a finding dropped at discovery cannot be recovered by a filter. Never instruct an agent to "only report high-severity issues" or "be conservative": current models follow that literally, investigating just as deeply and then reporting less
 - **Report before fixing**: state every finding before any fix — never silently mutate
 - **Per-fix narration**: before each file edit or tool call, state what changes and why
 - **! BREAKING format**: breaking findings = standalone block — never inline or buried in a table row:

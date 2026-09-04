@@ -548,7 +548,7 @@ ______________________________________________________________________
 
 **Use for**: ruff rules, mypy strictness, pre-commit hooks, fixing lint/type violations, missing type annotations, lint/type content of quality gates. Final code sanitization before handover.
 
-**Model**: `haiku` (high-frequency, lightweight diagnostics)
+**Model**: `sonnet` (effort: medium — haiku doesn't accept an `effort` key)
 
 **Not for**: CI pipeline structure or runner strategy (`oss:cicd-steward`), test logic (`foundry:qa-specialist`), implementation beyond annotation/style (`foundry:sw-engineer`), docstrings or API reference (`foundry:doc-scribe`).
 
@@ -668,7 +668,7 @@ Agents = directed pipeline, not flat pool:
 - `foundry:web-explorer` **feeds** `research:scientist` — fetches current docs + papers; scientist interprets
 - `foundry:creator` always **downstream** of `/foundry:create` — reads approved outline file; never generates without prior outline
 
-**Model tiering**: reasoning agents (`foundry:sw-engineer`, `foundry:perf-optimizer`) use `opus`; adversarial reasoning (`foundry:challenger`) uses `opus`; plan-gated roles (`foundry:solution-architect`, `foundry:curator`) use `opusplan`; execution agents (`foundry:doc-scribe`, `foundry:web-explorer`, `foundry:creator`, `foundry:qa-specialist`) use `sonnet`; high-frequency diagnostics (`foundry:linting-expert`) use `haiku`. `/foundry:audit`'s fix dispatch (`audit/modes/fix.md`, `audit/templates/audit-fix-prompt.md`) overrides per-call to `haiku` for `PARALLEL_SAFE_CATEGORIES` findings (pure transcription of an already-known replacement) regardless of the spawned agent's own frontmatter tier — judgment-bearing and cross-file fixes keep the agent's default.
+**Model tiering**: reasoning agents (`foundry:sw-engineer`, `foundry:perf-optimizer`) use `opus`; adversarial reasoning (`foundry:challenger`) uses `opus`; plan-gated roles (`foundry:solution-architect`, `foundry:curator`) use `opusplan`; execution agents (`foundry:doc-scribe`, `foundry:web-explorer`, `foundry:creator`, `foundry:qa-specialist`, `foundry:linting-expert`) use `sonnet`. Aliases resolve to the 5 family (`opus`→Opus 5, `sonnet`→Sonnet 5, `opusplan`→Opus in plan mode, Sonnet in execution); `fable` is the reserve tier for demanding long-horizon reasoning, with no standing agent assignment. Within the 5 family the tiers sit closer together than the 4.x tiers did, so **effort is the primary cost knob and tier the blunt one** — tune effort before moving an agent's tier, and prove any downgrade with `/foundry:calibrate <agent> --full --ab-test` rather than a generation-level parity claim. `/foundry:audit`'s fix dispatch (`audit/modes/fix.md`, `audit/templates/audit-fix-prompt.md`) overrides per-call to `haiku` for `PARALLEL_SAFE_CATEGORIES` findings (pure transcription of an already-known replacement) regardless of the spawned agent's own frontmatter tier — judgment-bearing and cross-file fixes keep the agent's default.
 
 ______________________________________________________________________
 

@@ -4,6 +4,8 @@ AB mode: `<AB_MODE>` — when `true`, also run `general-purpose` baseline on eve
 
 Run dir: `.reports/calibrate/<TIMESTAMP>/<TARGET>/`
 
+**Scratchpad discipline**: the session scratchpad is shared across every concurrent calibration pipeline, not per-target. Write every bridge task file and any other intermediate you create inside your own run dir above — never a bare filename in the shared scratchpad. A generic name there (`codex-gen-task.txt`, etc.) gets silently overwritten by a sibling pipeline within seconds, and the caller then scores against the wrong domain's problems with no error surfaced.
+
 ### Graceful-exit protocol
 
 Before returning for ANY reason — crash, context limit, unhandled error, or early exit — always write minimal `result.jsonl` to run dir. Even if phases incomplete, orchestrator must receive signal.
@@ -81,7 +83,9 @@ Split `<N>` in-scope problems between two generators. Claude always owns 1 out-o
 | fast (N=3) | 1 | 2 | 1 | 4 |
 | full (N=10) | 5 | 5 | 1 | 11 |
 
-**Step 1 — Codex generates N_CODEX in-scope problems** (runs first; writes directly to file — requires `bridge@borda-ai-rig`):
+**Step 1 — Codex generates N_CODEX in-scope problems** (runs first; requires `bridge@borda-ai-rig`):
+
+`bridge:advise`/`bridge:review` are read-only — they return their answer in the call's own envelope, they never write to the run dir despite the "Write JSON array to" instruction below. Capture the returned payload from the call result, then write it to the target file yourself.
 
 Skill(skill="bridge:advise", args="Generate \<N_CODEX> synthetic calibration problems for domain: '<DOMAIN>'.
 
@@ -119,8 +123,11 @@ Rules:
 - Issues must be unambiguous — domain expert would confirm them
 - Do NOT include any out-of-scope problem — in-scope only
 - Write ONLY valid JSON array (no prose, no markdown fences, no trailing commas)
+- `bridge_call.py` enforces a hard ~500-char cap on the returned `verdict` field — a response whose verdict exceeds it raises `ValueError` and the call fails outright (not a silent truncation). Request one problem per `bridge:advise` call rather than the full `N_CODEX` batch in one call, to stay under the cap. If a call still fails validation after a retry, drop that problem and proceed with fewer Codex problems — Phase 1b's `floor(<N_CODEX> * 0.5)` validity threshold already accounts for partial yield.
 
-Write JSON array to: .reports/calibrate/<TIMESTAMP>/<TARGET>/problems-codex.json")
+Return the JSON array in your response — do not attempt to write it to a file yourself.")
+
+Capture the JSON array from the call's return value and write it to `.reports/calibrate/<TIMESTAMP>/<TARGET>/problems-codex.json` yourself.
 
 **Step 2 — Claude generates N_CLAUDE in-scope problems + 1 out-of-scope problem**:
 
@@ -236,6 +243,8 @@ Each scorer receives this prompt (substitute `<PROBLEM_ID>`, `<GROUND_TRUTH_JSON
 
 For each problem, call the read-only Codex bridge skill. Run **sequentially** (not parallel — scoring writes shared result files).
 
+`bridge:review` is read-only — it returns its answer in the call envelope, it never writes the output file itself despite the "Output file:" instruction below. Also note: `bridge_call.py` enforces a hard ~500-char cap on the returned `verdict` field — a scoring response that exceeds it fails validation (`ValueError`) rather than returning truncated JSON; if the call fails, retry once, then fall back to Claude's score alone for that problem (`scorer_mode: "single"`, per Phase 3c below) rather than looping.
+
 Skill(skill="bridge:review", args="Score a calibration response against ground truth.
 
 ```text
@@ -258,9 +267,9 @@ Compute: recall=found/total (null if total=0), precision=found/(found+fp+1e-9), 
 
 Write ONLY this JSON (no prose, no markdown fences, no trailing commas) to file below: {"problem_id":"\<PROBLEM_ID>","found":[true/false,...],"false_positives":N,"confidence":0.N,"recall":0.N,"precision":0.N,"f1":0.N,"severity_accuracy":0.N,"format_score":0.N,"scorer":"codex"} [If AB_MODE is true, append before closing }: ,"recall_general":0.N,"confidence_general":0.N,"precision_general":0.N,"f1_general":0.N,"severity_accuracy_general":0.N,"format_score_general":0.N]
 
-Output file: .reports/calibrate/<TIMESTAMP>/<TARGET>/score-\<PROBLEM_ID>-codex.json")
+Return the JSON object in your response — do not attempt to write it to a file yourself.")
 
-Substitute `<PROBLEM_ID>` and `<GROUND_TRUTH_JSON>` per problem. If output file missing or unparsable after agent completes, set `scorer_mode: "single"` for that problem — Phase 3c uses Claude's score only.
+Substitute `<PROBLEM_ID>` and `<GROUND_TRUTH_JSON>` per problem. Capture the JSON from the call's return value and write it to `.reports/calibrate/<TIMESTAMP>/<TARGET>/score-<PROBLEM_ID>-codex.json` yourself. If the returned payload is missing or unparsable after one retry, set `scorer_mode: "single"` for that problem — Phase 3c uses Claude's score only.
 
 ### Phase 3c — Consensus merge
 
@@ -322,7 +331,7 @@ Verdict:
 - `bias > 0.15` → `overconfident`
 - `bias < −0.15` → `underconfident`
 
-Write full report to `.reports/calibrate/<TIMESTAMP>/<TARGET>/report.md` using this structure:
+The Write tool refuses any file whose exact basename is `report.md` from a subagent context ("Subagents should return findings as text, not write report files") — use `benchmark-report.md` instead. Write full report to `.reports/calibrate/<TIMESTAMP>/<TARGET>/benchmark-report.md` using this structure:
 
 ```markdown
 ## Benchmark Report — <TARGET> — <date>
@@ -402,7 +411,7 @@ Spawn **foundry:curator** subagent using **Agent tool** — never via Bash or CL
 > **Files to read** (use Read tool on each):
 >
 > 1. Target file: `<AGENT_OR_SKILL_FILE_PATH>`
-> 2. Benchmark report: `.reports/calibrate/<TIMESTAMP>/<TARGET>/report.md` — focus on **Systematic Gaps** and **Improvement Signals** sections
+> 2. Benchmark report: `.reports/calibrate/<TIMESTAMP>/<TARGET>/benchmark-report.md` — focus on **Systematic Gaps** and **Improvement Signals** sections
 >
 > Propose specific, minimal instruction edits that directly address each systematic gap (issues missed in ≥2/N problems) and each false-positive pattern. Conservative: one targeted change per gap. Don't refactor sections unrelated to findings.
 >

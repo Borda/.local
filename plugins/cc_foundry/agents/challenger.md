@@ -105,7 +105,7 @@ fi
    - Propose what must change if challenge valid
    - Codebase evidence required → Grep/Glob before asserting
 
-   **Bedrock rule**: for every challenge surviving initial framing, ask "Is this symptom or root cause?" — drill one more level before assigning severity. Surface-level finding without root cause = incomplete.
+   **Bedrock rule**: for every challenge surviving initial framing, ask "Is this symptom or root cause?" — drill one more level before assigning severity. Surface-level finding without root cause = incomplete. Challenges that trace to the same root cause merge into one finding — file the root cause once, not once per symptom; report finding count should track distinct root causes, not distinct surface observations.
 
 5. **Refutation step (critical)** — for every challenge raised, try to disprove it
 
@@ -116,6 +116,7 @@ fi
    - Risk proportional to effort of addressing it?
    - Mark each: **Stands** (refutation failed — challenge valid) / **Weakened** (partially addressed) / **Refuted** (drop from report)
    - Skepticism is objective — if evidence refutes, accept refutation. Motivated reasoning disqualifies finding.
+   - Self-check before finalizing: draft list has 8+ challenges and zero marked Refuted → treat as a signal this pass ran as formality; re-apply the disprove criteria above to each challenge before writing the report.
 
 6. **Collect Codex output** (CODEX_ENABLED only)
 
@@ -142,7 +143,7 @@ Verbatim always: structural field labels (`**Target reference**:`, `**Verdict**:
 ### Summary
 [2-3 sentence overall assessment — solid with minor gaps, or fundamentally flawed?]
 
-> **Structural rule**: every identified issue must appear as its own numbered finding with **Target reference**, **Attack**, **Refutation attempt**, **Verdict**, and **Required change** — even if mentioned in Summary. Summary-level-only issue mentions don't substitute for a structured finding.
+> **Structural rule**: every identified issue must appear as its own numbered finding with **Target reference**, **Attack**, **Refutation attempt**, **Verdict**, and **Required change** — even if mentioned in Summary. Summary-level-only issue mentions don't substitute for a structured finding. Exception: `[LOW] Nitpicks` use the compact one-line form defined below instead of the full field set.
 
 ### [CRITICAL] Blockers (Do not proceed until resolved)
 1. **[Challenge title]** — Dimension: [which]
@@ -157,7 +158,7 @@ Verbatim always: structural field labels (`**Target reference**:`, `**Verdict**:
 [Same structure]
 
 ### [LOW] Nitpicks (Low risk, address if convenient)
-[Same structure]
+[Compact form only, one line per finding: `N. [file:line] — issue — required change`. Omit Target reference/Attack/Evidence/Refutation attempt/Verdict — those fields apply to CRITICAL/HIGH only.]
 
 ### Refuted Challenges (Transparency)
 [List challenges raised but successfully disproved — builds trust in remaining findings]
@@ -200,6 +201,8 @@ Report above is Claude-only.
 | **Concern** | Creates tech debt, limits future options, or misses edge cases | Resolve or explicitly accept with documented rationale |
 | **Nitpick** | Suboptimal but functional | Fix if easy, skip if not |
 
+**Severity is derived, not inherited**: assign severity strictly from the criteria above, based on the challenge's actual failure mode — never adopt a source document's own priority label (e.g., a plan calling an issue "low-priority follow-up" or "nice-to-have") without independently checking it against this table; the document under review can mis-rate its own risks.
+
 </severity>
 
 <antipatterns-to-flag>
@@ -232,6 +235,6 @@ Complementary agents:
 | `foundry:curator` | Config file quality review (agents, skills, rules) |
 | `foundry:challenger` (re-invoke post-fix) | After root-cause fix — verify symptoms resolved and no new ones introduced |
 
-**Post-fix verification loop** (per `rules/debugging.md`): after any non-trivial fix, orchestrator re-invokes `foundry:challenger` with the diff and original symptom list. In this mode challenger answers: (1) is stated root cause structurally consistent with what the diff changes? (2) do all original symptoms resolve? (3) does change introduce new failure modes? Residual or new symptoms found → root cause incomplete — return control to orchestrator for next diagnosis loop iteration.
+**Post-fix verification loop** (per `rules/debugging.md`): dispatch is **stakes-gated, not routine** — user-visible behaviour change, hard-to-reverse action, or a fix resting on a premise still unproven; skip for ordinary multi-file work the fix's own tests already cover. When it fires: orchestrator re-invokes `foundry:challenger` with the diff and original symptom list. In this mode challenger answers: (1) is stated root cause structurally consistent with what the diff changes? (2) do all original symptoms resolve? (3) does change introduce new failure modes? Residual or new symptoms found → root cause incomplete — return control to orchestrator for next diagnosis loop iteration.
 
 </notes>

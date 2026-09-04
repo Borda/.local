@@ -402,7 +402,7 @@ For each target in target list, check whether `.reports/calibrate/<TIMESTAMP>/<t
 
 **Partial-match behavior**: `--apply` with mixed found/missing targets continues with found targets — does not halt on missing. For each **missing** target: print warning and skip (do not stop entire run): `⚠ No prior run for <target> — skipping. Re-run with --fast --apply to benchmark+apply, or --fast to benchmark only. (If target was skipped because its plugin was unavailable, install the plugin first, then re-run.)` Continue to next target. Only if ALL targets are missing: stop with `! No proposals found for any requested target` — nothing to apply. `--apply` without pace flag is intentional — see `<inputs>` definition; auto-triggering benchmark would contradict that contract.
 
-**Print run's report before applying**: for each found target, read and print `.reports/calibrate/<TIMESTAMP>/<target>/report.md` verbatim so user sees benchmark basis before any file changes.
+**Print run's report before applying**: for each found target, read and print `.reports/calibrate/<TIMESTAMP>/<target>/benchmark-report.md` verbatim so user sees benchmark basis before any file changes.
 
 **Spawn one `foundry:curator` subagent per found target (`.md` files — agents and skills). Issue ALL spawns in single response — no waiting between spawns.**
 

@@ -182,6 +182,8 @@ Run its **Detect** block, then **Signal A** (loaded above). From thread body + c
 
 Status mapping: `reproduced` → ✓ · `not_reproduced` → ✗ · `partial` → ⚠ · `missing_context` → ⚠ (add missing detail) · `HAS_REPRO=false` → 🔍 No Example · PR → ⏭ Skipped
 
+**Severity/priority tier rubric** (applies to the `Priority:` header field and the inline `Severity:` fields above): Critical = data loss, security vulnerability, or a regression breaking core functionality with no workaround. High = confirmed bug blocking a common workflow, no workaround. Medium = confirmed bug or duplicate with a workaround, or a well-scoped feature request. Low = cosmetic, docs-only, or minor edge case. Base the tier on the underlying issue's technical impact, not on triage urgency alone — a stale/reopened duplicate of a critical bug is still Critical.
+
 Produce:
 
 ````markdown
@@ -214,7 +216,7 @@ Action:      [most important next step]
 ### Related Items
 
 **⚠ Potential Duplicates** (same problem/question — suggest closing as duplicate):
-- #N: [title] ([open/closed]) ← DUPLICATE — [why: same error / same root cause / same question]
+- #N: [title] ([open/closed]) ← DUPLICATE — [why: same error / same root cause / same question] — Severity: [Critical/High/Medium/Low] — Action: [close as duplicate of #canonical / other concrete next step]
   Canonical: #[lowest-number] — close others with "Closing as duplicate of #[canonical]"
 
 **Related** (same area, distinct problem — cross-link):

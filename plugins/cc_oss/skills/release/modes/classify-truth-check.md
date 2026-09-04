@@ -27,7 +27,7 @@ Section order (fixed): 🚀 Added → ⚠️ Breaking Changes → 🌱 Changed �
 | Internal | *(omit)* | Refactors, CI/tooling, deps, housekeeping — omit unless user-impacting |
 | Reverted | 🔄 Reverted | Introduced AND reverted within range (REVERT_SET) — net effect zero |
 
-**Same-release feature+fix dedup**: 🔧 Fixed targeting code introduced same release = never shipped = fold into 🚀 Added or omit.
+**Same-release feature+fix dedup**: 🔧 Fixed targeting code introduced same release = never shipped = fold into 🚀 Added or omit. **Exception**: fix's commit body itself states a caller-visible behavior change (e.g. "changes behavior for any caller currently relying on...") → still surface a ⚠️ Breaking Changes entry, or a labeled breaking-behavior callout within the Added bullet — never silently absorbed into plain feature prose.
 
 **Breaking vs Deprecated vs Removed**: old call still works → Deprecated. Deprecated in prior release, now removed → Removed. **Prior-deprecation body-signal**: commit body contains "deprecated in vX", "previously deprecated", "was deprecated", "emits DeprecationWarning since", or "deprecated since" → treat as Removed regardless of `feat!:`/`BREAKING CHANGE:` markers. **Bug fixed to match spec**: classify as 🌱 Changed when users relied on buggy behavior; ⚠️ Breaking Changes only if load-bearing, causes widespread breakage.
 

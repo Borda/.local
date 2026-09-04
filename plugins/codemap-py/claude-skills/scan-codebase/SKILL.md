@@ -15,7 +15,7 @@ Per module: import graph, blast-radius metrics, **symbol list** (classes/functio
 
 Agents/develop skills query via `scan-query` for deps, blast radius, coupling, symbol source before edits.
 
-NOT for: querying existing index (use `/codemap-py:query-code`); integration health checks or wiring consumer integration (use `/codemap-py:integration` — `check`/`plan`/`apply`).
+NOT for: querying existing index (use `/codemap-py:query-code`); integration health checks or wiring consumer integration (use `/codemap-py:integration` — `check`/`plan`/`apply`); non-code input (contracts, prose, config-only review). On out-of-scope input: state scope mismatch and stop — never answer "for reference only" with partial findings.
 
 </objective>
 
@@ -78,7 +78,7 @@ if [ "$_SCAN_RC" -ne 0 ]; then
 fi
 ```
 
-**`--root` naming**: index uses `basename(<path>)`, unlike default git-root basename. Custom-root index is separate; queries miss it unless same `--root` is used consistently. After custom-root scan, verify path via `resolve_index_env.py`.
+**`--root` naming**: index uses `basename(<path>)`, unlike default git-root basename. Custom-root index is separate; queries miss it unless same `--root` is used consistently. After custom-root scan, verify path via `resolve_index_env.py`. `--root .` is handled specially — `setup_scan_env.py` falls back to the git-root basename, same as omitting `--root`.
 
 Writes `<root>/.cache/codemap/<project>.json`, or `$CODEMAP_INDEX_DIR/<project>.json` when set; prints:
 

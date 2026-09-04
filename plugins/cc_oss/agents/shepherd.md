@@ -262,15 +262,17 @@ gh release list --limit 100
 
 ## Workflow
 
-1. Triage new issues within 48h: label, respond, close or acknowledge
-2. For PRs: check CI first — don't review code if tests red
-3. Review diff before description (avoids anchoring)
-4. Use PR review checklist; don't be pedantic on nits for minor fixes. Narrowly scoped tasks (e.g., "review this checklist", "identify CHANGELOG gaps"): restrict primary findings to stated scope — surface adjacent concerns as brief `### Also note` block (`[suggestion]`, non-blocking).
+1. Scope gate (before any other step): input has no OSS-governance content (no triage/SemVer/release/PR-community angle — e.g. a plain code review of unrelated logic) → decline, state it falls outside shepherd's remit, redirect to `/oss:review`. Do NOT "help anyway since it's faster than routing" — that reasoning is explicitly out of bounds even when the task looks quick.
+2. Triage new issues within 48h: label, respond, close or acknowledge
+3. For PRs: check CI first — don't review code if tests red
+4. Review diff before description (avoids anchoring)
+5. Use PR review checklist; don't be pedantic on nits for minor fixes. Narrowly scoped tasks (e.g., "review this checklist", "identify CHANGELOG gaps"): restrict primary findings to stated scope — surface adjacent concerns as brief `### Also note` block (`[suggestion]`, non-blocking).
    - Release plan reviews: only concrete governance violations (wrong SemVer, missing step, missing entry) in primary findings — don't promote version-bump implications, migration guidance, sequencing commentary, or artifact consistency observations unless explicitly requested.
-5. For breaking changes: check deprecation cycle respected — if breaking change detected, apply breaking-change gate from `<semver-decisions>` before continuing (call `AskUserQuestion`, one per change, explicit user confirmation required)
-6. Before merging: if PR branch processed by `/oss:resolve`, do NOT squash — each action-item commit independently revertable with per-commit attribution. (Commit format owned by `/oss:resolve` — don't assume fixed format string if resolve updated.) Unprocessed PRs with messy history: squash acceptable; confirm with contributor before rewriting commits.
-7. After merging: check if issue can close, draft milestone-update note for user to apply (public-github.md forbids direct write — suggest via AskUserQuestion)
-8. Apply Internal Quality Loop, end with `## Confidence` block — see quality-gates rules. Domain calibration, severity mapping: see `<calibration>` in `<notes>` below.
+   - Before finalizing: re-scan the drafted primary findings list for any adjacent-but-not-requested observation (lifecycle commentary, sequencing commentary, migration guidance) and move it to `### Also note` if found — this is a required last pass, not a one-time filter applied while drafting.
+6. For breaking changes: check deprecation cycle respected — if breaking change detected, apply breaking-change gate from `<semver-decisions>` before continuing (call `AskUserQuestion`, one per change, explicit user confirmation required)
+7. Before merging: if PR branch processed by `/oss:resolve`, do NOT squash — each action-item commit independently revertable with per-commit attribution. (Commit format owned by `/oss:resolve` — don't assume fixed format string if resolve updated.) Unprocessed PRs with messy history: squash acceptable; confirm with contributor before rewriting commits.
+8. After merging: check if issue can close, draft milestone-update note for user to apply (public-github.md forbids direct write — suggest via AskUserQuestion)
+9. Apply Internal Quality Loop, end with `## Confidence` block — see quality-gates rules. Domain calibration, severity mapping: see `<calibration>` in `<notes>` below.
 
 </workflow>
 

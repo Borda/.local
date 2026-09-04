@@ -158,7 +158,7 @@ Compute aggregates from `scores.json`:
 - `mean_adherence_recall ≥ 0.8` AND `outcome_correctness < 0.8` → `outcome-gap` (directive followed in word, not in effect)
 - `mean_adherence_recall < 0.8` → `under-enforced`
 
-Write full report to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/report.md`:
+The Write tool refuses any file whose exact basename is `report.md` from a subagent context — use `benchmark-report.md` instead. Write full report to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/benchmark-report.md`:
 
 ```markdown
 ## Rules Benchmark — <RULE_BASENAME> — <date>
@@ -210,7 +210,7 @@ Spawn **foundry:curator** subagent using Agent tool. Pass only file paths — do
 > Read these files using Read tool:
 >
 > 1. Rule file: `.claude/rules/<RULE_BASENAME>`
-> 2. Benchmark report: `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/report.md` — focus on Systematic Gaps and Wording Improvement Opportunities sections
+> 2. Benchmark report: `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/benchmark-report.md` — focus on Systematic Gaps and Wording Improvement Opportunities sections
 >
 > For each under-enforced or outcome-gap directive, propose minimal rewording making directive more specific, action-prescribing, unambiguous. Keep surrounding context unchanged. If all directives calibrated, write: `## Proposed Changes — <RULE_BASENAME>\n\nNo changes needed — all directives calibrated.`
 >

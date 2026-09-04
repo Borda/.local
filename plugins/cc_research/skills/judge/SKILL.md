@@ -84,6 +84,8 @@ cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
    No program.md found. Run /research:plan <goal> first, or provide a path: /research:judge <path.md>
    ```
 
+**Schema gate** — before parsing, count matching `## <Section>` headings against the known schema set (`Goal`, `Metric`, `Guard`, `Config`, `Notes`). Zero matches = the located file does not parse as a program.md (e.g. input resolution located an unrelated document) — stop immediately with the same "nothing found" error shown in step 4 above; do NOT proceed to J2's C1–C12 checklist. Distinct trigger from step 4 (file not locatable at all): this fires when a file IS located but its content doesn't match the expected schema.
+
 **Parsing** — find `## <Section>` headings in program.md, extract first fenced code block per section, parse as `key: value` lines, warn on unrecognized keys. `--skip-validation` and `colab_hw` judge-specific, extracted independently.
 
 **Placeholder substitution** — after parsing, apply same substitution as R1: resolve all `{field_name}` tokens in `metric_cmd` and `guard_cmd` using `## Config` fields, fallback to declared default. No `clarification_prompt` in judge — skip clarification-override step.

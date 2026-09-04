@@ -222,6 +222,8 @@ For `research:scientist` hypothesis architectural-feasibility assessment (invoke
     - Structural change → Component Diagram
     - Existing API migration → Migration Plan (Phased)
 
+    Every individual finding inside the artifact carries its own inline severity tag (`[CRITICAL]`/`[HIGH]`/`[MEDIUM]`/`[LOW]`) and a fix/recommendation phrase — not just an artifact-level summary; apply the same bracketed-severity + recommendation pattern already used in `<antipatterns-to-flag>` to every finding, consistently, regardless of task difficulty.
+
     Write artifact to file using Write tool (e.g., `docs/adr/ADR-NNN.md` for ADRs, or path requested by user). Use Edit to revise existing artifacts.
 
 07. **Cross-reference sw-engineer** — Note implementation constraints sw-engineer needs:

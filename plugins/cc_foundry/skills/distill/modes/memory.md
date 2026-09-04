@@ -17,7 +17,7 @@ while IFS= read -r -d '' d; do
     slug=$(echo "$d" | sed 's|.*/projects/||;s|/memory$||')
     fb_count=$(find "$d" -maxdepth 1 -name "feedback_*.md" 2>/dev/null | wc -l | tr -d ' ')
     mem_file="$d/MEMORY.md"
-    mem_tokens=$([ -f "$mem_file" ] && echo $(( $(wc -c < "$mem_file") / 4 )) || echo 0)
+    mem_tokens=$([ -f "$mem_file" ] && echo $(( $(wc -c < "$mem_file") / 3 )) || echo 0)
     echo "MEM_DIR: $slug | ${mem_tokens}k tokens | ${fb_count} feedback files | $d"
 done < <(find "$HOME/.claude/projects" -maxdepth 3 -name "memory" -type d -print0 2>/dev/null | sort -z)
 ```
@@ -61,6 +61,8 @@ Label collected context as `[Project grounding: <slug>]` and pass alongside feed
 If `PROJ_ROOT` not resolved: note `[Project grounding: <slug> — path not resolved]` in L2; treat ambiguous feedback for that project as `→ too narrow` unless evidence in feedback files themselves strong.
 
 ## Step L2: Cluster and classify
+
+**Scope check**: if material collected in Step L1 contains no lesson/feedback-shaped entries (no `.notes/lessons.md` findings, no `feedback_*.md` content resembling a correction, confirmation, or recurring pattern), report zero clusters and stop — do not force a disposition (e.g. `→ too narrow`) onto non-lesson input.
 
 Group all lessons/feedback entries by domain. Use model reasoning to identify clusters of related items:
 

@@ -16,7 +16,7 @@
 - **Always pass explicit `subagent_type` matching the task**, even when the right specialist is already named in your own spawn prompt — §Agent Teams (below) is a separate, narrower gate (formal multi-agent Team protocol only); it does NOT restrict picking a specialist for an ordinary single-agent spawn, ad-hoc or background included. Omitting `subagent_type` defaults to `general-purpose` and hides the spawn from 🤖 status tracking. (Telemetry evidence + worked failure example: `rules/_full/CLAUDE-full.md` §Subagent Strategy.)
 - Independent subtasks run parallel, not serial; one tack per sub-agent
 - **Context discipline**: spawn prompt = task inputs + instructions only. Include: working dir · input paths/vars · output target · return envelope format. Exclude: session history · prior-phase reasoning · inline file contents (pass path)
-- Complex problem → more compute via sub-agents
+- Complex problem → more compute via sub-agents, but only on genuinely independent, sizeable tracks. Never delegate work finishable in a handful of tool calls, never spawn several where one suffices, and **never spawn a subagent to verify or double-check own work** — current models self-verify natively; a verifier spawn compounds that behaviour instead of adding signal. Deterministic caps: `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`, `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` (Claude Code ≥ 2.1.217)
 - **File-based handoff**: 2+ analysis agents each write full output to file, return only compact JSON envelope — protocol in foundry's own shared dir, resolved via `bin/resolve_shared_path.py foundry skills/_shared` then `cat "$_FS/file-handoff-protocol.md"`
 
 ### 3. Self-Improvement Loop
@@ -26,10 +26,11 @@
 
 ### 4. Verification Before Done
 
-- Never mark complete without proof — run tests, check logs, diff against main
+- Never mark complete without proof — run tests, check logs, diff against main. Proof means **external evidence** (command output, disk state, test result), never a re-read of own reasoning
 - Ask "would staff engineer approve?"
 - **Diff against ask**: before done, diff output against literal request — every constraint honored, nothing silently dropped
 - **Confidence scores**: request `## Confidence` block from every analysis agent (protocol in Output Standards); surface low confidence — never drop uncertain findings
+- **No added self-recheck passes, except one gated on a named, checkable trigger** (e.g. a scope-boundary re-scan against a stated rule — targeted verification, not blanket re-verify). Current models mostly catch and fix their own mistakes without an unscoped re-verify prompt; instructions like "double-check your answer" or "re-verify before responding" compound with that behaviour and cost tokens without reliably improving results. Run the external proof above once, then report
 
 ### 5. Autonomous Bug Fixing
 
@@ -52,7 +53,7 @@ Canonical helper: `_FOUNDRY_SHARED/agent-spawn-protocol.md`. Skills may tighten 
 - Cache-read cost = live context size × turn count — dominant cost line; keep both small
 - Multi-phase skill runs (e.g. review → resolve): after phase report file written, `/compact` before the next phase; resume from report file, not transcript
 - **Never suggest `/clear`.** It discards the prompt cache, so the next call re-writes the full context at the cache-write rate — ~12.5× the read rate — and buys nothing back, because the rebuilt context is the same size. Measured 2026-08-08 on a `/oss:review`: one mid-run `/clear` cost 179,545 write tokens in a single call, 46% of that session's entire cache-write spend. **`/compact` is the tool for every case** — it pays the same rebuild once, then shrinks what is re-sent on every remaining turn. Measured 2026-08-08 across 41 real compactions in 5 sessions (`bin/cost_analyzer.py`, drop-detection method — a compaction is any call whose post-call context falls below 70% of the prior call's): median context shrink 70%, median rebuild cost $0.87, median break-even **~2 turns**, worst observed 14 turns. All 41 repaid before their session ended. Break-even scales with pre-compaction context size, not a fixed dollar figure — it is worth checking only in the closing turns of a session, never mid-run
-- Live context >200K tokens = smell — wrap phase, persist state to file, restart lean
+- Live context past ~40% of the model's window = smell — wrap phase, persist state to file, restart lean. Current 5-family models carry a 1M window (Haiku 4.5: 200K), and instruction-following holds across it, so the smell is **cost**, not capability: cache-read scales linearly with live size, and `autoCompactThreshold: 0.7` only fires at ~700K
 - Batch tool calls: create all tasks in ONE response (parallel calls); pair `TaskUpdate` with next substantive tool call — never emit response with only task bookkeeping
 
 ## Pre-Authorized Operations
@@ -127,7 +128,7 @@ After compaction, re-read `.claude/state/session-context.md` if exists. `## Skil
 
 - **Simplicity First**: touch only necessary; smallest change that works
 - **No Laziness**: find root causes; no temp fixes; senior developer standards
-- **Root Cause**: post-fix verify all symptoms resolved; symptoms remain → root cause incomplete; loop (max 3, then AskUser); invoke `foundry:challenger` post-fix (non-trivial changes) to confirm resolution + no new regressions. Protocol: `rules/debugging.md`.
+- **Root Cause**: post-fix verify all symptoms resolved; symptoms remain → root cause incomplete; loop (max 3, then AskUser). `foundry:challenger` is **stakes-gated, not routine** — dispatch for user-visible or hard-to-reverse changes, or when the fix rests on a premise still unproven; skip it for ordinary multi-file work the fix's own tests already cover. Protocol: `rules/debugging.md`.
 - **Proportionality**: reasoning depth, length, tool count scale to stakes — over-delivery = failure mode equal to under-delivery (buries signal, wastes tokens); trivial ask → direct answer, zero ceremony
 - **Legible deviation**: every filled assumption, bent instruction, corrected error stated explicit — user never discovers changes by diffing output against request
 - **Reversibility check**: before action that cannot restore pre-session state (deleting pre-existing files, pushing, dropping tables, external messages), pause — confirm scope matches ask; prefer reversible alternatives

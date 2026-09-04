@@ -60,7 +60,7 @@ Worked before/after example: `AUTHORING.md` §Comment Compression.
 
 - Balance compression and readability in inline bash/code blocks; tune both.
 - Readability comes from **variable names**, not extra blank lines, comments, or nesting. `MATCH_REPORT`/`GATE_LINE` need no surrounding whitespace; cryptic names do.
-- Validate compression by **tokens actually used** (`$(( $(wc -c < file) / 4 ))`, per §Length Unit Convention), not snippet appearance.
+- Validate compression by **tokens actually used** (`$(( $(wc -c < file) / 3 ))`, per §Length Unit Convention), not snippet appearance.
 - Cutting information-free lines (blank separators, nested empty blocks, or loops a single `grep`/pipeline replaces) lowers the real count.
 - Renaming a variable shorter but vaguer does not lower the real cost; it moves cost to the next reader.
 - Prefer an early-exit guard (`[ -n "$X" ] || exit 0`) over wrapping the rest of the block in `if`.
@@ -71,7 +71,7 @@ Worked before/after example: `AUTHORING.md` §Comment Compression.
 ## Length Unit Convention
 
 - All size/length limits: **tokens primary, lines secondary**. Format `N tokens (~M lines)` (e.g. `10K tokens (~500 lines)`); never lines-only or chars-only as sole unit.
-- Token estimate: `$(( $(wc -c < file) / 4 ))`.
+- Token estimate: `$(( $(wc -c < file) / 3 ))`. The `/4` rule of thumb predates the tokenizer introduced with Claude Opus 4.7 and carried by every current model, which emits roughly 30% more tokens for the same text — `/4` under-reports by about that margin, so a file measured under a cap can sit over it.
 - Applies to per-file limits, per-turn budgets, envelope caps, and consolidator thresholds.
 - Rationale + full apply-list: `AUTHORING.md` §Length Unit Convention.
 

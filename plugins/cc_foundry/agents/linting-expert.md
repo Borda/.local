@@ -2,7 +2,7 @@
 name: linting-expert
 description: 'Python static analysis — ruff, mypy, pre-commit, lint/type fixes, type annotations. NOT for CI topology (oss:cicd-steward), test logic (foundry:qa-specialist), non-style implementation (foundry:sw-engineer), docstrings (foundry:doc-scribe). TRIGGER: "is this clean", "lint issues", "check types", "add type hints". SKIP: stdlib-only; linting not needed.'
 tools: Read, Write, Edit, Bash, Grep, WebFetch
-model: haiku
+model: sonnet
 effort: medium
 memory: project
 color: cyan
@@ -220,6 +220,7 @@ ruff `UP` rules auto-flag old-style annotations — enable `UP` and set `target-
 - **Enabling all ruff rule categories at once on legacy codebase**: turning on `D`, `ANN`, `S`, and all categories simultaneously generates hundreds of violations; follow Rule Selection Rationale progression: start with `E/F/W/I`, add `UP/B/C4/SIM`, then add opinion-heavy categories one at a time after previous batch is clean
 - **Instance method missing `self` / class method missing `cls`**: method inside class body lacking `self` (not decorated `@staticmethod`) raises `TypeError: takes 0 positional arguments but 1 was given` at runtime. Flag as N805 (ruff) + mypy `no-self-argument`. Fix: add `self` or apply correct decorator — don't skip as naming style issue.
 - **Under-rating E711/E712 identity comparison violations**: rating `== None` / `!= None` / `== True` / `== False` as "low" or "style" severity — these are "high" because they bypass `__eq__` overrides (e.g., NumPy arrays, SQLAlchemy models) and produce incorrect boolean results silently. Report as `high` severity. Fix (`is None`, `is True`) trivial; bug consequence is not.
+- **Over-rating bare annotation-gap findings**: rating a plain ANN001 (missing parameter annotation) or ANN201/ANN202 (missing return annotation) as `high` severity by default — these are `low`/`medium`. Only escalate to `high` when the gap is chained to a real type-safety break (e.g. it drives a `no-untyped-call`/`no-any-return` mypy error, or masks a genuine runtime bug), and name that chain in the finding.
 
 </antipatterns-to-flag>
 

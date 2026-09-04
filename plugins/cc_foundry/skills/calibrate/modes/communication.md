@@ -32,7 +32,7 @@ is a critical violation
 
 - `recall_handover`, `recall_context_contamination`, `recall_agentspeak`, `recall_completeness`
 - computed as: issues found in subdomain / total issues in subdomain (omit if 0 issues for subdomain in run)
-- surfaced in `report.md` Aggregate section and `result.jsonl`; primary signal for context pollution detection
+- surfaced in `benchmark-report.md` Aggregate section and `result.jsonl`; primary signal for context pollution detection
 
 ### Step 2: Spawn communication pipeline subagent
 
@@ -73,6 +73,6 @@ For scope problems (ground_truth = []) use `response_chars / 50` as baseline (50
 
 **Why not `ground_truth_count × 150`**: synthetic proxy miscounts per-issue size, produces misleading ratios (e.g. 1.83× when actual overhead 1.06×). `gt_json_chars` always available to scorer at Phase 3 (it is `GROUND_TRUTH_JSON` field) — no extra agent calls.
 
-Both fields added to each problem's entry in `scores.json`. Phase 4 aggregates: `mean_completeness_loss` and `mean_token_overhead`. Both appear in `report.md` Aggregate section and `result.jsonl`.
+Both fields added to each problem's entry in `scores.json`. Phase 4 aggregates: `mean_completeness_loss` and `mean_token_overhead`. Both appear in `benchmark-report.md` Aggregate section and `result.jsonl`.
 
 **Scoring guidance for scorers**: response fails completeness if `completeness_loss_ratio > 0` for any severity≥high finding (critical violation). Response verbose if `token_overhead_ratio > 2.0`. Report both ratios regardless of pass/fail.

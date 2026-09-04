@@ -9,13 +9,13 @@ Thresholds: agents > 300 lines (~4 k tokens) · skill SKILL.md > 600 lines (~8 k
 > **Line count = human-readable proxy; token count = true measure.** Thresholds guide human review — not actual context budget. Short sentences + short lines preferred: easier to read AND cheaper per logical unit. Collapsing multiple short lines into one long line does NOT reduce token cost and destroys readability. Fix = remove or distill content. Collapsing lines is not a fix.
 
 ```bash
-# bytes / 4 ≈ tokens (1 token ≈ 4 bytes in English markdown)
+# bytes / 3 ≈ tokens (current tokenizer; /4 under-reports ~30%)
 printf "%-52s %8s %8s\n" "FILE" "~TOKENS" "LINES"
 for f in .claude/agents/*.md; do # timeout: 5000
     [ -f "$f" ] || continue
     lines=$(wc -l <"$f" | tr -d ' ')
     bytes=$(wc -c <"$f" | tr -d ' ')
-    est=$((bytes / 4))
+    est=$((bytes / 3))
     [ "$est" -gt 4000 ] &&
     printf "⚠ OVER BUDGET: agents/%s — ~%d tokens / %d lines (limit: ~4 k)\n" "$(basename "$f")" "$est" "$lines" ||
     printf "  %-50s %8d %8d\n" "agents/$(basename "$f")" "$est" "$lines"
@@ -24,7 +24,7 @@ for f in .claude/skills/*/SKILL.md; do
     [ -f "$f" ] || continue
     lines=$(wc -l <"$f" | tr -d ' ')
     bytes=$(wc -c <"$f" | tr -d ' ')
-    est=$((bytes / 4))
+    est=$((bytes / 3))
     [ "$est" -gt 8000 ] &&
     printf "⚠ OVER BUDGET: skills/%s/SKILL.md — ~%d tokens / %d lines (limit: ~8 k)\n" "$(basename "$(dirname "$f")")" "$est" "$lines" ||
     printf "  %-50s %8d %8d\n" "skills/$(basename "$(dirname "$f")")/SKILL.md" "$est" "$lines"
@@ -33,7 +33,7 @@ for f in .claude/rules/*.md; do
     [ -f "$f" ] || continue
     lines=$(wc -l <"$f" | tr -d ' ')
     bytes=$(wc -c <"$f" | tr -d ' ')
-    est=$((bytes / 4))
+    est=$((bytes / 3))
     [ "$est" -gt 2500 ] &&
     printf "⚠ OVER BUDGET: rules/%s — ~%d tokens / %d lines (limit: ~2.5 k)\n" "$(basename "$f")" "$est" "$lines" ||
     printf "  %-50s %8d %8d\n" "rules/$(basename "$f")" "$est" "$lines"

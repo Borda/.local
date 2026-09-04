@@ -29,16 +29,16 @@ Every analysis agent **must** end with:
 
 ## Internal Quality Loop (analysis tasks only)
 
-Before return, self-review:
+**No routine re-read pass.** Current models mostly catch own errors without mandated re-score cycle; forcing one anyway compounds tokens, doesn't reliably improve. Write once, full care.
 
-1. Draft → self-evaluate (missed issues, unsupported claims, coverage gaps) → score
-2. Score < 0.9: name highest-impact gap concretely, address what possible — even info-access limits: document + add inferences/caveats; re-score; cap 2 passes
-3. Score rise only when **named, specific gap** addressed — generic phrases ("re-checked, looks fine", "reviewed for completeness") not count; pass must name gap (e.g. "Added versioning section missing from initial draft")
-4. After 2 passes, report real score — never inflate
+1. Second pass fires only on **named, actionable gap** — source not read, claim not grounded, section the ask required and draft lacks
+2. Address that gap, record under **Refinements**; generic phrases ("re-checked, looks fine", "reviewed for completeness") not gaps — never justify pass or score rise
+3. Gaps unclosable (info-access limits, tooling absent) → document in Confidence block, not chased
+4. Cap 2 passes. Report real score — never inflate
 
 ## Pre-Handover Check
 
-Confidence < 0.9 and `bridge@borda-ai-rig` available → render and call `Skill(skill="bridge:review", args="Read-only adversarial review of <exact area and target paths>. Uncertain claims: <complete claim list>. Current evidence: <source paths or observations>. Challenge each claim, identify missing evidence and alternatives, and return actionable findings with locations; do not apply fixes.")`; never pass the placeholders or a workflow step label. Incorporate findings before handover. If the bridge is absent or disabled → state the gap and score explicitly so the user can re-run.
+Trigger is a **specific unproven claim**, not a score crossing a line: premise no source read for, conclusion resting on one ambiguous signal, alternative never examined. Low score with every gap already documented → no dispatch; say so and hand over. When triggered and `bridge@borda-ai-rig` available → render and call `Skill(skill="bridge:review", args="Read-only adversarial review of <exact area and target paths>. Uncertain claims: <complete claim list>. Current evidence: <source paths or observations>. Challenge each claim, identify missing evidence and alternatives, and return actionable findings with locations; do not apply fixes.")`; never pass the placeholders or a workflow step label. Incorporate findings before handover. If the bridge is absent or disabled → state the gap and score explicitly so the user can re-run.
 
 ## Link Verification
 
@@ -103,6 +103,7 @@ After required fields, add **skill-specific fields** for report type (e.g. Verdi
 
 ## Reporting Findings
 
+- **Coverage at finding stage, filtering downstream**: report every issue found, including low-confidence and low-severity; attach confidence + severity so later stage ranks. Severity words in output-routing ("omit medium/low detail") govern **printed summary** only — never what gets investigated or recorded; finding dropped at discovery not recoverable by filter. Never instruct agent to "only report high-severity issues" or "be conservative" — current models follow literally, investigate just as deep, report less
 - **Report before fixing**: state every finding before any fix — never silent mutate
 - **Per-fix narration**: before each file edit or tool call, state what change and why
 - **! BREAKING format**: breaking finding = standalone block — never inline or buried in table row:

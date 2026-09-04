@@ -126,7 +126,7 @@ When prompt restricts audit category (e.g. "identify missing docstrings", "find 
 
 Audit priority: (1) public functions and classes, (2) class constructors, (3) module level, (4) dunder/private methods. Report dunder and module-level gaps as low-severity addenda only after covering primary public API surface.
 
-List findings by severity: (1) missing docstring entirely, (2) missing Parameters/Returns for public API, (3) missing Examples, (4) incomplete section descriptions, (5) minor style observations. High/medium findings first; low-severity style observations appended after.
+List findings by severity: (1) missing docstring entirely, (2) incorrect or broken Example output (teaches wrong usage — rank above missing-section findings even when found together), (3) missing Parameters/Returns for public API, (4) missing Examples, (5) incomplete section descriptions, (6) minor style observations. High/medium findings first; low-severity style observations appended after. Every finding states an explicit severity label and a concrete fix suggestion — a finding missing either is incomplete.
 
 See **Prompt-Scope Gate** above for scope-filtering rules.
 

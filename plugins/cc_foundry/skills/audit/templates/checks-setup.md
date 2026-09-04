@@ -420,7 +420,7 @@ printf "  Rules dir total:    %d bytes
 printf "  Global ~/.claude/:  %d bytes
 " "$GLOBAL_CLAUDE"
 printf "  Total always-loaded: %d bytes (~%d tokens)
-" "$TOTAL" "$((TOTAL / 4))"
+" "$TOTAL" "$((TOTAL / 3))"
 
 if [ "$TOTAL" -gt 102400 ]; then
     printf "! FAIL Check 34a — total always-loaded config %d bytes (> 100 KB)
@@ -430,7 +430,7 @@ elif [ "$TOTAL" -gt 51200 ]; then
 " "$TOTAL"
 else
     printf "✓ OK Check 34 — config overhead %d bytes (~%d tokens)
-" "$TOTAL" "$((TOTAL / 4))"
+" "$TOTAL" "$((TOTAL / 3))"
 fi
 
 if [ -d .claude/rules ]; then

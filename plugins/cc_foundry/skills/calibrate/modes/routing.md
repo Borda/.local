@@ -45,4 +45,4 @@ Verdict `incomplete` (empty agent roster — pipeline Phase 1 hard stop): omit t
 
 Routing accuracy < 0.90 or hard accuracy < 0.80 → update descriptions for confused pairs → `/calibrate routing` to verify. Max 3 re-run cycles; still below threshold after third → surface persistent confusion pairs to user for manual review.
 
-Proposals written to: `.reports/calibrate/<TIMESTAMP>/routing/report.md` — Proposals section has targeted wording per confused pair.
+Proposals written to: `.reports/calibrate/<TIMESTAMP>/routing/benchmark-report.md` — Proposals section has targeted wording per confused pair.

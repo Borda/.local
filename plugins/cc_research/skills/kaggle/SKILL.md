@@ -4,7 +4,7 @@ description: "Generate a Kaggle competition notebook as a Jupytext `# %%` Python
 argument-hint: <competition-name> [<url-or-description>] [--type classification|regression|segmentation|detection|tabular] [--eda-only] [--inference-only] [--offline-setup] [--resume <existing.py>] [--keep "<items>"]
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, WebFetch, WebSearch, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
 disable-model-invocation: true
-effort: high
+effort: xhigh
 ---
 
 <objective>

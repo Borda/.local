@@ -174,6 +174,8 @@ Producing a standalone `.claude` config health report: run `cat "${CLAUDE_PLUGIN
 
 **Fix directive required**: every finding bullet must end with `→ Fix: <one-line action>`. If no actionable fix (e.g., gap requiring calibration batch change), write `→ Fix: n/a — calibration batch update needed`. Omitting fix directive is format violation.
 
+**Precision discipline**: every finding row must name the specific `<evaluation-criteria>` bullet or `<antipatterns-to-flag>` pattern it violates. A row with no named check still gets filed — never silently dropped — but labelled `[unlisted criterion]` instead of scored as a checklist hit, so it's visible without inflating precision against the fixed check list. Repeated low-severity pattern instances within one file (e.g., LLM-First Formatting 41a/41b/41c hits, or the same Bash-compression pattern recurring across a file) fold into one row per file ("N instances of X — see lines ...") rather than one row per occurrence. This bar does not apply to the routing-boundaries scope guard — an out-of-scope target still returns zero findings, unaffected.
+
 Score = coverage estimate; `Gaps` = primary signal. `/calibrate` measures score-vs-recall tracking over time.
 
 Confidence scoring follows `quality-gates.md` (canonical). Curator-specific calibration:
@@ -248,6 +250,8 @@ Default: read-only audit. Write/Edit only when prompt explicitly lists fixes.
 
 - Cross-refs to non-existent agents (`"see foo-agent"` when `foo-agent.md` doesn't exist)
 
+- Rule stated against one example but meant to apply broadly, with the breadth left implicit — current models read instructions literally and do not generalize an instruction from one item to another, so an unscoped rule binds only the case it names. Fix: state the scope in the rule ("every section, not just the first", "all skills and agents without exception")
+
 - Same YAML snippet copy-pasted into 2+ agents instead of cross-referenced
 
 - Workflow step numbers with gaps (1, 2, 4 — step 3 missing)
@@ -261,10 +265,21 @@ Default: read-only audit. Write/Edit only when prompt explicitly lists fixes.
 | Plan-gated — high-stakes design/config decisions | `opusplan` | foundry:solution-architect, foundry:curator, oss:shepherd |
 | Implementation | `opus` | foundry:sw-engineer, research:scientist, foundry:perf-optimizer |
 | Adversarial reasoning | `opus` | foundry:challenger |
-| Diagnostics / writing | `sonnet` | foundry:web-explorer, foundry:doc-scribe, research:data-steward, oss:cicd-steward, foundry:creator, foundry:qa-specialist |
-| High-freq diagnostics | `haiku` | foundry:linting-expert — cost optimization |
+| Diagnostics / writing | `sonnet` | foundry:web-explorer, foundry:doc-scribe, research:data-steward, oss:cicd-steward, foundry:creator, foundry:qa-specialist, foundry:linting-expert |
 
-Never use `sonnet` for agents making complex multi-file design decisions; `foundry:creator` and `foundry:qa-specialist` are execution/pattern-matching roles — `sonnet` is correct.
+Aliases resolve to the 5 family: `opus`→Opus 5, `sonnet`→Sonnet 5, `haiku`→latest Haiku, `fable`→Fable 5.1, `best`→latest Fable else opus, `opusplan`→hybrid (Opus in plan mode, Sonnet in execution). `opus[1m]`/`sonnet[1m]` request the 1M-context variant.
+
+**Effort is the primary cost knob, tier second.** Within the 5 family the tiers sit closer in capability than the 4.x tiers did, so a tier change is the blunt lever and `effort` the precise one — reach for effort first. Consequences that follow from that, not from the table above:
+
+- `fable` is the reserve tier — Anthropic positions it for demanding reasoning and long-horizon agentic work, or when evals on `opus` at raised effort still fall short. No standing agent assignment; escalate deliberately.
+
+- `effort` accepts `low`, `medium`, `high` (default), `xhigh`, `max`. `xhigh` is the setting for the hardest coding and long-horizon agentic work; `low`/`medium` are the everyday cost lever wherever quality holds. An unrecognized value is **silently ignored** and the session level inherited — a typo degrades without erroring, so read the value, don't assume it took.
+
+- Haiku 4.5 does not accept `effort` at all — an `effort:` key on a haiku-tier agent is inert, not a setting.
+
+- Never use `sonnet` for agents making complex multi-file design decisions; `foundry:creator` and `foundry:qa-specialist` are execution/pattern-matching roles — `sonnet` is correct.
+
+- Tier downgrades justified by generation-level parity claims are **not** evidence for a specific agent. Measure with `/foundry:calibrate <agent> --full --ab-test` before moving any agent down a tier.
 
 - `haiku` for focused-execution agents acceptable and economical — do not flag as finding
 

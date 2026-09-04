@@ -639,6 +639,8 @@ Return ONLY: {"status":"done","files_updated":N}
 
 **For content-edit:** Run propagation only if entity's `description:` frontmatter changed — propagate new description to any MEMORY.md or README summary lines that quote it. Skip if only internal content changed.
 
+**Severity/priority labeling** — for every cross-reference decision above (rename fix, delete flag, content-edit propagate-or-skip), state a priority: **high** (genuine reference — invocation, routing, or discovery breaks if missed) or **low** (cosmetic/consistency-only, e.g. mention inside a code example or an unrelated similarly-named entity). Carry the priority into the Step 10 report (Files Changed table / Rename Occurrence Validation buckets).
+
 ### Rename occurrence validation (rename mode only)
 
 ```bash
