@@ -12,6 +12,10 @@ Call `TaskUpdate(status="completed")` **before** any long output block (audit re
 
 Correct sequence: `TaskUpdate(completed)` → emit output. Wrong: emit output → `TaskUpdate(completed)`.
 
+### Frozen plan during build
+
+Once a `.plans/active/todo_*.md` or `plan_*.md` is approved and implementation starts, treat it as read-only for implementation-phase agents — only a post-build sync step (move to `.plans/closed/results_*.md`, or explicit user-directed plan revision) may edit it. An implementer that can silently rewrite the spec to match whatever it built defeats the spec's purpose as an independent verification target. If the build reveals the plan itself is wrong, stop and surface via `AskUserQuestion` rather than quietly editing the plan to fit.
+
 ### Subagent task prohibition
 
 Tasks created inside subagents are session-local — invisible in parent `TaskList`. Never useful for tracking.

@@ -18,6 +18,8 @@ Never patch symptom. Symptoms = evidence — treat as signal, not problem.
 
 **Loop bound**: max 3 diagnosis-fix iterations (matches §Safety breaks default); at limit — stop, report remaining symptoms, invoke `AskUserQuestion` before continuing.
 
+**Early-stop on repeated failure signature**: if a fix attempt draws the *same* rejection/failure signature (same error string, same failing assertion, same reviewer objection) twice in a row, stop immediately — do not wait for the iteration cap. A repeat means the last attempt added no new information toward resolution; a 3rd identical try only spends tokens. Report both attempts and the unchanged signature, then `AskUserQuestion`.
+
 ### Falsification check
 
 Before marking fix complete: "Could this symptom have a second independent root cause not addressed by this fix?" If yes → diagnose and fix that cause too before closing.
@@ -25,6 +27,8 @@ Before marking fix complete: "Could this symptom have a second independent root 
 ### Post-fix challenger invocation
 
 **Dispatch rule**: post-fix re-invoke is fresh orchestrator-initiated dispatch — not nested call from within active challenger run. Challenger's SKIP rule ("already inside active challenger context") still applies if currently executing inside challenger review; orchestrator waits for challenger to complete, then dispatches new instance for post-fix verification.
+
+**Never dispatch challenger as `subagent_type: "fork"`.** A fork inherits the full implementer conversation — its reasoning, its self-assessment of success, its framing of what the symptom was. Verification run inside that inherited context tends toward confirming the implementer's own conclusion rather than independently re-deriving it. Challenger must get only the diff, the original symptom description, and the spec — no implementer reasoning trail — matching the "the reviewer doesn't inherit the implementer's conversation" isolation principle.
 
 After any non-trivial fix (multi-file change, behaviour change, fix to previously-masked bug):
 
