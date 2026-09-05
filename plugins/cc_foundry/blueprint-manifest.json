@@ -142,7 +142,7 @@
     },
     "06e5d102b3239e333d0cf374eac55fd8cd7df7ff47b8be6d01573293e3032d15": {
       "kind": "block",
-      "src": "agents/web-explorer.md:210"
+      "src": "agents/web-explorer.md:212"
     },
     "073057f2f7cde4abc84b8ce750fff9e934d55660d1ffa5ee4fa65a2c36301d90": {
       "kind": "command",
@@ -2266,7 +2266,7 @@
     },
     "674db4f5b2d3a90d26140930a56d34450b63c974091ae97c57c17bc3b3e270a3": {
       "kind": "block",
-      "src": "agents/web-explorer.md:220"
+      "src": "agents/web-explorer.md:222"
     },
     "6778b350434a8135f4d04441382d6e3c4c6ba6abde3f1eb8cb8f886d8f0e2677": {
       "kind": "command",
@@ -3570,7 +3570,7 @@
     },
     "a351d2b216f1e86c6a88616ad9f6a88c669dc67e7f514954e7aeeaaf4263ab14": {
       "kind": "command",
-      "src": "agents/web-explorer.md:220"
+      "src": "agents/web-explorer.md:222"
     },
     "a3644d697018b659879a1b33e71bca1f56feb838b22d8531b2a2d09f765d3251": {
       "kind": "command",
@@ -4594,7 +4594,7 @@
     },
     "cefa1dd48e1109218452d63ba3ca5da19f74f21af41aca079af7d81f725f9077": {
       "kind": "command",
-      "src": "agents/web-explorer.md:220"
+      "src": "agents/web-explorer.md:222"
     },
     "cf27e9e5caa5819655a18c3254de866e1b00dbecc08678f0437d7f328bbabd38": {
       "kind": "command",
@@ -5553,6 +5553,6 @@
       "src": "skills/investigate/SKILL.md:100"
     }
   },
-  "plugin": "cc_foundry@0.51.3",
+  "plugin": "cc_foundry@0.52.0",
   "schema": 1
 }

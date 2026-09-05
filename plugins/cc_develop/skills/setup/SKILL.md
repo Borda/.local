@@ -1,6 +1,6 @@
 ---
 name: setup
-description: "Post-install setup for the develop plugin. Run once after installing on a new machine, or after a plugin version upgrade, to deliver this plugin's rules/*.md into ~/.claude/rules/ as namespaced symlinks. TRIGGER when: user installed or upgraded the develop plugin and its rules are not loading; phrases: 'set up develop', 'develop rules not loading', 'after upgrading develop'. SKIP: settings/statusLine/TEAM_PROTOCOL setup (use /foundry:setup (requires `foundry` plugin)); editing rule content (edit the plugin source)."
+description: "Post-install setup for the develop plugin. Run once after installing on a new machine, or after a plugin version upgrade, to deliver this plugin's rules/*.md into ~/.claude/rules/ as namespaced symlinks and merge its own permissions.allow and permissions.deny entries into ~/.claude/settings.json. TRIGGER when: user installed or upgraded the develop plugin and its rules are not loading, or its deny rules are not blocking; phrases: 'set up develop', 'develop rules not loading', 'merge develop permissions', 'after upgrading develop'. SKIP: statusLine/TEAM_PROTOCOL/plugin-cache setup (use /foundry:setup (requires `foundry` plugin)); editing rule content (edit the plugin source)."
 argument-hint: '[--approve]'
 allowed-tools: Bash, AskUserQuestion
 effort: low
@@ -9,7 +9,7 @@ model: sonnet
 
 <objective>
 
-Deliver develop's rules to Claude's user-level rule namespace.
+Deliver develop's rules to Claude's user-level rule namespace, and its own permission rules to Claude's settings.
 
 | Action | What happens |
 | -- | -- |
@@ -18,6 +18,8 @@ Deliver develop's rules to Claude's user-level rule namespace.
 | Link whose source left the plugin | removed |
 | Real file or foreign link at a destination | preserved, reported as conflict |
 | Anything outside `~/.claude/rules/` | never touched |
+| `.claude-plugin/permissions-{allow,deny}.json` → `~/.claude/settings.json` | merged additively; nothing removed |
+| Any other key of `~/.claude/settings.json` | never touched |
 
 **Why namespaced?** Claude loads user rules from one flat directory. Four plugins ship a `rules/quality-gates.md`; installing source basenames would collide. Every rule installs as `<plugin>-<source-name>.md`, so `quality-gates.md` becomes `develop-quality-gates.md`. The prefix is inert — verified against Claude Code 2.1.220 that a filename prefix changes neither unconditional loading nor `paths:` frontmatter matching.
 
@@ -25,7 +27,7 @@ Deliver develop's rules to Claude's user-level rule namespace.
 
 **Why does develop deliver only its own rules?** Each plugin installs independently. A plugin that shipped a sibling's rules would break standalone installation and couple releases.
 
-NOT for: `~/.claude/settings.json`, statusLine, `TEAM_PROTOCOL.md`, or plugin-cache purging — those are `/foundry:setup` (requires `foundry` plugin). Writes nothing under `~/.codex/`.
+NOT for: statusLine, `TEAM_PROTOCOL.md`, or plugin-cache purging — those are `/foundry:setup` (requires `foundry` plugin). Of `~/.claude/settings.json` only the `permissions.allow` and `permissions.deny` arrays are touched, and only additively. Writes nothing under `~/.codex/`.
 
 </objective>
 
@@ -94,10 +96,71 @@ Otherwise invoke `AskUserQuestion`, listing each conflicting destination and its
 
 On **(b)**, re-run Step 3's command with `--approve` appended and report the resulting `replaced (--approve):` lines. On (a) or (c), report which rules remain undelivered.
 
-## Step 5: Report
+## Step 5: Merge permissions.allow and permissions.deny
+
+This plugin ships its own `permissions-allow.json` and `permissions-deny.json`. Claude Code does not read them from the plugin manifest, so without this step they are inert files — the allow entries never suppress a prompt and the deny entries never block anything.
+
+Merge is additive and idempotent: `unique` keeps entries already present from being duplicated, and no entry is ever removed. Each plugin merges only its own pair.
+
+Create the file when this is a first install, and back it up before any write — a standalone install may reach this step with no `~/.claude/settings.json` at all:
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+SETUP_BAK_TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+echo "$SETUP_BAK_TS" > "${TMPDIR:-/tmp}/develop-setup-bak-ts-${CSID}"
+[ -f ~/.claude/settings.json ] || printf '{}\n' > ~/.claude/settings.json  # created in-bash — no Write-tool prompt, headless-safe
+cp ~/.claude/settings.json "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}"  # timeout: 5000
+```
+
+Report: "Backed up ~/.claude/settings.json → ~/.claude/settings.json.bak-<timestamp>"
+
+Writes merged `permissions.allow` array:
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}"
+_jq_result=$(jq --slurpfile perms "$PLUGIN_ROOT/.claude-plugin/permissions-allow.json" \
+    '.permissions.allow = ((.permissions.allow // []) + $perms[0] | unique)' \
+    ~/.claude/settings.json)  # timeout: 5000
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/develop_setup_tmp.json-${CSID}" && mv "${TMPDIR:-/tmp}/develop_setup_tmp.json-${CSID}" ~/.claude/settings.json || { printf "! jq failed merging permissions.allow — settings.json unchanged\n"; exit 1; }
+```
+
+Report: "Added N new permissions.allow entries (M already present)."
+
+Writes merged `permissions.deny` array:
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}"
+_jq_result=$(jq --slurpfile deny "$PLUGIN_ROOT/.claude-plugin/permissions-deny.json" \
+    '.permissions.deny = ((.permissions.deny // []) + $deny[0] | unique)' \
+    ~/.claude/settings.json)  # timeout: 5000
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/develop_setup_tmp.json-${CSID}" && mv "${TMPDIR:-/tmp}/develop_setup_tmp.json-${CSID}" ~/.claude/settings.json || { printf "! jq failed merging permissions.deny — settings.json unchanged\n"; exit 1; }
+```
+
+Report: "Added N new permissions.deny entries (M already present)."
+
+Deny wins over allow in Claude Code, so merging both in either order yields the same effective policy.
+
+Validate what was written; settings.json that no longer parses is restored from the backup taken above:
+
+```bash
+jq empty ~/.claude/settings.json  # timeout: 5000
+```
+
+Zero exit → continue to Step 6. Non-zero exit → restore, report the failure, and stop:
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r SETUP_BAK_TS < "${TMPDIR:-/tmp}/develop-setup-bak-ts-${CSID}" 2>/dev/null || SETUP_BAK_TS=$(ls -t "$HOME/.claude/settings.json.bak-"* 2>/dev/null | head -1 | sed 's/.*\.bak-//')
+cp "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}" ~/.claude/settings.json  # timeout: 5000
+```
+
+## Step 6: Report
 
 - Rules linked: N → `~/.claude/rules/develop-*.md`
 - Unchanged: N · Obsolete removed: N · Conflicts kept: N (name each)
+- Permissions: N allow entries added, N deny entries added
 - Failures: N (name each; a failure means the platform refused the symlink — rules are never copied as a fallback)
 
 </workflow>
@@ -110,6 +173,6 @@ On **(b)**, re-run Step 3's command with `--approve` appended and report the res
 
 **Testing**: setup is reachable only as `/develop:setup` after the plugin is installed. To exercise it locally, bump `version` in `plugins/cc_develop/.claude-plugin/plugin.json`, run `claude plugin install develop@borda-ai-rig` from the repo root to refresh the cache, then invoke the skill. `bin/sync_rules.py` itself is covered by `plugins/cc_develop/tests/test_sync_rules.py` against disposable home directories.
 
-**Follow-up gate omitted** — setup is one-shot; Step 5 is terminal output.
+**Follow-up gate omitted** — setup is one-shot; Step 6 is terminal output.
 
 </notes>

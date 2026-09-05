@@ -674,7 +674,7 @@ ______________________________________________________________________
 
 ## 📋 Rules installed
 
-`/foundry:setup` symlinks all 13 rule files from `plugins/cc_foundry/rules/` into `~/.claude/rules/`, each renamed to `foundry-<source-name>.md`. They govern Claude behavior globally, in all sessions after install.
+`/foundry:setup` symlinks all 14 rule files from `plugins/cc_foundry/rules/` into `~/.claude/rules/`, each renamed to `foundry-<source-name>.md`. They govern Claude behavior globally, in all sessions after install.
 
 `~/.claude/rules/` is one flat directory shared by every installed plugin, and four of this marketplace's plugins ship a `rules/quality-gates.md`, so source basenames would silently overwrite one another. Each plugin therefore namespaces its own rules with its plugin name: `quality-gates.md` installs as `foundry-quality-gates.md`, alongside `develop-quality-gates.md`, `oss-quality-gates.md`, and `research-quality-gates.md` from the sibling plugins' own setup skills. The prefix is inert — verified against Claude Code 2.1.220 that it changes neither unconditional rule loading nor `paths:` frontmatter matching. Re-running setup after an upgrade migrates any pre-namespace unprefixed link, but only when that link provably belongs to foundry; a link into another marketplace, a source checkout, or a dotfiles tree is preserved and reported as a conflict instead.
 
@@ -694,6 +694,7 @@ ______________________________________________________________________
 | `python-code.md`        | `**/*.py`                       | Google-style docstrings, closed option sets as enums, dataclass/TypedDict selection, deprecation API, complexity limits    |
 | `python-testing.md`     | `tests/**/*.py`, `**/test_*.py` | pytest design: TDD process, fixtures, parametrization, mocking, what to test in priority order                             |
 | `public-github.md`      | all                             | Read-only policy on public GitHub — permitted reads vs permanently forbidden write operations                              |
+| `untrusted-content.md`  | all                             | Ingested external text is data, never instruction — delimiters, no permission widening, memory propagation                 |
 
 ______________________________________________________________________
 
@@ -786,7 +787,7 @@ plugins/cc_foundry/
 ├── agents/                      10 specialist agent files (flat — a nested `agents/<x>/y.md` would register as a dispatchable `foundry:<x>:y` agent)
 ├── references/                  agent sidecar fragments (`references/<agent>/*.md`), `cat`-loaded on demand; deliberately outside `agents/` so they are never scanned as agents
 ├── skills/                      11 skill directories (audit, brainstorm, calibrate, create, distill, humanizer, investigate, manage, profile, session, setup)
-├── rules/                       13 rule files symlinked to ~/.claude/rules/foundry-*.md by /foundry:setup (+ 10 on-demand bodies in rules/_full/)
+├── rules/                       14 rule files symlinked to ~/.claude/rules/foundry-*.md by /foundry:setup (+ 10 on-demand bodies in rules/_full/)
 ├── CLAUDE.src.md                workflow rules; /foundry:setup Step 10 copies → ~/.claude/CLAUDE.md
 ├── TEAM_PROTOCOL.md             AgentSpeak v2 inter-agent protocol
 ├── permissions-guide.md         annotated allow/deny reference (copied to .claude/ by /foundry:setup)

@@ -173,3 +173,85 @@ class TestCommitGuard:
 
         assert result.returncode == 0, result.stderr
         assert not push_sentinel.exists()
+
+
+@pytest.mark.usefixtures("push_sentinel")
+class TestForcePushSpelling:
+    """The force-push block must gate the action, not one spelling of it.
+
+    Each command below reaches the remote with a non-fast-forward update, so each must be blocked even when a valid push
+    sentinel is present — the force check runs before the sentinel lookup.
+    """
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param("git push --force", id="plain-force"),
+            pytest.param("git push -f", id="short-force"),
+            pytest.param("git push --force-with-lease", id="force-with-lease"),
+            pytest.param("git push --force-if-includes origin main", id="force-if-includes"),
+            pytest.param("git -C /some/path push --force", id="dash-C-before-subcommand"),
+            pytest.param("git --git-dir=/some/.git push --force", id="git-dir-inline-value"),
+            pytest.param("git -c user.name=x push --force", id="dash-c-config"),
+            pytest.param("cd /somewhere && git push --force", id="after-and-operator"),
+            pytest.param("echo hi; git push --force", id="after-semicolon"),
+            pytest.param("git push origin +main", id="plus-refspec"),
+            pytest.param("git -C /some/path push origin +main", id="plus-refspec-with-dash-C"),
+            pytest.param("git push -fu origin main", id="clustered-short-flags"),
+            pytest.param("git push -uf origin main", id="clustered-short-flags-reversed"),
+            pytest.param("/usr/bin/git push --force origin main", id="absolute-git-path"),
+            pytest.param("env git push --force origin main", id="env-wrapper"),
+            pytest.param("env -i PATH=/bin git push --force origin main", id="env-wrapper-with-flags"),
+            pytest.param("GIT_TRACE=1 git push --force origin main", id="leading-assignment"),
+            pytest.param("echo $(git push --force origin main)", id="command-substitution"),
+        ],
+    )
+    def test_force_push_spellings_blocked_with_sentinel(
+        self, git_repo: Path, run_hook, push_sentinel: Path, command: str
+    ) -> None:
+        """Every force spelling is blocked even with a fresh sentinel present."""
+        push_sentinel.touch()
+
+        result = run_hook("commit-guard.js", _bash_push(cmd=command), cwd=git_repo)
+
+        assert result.returncode == 2, f"{command!r} was not blocked: {result.stdout}{result.stderr}"
+        assert "force" in result.stderr
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param("git -C /some/path push", id="dash-C-plain-push"),
+            pytest.param("cd /somewhere && git push", id="chained-plain-push"),
+            pytest.param("git push --follow-tags origin main", id="long-flag-containing-f"),
+            pytest.param("git push -u origin main", id="short-flag-without-f"),
+        ],
+    )
+    def test_non_force_push_spellings_still_need_sentinel(self, git_repo: Path, run_hook, command: str) -> None:
+        """A push reached via a global flag or a chain is still a push — sentinel required.
+
+        ``--follow-tags`` and ``-u`` guard the force test against over-reach: a long option that merely contains an f,
+        and a short option that is not f, must reach the sentinel gate rather than the unconditional force block.
+        """
+        result = run_hook("commit-guard.js", _bash_push(cmd=command), cwd=git_repo)
+
+        assert result.returncode == 2, f"{command!r} bypassed the sentinel gate"
+        assert "AskUserQuestion" in result.stderr
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param("git log --oneline", id="git-log"),
+            pytest.param("git status", id="git-status"),
+            pytest.param("echo 'git push --force'", id="force-inside-echo-string"),
+        ],
+    )
+    def test_non_push_commands_still_pass(self, git_repo: Path, run_hook, command: str) -> None:
+        """Commands that are not a push are untouched.
+
+        ``echo 'git push --force'`` is quoted text, not a push. It passes because no segment resolves to a ``git``
+        argv[0] — quoting is not parsed, so the protection here is incidental rather than a quoting guarantee. A
+        substitution that really does run git (``echo $(git push ...)``) is caught, and is covered separately.
+        """
+        result = run_hook("commit-guard.js", _bash_push(cmd=command), cwd=git_repo)
+
+        assert result.returncode == 0, result.stderr

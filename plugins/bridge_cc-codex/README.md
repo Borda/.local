@@ -306,6 +306,8 @@ Safety boundaries:
 - Authentication failures, permission denials, unsupported models, and unknown faults are surfaced as structured results or incidents.
 - Timeout and cancellation give POSIX peer groups a two-second cooperative grace, then force termination even when the group leader already exited. Windows invokes `taskkill /T /F` before a leader can exit and orphan its tree; native Windows reparse and tree behavior still require native-host verification.
 - Provider login output is never captured, and rollback never touches credentials.
+- The peer child receives an allowlisted environment, not the caller's: base process keys, provider authentication keys, and on Windows the interpreter start-up keys. Unrelated API keys, cloud credentials, and the session's inter-agent messaging variables are dropped. A host whose proxy or enterprise provider path needs more names them in `BRIDGE_CHILD_ENV_EXTRA` (comma-separated).
+- ! BREAKING — every Codex invocation pins `sandbox_workspace_write.network_access=false`, so an `implement` task that installed a dependency, refreshed a lockfile, or ran a network-touching hook now fails inside the sandbox. The control is Codex-side only; the Claude child is constrained by permission mode instead.
 
 > The bridge never bypasses host permission prompts, invents a credential, retries a write-capable timeout, or silently replaces a requested effort tier.
 

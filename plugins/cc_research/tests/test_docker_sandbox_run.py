@@ -4,6 +4,8 @@ Covers:
     - ``build_explore_command`` / ``build_verify_command`` argv shape (pure functions).
     - ``main()``: mode dispatch, ``SANDBOX_NETWORK`` override, bad-arg exit 2, return-code forwarding,
       missing-docker handling, ``SANDBOX_TIMEOUT_SEC`` cap and the post-timeout container kill.
+    - Resource quotas: default ``--cpus``/``--memory``/``--pids-limit`` in both modes, their
+      ``SANDBOX_*`` overrides, and the fallback that keeps a malformed override from disabling them.
 """
 
 from __future__ import annotations
@@ -49,6 +51,70 @@ def test_build_verify_command_network_override() -> None:
     cmd = ds.build_verify_command("echo hi", "host", "/proj")
     idx = cmd.index("--network")
     assert cmd[idx + 1] == "host"
+
+
+# ---------- Resource quotas ----------
+
+
+@pytest.mark.parametrize(
+    "builder",
+    [
+        pytest.param(ds.build_explore_command, id="explore"),
+        pytest.param(ds.build_verify_command, id="verify"),
+    ],
+)
+def test_builders_carry_default_resource_quotas(builder: Any) -> None:
+    """Both modes cap CPU, memory and process count, not just wall-clock time.
+
+    The wall-clock backstop only reaps a container at the deadline; without these quotas a runaway command may saturate
+    the host for the whole timeout window. Explore mode is not exempt — an exploratory script can wedge a laptop exactly
+    like a metric command.
+    """
+    cmd = builder("x.py", "none", "/proj")
+    assert cmd[cmd.index("--cpus") + 1] == "2"
+    assert cmd[cmd.index("--memory") + 1] == "2g"
+    assert cmd[cmd.index("--pids-limit") + 1] == "512"
+
+
+@pytest.mark.parametrize(
+    "builder",
+    [
+        pytest.param(ds.build_explore_command, id="explore"),
+        pytest.param(ds.build_verify_command, id="verify"),
+    ],
+)
+def test_builders_render_supplied_limits(builder: Any) -> None:
+    """Explicit ``SandboxLimits`` reach the argv of both builders instead of the defaults."""
+    limits = ds.SandboxLimits(cpus=0.5, memory="256m", pids=64)
+    cmd = builder("x.py", "none", "/proj", limits=limits)
+    assert cmd[cmd.index("--cpus") + 1] == "0.5"
+    assert cmd[cmd.index("--memory") + 1] == "256m"
+    assert cmd[cmd.index("--pids-limit") + 1] == "64"
+
+
+@pytest.mark.parametrize(
+    "env,expected",
+    [
+        pytest.param({}, ds.SandboxLimits(), id="unset-uses-defaults"),
+        pytest.param({"SANDBOX_CPUS": ""}, ds.SandboxLimits(), id="empty-uses-defaults"),
+        pytest.param({"SANDBOX_CPUS": "1.5"}, ds.SandboxLimits(cpus=1.5), id="cpus-override"),
+        pytest.param({"SANDBOX_MEMORY": "512m"}, ds.SandboxLimits(memory="512m"), id="memory-override"),
+        pytest.param({"SANDBOX_PIDS_LIMIT": "64"}, ds.SandboxLimits(pids=64), id="pids-override"),
+        pytest.param({"SANDBOX_CPUS": "bogus"}, ds.SandboxLimits(), id="cpus-malformed-falls-back"),
+        pytest.param({"SANDBOX_CPUS": "-1"}, ds.SandboxLimits(), id="cpus-negative-falls-back"),
+        pytest.param({"SANDBOX_MEMORY": "2 gigs"}, ds.SandboxLimits(), id="memory-malformed-falls-back"),
+        pytest.param({"SANDBOX_MEMORY": "0g"}, ds.SandboxLimits(), id="memory-zero-falls-back"),
+        pytest.param({"SANDBOX_PIDS_LIMIT": "0"}, ds.SandboxLimits(), id="pids-zero-falls-back"),
+        pytest.param({"SANDBOX_PIDS_LIMIT": "0.5"}, ds.SandboxLimits(), id="pids-truncating-to-zero-falls-back"),
+    ],
+)
+def test_resolve_limits_falls_back_instead_of_raising(env: dict[str, str], expected: ds.SandboxLimits) -> None:
+    """A malformed or non-positive override falls back to the default rather than raising.
+
+    These quotas are containment backstops: a typo in the environment must not be able to
+    disable one, and must not abort the run either — the same contract ``_resolve_timeout`` has.
+    """
+    assert ds._resolve_limits(env) == expected
 
 
 # ---------- Destructive-token guard ----------
@@ -142,6 +208,12 @@ def test_golden_explore_invocation_constructs_expected_docker_argv(captured_run:
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
         "--read-only",
+        "--cpus",
+        "2",
+        "--memory",
+        "2g",
+        "--pids-limit",
+        "512",
         "-v",
         "/proj:/workspace:ro",
         "--tmpfs",
@@ -170,6 +242,12 @@ def test_golden_verify_invocation_constructs_expected_docker_argv(captured_run: 
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
         "--read-only",
+        "--cpus",
+        "2",
+        "--memory",
+        "2g",
+        "--pids-limit",
+        "512",
         "-v",
         "/proj:/workspace:ro",
         "-v",
@@ -360,3 +438,19 @@ def test_main_timeout_without_cidfile_content_still_returns_124(
     assert rc == 124
     assert len(calls) == 1
     assert "killing container" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("mode", ["explore", "verify"])
+def test_main_applies_quota_env_overrides(captured_run: list[list[str]], mode: str) -> None:
+    """The ``SANDBOX_*`` quota overrides reach the docker argv in both modes.
+
+    A caller running several sandboxes at once needs to shrink each one's share; this is the path that lets them, and it
+    must work identically for explore and verify.
+    """
+    env = {"SANDBOX_CPUS": "1", "SANDBOX_MEMORY": "512m", "SANDBOX_PIDS_LIMIT": "128"}
+    rc = ds.main(["--mode", mode, "x.py"], env=env, cwd="/proj")
+    assert rc == 0
+    cmd = captured_run[0]
+    assert cmd[cmd.index("--cpus") + 1] == "1"
+    assert cmd[cmd.index("--memory") + 1] == "512m"
+    assert cmd[cmd.index("--pids-limit") + 1] == "128"

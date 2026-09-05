@@ -18,7 +18,7 @@
     },
     "023ced9ee34616fa791dbf1df635a0237af847088ea988644f3ed96ae73fb262": {
       "kind": "command",
-      "src": "skills/setup/SKILL.md:47"
+      "src": "skills/setup/SKILL.md:49"
     },
     "02c4f91a69cfda0e48f307582189d922b46dc29823b8719951e2afe7ed857b79": {
       "kind": "block",
@@ -31,6 +31,10 @@
     "02d9fbcef72c6f9492644da82137f03308f856e59f3fabfb7d3cd5f6315addd8": {
       "kind": "command",
       "src": "skills/feature/SKILL.md:581"
+    },
+    "0369f1bc038432d54e105e7edf3af9c930891383478e09cbab78d9d064334443": {
+      "kind": "command",
+      "src": "skills/setup/SKILL.md:153"
     },
     "03fbd2dbb37afb8ff7469459f153a1f6d09ba65b738c4e8b46197cc215d9ddd5": {
       "kind": "block",
@@ -240,6 +244,10 @@
       "kind": "command",
       "src": "skills/fix/SKILL.md:229"
     },
+    "136605a601b8226b2bf4068ad78b30beb46cb0a8efee607180433d7b2113ff87": {
+      "kind": "command",
+      "src": "skills/setup/SKILL.md:119"
+    },
     "1370822f8f38b477a64ed861dd3e4b76a58c827eea6e57187b3774a7d7a19411": {
       "kind": "command",
       "src": "skills/_shared/runner-detection.md:17"
@@ -348,6 +356,10 @@
       "kind": "command",
       "src": "skills/review/SKILL.md:319"
     },
+    "19f23878713e3efb7d3beb1abb6cbfff03c9f48afb144d8107750cb304bd9225": {
+      "kind": "block",
+      "src": "skills/setup/SKILL.md:119"
+    },
     "1a63e694dfd3a8718fa549e3165481ae90f54e4b22a9e9e0b73f2f8161f0400d": {
       "kind": "block",
       "src": "skills/feature/SKILL.md:431"
@@ -442,7 +454,7 @@
     },
     "1fa75550faa5f1ac12d88843de6aeb27aac1475c5e138208774dd8c90161035b": {
       "kind": "command",
-      "src": "skills/setup/SKILL.md:47"
+      "src": "skills/setup/SKILL.md:49"
     },
     "1fb76798024823a847c65c271d830d65d7b2fb823dbe5467dfe74958ace2c399": {
       "kind": "block",
@@ -494,7 +506,7 @@
     },
     "225c6f94e69bc9621a010e73bb4a3da5c0e1d3246b7a641d833f8033c65a1cbe": {
       "kind": "command",
-      "src": "skills/setup/SKILL.md:47"
+      "src": "skills/setup/SKILL.md:49"
     },
     "225db49d305b29b3b5a93176f5f00996322a37e4396e2846c22a94df0060e4af": {
       "kind": "command",
@@ -514,7 +526,7 @@
     },
     "23cf2186f062f008d1b47b78f1e43ba3b47284c01e1dfe2a38c45b3f14f3c679": {
       "kind": "command",
-      "src": "skills/setup/SKILL.md:47"
+      "src": "skills/setup/SKILL.md:49"
     },
     "23e10a23d4b87c405dbe3dcf1658e66d876c7f37ea70d8592cf3a3ed1d7e5c9d": {
       "kind": "block",
@@ -526,7 +538,7 @@
     },
     "242612864852603409e481db48111eca47f9f16b1941ba6432be43a18108efc1": {
       "kind": "command",
-      "src": "skills/setup/SKILL.md:47"
+      "src": "skills/setup/SKILL.md:49"
     },
     "244dca9011bb9813f716d536a75b1118ab72bc8f5d7329a9af77752e8dc7d325": {
       "kind": "command",
@@ -650,7 +662,7 @@
     },
     "3002492c3e290464f7fc532681ce1c372ae3cc440f755e7435d74c1053e0b65b": {
       "kind": "block",
-      "src": "skills/setup/SKILL.md:74"
+      "src": "skills/setup/SKILL.md:76"
     },
     "301649eca57c7823a181fb6a0f53b338ad4664c69cd572f955452facc00faae5": {
       "kind": "block",
@@ -774,7 +786,7 @@
     },
     "3976ab12aadb8435ce98dee648000ccf43a463fc3a3c693094637b06341727b4": {
       "kind": "command",
-      "src": "skills/setup/SKILL.md:63"
+      "src": "skills/setup/SKILL.md:65"
     },
     "3982357411e5c5517e7de1f9a60322e4635023047f3d63796c9265a389e4a372": {
       "kind": "command",
@@ -1226,7 +1238,7 @@
     },
     "5be94de944e79503aa1ee1e25db426c9d3b5840b37dcfeb64d4a0b05b53f760c": {
       "kind": "command",
-      "src": "skills/setup/SKILL.md:74"
+      "src": "skills/setup/SKILL.md:76"
     },
     "5c39cf4532f16c8d49aedb43a9ef9d9cab66fae83ec7e8e9287c81974f43ce68": {
       "kind": "block",
@@ -1288,6 +1300,10 @@
       "kind": "command",
       "src": "skills/_shared/runner-detection.md:5"
     },
+    "6274d1d8f80fefda2441c27c09f40bbe4d06c6061bde493261ccb2a0ec897619": {
+      "kind": "block",
+      "src": "skills/setup/SKILL.md:153"
+    },
     "627c7023c85b3876e8311669795231e17ed3be6148664c24ce25c019eb83a20e": {
       "kind": "command",
       "src": "skills/debug/SKILL.md:492"
@@ -1318,7 +1334,7 @@
     },
     "6515ad500a06fb0149fc09256a1643c8f2e9abf2cbdc7bad755179233637d11b": {
       "kind": "block",
-      "src": "skills/setup/SKILL.md:63"
+      "src": "skills/setup/SKILL.md:65"
     },
     "6529964256eddcd3f66f35fa561b010282deaf23552333d0f80008c619abf48e": {
       "kind": "block",
@@ -1359,6 +1375,10 @@
     "684c3a645d87fd9f63994ff615f87453c495a9aa8d1cd52197e285d9f7793be6": {
       "kind": "command",
       "src": "skills/fix/SKILL.md:422"
+    },
+    "6883b244c3b8e87d16edf04fb7c010d805c9b2c9b1d08ad9dadf716ce25256be": {
+      "kind": "command",
+      "src": "skills/setup/SKILL.md:107"
     },
     "6933c9fd5ce163c5a07443bfa68c9ce4e764381bd1fe172499ee5b46264cd2ef": {
       "kind": "block",
@@ -1406,7 +1426,7 @@
     },
     "6d436870eb57dec863aab6668839a616d530c848fba0341aea62347cddd49a8d": {
       "kind": "command",
-      "src": "skills/setup/SKILL.md:47"
+      "src": "skills/setup/SKILL.md:49"
     },
     "6e7870bace0af9c5092d1d0a77ae53c6a2e5baf1acdca29e8c9bb315c1b098b0": {
       "kind": "block",
@@ -1419,6 +1439,10 @@
     "6f313a7e126ddcdfeccbb114d2278178f662e050cdb15ec51b9555a88bccdeac": {
       "kind": "command",
       "src": "skills/feature/SKILL.md:682"
+    },
+    "6f5a65a4a1b58d9bdb13a009f9dca1ef952de506bed77533fdbb92f10d72dc7f": {
+      "kind": "block",
+      "src": "skills/setup/SKILL.md:107"
     },
     "6f6866ee3049a7b6d7707cb1cab44575104d930347e74656bbcbb11f72f1d12d": {
       "kind": "command",
@@ -1576,6 +1600,10 @@
       "kind": "command",
       "src": "skills/_shared/runner-detection.md:17"
     },
+    "7e61c450982c68afe61e657df859e72fb95fc6b92cfd46a9a91e085b5725b7c0": {
+      "kind": "command",
+      "src": "skills/setup/SKILL.md:132"
+    },
     "7f04c48c482fdc60fb728d8e3349df8a8c7f0d5740307d158631cf49eb7e57f2": {
       "kind": "block",
       "src": "skills/debug/SKILL.md:379"
@@ -1598,7 +1626,7 @@
     },
     "7ff968b921bc84bb8c7e0a76f435e132af29688d40cc80a72f2f9c65e0b8444c": {
       "kind": "command",
-      "src": "skills/setup/SKILL.md:47"
+      "src": "skills/setup/SKILL.md:49"
     },
     "803c9e29fcc59f3a8ae3678b0a834b3ff6145df4fd112df6fb6e2ed6bb24de02": {
       "kind": "command",
@@ -1626,7 +1654,7 @@
     },
     "814e78d81ae8589825dc84af669c13ad7ce13382f766472d90f8e379d7fe3744": {
       "kind": "block",
-      "src": "skills/setup/SKILL.md:47"
+      "src": "skills/setup/SKILL.md:49"
     },
     "817674d43c561291706295d737cbed28a43eac27cab835076b8b4de39d15d619": {
       "kind": "command",
@@ -1736,6 +1764,10 @@
       "kind": "command",
       "src": "skills/feature/SKILL.md:383"
     },
+    "89e3dd8a18b4263d7575e9ef039be3f2cfe1922971924d05b5af56e18b447f0e": {
+      "kind": "command",
+      "src": "skills/setup/SKILL.md:107"
+    },
     "8a1cf0e7b7adfa5a85c0388f84dfe3f048e86270fdc4c23dab7761587767a101": {
       "kind": "command",
       "src": "skills/_shared/foundry--quality-stack.md:45"
@@ -1811,6 +1843,10 @@
     "8ede843ada6a921ef524c52077c56d2d515088bb5b1619e7fda12a61a0b8d7a1": {
       "kind": "block",
       "src": "skills/review/SKILL.md:524"
+    },
+    "911e7a2b2f2c81d06464d5df0051007e82a01ad1167c6219d14f172e515a489d": {
+      "kind": "command",
+      "src": "skills/setup/SKILL.md:107"
     },
     "914823c791faa4defb249d30bcc43fd35de86feb9d327ba6b7430cbdc1875176": {
       "kind": "command",
@@ -2048,6 +2084,10 @@
       "kind": "command",
       "src": "skills/feature/SKILL.md:304"
     },
+    "a4466655f9e573c59cf43d9c1bcdc9b8e3d95551e5fe1e5043490eb53ba64c69": {
+      "kind": "command",
+      "src": "skills/setup/SKILL.md:132"
+    },
     "a47b09186f2fd9a3c09219847fa0e8dc70c710f2b7f2d2bb44e5a4188400f231": {
       "kind": "command",
       "src": "skills/feature/SKILL.md:248"
@@ -2092,6 +2132,10 @@
       "kind": "command",
       "src": "skills/review/SKILL.md:263"
     },
+    "a7c00584c892218e057038c02051a20b471fb2cab175e5c2f3e65597cbf9359c": {
+      "kind": "block",
+      "src": "skills/setup/SKILL.md:147"
+    },
     "a814c81f79bd23dc02a259dfc78842d0131852092dc3bed6a0b6fef8220a9448": {
       "kind": "block",
       "src": "skills/review/SKILL.md:427"
@@ -2103,6 +2147,10 @@
     "a952497d8ec0d029ca6eede2d977c97d8975d68de161ca42e4a97268e0541fc8": {
       "kind": "command",
       "src": "skills/review/SKILL.md:319"
+    },
+    "a95b4cbdc0ce42a0855c1f9e3029b4a3ff79f8a4c4b3bf6a24834541674b1655": {
+      "kind": "block",
+      "src": "skills/setup/SKILL.md:132"
     },
     "a9c1686a7db9592e295bdd9f97fe6d83112a0999bc9d6da60d9d63112f35a163": {
       "kind": "command",
@@ -2376,6 +2424,10 @@
       "kind": "command",
       "src": "skills/review/SKILL.md:132"
     },
+    "c34f1bae88afa05c0c731e42c1c29c7d625a4424919239805e204e15289cbe68": {
+      "kind": "command",
+      "src": "skills/setup/SKILL.md:153"
+    },
     "c417c898e497dd30fa357eb415e0dc407295b0d82ff6f3cfdf4462f41ebe5d60": {
       "kind": "command",
       "src": "skills/plan/SKILL.md:70"
@@ -2399,6 +2451,10 @@
     "c4fdf01132b8a49a634389fc1fdad06dd080eed262d9402e85820ff50d6bcae5": {
       "kind": "command",
       "src": "skills/review/SKILL.md:434"
+    },
+    "c56225e4cf55b6bfc01a5bda46abc06238143d0452986698f1bbd6dbb540550e": {
+      "kind": "command",
+      "src": "skills/setup/SKILL.md:107"
     },
     "c583e04246caae5ba9bb3c73f63576b2dc63bd610f622548c86602936306a23e": {
       "kind": "command",
@@ -2734,7 +2790,7 @@
     },
     "e1b112a196325ed209197aefafd3bdd59cd81dfef3f6731c2ac96b63869c4b12": {
       "kind": "command",
-      "src": "skills/setup/SKILL.md:63"
+      "src": "skills/setup/SKILL.md:65"
     },
     "e2220b74ed64fd4582a4d036e52008fd606c4a4cbb6306b02f1cfd665232399f": {
       "kind": "command",
@@ -2795,6 +2851,10 @@
     "e6baf74029b6c2f6d3734abefb2c5ff6fee166305cb35c0222782b07f08624fc": {
       "kind": "command",
       "src": "skills/review/SKILL.md:319"
+    },
+    "e6cabd61f8c7741f05e04912c49da57a8b154b169136fee3a436ccc9b8ca8736": {
+      "kind": "command",
+      "src": "skills/setup/SKILL.md:119"
     },
     "e6fe50f4f9866b316ff23763028040b7be0d283cbcd07530eeef91d78b3bd81c": {
       "kind": "command",
@@ -3097,6 +3157,6 @@
       "src": "skills/debug/SKILL.md:351"
     }
   },
-  "plugin": "cc_develop@0.27.1",
+  "plugin": "cc_develop@0.28.0",
   "schema": 1
 }

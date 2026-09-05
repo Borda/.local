@@ -724,11 +724,13 @@ claude plugin uninstall develop
 ```text
 plugins/cc_develop/
 ├── .claude-plugin/
-│   └── plugin.json          -- manifest (name, version, author)
+│   ├── plugin.json              -- manifest (name, version, author)
+│   ├── permissions-allow.json   -- tool calls the skills expect to be pre-approved
+│   └── permissions-deny.json    -- operations that must stay denied (see below)
 ├── bin/
-│   └── sync_rules.py        -- installs rules/*.md into ~/.claude/rules/
+│   └── sync_rules.py            -- installs rules/*.md into ~/.claude/rules/
 ├── rules/
-│   └── quality-gates.md     -- delivered as ~/.claude/rules/develop-quality-gates.md
+│   └── quality-gates.md         -- delivered as ~/.claude/rules/develop-quality-gates.md
 └── skills/
     ├── plan/
     │   └── SKILL.md
@@ -745,6 +747,8 @@ plugins/cc_develop/
     └── setup/
         └── SKILL.md
 ```
+
+**Permission manifests**: `.claude-plugin/permissions-allow.json` lists the tool calls the skills expect to be pre-approved. `.claude-plugin/permissions-deny.json` is its counterpart — the operations that must stay denied no matter how broad the allow list becomes: destructive shell and git commands (`rm -rf`, `sudo`, `ssh`, `chmod 777`, branch and tag deletion, force-push, `claude --dangerously-skip-permissions`) plus every public-GitHub write (`gh issue`/`pr`/`release`/`gist` create, edit, merge, delete, and `gh api` with `POST`, `PATCH`, `PUT` or `DELETE`). Both files are merged into `~/.claude/settings.json` by `/develop:setup` (Step 5) — additive and idempotent, nothing is ever removed. Deny entries are prefix matches, so they stop the documented command forms rather than every possible flag ordering.
 
 <a id="bin-helper-inventory"></a>
 

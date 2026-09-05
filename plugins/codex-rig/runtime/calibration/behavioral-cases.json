@@ -1,13 +1,20 @@
 {
   "cases": [
     {
-      "expected_findings": ["review-host-admission-missing", "review-completion-before-promotion", "stale-review-fallback"],
+      "expected_findings": [
+        "review-host-admission-missing",
+        "review-completion-before-promotion",
+        "stale-review-fallback"
+      ],
       "id": "code-review-completion-handoff",
       "prompt": "Assess a workflow that spawns review specialists using incompatible host controls, retains assessed notes when promotion fails, emits a normal verdict with the failure buried at the end, and lets remediation select an older report because no current result exists. Host admission must precede dispatch; only validated promoted and discoverable results may complete review.",
       "target": "code-review"
     },
     {
-      "expected_findings": ["review-finding-id-unbound", "review-finding-severity-count-mismatch"],
+      "expected_findings": [
+        "review-finding-id-unbound",
+        "review-finding-severity-count-mismatch"
+      ],
       "id": "code-review-finding-identity",
       "prompt": "Assess a schema-v2 review with one declared high finding CR-1, a medium severity total, and an action row for undeclared CR-2. Check source finding identities, severity totals, operational blocker separation, and exact notes/final row coverage rather than counting rows alone.",
       "target": "code-review"

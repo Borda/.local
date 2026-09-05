@@ -44,17 +44,20 @@ if (spawnSync("which", ["rtk"]).status !== 0) {
 // Auto-allowed on match. `diff` is intentionally absent — rtk changes its exit
 // status and prints "Files are identical" for differing files, corrupting any
 // caller that branches on the result.
+//
+// `find` is intentionally absent: a bare prefix match cannot tell `find . -name x`
+// from `find . -delete` or `find . -exec rm {} +`. The `\;` form of -exec carries a
+// semicolon and so trips SHELL_META, but `+` and `-delete` do not — they would be
+// rewritten and auto-allowed, running a destructive command with no prompt.
+// `ls`/`tree`/`grep` cover the read-only token payoff without that hole.
 const SAFE_PREFIXES = [
   // JS / TS
   "tsc",
   "jest",
   "vitest",
-  "next",
   "prettier",
   "lint",
   "format",
-  // Rust
-  "cargo",
   // Python
   "ruff",
   "pytest",
@@ -68,7 +71,6 @@ const SAFE_PREFIXES = [
   "ls",
   "tree",
   "grep",
-  "find",
   "wc",
 ];
 
@@ -78,7 +80,11 @@ const SAFE_PREFIXES = [
 // prisma are deliberately NOT here — their read/write intent is hard to prove
 // from the command line and the token payoff is marginal, so they always
 // passthrough (deny list stays authoritative for them).
-const GUARDED_PREFIXES = ["git", "gh", "docker", "kubectl", "aws"];
+// `cargo` and `next` sit here rather than in SAFE_PREFIXES: both mix inspection
+// with subcommands that execute arbitrary project code or mutate the machine
+// (`cargo install`, `cargo run`, `next build`), and a bare prefix match cannot
+// separate them.
+const GUARDED_PREFIXES = ["git", "gh", "docker", "kubectl", "aws", "cargo", "next"];
 
 // Positive read-only allowlist for GUARDED_PREFIXES. A guarded command is
 // rewritten + allowed only if it matches one of these. Add patterns here to
@@ -101,6 +107,12 @@ const READ_ONLY_GUARDS = [
   // aws — describe-/get-/list- verbs and `aws s3 ls`
   /^aws\s+\S+\s+(describe|get|list)[\w-]*\b/,
   /^aws\s+s3\s+ls\b/,
+  // cargo — inspection only. `check`/`build`/`test` are absent: they execute
+  // build.rs, which is arbitrary code. `tree` and `metadata` resolve the
+  // dependency graph without building.
+  /^cargo\s+(tree|metadata|search|--version|-V)\b/,
+  // next — `info` and `telemetry status` report; `build`/`dev`/`start` execute.
+  /^next\s+(info|telemetry\s+status)\b/,
 ];
 
 // Shell control operators that could chain, substitute, or redirect a second

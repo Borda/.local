@@ -154,6 +154,66 @@ def test_git_branch_create_passthrough() -> None:
     assert _run("git branch newfeature") == {}
 
 
+# ── find is never rewritten (destructive flags carry no shell metacharacter) ──
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("find . -name '*.py' -delete", id="find-delete"),
+        pytest.param("find . -type f -exec rm {} +", id="find-exec-plus"),
+        pytest.param("find . -fprintf /etc/target payload", id="find-fprintf"),
+        pytest.param("find . -name '*.py'", id="find-read-only"),
+    ],
+)
+def test_find_is_never_rewritten(command: str) -> None:
+    """``find`` passes through whole.
+
+    ``-delete``, ``-exec ... {} +`` and ``-fprintf`` mutate the filesystem while carrying no character that
+    ``SHELL_META`` catches, so a prefix match would auto-approve them. The read-only spelling passes through too — the
+    prefix is excluded outright rather than filtered.
+    """
+    result = _run(command)
+    assert result == {}, f"{command!r} was rewritten — destructive find bypass: {result}"
+
+
+# ── cargo / next: inspection rewritten, execution passthrough ─────────────────
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("cargo tree", id="cargo-tree"),
+        pytest.param("cargo metadata --no-deps", id="cargo-metadata"),
+        pytest.param("next info", id="next-info"),
+    ],
+)
+def test_guarded_build_tool_inspection_is_rewritten(command: str) -> None:
+    """Inspection subcommands of cargo/next still earn the rewrite."""
+    result = _run(command)
+    assert result["hookSpecificOutput"]["permissionDecision"] == "allow"
+    assert _rewritten_to(result) == f"rtk {command}"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("cargo install ripgrep", id="cargo-install"),
+        pytest.param("cargo run --release", id="cargo-run"),
+        pytest.param("cargo check", id="cargo-check-runs-build-rs"),
+        pytest.param("next build", id="next-build"),
+        pytest.param("next dev", id="next-dev"),
+    ],
+)
+def test_guarded_build_tool_execution_passthrough(command: str) -> None:
+    """Subcommands that execute arbitrary project code are never rewritten.
+
+    ``cargo check`` is included: it runs ``build.rs``, so it executes project code even though it produces no binary.
+    """
+    result = _run(command)
+    assert result == {}, f"{command!r} was rewritten — arbitrary execution: {result}"
+
+
 # ── Result-corrupting commands are excluded ───────────────────────────────────
 
 

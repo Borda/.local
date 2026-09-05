@@ -15,6 +15,11 @@ interpreter (``python -c "...rmtree(...)"``) passes it; containment is the Docke
 Network defaults to ``none``; override via ``SANDBOX_NETWORK`` environment variable.
 Each ``docker run`` is capped at ``SANDBOX_TIMEOUT_SEC`` seconds (default 600) as a host-side
 backstop; on expiry the container is killed via its ``--cidfile`` id and ``124`` is returned.
+Every container also carries in-container resource quotas — ``--cpus`` (``SANDBOX_CPUS``,
+default 2), ``--memory`` (``SANDBOX_MEMORY``, default ``2g``) and ``--pids-limit``
+(``SANDBOX_PIDS_LIMIT``, default 512) — so a runaway metric command is throttled where it runs
+instead of only being reaped at the wall-clock deadline. A malformed or non-positive override
+falls back to its default; the quotas can be loosened or tightened, never disabled.
 
 Usage:
     docker_sandbox_run.py --mode explore <script-path>
@@ -34,18 +39,37 @@ import subprocess
 import sys
 import tempfile
 import uuid
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 IMAGE = "python:3.11-slim"
 TMPFS_SIZE = "256m"
 TMPFS_MOUNT = f"/tmp:rw,size={TMPFS_SIZE}"
 DEFAULT_NETWORK = "none"
-# Wall-clock cap for one ``docker run``; override via ``SANDBOX_TIMEOUT_SEC``.  The container
-# gets no CPU/memory limits of its own, so a hanging metric command would otherwise pin the
-# host-side client forever.  Callers with their own shorter cap hit theirs first.
+# Wall-clock cap for one ``docker run``; override via ``SANDBOX_TIMEOUT_SEC``.  The resource
+# quotas below throttle a runaway container but never end it, so this deadline stays the only
+# thing that stops a merely *slow* command.  Callers with their own shorter cap hit theirs first.
 DEFAULT_TIMEOUT_SEC = 600
 # Cap for the post-timeout ``docker kill`` itself — a wedged daemon must not re-hang the exit path.
 _KILL_TIMEOUT_SEC = 15
+# Per-container resource quotas, sized for the workload these sandboxes actually run — a pytest
+# metric command or a short exploratory script — on a developer laptop: high enough that a
+# legitimate run never notices them, low enough that a runaway one leaves the host usable.
+# 2 cores: fits pytest with a couple of workers while leaving cores for the host on a 4-core
+# machine; a spin loop then pins 2 cores instead of every core.  A host with fewer cores to
+# spare lowers it via ``SANDBOX_CPUS`` — fractional values are allowed (``0.5``).
+DEFAULT_CPUS = 2.0
+# 2 GiB: covers the interpreter plus the usual scientific imports with headroom.  A leaking run
+# is OOM-killed inside the container instead of pushing the host into swap.
+DEFAULT_MEMORY = "2g"
+# 512 processes: far above what pytest and its subprocesses need, low enough that a fork bomb
+# exhausts the container's own allowance rather than the host pid table.
+DEFAULT_PIDS_LIMIT = 512
+# Accepted ``SANDBOX_MEMORY`` shape: positive number, optional docker size suffix (``512m``,
+# ``2g``, ``1.5g``, or a bare byte count).  Anything else falls back to the default.
+_MEMORY_PATTERN = re.compile(r"^\d+(?:\.\d+)?[bkmg]?$", re.IGNORECASE)
+_MEMORY_SUFFIXES = "bkmgBKMG"
 # Docker network modes that preserve sandbox isolation.  ``host`` is excluded by
 # policy: it removes network namespace isolation and would allow exfiltration
 # from inside the verify-mode container.
@@ -68,6 +92,47 @@ _VERIFY_FORBIDDEN_CHARS = frozenset(";&|$`<>\n\r\\")
 _VERIFY_FORBIDDEN_TOKENS: frozenset[str] = frozenset(
     {"rm", "rmdir", "unlink", "shred", "truncate", "dd", "mv", "mkfs", "find", "chmod", "chown"}
 )
+
+
+@dataclass(frozen=True, slots=True)
+class SandboxLimits:
+    """Resource quotas applied to a single sandbox container.
+
+    Each field renders to the ``docker run`` flag of the same purpose. Defaults are the
+    module-level ``DEFAULT_*`` constants; :func:`_resolve_limits` builds an instance from the
+    ``SANDBOX_*`` environment overrides.
+
+    Attributes:
+        cpus: CPU allowance for ``--cpus``; fractional cores allowed.
+        memory: Memory allowance for ``--memory`` as a docker size string.
+        pids: Process-count allowance for ``--pids-limit``.
+
+    Examples:
+        >>> SandboxLimits().as_flags()
+        ['--cpus', '2', '--memory', '2g', '--pids-limit', '512']
+        >>> SandboxLimits(cpus=1.5, memory="512m", pids=64).as_flags()
+        ['--cpus', '1.5', '--memory', '512m', '--pids-limit', '64']
+    """
+
+    cpus: float = DEFAULT_CPUS
+    memory: str = DEFAULT_MEMORY
+    pids: int = DEFAULT_PIDS_LIMIT
+
+    def as_flags(self) -> list[str]:
+        """Render the quotas as ``docker run`` flags.
+
+        Returns:
+            Flag/value pairs in a stable order, ready to splice into a docker argv.
+
+        Examples:
+            >>> SandboxLimits(cpus=4, memory="8g", pids=1024).as_flags()[:2]
+            ['--cpus', '4']
+        """
+        return ["--cpus", f"{self.cpus:g}", "--memory", self.memory, "--pids-limit", str(self.pids)]
+
+
+#: Quotas used when a caller supplies none — immutable, so it is safe as a parameter default.
+DEFAULT_LIMITS = SandboxLimits()
 
 
 def find_destructive_tokens(arg: str) -> list[str]:
@@ -132,7 +197,13 @@ def _verify_rejection_reason(arg: str) -> str | None:
     return None
 
 
-def build_explore_command(arg: str, network: str, workdir: str, cidfile: str | None = None) -> list[str]:
+def build_explore_command(
+    arg: str,
+    network: str,
+    workdir: str,
+    cidfile: str | None = None,
+    limits: SandboxLimits = DEFAULT_LIMITS,
+) -> list[str]:
     """Build the ``docker run`` argv for explore mode.
 
     The script path may be given with a leading ``./``; it's stripped before being
@@ -144,6 +215,9 @@ def build_explore_command(arg: str, network: str, workdir: str, cidfile: str | N
         workdir: Host directory mounted at ``/workspace`` (read-only).
         cidfile: Path docker writes the container id to. Omitted from the argv when ``None``;
             :func:`main` always supplies one so the timeout path has a kill handle.
+        limits: Resource quotas for the container; defaults to :data:`DEFAULT_LIMITS`. An
+            exploratory script is as capable of wedging the host as a metric command, so
+            explore mode carries the same quotas as verify mode.
 
     Returns:
         Argument list ready for ``subprocess.run`` (no shell).
@@ -161,6 +235,13 @@ def build_explore_command(arg: str, network: str, workdir: str, cidfile: str | N
         True
         >>> build_explore_command("a.py", "none", "/proj", cidfile="/c.cid")[3:5]
         ['--cidfile', '/c.cid']
+        >>> cmd = build_explore_command("a.py", "none", "/proj")
+        >>> cmd[cmd.index("--cpus") : cmd.index("--cpus") + 2]
+        ['--cpus', '2']
+        >>> cmd[cmd.index("--memory") : cmd.index("--memory") + 2]
+        ['--memory', '2g']
+        >>> cmd[cmd.index("--pids-limit") : cmd.index("--pids-limit") + 2]
+        ['--pids-limit', '512']
         >>> build_explore_command("../etc/passwd", "none", "/proj")
         Traceback (most recent call last):
             ...
@@ -192,6 +273,7 @@ def build_explore_command(arg: str, network: str, workdir: str, cidfile: str | N
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
         "--read-only",
+        *limits.as_flags(),
         "-v",
         f"{workdir}:/workspace:ro",
         "--tmpfs",
@@ -204,7 +286,13 @@ def build_explore_command(arg: str, network: str, workdir: str, cidfile: str | N
     ]
 
 
-def build_verify_command(arg: str, network: str, workdir: str, cidfile: str | None = None) -> list[str]:
+def build_verify_command(
+    arg: str,
+    network: str,
+    workdir: str,
+    cidfile: str | None = None,
+    limits: SandboxLimits = DEFAULT_LIMITS,
+) -> list[str]:
     """Build the ``docker run`` argv for verify mode.
 
     The ``.experiments`` subdir of ``workdir`` is mounted read-write so metric runs may
@@ -217,6 +305,7 @@ def build_verify_command(arg: str, network: str, workdir: str, cidfile: str | No
             ``.experiments`` subdir is mounted read-write.
         cidfile: Path docker writes the container id to. Omitted from the argv when ``None``;
             :func:`main` always supplies one so the timeout path has a kill handle.
+        limits: Resource quotas for the container; defaults to :data:`DEFAULT_LIMITS`.
 
     Returns:
         Argument list ready for ``subprocess.run`` (no shell).
@@ -229,6 +318,15 @@ def build_verify_command(arg: str, network: str, workdir: str, cidfile: str | No
         True
         >>> build_verify_command("pytest -q", "none", "/proj", cidfile="/c.cid")[3:5]
         ['--cidfile', '/c.cid']
+        >>> cmd[cmd.index("--cpus") : cmd.index("--cpus") + 2]
+        ['--cpus', '2']
+        >>> cmd[cmd.index("--memory") : cmd.index("--memory") + 2]
+        ['--memory', '2g']
+        >>> cmd[cmd.index("--pids-limit") : cmd.index("--pids-limit") + 2]
+        ['--pids-limit', '512']
+        >>> tight = build_verify_command("pytest -q", "none", "/proj", limits=SandboxLimits(cpus=1))
+        >>> tight[tight.index("--cpus") : tight.index("--cpus") + 2]
+        ['--cpus', '1']
     """
     # arg in verify mode is treated as shell string — Docker container is primary isolation boundary
     return [
@@ -241,6 +339,7 @@ def build_verify_command(arg: str, network: str, workdir: str, cidfile: str | No
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
         "--read-only",
+        *limits.as_flags(),
         "-v",
         f"{workdir}:/workspace:ro",
         "-v",
@@ -287,6 +386,35 @@ def _parse_args(argv: list[str]) -> tuple[str, str]:
     return mode, arg
 
 
+def _resolve_positive_float(raw: str | float, default: float) -> float:
+    """Coerce an environment override into a positive float, falling back to ``default``.
+
+    Shared contract for every numeric ``SANDBOX_*`` override: a malformed or non-positive value
+    falls back rather than raising, because each of these is a containment backstop that must
+    never end up disabled by a typo in the environment.
+
+    Args:
+        raw: Raw env value, or the default itself when the variable is unset.
+        default: Value returned when ``raw`` is unparsable or ``<= 0``.
+
+    Returns:
+        The parsed value when positive, otherwise ``default``; always ``> 0``.
+
+    Examples:
+        >>> _resolve_positive_float("30", 600)
+        30.0
+        >>> _resolve_positive_float("not-a-number", 600)
+        600.0
+        >>> _resolve_positive_float("-5", 600)
+        600.0
+    """
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return float(default)
+    return value if value > 0 else float(default)
+
+
 def _resolve_timeout(raw: str | int) -> float:
     """Coerce a ``SANDBOX_TIMEOUT_SEC`` value into a positive number of seconds.
 
@@ -311,11 +439,93 @@ def _resolve_timeout(raw: str | int) -> float:
         >>> _resolve_timeout("-5")
         600.0
     """
-    try:
-        seconds = float(raw)
-    except (TypeError, ValueError):
-        return float(DEFAULT_TIMEOUT_SEC)
-    return seconds if seconds > 0 else float(DEFAULT_TIMEOUT_SEC)
+    return _resolve_positive_float(raw, DEFAULT_TIMEOUT_SEC)
+
+
+def _resolve_memory(raw: str) -> str:
+    """Coerce a ``SANDBOX_MEMORY`` value into a docker size string.
+
+    Same fallback contract as :func:`_resolve_timeout`: a value outside docker's size grammar — a
+    bad suffix, a non-numeric value, zero — falls back to :data:`DEFAULT_MEMORY` instead of
+    raising, so the memory cap survives a malformed override. Only the shape and positivity are
+    checked here; docker still rejects a well-formed value it considers too small at run time.
+
+    Args:
+        raw: Raw env value, or :data:`DEFAULT_MEMORY` when the variable is unset.
+
+    Returns:
+        A docker size string accepted by ``--memory``; never empty, never zero.
+
+    Examples:
+        >>> _resolve_memory("512m")
+        '512m'
+        >>> _resolve_memory("1.5G")
+        '1.5G'
+        >>> _resolve_memory("4096")
+        '4096'
+        >>> _resolve_memory("2 gigs")
+        '2g'
+        >>> _resolve_memory("0m")
+        '2g'
+        >>> _resolve_memory("-1g")
+        '2g'
+    """
+    candidate = str(raw).strip()
+    if not _MEMORY_PATTERN.match(candidate):
+        return DEFAULT_MEMORY
+    return candidate if float(candidate.rstrip(_MEMORY_SUFFIXES)) > 0 else DEFAULT_MEMORY
+
+
+def _resolve_pids_limit(raw: str | int) -> int:
+    """Coerce a ``SANDBOX_PIDS_LIMIT`` value into a positive process count.
+
+    Same fallback contract as :func:`_resolve_timeout`. A fractional override truncates toward
+    zero, and a value that truncates to ``0`` falls back — docker reads ``0`` as *unlimited*,
+    which would silently remove the fork-bomb ceiling this flag exists to impose.
+
+    Args:
+        raw: Raw env value, or :data:`DEFAULT_PIDS_LIMIT` when the variable is unset.
+
+    Returns:
+        Maximum process count, always ``>= 1``.
+
+    Examples:
+        >>> _resolve_pids_limit("64")
+        64
+        >>> _resolve_pids_limit("bogus")
+        512
+        >>> _resolve_pids_limit("0")
+        512
+        >>> _resolve_pids_limit("0.5")
+        512
+    """
+    count = int(_resolve_positive_float(raw, DEFAULT_PIDS_LIMIT))
+    return count if count > 0 else DEFAULT_PIDS_LIMIT
+
+
+def _resolve_limits(env: Mapping[str, str]) -> SandboxLimits:
+    """Build the container resource quotas from the ``SANDBOX_*`` environment overrides.
+
+    Args:
+        env: Environment mapping to read ``SANDBOX_CPUS``, ``SANDBOX_MEMORY`` and
+            ``SANDBOX_PIDS_LIMIT`` from. Unset or empty values keep the module defaults.
+
+    Returns:
+        Quotas for one sandbox container; every field positive.
+
+    Examples:
+        >>> _resolve_limits({})
+        SandboxLimits(cpus=2.0, memory='2g', pids=512)
+        >>> _resolve_limits({"SANDBOX_CPUS": "1", "SANDBOX_MEMORY": "512m"})
+        SandboxLimits(cpus=1.0, memory='512m', pids=512)
+        >>> _resolve_limits({"SANDBOX_PIDS_LIMIT": "bogus"}).pids
+        512
+    """
+    return SandboxLimits(
+        cpus=_resolve_positive_float(env.get("SANDBOX_CPUS") or DEFAULT_CPUS, DEFAULT_CPUS),
+        memory=_resolve_memory(env.get("SANDBOX_MEMORY") or DEFAULT_MEMORY),
+        pids=_resolve_pids_limit(env.get("SANDBOX_PIDS_LIMIT") or DEFAULT_PIDS_LIMIT),
+    )
 
 
 def _kill_container(cidfile: str) -> None:
@@ -400,6 +610,7 @@ def main(argv: list[str] | None = None, env: dict[str, str] | None = None, cwd: 
 
     network = env.get("SANDBOX_NETWORK") or DEFAULT_NETWORK
     timeout = _resolve_timeout(env.get("SANDBOX_TIMEOUT_SEC") or DEFAULT_TIMEOUT_SEC)
+    limits = _resolve_limits(env)
     if network not in _ALLOWED_NETWORK_MODES:
         # ``host`` is explicitly rejected — it removes network-namespace isolation.
         print(
@@ -415,7 +626,7 @@ def main(argv: list[str] | None = None, env: dict[str, str] | None = None, cwd: 
 
     if mode == "explore":
         try:
-            cmd = build_explore_command(arg, network, workdir, cidfile=cidfile)
+            cmd = build_explore_command(arg, network, workdir, cidfile=cidfile, limits=limits)
         except ValueError as exc:
             print(f"docker_sandbox_run.py: {exc}", file=sys.stderr)
             return 2
@@ -427,7 +638,7 @@ def main(argv: list[str] | None = None, env: dict[str, str] | None = None, cwd: 
         if reason:
             print(f"docker_sandbox_run.py: {reason}", file=sys.stderr)
             return 2
-        cmd = build_verify_command(arg, network, workdir, cidfile=cidfile)
+        cmd = build_verify_command(arg, network, workdir, cidfile=cidfile, limits=limits)
     else:
         # argparse choices should have rejected, but guard anyway.
         print(f"unknown mode: {mode} (expected: explore|verify)", file=sys.stderr)

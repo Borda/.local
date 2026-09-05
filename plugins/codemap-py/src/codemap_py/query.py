@@ -633,8 +633,8 @@ def _autobuild_disabled() -> bool:
 class _FileShas(NamedTuple):
     """Tracked blob SHAs plus how confidently they were obtained.
 
-    ``status`` is what separates "git says nothing changed" from "git never answered". Collapsing the two — the previous
-    behaviour, an empty dict for both — let a git failure be read as proof of a fresh index.
+    ``status`` is what separates "git says nothing changed" from "git never answered". Collapsing the two — the
+    previous behaviour, an empty dict for both — let a git failure be read as proof of a fresh index.
     """
 
     shas: dict[str, str]
@@ -729,10 +729,10 @@ def _resolve_current_file_shas() -> _FileShas:
 def _current_file_shas() -> _FileShas:
     """Return the memoized tracked-blob SHAs (and their status) for this invocation.
 
-    Memoized because two independent consumers ask the same question on every query — :func:`_changed_py_files` for the
-    self-heal decision and :func:`_coverage` for the honesty block. Without this memo, each query spawned two identical
-    subprocesses running ``git ls-files``. The working tree cannot change under a single query, so one call is both
-    cheaper and guaranteed self-consistent.
+    Memoized because two independent consumers ask the same question on every query — :func:`_changed_py_files` for
+    the self-heal decision and :func:`_coverage` for the honesty block. Without this memo, each query spawned two
+    identical subprocesses running ``git ls-files``. The working tree cannot change under a single query, so one call is
+    both cheaper and guaranteed self-consistent.
     """
     global _file_shas_cache
     if _file_shas_cache is None:

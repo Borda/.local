@@ -139,6 +139,108 @@ def _process_exists(pid: int) -> bool:
     return True
 
 
+class TestBuildChildEnvironment:
+    """Child environment is an allowlist, so session credentials never reach a peer process."""
+
+    def test_drops_unrelated_secrets(self) -> None:
+        """Credentials the child has no use for are removed.
+
+        A bridge call runs inside whatever session the operator is already using, so the parent environment routinely
+        holds cloud and service credentials for unrelated work. Inheriting it wholesale hands all of them to a peer CLI
+        running model-authored code.
+        """
+        source = {
+            "PATH": "/usr/bin",
+            "AWS_SECRET_ACCESS_KEY": "aws-secret",
+            "KAGGLE_KEY": "kaggle-secret",
+            "GITHUB_TOKEN": "gh-secret",
+            "MY_APP_DB_PASSWORD": "db-secret",
+        }
+
+        result = bridge_call.build_child_environment(source, platform="linux")
+
+        assert result == {"PATH": "/usr/bin"}
+
+    def test_keeps_provider_auth(self) -> None:
+        """Provider authentication survives, or every bridge call would fail closed."""
+        source = {"OPENAI_API_KEY": "k", "ANTHROPIC_API_KEY": "a", "CODEX_HOME": "/c", "SOME_OTHER": "x"}
+
+        result = bridge_call.build_child_environment(source, platform="linux")
+
+        assert result == {"OPENAI_API_KEY": "k", "ANTHROPIC_API_KEY": "a", "CODEX_HOME": "/c"}
+
+    def test_keeps_windows_startup_keys_on_win32(self) -> None:
+        """On Windows the interpreter start-up keys must survive the filter.
+
+        A child Python launched without ``SystemRoot``/``COMSPEC`` aborts during start-up with
+        ``_Py_HashRandomization_Init: failed to get random numbers``, so filtering them out would break every bridge
+        call on that host while passing on POSIX.
+        """
+        source = {"PATH": "p", "SystemRoot": "C:\\Windows", "COMSPEC": "cmd.exe", "PATHEXT": ".EXE", "NOPE": "x"}
+
+        result = bridge_call.build_child_environment(source, platform="win32")
+
+        assert result == {"PATH": "p", "SystemRoot": "C:\\Windows", "COMSPEC": "cmd.exe", "PATHEXT": ".EXE"}
+
+    def test_windows_keys_dropped_on_posix(self) -> None:
+        """The Windows-only keys are not carried onto POSIX hosts, where nothing reads them."""
+        result = bridge_call.build_child_environment({"PATH": "p", "COMSPEC": "cmd.exe"}, platform="linux")
+
+        assert result == {"PATH": "p"}
+
+    def test_operator_extra_keys_are_allowed_through(self) -> None:
+        """Variables named in BRIDGE_CHILD_ENV_EXTRA reach the child.
+
+        A host behind a proxy or on an enterprise provider path needs variables the fixed sets cannot anticipate.
+        Without this the bridge is unusable there and the failure surfaces as an opaque provider error in the child.
+        """
+        source = {
+            "PATH": "/usr/bin",
+            "BRIDGE_CHILD_ENV_EXTRA": "HTTPS_PROXY, NO_PROXY",
+            "HTTPS_PROXY": "http://proxy:3128",
+            "NO_PROXY": "localhost",
+            "AWS_SECRET_ACCESS_KEY": "still-dropped",
+        }
+
+        result = bridge_call.build_child_environment(source, platform="linux")
+
+        assert result == {"PATH": "/usr/bin", "HTTPS_PROXY": "http://proxy:3128", "NO_PROXY": "localhost"}
+
+    def test_operator_extra_marker_is_not_forwarded(self) -> None:
+        """The marker variable itself never reaches the child.
+
+        Forwarding it would tell a peer process which policy produced its own environment, and a nested bridge call
+        would inherit the widening rather than re-deriving it from the operator's host configuration.
+        """
+        source = {"PATH": "/usr/bin", "BRIDGE_CHILD_ENV_EXTRA": "BRIDGE_CHILD_ENV_EXTRA,HTTPS_PROXY"}
+
+        result = bridge_call.build_child_environment(source, platform="linux")
+
+        assert "BRIDGE_CHILD_ENV_EXTRA" not in result
+
+    def test_malformed_extra_entry_is_skipped_not_fatal(self) -> None:
+        """A typo in the operator's list drops that entry and keeps the rest.
+
+        The list is host configuration re-read on every call; raising on one bad name would take the bridge down for
+        every request rather than losing one variable.
+        """
+        source = {"PATH": "/usr/bin", "BRIDGE_CHILD_ENV_EXTRA": "bad name,,9INVALID,NO_PROXY", "NO_PROXY": "localhost"}
+
+        result = bridge_call.build_child_environment(source, platform="linux")
+
+        assert result == {"PATH": "/usr/bin", "NO_PROXY": "localhost"}
+
+    def test_absent_key_is_omitted_not_blanked(self) -> None:
+        """An allowlisted key missing from the source is left out rather than set empty.
+
+        Setting it to "" would make an unset provider key look configured-but-empty to the child, turning a clear auth
+        failure into a confusing one.
+        """
+        result = bridge_call.build_child_environment({"PATH": "p"}, platform="linux")
+
+        assert "OPENAI_API_KEY" not in result
+
+
 def test_fresh_review_and_resume_argv_preserve_routing_contract(tmp_path: Path) -> None:
     """Prevent subtle Codex argv drift that changes sandbox, review, or resume behavior."""
     schema_path = tmp_path / "core-schema.json"
@@ -154,6 +256,9 @@ def test_fresh_review_and_resume_argv_preserve_routing_contract(tmp_path: Path) 
     assert fresh[:2] == ["codex", "exec"]
     assert ["-s", "read-only"] == fresh[fresh.index("-s") : fresh.index("-s") + 2]
     assert "--ephemeral" in fresh and "--ignore-user-config" in fresh
+    assert all(
+        "sandbox_workspace_write.network_access=false" in command for command in (fresh, review, implement, resumed)
+    )
     assert 'model_reasoning_effort="medium"' in fresh
     assert all("--skip-git-repo-check" in command for command in (fresh, review, implement))
     assert review[:2] == ["codex", "exec"]
@@ -522,13 +627,16 @@ def test_normal_leader_exit_with_an_inherited_pipe_cannot_block_output_drain(tmp
     """Prevent a completed leader's descendant from deadlocking the bounded output-drain cleanup."""
     child_pid_path = tmp_path / "inherited-pipe-child.pid"
     result_path = tmp_path / "inherited-pipe-result.txt"
+    # The pid path is embedded in the child source rather than passed through the
+    # environment: _run_child filters the child environment down to an allowlist, so a
+    # test-only variable would not survive to be read here.
     parent = (
-        "import os, subprocess, sys\n"
+        "import subprocess, sys\n"
         "from pathlib import Path\n"
         "child = subprocess.Popen([sys.executable, '-c', "
         '\'import sys, time; time.sleep(0.1); sys.stdout.buffer.write(b\\"x\\" * 400000); '
         "sys.stdout.flush(); time.sleep(60)'])\n"
-        "Path(os.environ['BRIDGE_TEST_CHILD_PID']).write_text(str(child.pid), encoding='utf-8')\n"
+        f"Path({str(child_pid_path)!r}).write_text(str(child.pid), encoding='utf-8')\n"
     )
     runner = (
         "import sys\n"
@@ -538,7 +646,7 @@ def test_normal_leader_exit_with_an_inherited_pipe_cannot_block_output_drain(tmp
         f"outcome = bridge_call._run_child([sys.executable, '-c', {parent!r}], Path({str(tmp_path)!r}), 1.0)\n"
         f"Path({str(result_path)!r}).write_text(str(outcome.output_limited), encoding='utf-8')\n"
     )
-    environment = {**os.environ, "BRIDGE_TEST_CHILD_PID": str(child_pid_path)}
+    environment = dict(os.environ)
     child_pid: int | None = None
     runner_process: subprocess.Popen[bytes] | None = None
     try:
@@ -2024,28 +2132,30 @@ def test_child_receives_incremented_trusted_depth(tmp_path: Path, monkeypatch: p
         return Process()
 
     monkeypatch.setenv(bridge_call.DEPTH_ENVIRONMENT_VARIABLE, "2")
+    monkeypatch.setenv("BRIDGE_TEST_UNRELATED_SECRET", "must-not-propagate")
     monkeypatch.setattr(bridge_call.subprocess, "Popen", fake_popen)
 
     bridge_call._run_child(["fake-peer"], tmp_path, timeout=1.0)
 
-    assert environments == [{**os.environ, bridge_call.DEPTH_ENVIRONMENT_VARIABLE: "3"}]
+    assert environments == [{**bridge_call.build_child_environment(), bridge_call.DEPTH_ENVIRONMENT_VARIABLE: "3"}]
+    assert "BRIDGE_TEST_UNRELATED_SECRET" not in environments[0]
 
 
 @pytest.mark.skipif(not hasattr(os, "killpg"), reason="requires POSIX process-group termination capability")
 def test_timeout_force_terminates_a_descendant_after_its_term_ignoring_leader_exits(tmp_path: Path) -> None:
     """Prevent a timeout from returning while a TERM-ignoring descendant retains its inherited pipes."""
     child_pid_path = tmp_path / "timeout-child.pid"
+    # Path embedded in the source, not passed via the environment: _run_child filters the
+    # child environment to an allowlist, so a test-only variable would not reach this code.
     parent = (
-        "import os, subprocess, sys, time\n"
+        "import subprocess, sys, time\n"
         "from pathlib import Path\n"
         "child = subprocess.Popen([sys.executable, '-c', "
         "'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)'])\n"
-        "Path(os.environ['BRIDGE_TEST_CHILD_PID']).write_text(str(child.pid), encoding='utf-8')\n"
+        f"Path({str(child_pid_path)!r}).write_text(str(child.pid), encoding='utf-8')\n"
         "time.sleep(60)\n"
     )
     child_pid: int | None = None
-    previous = os.environ.get("BRIDGE_TEST_CHILD_PID")
-    os.environ["BRIDGE_TEST_CHILD_PID"] = str(child_pid_path)
     try:
         outcome = bridge_call._run_child([sys.executable, "-c", parent], tmp_path, timeout=0.05)
         child_pid = int(child_pid_path.read_text(encoding="utf-8"))
@@ -2056,10 +2166,6 @@ def test_timeout_force_terminates_a_descendant_after_its_term_ignoring_leader_ex
         assert outcome.timed_out is True
         assert not _process_exists(child_pid)
     finally:
-        if previous is None:
-            os.environ.pop("BRIDGE_TEST_CHILD_PID", None)
-        else:
-            os.environ["BRIDGE_TEST_CHILD_PID"] = previous
         if child_pid is not None and _process_exists(child_pid):
             os.kill(child_pid, bridge_call.signal.SIGKILL)
 
@@ -2104,15 +2210,16 @@ def test_cancelling_detached_supervisor_terminates_its_real_child(
     fake_bin.mkdir()
     child_pid_path = tmp_path / "child.pid"
     peer_script = fake_bin / "codex_peer.py"
+    # Path baked into the peer script rather than read from the environment: the bridge
+    # filters the child environment to an allowlist, so a test-only variable never arrives.
     peer_script.write_text(
-        "import os\n"
         "from pathlib import Path\n"
         "import subprocess\n"
         "import sys\n"
         "import time\n"
         "child = subprocess.Popen([sys.executable, '-c', "
         "'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)'])\n"
-        "Path(os.environ['BRIDGE_TEST_CHILD_PID']).write_text(str(child.pid), encoding='utf-8')\n"
+        f"Path({str(child_pid_path)!r}).write_text(str(child.pid), encoding='utf-8')\n"
         "time.sleep(60)\n",
         encoding="utf-8",
         newline="\n",
@@ -2129,7 +2236,6 @@ def test_cancelling_detached_supervisor_terminates_its_real_child(
         )
         fake_codex.chmod(0o755)
     monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
-    monkeypatch.setenv("BRIDGE_TEST_CHILD_PID", str(child_pid_path))
 
     job_id: str | None = None
     child_pid: int | None = None

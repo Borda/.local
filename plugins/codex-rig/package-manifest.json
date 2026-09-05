@@ -163,7 +163,7 @@
     {
       "mode": "0644",
       "path": "runtime/calibration/behavioral-cases.json",
-      "sha256": "1896d0c09af15a9ad4dddd4694bd7870da2483f9328e2f9c023a60b2df2df71e"
+      "sha256": "6bfc687ab5aebe648a5078ce23104ca3a4f15dbaa0f75718bcd3ddd9d1b92556"
     },
     {
       "mode": "0644",
@@ -508,7 +508,7 @@
     {
       "mode": "0644",
       "path": "skills/code-review/result-template.json",
-      "sha256": "0eb05767a1587ceef0bfc8395f960763d07ef8b710befc1574c27dd683bc6448"
+      "sha256": "d5735b5d2cb5cf9c0624df4afa504c912be2e4fad0a0efbfbc1e418a4462ddd6"
     },
     {
       "mode": "0755",

@@ -79,14 +79,14 @@
     },
     "independence_required": true,
     "independence_satisfied": true,
+    "operational_blockers": [],
     "review_decision": {
       "rationale": "why the recommendation follows from findings, gates, and scope",
       "recommendation": "assessed only: accept-as-is|minor-changes|needs-more-work|reject|not-aligned",
       "summary": "1-3 sentence review outcome"
     },
-    "review_input_sha256": "sha256 of diff.patch",
     "review_findings": [],
-    "operational_blockers": [],
+    "review_input_sha256": "sha256 of diff.patch",
     "review_run_id": "stable ID for this review execution",
     "review_status": "omit for assessed review; unavailable|closed for a terminal result",
     "risk_tier": "TRIVIAL|LOCAL|BROAD|HIGH_RISK",

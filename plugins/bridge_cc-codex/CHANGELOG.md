@@ -2,6 +2,13 @@
 
 All notable changes to `bridge_CC-Codex` are documented here.
 
+## 0.4.0
+
+- Build the peer child's environment from an allowlist instead of inheriting the caller's: base process keys, provider authentication keys, and on Windows the interpreter start-up keys survive; unrelated API keys, cloud credentials, and the session's inter-agent messaging variables no longer reach a peer process.
+- Add `BRIDGE_CHILD_ENV_EXTRA`, a comma-separated list of additional variable names to allow through, for hosts whose proxy or enterprise provider path needs variables the fixed sets cannot anticipate.
+- ! BREAKING — pin `sandbox_workspace_write.network_access=false` on every Codex invocation, so the bridge's egress posture no longer depends on the installed Codex version's default. A Codex `implement` that installed a dependency, refreshed a lockfile, or ran a network-touching hook now fails inside the sandbox.
+- Document the sandbox mode, egress, environment, and quota posture in `docs/security.md`, including that the egress control is Codex-side only and has no Claude-child equivalent.
+
 ## 0.3.2
 
 - Terminate surviving POSIX peer-group descendants after timeout or cancellation even when the leader has already exited.

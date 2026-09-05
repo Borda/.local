@@ -22,6 +22,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import stat
@@ -31,7 +32,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field as dataclass_field
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 
 DEFAULT_MODEL: str | None = None
@@ -57,6 +58,40 @@ MAX_WINDOWS_COMMAND_UTF16_UNITS = 32_767
 MAX_WINDOWS_BATCH_COMMAND_UTF16_UNITS = 8_000
 MAX_CHILD_OUTPUT_BYTES = 256 * 1024
 MAX_CHILD_TRANSCRIPT_BYTES = 256 * 1024
+
+# Environment passed to a bridge child, as an allowlist. Inheriting the parent
+# environment wholesale hands every API key, cloud credential, and token in the
+# session to the child; a bridge child needs its own provider auth and little
+# else. Anything absent from these three sets is dropped.
+#
+# Base process needs, portable across hosts.
+CHILD_ENV_BASE_KEYS = ("PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR", "USER", "SHELL")
+# Windows requires these or a child Python aborts during interpreter start-up
+# with `_Py_HashRandomization_Init: failed to get random numbers`. SystemRoot in
+# both spellings because the OS is case-insensitive and callers differ.
+CHILD_ENV_WINDOWS_KEYS = ("SystemRoot", "SYSTEMROOT", "COMSPEC", "PATHEXT", "TEMP", "TMP", "USERPROFILE")
+# Provider auth and config discovery for the two supported children. Without
+# these the child cannot authenticate and every call fails closed.
+CHILD_ENV_PROVIDER_KEYS = (
+    "CODEX_HOME",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CONFIG_DIR",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+)
+# Operator escape hatch: a comma-separated list of additional variable names to
+# let through. The fixed sets above assume a direct-API-key login on a host with
+# open egress; a corporate proxy (`HTTPS_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`) or
+# an enterprise auth path (`CLAUDE_CODE_USE_BEDROCK`, `AWS_PROFILE`,
+# `GOOGLE_APPLICATION_CREDENTIALS`) needs names no fixed list can anticipate.
+# Without this, such a host cannot use the bridge at all without editing plugin
+# source, and the failure surfaces as an opaque provider error inside the child.
+# Only the parent process can set this, so it widens nothing a caller controls.
+CHILD_ENV_EXTRA_VARIABLE = "BRIDGE_CHILD_ENV_EXTRA"
+_ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class ArtifactBoundaryError(ValueError):
@@ -269,6 +304,14 @@ def build_codex_argv(request: Request, schema_path: Path) -> list[str]:
         f"model_reasoning_effort={quoted_effort}",
         "-c",
         'approval_policy="never"',
+        # Egress is denied explicitly rather than inherited. `workspace-write`
+        # decides network access from `sandbox_workspace_write.network_access`,
+        # so leaving it unset makes the bridge's egress posture a property of
+        # whatever Codex defaults to in the installed version. Pinning it keeps
+        # the child unable to send workspace contents anywhere, which is the
+        # cheapest capability to remove: it still reads code and writes files.
+        "-c",
+        "sandbox_workspace_write.network_access=false",
         "--skip-git-repo-check",
         "--ignore-user-config",
         "--json",
@@ -637,9 +680,74 @@ class _ChildOutputBuffer:
             )
 
 
+def build_child_environment(source: Mapping[str, str] | None = None, platform: str | None = None) -> dict[str, str]:
+    """Build the child environment from an allowlist instead of inheriting the parent's.
+
+    Only keys named in :data:`CHILD_ENV_BASE_KEYS`, :data:`CHILD_ENV_PROVIDER_KEYS`, on Windows
+    :data:`CHILD_ENV_WINDOWS_KEYS`, and any the operator names in
+    :data:`CHILD_ENV_EXTRA_VARIABLE` survive. Keys absent from ``source`` are omitted rather than
+    set empty, so the child cannot tell a dropped variable from an unset one.
+
+    Args:
+        source: Environment to filter. Defaults to :data:`os.environ`.
+        platform: Platform name to decide the Windows key set. Defaults to :data:`sys.platform`.
+
+    Returns:
+        Filtered environment mapping, without the bridge depth marker (the caller adds it).
+
+    Examples:
+        >>> build_child_environment({"PATH": "/bin", "AWS_SECRET_ACCESS_KEY": "s"}, platform="linux")
+        {'PATH': '/bin'}
+        >>> build_child_environment({"OPENAI_API_KEY": "k"}, platform="linux")
+        {'OPENAI_API_KEY': 'k'}
+        >>> sorted(build_child_environment({"COMSPEC": "c", "PATH": "p"}, platform="win32"))
+        ['COMSPEC', 'PATH']
+        >>> sorted(build_child_environment({"COMSPEC": "c", "PATH": "p"}, platform="linux"))
+        ['PATH']
+        >>> extra = {"BRIDGE_CHILD_ENV_EXTRA": "HTTPS_PROXY, NO_PROXY", "HTTPS_PROXY": "p", "OTHER": "x"}
+        >>> sorted(build_child_environment(extra, platform="linux"))
+        ['HTTPS_PROXY']
+    """
+    env = os.environ if source is None else source
+    active = sys.platform if platform is None else platform
+    allowed = [*CHILD_ENV_BASE_KEYS, *CHILD_ENV_PROVIDER_KEYS]
+    if active == "win32":
+        allowed.extend(CHILD_ENV_WINDOWS_KEYS)
+    allowed.extend(_extra_child_environment_keys(env))
+    return {key: env[key] for key in allowed if key in env}
+
+
+def _extra_child_environment_keys(env: Mapping[str, str]) -> list[str]:
+    """Parse the operator's additional-variable list into names.
+
+    Malformed entries are skipped rather than raising: the list is host configuration read on every
+    call, and one typo must not take the bridge down. The marker variable itself is never forwarded,
+    so the child cannot read or re-widen the policy that produced its own environment.
+
+    Args:
+        env: Environment to read :data:`CHILD_ENV_EXTRA_VARIABLE` from.
+
+    Returns:
+        Valid variable names named by the operator, in the order given.
+
+    Examples:
+        >>> _extra_child_environment_keys({"BRIDGE_CHILD_ENV_EXTRA": "HTTPS_PROXY,NO_PROXY"})
+        ['HTTPS_PROXY', 'NO_PROXY']
+        >>> _extra_child_environment_keys({"BRIDGE_CHILD_ENV_EXTRA": " AWS_PROFILE , bad name ,"})
+        ['AWS_PROFILE']
+        >>> _extra_child_environment_keys({"BRIDGE_CHILD_ENV_EXTRA": "BRIDGE_CHILD_ENV_EXTRA"})
+        []
+        >>> _extra_child_environment_keys({})
+        []
+    """
+    raw = env.get(CHILD_ENV_EXTRA_VARIABLE, "")
+    names = (name.strip() for name in raw.split(","))
+    return [name for name in names if name != CHILD_ENV_EXTRA_VARIABLE and _ENVIRONMENT_NAME.match(name)]
+
+
 def _run_child(command: list[str], workspace: Path, timeout: float, job_path: Path | None = None) -> ChildOutcome:
     """Run a child in its own process group with stdin closed from birth."""
-    environment = os.environ.copy()
+    environment = build_child_environment()
     environment[DEPTH_ENVIRONMENT_VARIABLE] = str(_next_bridge_depth())
     kwargs: dict[str, Any] = {
         "cwd": workspace,

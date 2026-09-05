@@ -586,6 +586,8 @@ Hooks register from `hooks/hooks.json` when the plugin is enabled; no settings e
 
 `rules/quality-gates.md` requires confidence blocks on analysis output and defines report-file and terminal-header formatting. `/research:setup` delivers it as a namespaced user rule instead of editing global configuration.
 
+`.claude-plugin/permissions-allow.json` lists the tool calls the skills expect to be pre-approved. `.claude-plugin/permissions-deny.json` is its counterpart — the operations that must stay denied no matter how broad the allow list becomes: destructive shell and git commands (`rm -rf`, `sudo`, `ssh`, `chmod 777`, branch and tag deletion, force-push, `claude --dangerously-skip-permissions`) plus every public-GitHub write (`gh issue`/`pr`/`release`/`gist` create, edit, merge, delete, and `gh api` with `POST`, `PATCH`, `PUT` or `DELETE`). Both files are merged into `~/.claude/settings.json` by `/research:setup` (Step 5) — additive and idempotent, nothing is ever removed. Deny entries are prefix matches, so they stop the documented command forms rather than every possible flag ordering.
+
 Generated files remain at the project root:
 
 ```text
