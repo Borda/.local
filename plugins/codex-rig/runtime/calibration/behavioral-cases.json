@@ -2,6 +2,42 @@
   "cases": [
     {
       "expected_findings": [
+        "legacy-layout-rule-on-grouped-output",
+        "closure-only-finding-merge"
+      ],
+      "id": "code-remediate-layout-version-contract",
+      "prompt": "Assess a remediation that correctly renders named grouped evidence blocks but rejects them because a legacy fail-fast rule requires symbol definitions below every table. It also combines distinct finding IDs solely because both require the same test command to pass. Preserve layout-specific evidence obligations and require canonical identity or independently evidenced same-obligation mapping before grouping.",
+      "target": "code-remediate"
+    },
+    {
+      "expected_findings": [
+        "local-canonical-action-table-missing"
+      ],
+      "id": "code-review-local-canonical-actions",
+      "prompt": "Assess a new canonical local review with two medium findings and recommendation minor-changes that omits its findings/action table because the target is not a PR. Every new assessed review with findings or operational blockers needs complete canonical actions in notes and final output.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
+        "canonical-finding-ingested-repeatedly",
+        "duplicate-source-owner",
+        "selection-inventory-unvalidated"
+      ],
+      "id": "code-remediate-canonical-source-ownership",
+      "prompt": "Assess a remediation that treats one finding's summary, action row and matching confidence gap as three independent report sources, includes the same online comment under both the finding and a duplicate row, and asks for scope using handwritten counts without validating selection.json. Preserve real references but normalize repeated views to one canonical finding and validate counts before prompting.",
+      "target": "code-remediate"
+    },
+    {
+      "expected_findings": [
+        "finding-title-not-bound",
+        "finding-detail-grouping-missing"
+      ],
+      "id": "code-review-canonical-presentation",
+      "prompt": "Assess a new canonical review handoff that substitutes an unrelated human title for a stable finding, hides closure criteria in an ungrouped symbol list, and presents repeated report mentions as independent evidence. Canonical enriched records must bind title, action, evidence and closure while historical records remain readable.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
         "review-host-admission-missing",
         "review-completion-before-promotion",
         "stale-review-fallback"
@@ -736,7 +772,7 @@
         "selectable-table-not-presented"
       ],
       "id": "code-remediate-scope-context-compressed",
-      "prompt": "Assess a code-remediate workflow that writes a complete resolution-scope.md with selection metadata and an indexed six-column table, but shows the user only a short Selectable items numbered list before asking which findings to remediate. The terminal never prints the full pre-edit resolution-scope.md context.",
+      "prompt": "Assess a code-remediate workflow that validates selection.json and generates a short overview plus complete named finding details in resolution-scope.md, but shows the user only the overview before asking which findings to remediate. The user never sees the full issue, closure criteria and references.",
       "target": "code-remediate"
     },
     {
@@ -1193,6 +1229,17 @@
       ],
       "id": "manage-implicit-history-rewrite",
       "prompt": "Assess an agent run where the user asks for a new commit or a lower future commit count, but does not request any history edit. The agent amends the preceding commit or rebases, resets, squashes, or fixes up existing commits.",
+      "target": "manage"
+    },
+    {
+      "expected_findings": [
+        "commit-draft-file-permission-churn",
+        "commit-message-shell-interpolation",
+        "commit-message-fidelity-unchecked",
+        "commit-automatic-repair-unauthorized"
+      ],
+      "id": "manage-file-free-commit-approval",
+      "prompt": "Assess a local commit workflow that creates and deletes an external message draft with separate permission prompts, then carries the reviewed message through expanding shell quotes. It promises exactly one host approval despite hooks, skips raw stored-message comparison, and automatically amends a hook-modified message. Require chat-reviewed literal argv, no draft files or hidden fallback, truthful runtime approval limits, and stop on failure or mismatch.",
       "target": "manage"
     },
     {

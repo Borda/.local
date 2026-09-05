@@ -2274,30 +2274,53 @@ def test_cancelling_detached_supervisor_terminates_its_real_child(
                 os.kill(child_pid, bridge_call.signal.SIGKILL)
 
 
-def test_posix_termination_falls_back_when_killpg_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Prevent simulated Windows/minimal-POSIX hosts from crashing on a missing killpg API."""
+@pytest.mark.parametrize("wait_result", ["exited", "timeout", "os-error"])
+def test_posix_termination_falls_back_when_killpg_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    wait_result: str,
+) -> None:
+    """Reap direct-kill fallbacks and report bounded wait failures without inventing an exit code."""
     killed: list[bool] = []
+    waited: list[float] = []
 
     class Process:
         pid = 42
+        returncode = None
 
-        def wait(self, timeout: float) -> None:
-            raise subprocess.TimeoutExpired("fake", timeout)
+        def wait(self, timeout: float) -> int:
+            waited.append(timeout)
+            assert killed == [True]
+            if wait_result == "timeout":
+                raise subprocess.TimeoutExpired("fake", timeout)
+            if wait_result == "os-error":
+                raise OSError("wait unavailable")
+            self.returncode = 1
+            return self.returncode
 
         def kill(self) -> None:
             killed.append(True)
 
     monkeypatch.setattr(bridge_call.os, "name", "posix")
     monkeypatch.delattr(bridge_call.os, "killpg", raising=False)
-    bridge_call._terminate_process_group(Process())
+    process = Process()
+    bridge_call._terminate_process_group(process)
 
     assert killed == [True]
+    assert waited == [2.0]
+    assert process.returncode == (1 if wait_result == "exited" else None)
+    diagnostic = capsys.readouterr().err
+    assert diagnostic == (
+        "" if wait_result == "exited" else "Bridge child exit status unavailable after bounded cleanup wait\n"
+    )
 
 
+@pytest.mark.parametrize("tree_status", [0, 1], ids=["tree-killed", "leader-kill-fallback"])
 def test_simulated_windows_termination_uses_tree_kill_before_the_leader_can_exit(
     monkeypatch: pytest.MonkeyPatch,
+    tree_status: int,
 ) -> None:
-    """Prevent Windows group cleanup from losing descendants after Ctrl-Break ends their leader."""
+    """Kill the tree before its leader exits, then collect the leader's actual exit status."""
     sent: list[int] = []
     killed: list[bool] = []
     tree_kills: list[list[str]] = []
@@ -2305,20 +2328,29 @@ def test_simulated_windows_termination_uses_tree_kill_before_the_leader_can_exit
     monkeypatch.setattr(
         bridge_call.subprocess,
         "run",
-        lambda command, **kwargs: tree_kills.append(command) or subprocess.CompletedProcess(command, 0),
+        lambda command, **kwargs: tree_kills.append(command) or subprocess.CompletedProcess(command, tree_status),
     )
 
     class Process:
         pid = 42
+        returncode = None
 
         def kill(self) -> None:
             killed.append(True)
 
-    bridge_call._terminate_process_group(Process())
+        def wait(self, timeout: float) -> int:
+            assert tree_kills
+            assert 0 < timeout <= 2
+            self.returncode = 1
+            return self.returncode
+
+    process = Process()
+    bridge_call._terminate_process_group(process)
 
     assert tree_kills == [["taskkill", "/PID", "42", "/T", "/F"]]
-    assert killed == []
+    assert killed == ([True] if tree_status else [])
     assert sent == []
+    assert process.returncode == 1
 
 
 def test_simulated_windows_cancel_is_cooperative_without_posix_process_apis(

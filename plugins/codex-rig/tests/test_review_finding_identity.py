@@ -61,6 +61,29 @@ def _notes(path: Path, identities: list[str]) -> None:
     )
 
 
+@pytest.mark.parametrize("recommendation", ["minor-changes", "reject", "not-aligned"])
+def test_canonical_local_findings_always_require_action_table(tmp_path: Path, recommendation: str) -> None:
+    """New local review findings need the same complete notes as their final handoff."""
+    metadata = _metadata(finding_severity="medium")
+    metadata["finding_records_version"] = 1
+    metadata["review_decision"]["recommendation"] = recommendation
+    for record in metadata["review_findings"]:
+        record.update(
+            title="Resolve finding",
+            summary="Observed issue",
+            required_change="Resolve it",
+            evidence=["evidence"],
+            closure_evidence="Regression passes",
+        )
+    result = {"schema_version": 2, "findings": {"critical": 0, "high": 0, "medium": 2, "low": 0}}
+    notes = tmp_path / "review-notes.md"
+    notes.write_text("No action table\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="review-missing-findings-action-table"):
+        _load_validator()._validate_action_table(notes, result, metadata, "working-tree")
+    _notes(notes, ["R1", "R2", "G1"])
+    _load_validator()._validate_action_table(notes, result, metadata, "working-tree")
+
+
 def _run_cli_validation(
     tmp_path: Path, metadata: dict[str, object], identities: list[str]
 ) -> subprocess.CompletedProcess[str]:
@@ -157,6 +180,17 @@ def test_schema_v1_retains_historical_count_only_action_coverage(tmp_path: Path)
     metadata = _metadata()
     metadata.pop("review_findings")
     metadata.pop("operational_blockers")
+
+    _load_validator()._validate_action_table(notes, result, metadata, "pr")
+
+
+def test_schema_v1_does_not_interpret_opaque_historical_finding_metadata(tmp_path: Path) -> None:
+    """Keep count-only historical summaries independent of the new record representation."""
+    notes = tmp_path / "review-notes.md"
+    _notes(notes, ["First issue", "Second issue"])
+    metadata = _metadata()
+    metadata["review_findings"] = {"historical_summary": "Two findings"}
+    result = {"schema_version": 1, "findings": {"critical": 0, "high": 2, "medium": 0, "low": 0}}
 
     _load_validator()._validate_action_table(notes, result, metadata, "pr")
 

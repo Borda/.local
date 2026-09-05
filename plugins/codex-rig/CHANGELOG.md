@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.14.2
+
+- Read generated selection Markdown as UTF-8 in the packaged presentation regression so Windows locale defaults do not corrupt Unicode assertions or fail the installed-package gate.
+
+- Replace external commit-message drafts with chat-reviewed literal message arguments: remove draft-file creation/cleanup approvals, preserve shell-safe quoting and exact-message checks, and stop on unsupported transport or failed commits without automatic repair.
+
+- Keep all-closed selection and grouped review-gate intake compatible with final validation, make byte-bound test fixtures portable, and align fail-fast instructions with grouped layouts.
+
+- Preserve selection inputs against output aliases, scope finding identity to report files, bind gate counts to item types, and require complete actions for new local reviews with findings. Shared closure evidence alone never merges distinct findings.
+
+- Fix repeated report mentions being treated as independent findings: enriched canonical records bind titles, actions, evidence and closure criteria while preserving legacy record reads.
+
+- Validate source ownership, canonical finding identity, counts and confirmed indexes before presenting remediation selection; bind the unchanged inventory to final outcomes.
+
+- Render short review/remediation overviews with named detail groups and full references; separate pending selection from deliberate deferral. Keep historical handoff bytes unchanged.
+
 ## 0.14.1
 
 - Preserve incomplete/unpromoted review barriers across later collection failures; reject approving recommendations with failed or incomplete quality gates and reject non-string finding severities without a traceback.

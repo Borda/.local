@@ -14,7 +14,9 @@ does not decide workflow findings, execute project gates, inspect chat transcrip
 ## Usage
 
 Run ``render`` after gates and handoff creation, then run ``check`` directly or through the shared artifact validator
-before promoting ``result.candidate.json``.
+before promoting ``result.candidate.json``. Before remediation selection, run ``selection --input selection.json
+--out-scope resolution-scope.md`` to validate source ownership and render the scope; add ``--check`` for a read-only
+byte comparison. Grouped review/remediation views retain the same machine identity and evidence bindings.
 
 ## Outputs
 
@@ -39,8 +41,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -161,6 +164,13 @@ def _validate_tables(payload: dict[str, Any], skill: str, branch: str) -> tuple[
             raise HandoffError(f"table-heading-duplicate:{heading}")
         table_headings.add(heading)
         columns = _require_string_list(table.get("columns"), f"table-columns:{heading}", allow_empty=False)
+        layout = table.get("layout", "legacy")
+        if (
+            not isinstance(layout, str)
+            or layout not in {"legacy", "grouped"}
+            or (layout == "grouped" and (skill not in {"code-review", "code-remediate"} or heading == "PR Snapshot"))
+        ):
+            raise HandoffError(f"table-layout-invalid:{heading}")
         expected = REVIEW_TABLE_COLUMNS.get(heading) if skill == "code-review" else STANDARD_COLUMNS[skill]
         if expected is None or tuple(columns) != expected:
             raise HandoffError(f"table-columns-mismatch:{skill}:{heading}")
@@ -177,6 +187,11 @@ def _validate_tables(payload: dict[str, Any], skill: str, branch: str) -> tuple[
             cells = _require_string_list(row.get("cells"), f"table-row-cells:{row_id}", allow_empty=False)
             if len(cells) != len(columns):
                 raise HandoffError(f"table-row-width-mismatch:{row_id}")
+            if layout == "grouped" and skill == "code-review":
+                _require_string(row.get("title"), f"table-row-title:{row_id}")
+                for field in ("summary", "closure_evidence"):
+                    if field in row:
+                        _require_string(row[field], f"table-row-{field}:{row_id}")
             table_cells.extend(cells)
             row_sources = _require_string_list(
                 row.get("source_ids"), f"table-row-source-ids:{row_id}", allow_empty=False
@@ -377,6 +392,8 @@ def _table_cell(value: str) -> str:
 
 def _render_table(table: dict[str, Any]) -> list[str]:
     """Render one validated table and its symbol details deterministically."""
+    if table.get("layout") == "grouped":
+        return _render_grouped_table(table)
     columns = table["columns"]
     lines = [f"**{table['heading']}**", "", "| " + " | ".join(columns) + " |"]
     lines.append("| " + " | ".join("---" for _ in columns) + " |")
@@ -389,6 +406,202 @@ def _render_table(table: dict[str, Any]) -> list[str]:
             for detail in table["details"]
         )
     return lines
+
+
+def _render_grouped_table(table: dict[str, Any]) -> list[str]:
+    """Present bound machine cells as a short overview and labeled per-item details."""
+    remediation = tuple(table["columns"]) == STANDARD_COLUMNS["code-remediate"]
+    columns = ["ID", "Severity", "Finding", "Outcome"] if remediation else ["ID", "Finding", "Status"]
+    lines = [
+        f"**{table['heading']}**",
+        "",
+        "| " + " | ".join(columns) + " |",
+        "| " + " | ".join("---" for _ in columns) + " |",
+    ]
+    definitions = {entry["id"]: entry["text"] for entry in table.get("details", [])}
+    for row in table["rows"]:
+        cells = row["cells"]
+        overview = [*cells[:3], cells[4].split(" — [", 1)[0]] if remediation else [cells[0], row["title"], cells[3]]
+        lines.append("| " + " | ".join(_table_cell(value) for value in overview) + " |")
+    for row in table["rows"]:
+        cells = row["cells"]
+        title = cells[2] if remediation else row["title"]
+        lines.extend(("", f"**{_table_cell(cells[0])} — {_table_cell(title)}**", ""))
+        if row.get("summary"):
+            lines.append(f"- Issue: {_table_cell(row['summary'])}")
+        fields = zip(table["columns"][3:], cells[3:]) if remediation else zip(table["columns"][1:], cells[1:])
+        for label, value in fields:
+            # Expand only declared symbols; source IDs remain literal and fully visible.
+            if label == "Sources":
+                lines.append("- Sources:")
+                lines.extend(f"  - {source}" for source in value.splitlines())
+                continue
+            expanded = re.sub(r"\[([^\]]+)\]", lambda match: definitions.get(match[1], match[0]), value)
+            lines.append(f"- {label}: " + expanded.replace("\r\n", "\n").replace("\n", "\n  "))
+        if row.get("closure_evidence"):
+            lines.append(f"- Done when: {_table_cell(row['closure_evidence'])}")
+    return lines
+
+
+def _validate_selection(payload: object) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, int]]:
+    """Validate source ownership, counts and choice before rendering any selection context.
+
+    Null selected_indexes means awaiting input; a list records the confirmed choice. All items, including closed
+    nonselectable entries, participate in identity and source counts. Related mentions never count as new sources.
+    """
+    inventory = _require_object(payload, "selection")
+    if (
+        type(inventory.get("schema_version")) is not int
+        or inventory["schema_version"] != 1
+        or not isinstance(inventory.get("items"), list)
+    ):
+        raise HandoffError("selection-schema-invalid")
+    items = inventory["items"]
+    identities: set[str] = set()
+    sources: set[tuple[str, str]] = set()
+    canonical: set[tuple[str, str]] = set()
+    selectable = []
+    grouped = 0
+    for item in items:
+        item = _require_object(item, "selection-item")
+        for field in ("input_item_id", "item_name", "item_type", "severity", "summary", "closure_evidence"):
+            _require_string(item.get(field), f"selection-item-{field}")
+        identity = item["input_item_id"]
+        if (
+            identity != identity.strip()
+            or identity in identities
+            or item["severity"] not in {"critical", "high", "medium", "low"}
+        ):
+            raise HandoffError("selection-item-identity-or-severity-invalid")
+        identities.add(identity)
+        if not isinstance(item.get("selectable"), bool):
+            raise HandoffError("selection-item-selectable-invalid")
+        if item["selectable"]:
+            selectable.append(item)
+        records = item.get("sources")
+        if not isinstance(records, list) or not records:
+            raise HandoffError("selection-sources-missing")
+        grouped += len(records) > 1
+        for source in records:
+            source = _require_object(source, "selection-source")
+            for field in ("kind", "source_id", "location", "body", "evidence"):
+                _require_string(source.get(field), f"selection-source-{field}")
+            kind, source_id = source["kind"], source["source_id"]
+            if (
+                kind not in {"report", "online"}
+                or source_id != source_id.strip()
+                or re.search(r"[\r\n\[\]]", source_id)
+            ):
+                raise HandoffError("selection-source-invalid")
+            if (kind, source_id) in sources:
+                raise HandoffError("selection-source-duplicate")
+            if kind == "online" and re.fullmatch(r"(?!https?://)\S+", source_id, re.IGNORECASE) is None:
+                raise HandoffError("selection-online-source-invalid")
+            sources.add((kind, source_id))
+            if kind == "report":
+                match = re.fullmatch(r"(.+?)(?::[1-9][0-9]*|#([^#\s]+))", source_id)
+                if match is None:
+                    raise HandoffError("selection-report-source-invalid")
+                if match[2] is not None and not match[1].lower().endswith(".json"):
+                    raise HandoffError("selection-report-source-invalid")
+                finding_id = source.get("finding_id", match[2])
+                if finding_id is not None:
+                    _require_string(finding_id, "selection-source-finding-id")
+                    if match[2] is not None and match[2] != finding_id:
+                        raise HandoffError("selection-source-finding-id-mismatch")
+                    report_id = source.get("report_id", PurePosixPath(match[1].replace("\\", "/")).as_posix())
+                    _require_string(report_id, "selection-source-report-id")
+                    key = (report_id, finding_id)
+                    if key in canonical:
+                        raise HandoffError("selection-canonical-finding-duplicate")
+                    canonical.add(key)
+            if "related_mentions" in source:
+                _require_string_list(source["related_mentions"], "selection-related-mentions")
+    counts = {"source_records_total": len(sources), "grouped_items_total": grouped, "items_total": len(items)}
+    for key, value in counts.items():
+        if key in inventory and (type(inventory[key]) is not int or inventory[key] != value):
+            raise HandoffError(f"selection-count-mismatch:{key}")
+    selected = inventory.get("selected_indexes")
+    if selected is not None and (
+        not isinstance(selected, list)
+        or any(type(index) is not int or not 1 <= index <= len(selectable) for index in selected)
+        or len(set(selected)) != len(selected)
+    ):
+        raise HandoffError("selection-index-invalid")
+    return inventory, selectable, counts
+
+
+def render_selection(payload: object) -> str:
+    """Render a validated inventory as a short overview with named evidence groups."""
+    inventory, selectable, counts = _validate_selection(payload)
+    items = inventory["items"]
+    selected = inventory.get("selected_indexes")
+    grouped = counts["grouped_items_total"]
+    source_count = counts["source_records_total"]
+    lines = [
+        "## Resolution Scope Selection",
+        "",
+        "Choose by #; IDs identify findings and do not change with selection order.",
+        "",
+    ]
+    if not selectable:
+        lines.extend(
+            ("No selectable findings (none-selectable).", "", "Selected indexes: none. Deferred indexes: none.")
+        )
+    elif selected is None:
+        high = ", ".join(item["input_item_id"] for item in selectable if item["severity"] in {"critical", "high"})
+        lines.append(f"Awaiting selection. High-priority findings: {high or 'none'}.")
+    else:
+        deferred = [item["input_item_id"] for index, item in enumerate(selectable, 1) if index not in selected]
+        lines.extend(
+            (
+                f"Confirmed selected indexes: {', '.join(map(str, selected)) or 'none'}.",
+                "",
+                f"Deferred by your selection: {', '.join(deferred) or 'none'}.",
+            )
+        )
+    lines.extend(
+        (
+            "",
+            f"Items: {len(items)}; selectable: {len(selectable)}; sources: {source_count}; grouped items: {grouped}.",
+            "",
+            "| # | Severity | Finding |",
+            "| --- | --- | --- |",
+        )
+    )
+    for index, item in enumerate(selectable, 1):
+        lines.append(
+            f"| {index} | {item['severity']} | {_table_cell(item['input_item_id'])} — {_table_cell(item['item_name'])} |"
+        )
+    for index, item in enumerate(selectable, 1):
+        lines.extend(
+            (
+                "",
+                f"### {index} · {_table_cell(item['input_item_id'])} — {_table_cell(item['item_name'])}",
+                "",
+                f"- Issue: {_table_cell(item['summary'])}",
+                f"- Done when: {_table_cell(item['closure_evidence'])}",
+            )
+        )
+        for source in item["sources"]:
+            lines.append(f"- Evidence: {source['kind']} [{source['source_id']}]")
+            if source.get("related_mentions"):
+                lines.append(
+                    f"  - Related mentions: {', '.join(_table_cell(value) for value in source['related_mentions'])}"
+                )
+    if "pr_relevance" in inventory:
+        relevance = _require_object(inventory["pr_relevance"], "selection-pr-relevance")
+        lines.extend(("", "## PR Relevance Summary", ""))
+        for field in (
+            "connected_open_items_total",
+            "connected_selectable_items_total",
+            "connected_required_followup_total",
+            "connected_items_marked_out_of_scope",
+        ):
+            if type(relevance.get(field)) is not int or relevance[field] < 0:
+                raise HandoffError(f"selection-pr-relevance-invalid:{field}")
+            lines.append(f"- {field.replace('_', ' ')}: {relevance[field]}")
+    return "\n".join(lines) + "\n"
 
 
 def render_handoff(payload: object) -> str:
@@ -502,7 +715,7 @@ def check_files(handoff_path: Path, final_path: Path, validation_path: Path) -> 
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse the render/check command contract."""
+    """Parse final handoff and pre-selection rendering/check contracts."""
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="action", required=True)
     render = subparsers.add_parser("render", help="Validate a handoff and write final output plus digests.")
@@ -513,6 +726,10 @@ def parse_args() -> argparse.Namespace:
     check.add_argument("--handoff", type=Path, required=True)
     check.add_argument("--final", type=Path, required=True)
     check.add_argument("--validation", type=Path, required=True)
+    selection = subparsers.add_parser("selection", help="Validate the inventory before rendering or checking scope.")
+    selection.add_argument("--input", type=Path, required=True, help="Canonical selection.json inventory.")
+    selection.add_argument("--out-scope", type=Path, required=True)
+    selection.add_argument("--check", action="store_true", help="Check exact existing scope bytes without writing.")
     return parser.parse_args()
 
 
@@ -522,6 +739,27 @@ def main() -> int:
     try:
         if arguments.action == "render":
             result = render_files(arguments.handoff, arguments.out_final, arguments.out_validation)
+        elif arguments.action == "selection":
+            _require_siblings(arguments.input, arguments.out_scope)
+            if arguments.out_scope.is_symlink() or arguments.input.resolve() == arguments.out_scope.resolve():
+                raise HandoffError("selection-output-aliases-input-or-symlink")
+            if (
+                arguments.input.is_file()
+                and arguments.out_scope.exists()
+                and arguments.input.samefile(arguments.out_scope)
+            ):
+                raise HandoffError("selection-output-aliases-input-or-symlink")
+            rendered = render_selection(_load_json(arguments.input)).encode("utf-8")
+            if arguments.check:
+                if not arguments.out_scope.is_file() or arguments.out_scope.read_bytes() != rendered:
+                    raise HandoffError("selection-render-mismatch")
+            else:
+                arguments.out_scope.write_bytes(rendered)
+            result = {
+                "status": "pass",
+                "input_sha256": _sha256(arguments.input.read_bytes()),
+                "rendered_sha256": _sha256(rendered),
+            }
         else:
             result = check_files(arguments.handoff, arguments.final, arguments.validation)
     except HandoffError as error:

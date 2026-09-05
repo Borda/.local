@@ -450,14 +450,31 @@ def _review_finding_identities(metadata: dict[str, Any], result: dict[str, Any])
         raise SystemExit("unsupported-result-schema-version")
 
     records = metadata.get("review_findings")
+    records_version = metadata.get("finding_records_version")
+    if records_version is not None and (type(records_version) is not int or records_version != 1):
+        raise SystemExit("review-finding-records-version-invalid")
     if not isinstance(records, list):
         raise SystemExit("review-findings-records-missing")
     counts = {severity: 0 for severity in FINDING_SEVERITIES}
     identities: set[str] = set()
     for index, record in enumerate(records, start=1):
-        if not isinstance(record, dict) or set(record) != {"id", "severity"}:
+        detail_fields = {"title", "summary", "required_change", "evidence", "closure_evidence"}
+        if not isinstance(record, dict) or set(record) not in ({"id", "severity"}, {"id", "severity"} | detail_fields):
             raise SystemExit(f"review-finding-record-invalid:{index}")
+        if "title" in record:
+            for field in detail_fields - {"evidence"}:
+                if not isinstance(record[field], str) or not record[field].strip():
+                    raise SystemExit(f"review-finding-{field}-invalid:{index}")
+            evidence = record["evidence"]
+            if (
+                not isinstance(evidence, list)
+                or not evidence
+                or any(not isinstance(entry, str) or not entry.strip() for entry in evidence)
+            ):
+                raise SystemExit(f"review-finding-evidence-invalid:{index}")
         identity = record["id"]
+        if records_version == 1 and "title" not in record:
+            raise SystemExit(f"review-finding-canonical-details-missing:{index}")
         severity = record["severity"]
         if not isinstance(identity, str) or not identity.strip():
             raise SystemExit(f"review-finding-id-invalid:{index}")
@@ -552,7 +569,12 @@ def _validate_action_table(notes_path: Path, result: dict[str, Any], metadata: d
     """Require actionable, evidence-backed rows for non-approval review outcomes."""
     decision = metadata["review_decision"]
     recommendation = decision["recommendation"]
-    if recommendation == "accept-as-is" or (scope != "pr" and recommendation != "needs-more-work"):
+    canonical_actions = metadata.get("finding_records_version") == 1 and bool(
+        metadata.get("review_findings") or metadata.get("operational_blockers")
+    )
+    if not canonical_actions and (
+        recommendation == "accept-as-is" or (scope != "pr" and recommendation != "needs-more-work")
+    ):
         return
 
     rows = _action_table_rows(notes_path.read_text(encoding="utf-8"))
@@ -565,6 +587,7 @@ def _validate_action_table(notes_path: Path, result: dict[str, Any], metadata: d
         raise SystemExit("review-findings-action-table-empty")
     finding_ids = _review_finding_identities(metadata, result)
     blocker_ids = _operational_blocker_identities(metadata, finding_ids or set()) if finding_ids is not None else set()
+    records_by_id = {record["id"]: record for record in metadata["review_findings"]} if finding_ids is not None else {}
     action_identities: set[str] = set()
     for index, row in enumerate(action_rows, start=1):
         if not all(row):
@@ -577,6 +600,17 @@ def _validate_action_table(notes_path: Path, result: dict[str, Any], metadata: d
             raise SystemExit(f"review-findings-action-table-status-closed:{index}")
         if finding_ids is not None and identity not in (finding_ids | blocker_ids):
             raise SystemExit(f"review-findings-action-table-identity-unbound:{identity}")
+        record = records_by_id.get(identity)
+        if (
+            record is not None
+            and "required_change" in record
+            and row[1:3]
+            != [
+                record["required_change"].replace("\r\n", "\n").replace("\n", "<br>"),
+                "; ".join(record["evidence"]).replace("\r\n", "\n").replace("\n", "<br>"),
+            ]
+        ):
+            raise SystemExit(f"review-findings-action-table-content-mismatch:{identity}")
     if finding_ids is not None:
         missing = sorted((finding_ids | blocker_ids) - action_identities)
         if missing:

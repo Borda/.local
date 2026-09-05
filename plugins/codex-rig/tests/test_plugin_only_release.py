@@ -6,8 +6,11 @@ from collections import Counter
 import hashlib
 import importlib.util
 import json
+import os
 import re
+import shlex
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -521,11 +524,79 @@ def test_approval_contract_keeps_runtime_reason_short_and_prefix_safe() -> None:
 
     commit_contract = normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
     assert "application of the general approval contract" in commit_contract
-    assert "mode 0700" in commit_contract
-    assert "reject symlink" in commit_contract
-    assert (
-        "must not repeat the command, flags, message-file path, message body, or full approval brief" in commit_contract
+    assert "do not create a temporary or persistent commit-message file" in commit_contract
+    assert "one message argument" in commit_contract
+    assert "--cleanup=verbatim" in commit_contract
+    assert "must not repeat the command, flags, message body, or full approval brief" in commit_contract
+
+
+def test_commit_contract_preserves_literal_message_and_failure_boundaries() -> None:
+    """Reject unsafe interpolation, hidden file fallback, and automatic repair commits."""
+    contract = normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
+    for required in (
+        "show the complete secret-free message in chat",
+        "shell-free argv",
+        "posix",
+        "powershell",
+        "never use double-quoted shell interpolation",
+        "command-size or encoding limits",
+        "do not silently fall back to a file",
+        "normalizing only one terminal lf",
+        "raw git output",
+        "on denial, failure, or mismatch, do not retry automatically or change the index",
+        "do not amend",
+        "full message may appear in the runtime command approval",
+        "does not promise a fixed number of host approval prompts",
+    ):
+        assert required in contract
+
+
+@pytest.mark.parametrize(
+    "transport",
+    [
+        "argv",
+        pytest.param("posix", marks=pytest.mark.skipif(shutil.which("sh") is None, reason="POSIX shell unavailable")),
+        pytest.param("rtk", marks=pytest.mark.skipif(shutil.which("rtk") is None, reason="RTK executable unavailable")),
+    ],
+)
+def test_file_free_commit_preserves_reviewed_message(tmp_path: Path, transport: str) -> None:
+    """Preserve hostile-looking literal text without shell expansion or draft files."""
+    contract = (PLUGIN_ROOT / "shared" / "commit-response-template.md").read_text(encoding="utf-8")
+    command = re.search(r"`(rtk git commit --cleanup=verbatim -m <message>)`", contract)
+    assert command is not None
+    message = (
+        "test(cli): preserve literal commit text\n\n"
+        "Changes:\n- Keep 'apostrophes', \"quotes\", C:\\work\\path, and Unicode: příliš 日本語.\n"
+        "- Preserve $(touch shell-expanded), `touch backtick-expanded`, $HOME, %PATH%, & | ; < >.\n\n"
+        "Impact:\n- No evaluation or lossy transport.\n\n"
+        "Verification:\n- Exact message and no side-effect files.\n"
+        "# Keep this comment-looking line and trailing spaces.  \n\n"
+        "Residual limits:\n- None known\n\n---\n\n"
+        "Co-authored-by: Codex <codex@openai.com>"
     )
+    # Isolate the disposable repository from caller Git routing and global hooks/config.
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+    subprocess.run(["git", "init", "--quiet", str(tmp_path)], check=True, env=env, capture_output=True)
+    argv = shlex.split(command.group(1))
+    argv = argv[1:-1] + [message, "--allow-empty"]
+    argv[1:1] = ["-c", "user.name=Contract Test", "-c", "user.email=contract@example.invalid"]
+    if transport == "rtk":
+        argv.insert(0, shutil.which("rtk"))
+    if transport == "posix":
+        # Match the documented POSIX apostrophe encoding, not shell interpolation.
+        quoted = ["'" + part.replace("'", "'\"'\"'") + "'" for part in argv]
+        argv = [shutil.which("sh"), "-c", " ".join(quoted)]
+    subprocess.run(argv, cwd=tmp_path, env=env, check=True, capture_output=True)
+    stored = subprocess.run(
+        ["git", "--no-pager", "show", "-s", "--format=format:%B", "HEAD"],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+    ).stdout.decode("utf-8")
+    assert stored.removesuffix("\n") == message
+    assert sorted(path.name for path in tmp_path.iterdir()) == [".git"]
 
 
 def test_calibration_recurrence_cases_cover_each_escalation_stage() -> None:

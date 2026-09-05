@@ -10,9 +10,9 @@ with the ``implement`` action and ``--task`` for a foreground request, or add ``
 Outputs: Every command writes exactly one JSON object to stdout; artifacts live beneath ``<workspace>/.temp/bridge``.
 Failure: Invalid requests, invalid model output, unavailable executables, timeouts, and structured child faults become a
 validated result envelope and an incident when appropriate. Used by: Claude-facing bridge skills, the Codex-facing stdio
-MCP server, and bridge diagnostics. The implementation supports Python 3.10+, uses Python's standard library, and falls
-back to the native ``taskkill`` process-tree control on Windows when a graceful control event cannot stop the complete
-child group.
+MCP server, and bridge diagnostics. The implementation supports Python 3.10+, uses Python's standard library, and uses
+native ``taskkill`` process-tree control on Windows. Every termination path performs a bounded leader wait to collect
+its actual exit status; unavailable status is diagnosed without inventing a return code.
 """
 
 from __future__ import annotations
@@ -885,27 +885,35 @@ def _drain_terminated_child(process: subprocess.Popen[str]) -> tuple[str, str]:
 
 
 def _terminate_process_group(process: subprocess.Popen[str]) -> None:
-    """Terminate the child group through native POSIX or Windows process-tree controls."""
-    if os.name == "nt":
-        if not _terminate_windows_process_tree(process.pid):
+    """Terminate the child tree and collect its leader's exit status within a bounded wait."""
+    try:
+        if os.name == "nt":
+            if not _terminate_windows_process_tree(process.pid):
+                process.kill()
+            return
+        kill_process_group = getattr(os, "killpg", None)
+        if kill_process_group is None:
             process.kill()
-        return
-    kill_process_group = getattr(os, "killpg", None)
-    if kill_process_group is None:
-        process.kill()
-        return
-    try:
-        kill_process_group(process.pid, signal.SIGTERM)
-    except OSError:
-        process.kill()
-        return
-    _wait_for_cleanup_grace(process)
-    try:
-        # The leader can exit during the grace period while descendants retain
-        # inherited pipes, so leader completion is never proof that its group ended.
-        kill_process_group(process.pid, signal.SIGKILL)
-    except OSError:
-        pass
+            return
+        try:
+            kill_process_group(process.pid, signal.SIGTERM)
+        except OSError:
+            process.kill()
+            return
+        _wait_for_cleanup_grace(process)
+        try:
+            # The leader can exit during the grace period while descendants retain
+            # inherited pipes, so leader completion is never proof that its group ended.
+            kill_process_group(process.pid, signal.SIGKILL)
+        except OSError:
+            pass
+    finally:
+        # External tree kills and Popen.kill() do not refresh Popen.returncode.
+        # Reap every termination path without letting failed cleanup hang a request.
+        try:
+            process.wait(timeout=2.0)
+        except (OSError, subprocess.TimeoutExpired):
+            print("Bridge child exit status unavailable after bounded cleanup wait", file=sys.stderr)
 
 
 def _wait_for_cleanup_grace(process: subprocess.Popen[str]) -> None:

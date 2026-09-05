@@ -12,6 +12,7 @@ from pathlib import Path
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_SAFE_TEST_SELECTION = (
+    "tests/test_finding_presentation.py",
     "tests/test_parallel_execution.py",
     "tests/test_parallel_telemetry.py",
     "tests/test_parallel_worktrees.py",

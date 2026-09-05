@@ -268,6 +268,10 @@ Independence gate:
 
 ### 06: Write `<run-directory>/review-notes.md`
 
+Set `CODE_REVIEW_METADATA.finding_records_version=1` for new assessed reviews; legacy records without this marker remain readable.
+
+Define each finding once in `CODE_REVIEW_METADATA.review_findings` with stable `id`, `severity`, `title`, `summary`, `required_change`, nonempty ordered `evidence` strings, and `closure_evidence`. These enriched records are canonical; counts, notes and final actions are views, never separately ingested findings. In `Findings`, reference the canonical IDs instead of repeating the complete finding text. Decision summaries and confidence gaps sharing a finding's closure cross-reference that ID; independent operational obligations remain distinct. Keep genuine code/test/online evidence in the canonical record, not merely repeated report-line mentions.
+
 Required sections:
 
 - `Decision Summary`
@@ -328,13 +332,15 @@ For an assessed `scope=pr` review, immediately before user-facing output, rebuil
 
 Read PR CI from `pr.json.statusCheckRollup`: a failing completed check makes CI `failing`; otherwise an incomplete check makes it `pending`; otherwise completed successful/neutral/skipped checks make it `passing`. An absent or empty rollup is `unavailable`, never `passing`; name the known non-passing checks. Classify `Type` from verified change intent and diff, not title or file count. Map `Suggestion` directly from `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, and `not-aligned`, respectively. The snapshot applies only after successful source assessment: terminal unavailable and close outputs retain their existing no-table contracts.
 
-For every assessed non-`accept-as-is` PR decision and any `needs-more-work` decision in another scope, add a `## Review Findings and Merge Blocks` section immediately after `Decision Summary`. It is the canonical pre-merge handoff and must use this exact Markdown header and column order:
+For every new assessed review with findings or operational blockers, regardless of scope or recommendation, add a `## Review Findings and Merge Blocks` section immediately after `Decision Summary` and include its grouped table in the final handoff. The historical requirement for every assessed non-`accept-as-is` PR decision and any `needs-more-work` decision in another scope also remains. It is the canonical pre-merge handoff and must use this exact Markdown header and column order:
 
 | Finding / area | Required change | Evidence | Status |
 | -- | -- | -- | -- |
-| Finding ID/title and owning area, or an operational blocker | Concrete action that closes the finding or decision condition | File, command, gate, review thread, or other observed evidence | Required, Minor change, Verify, Implemented; verify, Required verification, Reject, or Not aligned |
+| Exact finding ID or declared operational-blocker ID | Canonical required_change | Canonical evidence joined with semicolon-space | Required, Minor change, Verify, Implemented; verify, Required verification, Reject, or Not aligned |
 
 Include one non-empty row for every reported finding, unresolved blocker, failed or missing gate, and required verification. Schema-v2 first cells use the exact declared finding or operational-blocker IDs; the validator checks unique, complete identity coverage as specified below. Historical schema-v1 has only count-based coverage; the parent must cross-check its source identities.
+
+For new final handoffs, set the findings table `layout=grouped`; keep its four machine columns unchanged. Each finding row additionally carries `title`, `summary`, and `closure_evidence` copied exactly from its canonical record. Its Required change/Evidence cells must equal that record's required_change and semicolon-space-joined evidence. Operational-blocker rows use their exact ID as title and omit the optional summary/closure fields. The renderer shows a short `ID | Finding | Status` overview, then one named detail block containing the complete issue, action, evidence and closure criterion. Human-readable titles never replace stable IDs in machine cells. Historical handoffs without grouped layout remain byte-exact readable.
 
 `Status` must distinguish required, minor, verification-only, rejected, or not aligned; `Implemented` alone is not an open action. Do not collapse distinct findings into a generic row. This table is mandatory after assessment for every non-`accept-as-is` PR and any `needs-more-work` review; missing, malformed, empty, or non-actionable rows fail validation. Terminal review-unavailable output forbids tables and uses plain process diagnostic prose.
 
@@ -431,7 +437,7 @@ Final chat follows the shared ordered frame with these review-specific branches.
 
 For an assessed review:
 
-- New schema-v2 results require `CODE_REVIEW_METADATA.review_findings`: one exact `{"id":"<stable finding ID>","severity":"critical|high|medium|low"}` record per source finding, or `[]` for none. Derive IDs from assessed source findings before writing action rows, never reconstruct them from the table. Per-severity totals must equal `findings`.
+- New schema-v2 results use the enriched canonical `CODE_REVIEW_METADATA.review_findings` records from step 06, or `[]` for none. Historical exact `{"id":"<stable finding ID>","severity":"critical|high|medium|low"}` records remain accepted; do not rewrite historical artifacts. Derive IDs from assessed source findings before writing action rows, never reconstruct them from the table. Per-severity totals must equal `findings`.
 - Optional `operational_blockers` contains exact `{"id":"<stable blocker ID>"}` records for non-finding actions, separate from severity totals. IDs must be nonblank, unique and disjoint. Every required notes action table and final findings table uses those exact IDs as its first cell and covers the complete declared set once—no missing, duplicate or unknown action.
 - Historical schema-v1 count-only artifacts remain readable; new reviews must not downgrade to v1 to avoid identity checks. Terminal unavailable/closed results omit both assessed identity lists.
 - For schema-v2 assessed handoffs, `outcome` is exactly `{"title": "Review Decision", "summary": "Recommendation: <recommendation>."}` with the recommendation copied from `CODE_REVIEW_METADATA.review_decision.recommendation`. Keep rationale, blockers, and required next work in the decision summary and result rows; never replace the canonical outcome with an unbound approval statement.

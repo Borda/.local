@@ -402,6 +402,8 @@ def _validate_code_remediate_final_handoff(result: dict[str, Any], handoff: dict
     if not isinstance(rows, list):
         raise SystemExit("code-remediate-final-handoff-table-invalid")
     expected_items = resolution_table["items"]
+    if metadata.get("resolution_scope", {}).get("presentation_version") == 2 and tables[0].get("layout") != "grouped":
+        raise SystemExit("code-remediate-final-handoff-grouped-layout-required")
     expected_rows = []
     expected_details = []
     expected_source_records = []
@@ -542,6 +544,8 @@ def _validate_code_review_final_handoff(result: dict[str, Any], handoff: dict[st
         if any(not isinstance(identity, str) or not identity.strip() for identity in identities):
             raise SystemExit("code-review-final-handoff-finding-records-invalid")
         table = tables_by_heading.get("Review Findings and Merge Blocks", {})
+        if metadata.get("finding_records_version") == 1 and identities and table.get("layout") != "grouped":
+            raise SystemExit("code-review-final-handoff-grouped-layout-required")
         rows = table.get("rows", [])
         row_identities = [
             row["cells"][0] if isinstance(row, dict) and isinstance(row.get("cells"), list) and row["cells"] else None
@@ -549,6 +553,20 @@ def _validate_code_review_final_handoff(result: dict[str, Any], handoff: dict[st
         ]
         if len(row_identities) != len(identities) or set(row_identities) != set(identities):
             raise SystemExit("code-review-final-handoff-finding-identity-mismatch")
+        if table.get("layout") == "grouped":
+            by_id = {record["id"]: record for record in records + blockers}
+            for row in rows:
+                record = by_id[row["cells"][0]]
+                if row.get("title") != record.get("title", record["id"]):
+                    raise SystemExit("code-review-final-handoff-finding-title-mismatch")
+                for field in ("summary", "closure_evidence"):
+                    if row.get(field) != record.get(field):
+                        raise SystemExit(f"code-review-final-handoff-finding-{field}-mismatch")
+                if "required_change" in record and row["cells"][1:3] != [
+                    record["required_change"],
+                    "; ".join(record["evidence"]),
+                ]:
+                    raise SystemExit("code-review-final-handoff-finding-content-mismatch")
 
 
 def _validate_final_handoff(result: dict[str, Any], skill: str, out_dir: Path, gates: dict[str, Any]) -> None:
@@ -865,6 +883,25 @@ def _validate_code_remediate_report_intake(result: dict[str, Any], out_dir: Path
         if not isinstance(value, int) or value < 0:
             raise SystemExit(f"code-remediate-invalid-review-report-intake:{key}")
 
+    grouped_scope = metadata.get("resolution_scope", {}).get("presentation_version") == 2
+    if grouped_scope:
+        # Item classifications, unlike rendered titles, bind report gate obligations to the inventory.
+        report_items = [
+            item
+            for item in metadata["final_resolution_table"]["items"]
+            if any(source["kind"] == "report" for source in item["sources"])
+        ]
+        gate_items = [item for item in report_items if item["item_type"] in {"review-gate", "confidence-gap"}]
+        derived = {
+            "report_items_total": len(report_items),
+            "review_gate_items_total": len(gate_items),
+            "review_gate_items_selectable": sum(item["selectable"] for item in gate_items),
+            "report_items_marked_out_of_scope": sum(
+                item.get("triage_status") == "out-of-scope" for item in report_items
+            ),
+        }
+        if any(intake[key] != value for key, value in derived.items()) or (report_items and not requested_report):
+            raise SystemExit("code-remediate-review-intake-inventory-mismatch")
     if not requested_report:
         return
 
@@ -873,18 +910,25 @@ def _validate_code_remediate_report_intake(result: dict[str, Any], out_dir: Path
     review_gate_items_selectable = intake["review_gate_items_selectable"]
     if report_items_total < review_gate_items_total:
         raise SystemExit("code-remediate-review-gates-exceed-report-items")
-    if review_gate_items_total > 0 and review_gate_items_selectable == 0:
+    if not grouped_scope and review_gate_items_total > 0 and review_gate_items_selectable == 0:
         raise SystemExit("code-remediate-review-gates-not-selectable")
 
     action_text = (out_dir / "action-items.md").read_text(encoding="utf-8").lower()
     scope_text = (out_dir / "resolution-scope.md").read_text(encoding="utf-8").lower()
     if "review report intake" not in action_text:
         raise SystemExit("code-remediate-review-report-intake-section-missing")
-    if review_gate_items_total > 0 and not any(
-        token in action_text for token in ("checks_failed", "follow_up", "review-gate", "review gate")
+    if (
+        not grouped_scope
+        and review_gate_items_total > 0
+        and not any(token in action_text for token in ("checks_failed", "follow_up", "review-gate", "review gate"))
     ):
         raise SystemExit("code-remediate-review-gate-items-missing")
-    if review_gate_items_total > 0 and "review-gate" not in scope_text and "review gate" not in scope_text:
+    if (
+        not grouped_scope
+        and review_gate_items_total > 0
+        and "review-gate" not in scope_text
+        and "review gate" not in scope_text
+    ):
         raise SystemExit("code-remediate-review-gate-scope-missing")
 
 
@@ -913,6 +957,10 @@ def _validate_code_remediate_scope_selection(metadata: dict[str, Any], out_dir: 
         raise SystemExit("code-remediate-invalid-deferred-indexes")
     if not isinstance(selected_groups, list) or not all(isinstance(item, str) for item in selected_groups):
         raise SystemExit("code-remediate-invalid-selected-severity-groups")
+
+    if resolution_scope.get("presentation_version") == 2:
+        _validate_grouped_selection(metadata, out_dir)
+        return
 
     scope_text = (out_dir / "resolution-scope.md").read_text(encoding="utf-8").lower()
     has_selectable = "none-selectable" not in scope_text and "selectable: 0" not in scope_text
@@ -967,6 +1015,56 @@ def _validate_code_remediate_scope_selection(metadata: dict[str, Any], out_dir: 
             line.startswith(f"{closure_ref} ") for line in normalized_scope_lines
         ):
             raise SystemExit("code-remediate-scope-symbol-detail-missing")
+
+
+def _validate_grouped_selection(metadata: dict[str, Any], out_dir: Path) -> None:
+    """Reconcile a rendered pre-edit inventory with confirmed scope and final source ownership."""
+    inventory_path = out_dir / "selection.json"
+    if inventory_path.is_symlink() or not inventory_path.is_file():
+        raise SystemExit("code-remediate-selection-inventory-missing")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).with_name("final_handoff.py")),
+            "selection",
+            "--input",
+            str(inventory_path),
+            "--out-scope",
+            str(out_dir / "resolution-scope.md"),
+            "--check",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode:
+        raise SystemExit("code-remediate-selection-invalid:" + completed.stderr.strip())
+    inventory = _load_json(inventory_path)
+    if metadata.get("mode") == "pr" and inventory.get("pr_relevance") != metadata.get("pr_relevance"):
+        raise SystemExit("code-remediate-selection-pr-relevance-mismatch")
+    scope = metadata["resolution_scope"]
+    selected = inventory.get("selected_indexes")
+    selectable = [item for item in inventory["items"] if item["selectable"]]
+    if (
+        selected is None
+        or selected != scope.get("selected_indexes")
+        or (selectable and not scope.get("selection_confirmed_by_user"))
+    ):
+        raise SystemExit("code-remediate-selection-not-confirmed")
+    expected_deferred = [index for index in range(1, len(selectable) + 1) if index not in selected]
+    if scope.get("deferred_indexes") != expected_deferred:
+        raise SystemExit("code-remediate-selection-deferred-mismatch")
+    if selectable and scope.get("selection_source") == "none-selectable":
+        raise SystemExit("code-remediate-selection-source-incorrectly-none-selectable")
+    if scope.get("selection_source") == "user-prompt" and not scope.get("prompt_presented"):
+        raise SystemExit("code-remediate-user-prompt-not-confirmed")
+    final_items = metadata.get("final_resolution_table", {}).get("items", [])
+    # Only outcomes may change after selection: names, IDs, severity and provenance stay bound.
+    fields = ("input_item_id", "item_name", "item_type", "severity", "selectable", "sources")
+    before = [{field: item.get(field) for field in fields} for item in inventory["items"]]
+    after = [{field: item.get(field) for field in fields} for item in final_items]
+    if before != after:
+        raise SystemExit("code-remediate-selection-final-inventory-mismatch")
 
 
 def _code_remediate_run_path(out_dir: Path, value: object, error_code: str) -> Path:

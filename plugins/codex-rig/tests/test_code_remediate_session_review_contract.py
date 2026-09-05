@@ -45,15 +45,15 @@ def test_visible_tables_use_compact_sources_without_dropping_details() -> None:
     """Keep selection and outcome tables readable without weakening the full ledger."""
     skill = CODE_REMEDIATE_SKILL.read_text(encoding="utf-8")
     assert "Item | Severity | Finding | Sources | Outcome | Evidence / next action" in skill
-    assert "category `report|online`" in skill
-    assert "complete body without truncation" in skill
+    assert "Every source has one owning item" in skill
+    assert "complete body" in skill
     assert (
         "`report [<report-file>:<line>]`, `report [<report-json>#<finding-id>]`, or `online [<comment|thread|review-id>]`"
         in skill
     )
-    assert "initial selection, durable resolution, and final outcome tables" in skill
-    assert "Full source details stay in machine metadata and expanded item records" in skill
-    assert "symbol definitions immediately below each table" in skill
+    assert "Keep full source records in metadata and expanded item records" in skill
+    assert "layout=grouped" in skill
+    assert "Failure blocks the prompt and edits" in skill
     assert "omitted_source_records_total" in skill
 
 
