@@ -52,6 +52,12 @@ def _row(
     total_usage: dict[str, int] | None = None,
     terminal: bool = False,
 ) -> list[dict[str, object]]:
+    """Build one token-count row and optionally append its terminal event.
+
+    Example:
+        >>> len(_row(_usage(2, 1), terminal=True))
+        2
+    """
     total_usage = total_usage or usage
     payload: dict[str, object] = {
         "type": "token_count",
@@ -69,6 +75,12 @@ def _row(
 
 
 def _usage(input_tokens: int, output_tokens: int, *, cached: int = 0) -> dict[str, int]:
+    """Build internally consistent token counters for telemetry fixtures.
+
+    Example:
+        >>> _usage(2, 1, cached=1)["total_tokens"]
+        3
+    """
     return {
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
@@ -230,7 +242,12 @@ def test_workload_key_is_required_and_post_mutation_is_detected() -> None:
 
 
 def _parallel_wave() -> dict[str, object]:
-    """Return one valid compact wave for retention-policy checks."""
+    """Return one valid compact wave for retention-policy checks.
+
+    Example:
+        >>> _parallel_wave()["wall_time_ms"]
+        180
+    """
     attempts = [
         collect_attempt_telemetry(
             _row(_usage(40, 20), terminal=True),
@@ -370,7 +387,12 @@ def test_retained_wave_rejects_unknown_fields_and_invalid_lifecycle() -> None:
 
 
 def _retained_record(*, status: str = "passed", resolved_at: str | None = None) -> dict[str, object]:
-    """Return a compact record with a deterministic 30-day expiry policy."""
+    """Return a compact record with a deterministic 30-day expiry policy.
+
+    Example:
+        >>> _retained_record(status="failed")["status"]
+        'failed'
+    """
     return build_retained_wave_evidence(
         _parallel_wave(),
         hmac_secret=SECRET,
@@ -482,11 +504,11 @@ def test_expiry_enforcement_preserves_diagnostic_when_intent_fsync_fails(
     artifact = diagnostics / f"{record['wave_id_hmac']}.diagnostic.json"
     artifact.write_text("sanitized\n", encoding="utf-8", newline="\n")
 
-    def fail_fsync(_descriptor: int) -> None:
+    def _fail_fsync(_descriptor: int) -> None:
         """Simulate a storage failure at the audit durability boundary."""
         raise OSError("full")
 
-    monkeypatch.setattr(parallel_telemetry.os, "fsync", fail_fsync)
+    monkeypatch.setattr(parallel_telemetry.os, "fsync", _fail_fsync)
 
     with pytest.raises(TelemetryError, match="diagnostic-audit-write-failed"):
         enforce_diagnostic_expiry(record, diagnostics_directory=diagnostics, now="2026-10-02T12:00:00Z")
@@ -507,7 +529,7 @@ def test_expiry_enforcement_retains_intent_when_outcome_fsync_fails(
     real_fsync = os.fsync
     calls = 0
 
-    def fail_second_fsync(descriptor: int) -> None:
+    def _fail_second_fsync(descriptor: int) -> None:
         """Fail only the post-deletion audit durability boundary."""
         nonlocal calls
         calls += 1
@@ -515,7 +537,7 @@ def test_expiry_enforcement_retains_intent_when_outcome_fsync_fails(
             raise OSError("full")
         real_fsync(descriptor)
 
-    monkeypatch.setattr(parallel_telemetry.os, "fsync", fail_second_fsync)
+    monkeypatch.setattr(parallel_telemetry.os, "fsync", _fail_second_fsync)
     with pytest.raises(TelemetryError, match="diagnostic-audit-write-failed"):
         enforce_diagnostic_expiry(record, diagnostics_directory=diagnostics, now="2026-10-02T12:00:00Z")
 

@@ -7,6 +7,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import tempfile  # noqa: F401 - used by executable doctest examples
 from pathlib import Path
 from types import ModuleType
 
@@ -28,12 +29,23 @@ def _load_validator() -> ModuleType:
 
 
 def _sha256(path: Path) -> str:
-    """Return the exact SHA-256 digest for one fixture file."""
+    """Return the exact SHA-256 digest for one fixture file.
+
+    Example:
+        >>> len(_sha256(PLUGIN_ROOT / "package-manifest.json"))
+        64
+    """
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _write_role(roles_dir: Path, role_id: str) -> str:
-    """Write one canonical-card-shaped fixture and return its digest."""
+    """Write one canonical-card-shaped fixture and return its digest.
+
+    Example:
+        >>> with tempfile.TemporaryDirectory() as directory:
+        ...     len(_write_role(Path(directory), "qa-specialist"))
+        64
+    """
     path = roles_dir / role_id / "ROLE.md"
     path.parent.mkdir(parents=True)
     path.write_text(
@@ -59,7 +71,12 @@ def _write_role(roles_dir: Path, role_id: str) -> str:
 
 
 def _event(event_id: str, sequence: int) -> dict[str, object]:
-    """Return one parent-observed event fixture."""
+    """Return one parent-observed event fixture.
+
+    Example:
+        >>> _event("start", 1)
+        {'event_id': 'start', 'sequence': 1}
+    """
     return {"event_id": event_id, "sequence": sequence}
 
 

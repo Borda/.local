@@ -58,6 +58,11 @@ _PID_TMP_RE = re.compile(r"\.json\.\d+\.tmp")
 
 
 def _normalize_pid_tmp(text: str) -> str:
+    """Replace process-specific temporary-file IDs before parity comparison.
+
+    >>> _normalize_pid_tmp("write failed: out.json.123.tmp")
+    'write failed: out.json.PID.tmp'
+    """
     return _PID_TMP_RE.sub(".json.PID.tmp", text)
 
 
@@ -138,8 +143,8 @@ def _materialize_old_bin(dest: Path) -> Path:
     return dest / "scan-index"
 
 
-@pytest.fixture(scope="module")
-def old_scan_index(tmp_path_factory: pytest.TempPathFactory) -> Path:
+@pytest.fixture(name="old_scan_index", scope="module")
+def _old_scan_index(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Session-stable path to the golden pre-extraction ``scan-index``."""
     return _materialize_old_bin(tmp_path_factory.mktemp("old_bin_scanner_discovery"))
 
@@ -170,6 +175,11 @@ def _legacy_index(index: dict) -> dict:
 
 
 def _canonical(index: dict) -> str:
+    """Serialize an index with stable key ordering for parity assertions.
+
+    >>> _canonical({"b": 2, "a": 1})
+    '{"a": 1, "b": 2}'
+    """
     return json.dumps(index, sort_keys=True, ensure_ascii=False)
 
 

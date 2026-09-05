@@ -15,12 +15,20 @@ def _load(relative_path: str) -> dict:
 
 
 def _commands(config: dict, event: str, matcher: str | None) -> list[dict]:
-    """Return command hooks registered for exactly one Codex event/matcher pair."""
+    """Return command hooks registered for exactly one Codex event/matcher pair.
+
+    >>> _commands({"hooks": {"start": [{"matcher": None, "hooks": [{"command": "x"}]}]}}, "start", None)
+    [{'command': 'x'}]
+    """
     return [hook for entry in config["hooks"][event] if entry.get("matcher") == matcher for hook in entry["hooks"]]
 
 
 def _command(script: str) -> dict:
-    """Return the cross-platform command schema for one runtime-scoped hook script."""
+    """Return the cross-platform command schema for one runtime-scoped hook script.
+
+    >>> _command("seed-session.py")["type"]
+    'command'
+    """
     return {
         "type": "command",
         "command": f'env CODEMAP_RUNTIME=codex python3 "$PLUGIN_ROOT/hooks/{script}"',

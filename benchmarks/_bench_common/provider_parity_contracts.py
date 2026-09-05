@@ -185,6 +185,10 @@ def canonical_task_bytes(task: Task) -> bytes:
 
     Returns:
         UTF-8 JSON bytes with sorted object keys.
+
+    Examples:
+        >>> canonical_task_bytes({"b": 2, "a": 1})
+        b'{"a": 1, "b": 2}'
     """
     return json.dumps(task, sort_keys=True).encode("utf-8")
 
@@ -234,10 +238,19 @@ def materialize_task_prompt(task: Task) -> str:
         task: Raw task object containing a string ``prompt`` field.
 
     Returns:
-        The exact prompt bytes supplied to either model provider.
+        The prompt string supplied to either model provider, before UTF-8 encoding.
 
     Raises:
         ValueError: If the task prompt or a nested question prompt is invalid.
+
+    Examples:
+        >>> materialize_task_prompt({"prompt": "Explain this function."})
+        'Explain this function.'
+        >>> print(materialize_task_prompt({"prompt": "Review.", "sub_questions": [{"prompt": "Any risks?"}]}))
+        Review.
+        <BLANKLINE>
+        Answer every review question:
+        1. Any risks?
     """
     prompt = task.get("prompt")
     if not isinstance(prompt, str):
@@ -265,6 +278,18 @@ def token_accounting_inconsistent(input_tokens: int, cached_input_tokens: int) -
 
     Gross and cached counts are retained as provider-native evidence. A cache count above gross is internally
     contradictory, so derived token metrics must remain unscoreable rather than being coerced into a plausible value.
+
+    Raise ``ValueError`` for negative counts, booleans, or non-integer values.
+
+    Examples:
+        >>> token_accounting_inconsistent(10, 10)
+        False
+        >>> token_accounting_inconsistent(10, 11)
+        True
+        >>> token_accounting_inconsistent(True, 0)
+        Traceback (most recent call last):
+        ...
+        ValueError: input_tokens must be a non-negative integer token count
     """
     for name, value in (("input_tokens", input_tokens), ("cached_input_tokens", cached_input_tokens)):
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -277,6 +302,17 @@ def fresh_input_tokens(input_tokens: int, cached_input_tokens: int) -> int | Non
 
     Native providers report gross input and a cached subset. The raw values remain available for diagnosis; this derived
     metric is deliberately absent when the cache exceeds gross so it cannot enter token comparisons.
+
+    Both counts must be non-negative integers, excluding booleans; invalid
+    counts raise ``ValueError`` through :func:`token_accounting_inconsistent`.
+
+    Examples:
+        >>> fresh_input_tokens(100, 40)
+        60
+        >>> fresh_input_tokens(100, 100)
+        0
+        >>> fresh_input_tokens(10, 11) is None
+        True
     """
     if token_accounting_inconsistent(input_tokens, cached_input_tokens):
         return None

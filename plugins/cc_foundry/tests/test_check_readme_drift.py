@@ -28,6 +28,10 @@ def _messages(findings: list[crd.Finding]) -> list[str]:
 
     Returns:
         One message string per finding, in the original order.
+
+    Examples:
+        >>> _messages([crd.Finding(crd.FindingKind.VERSION, "old")])
+        ['old']
     """
     return [f.message for f in findings]
 

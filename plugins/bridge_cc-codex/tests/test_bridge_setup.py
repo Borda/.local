@@ -50,7 +50,12 @@ def _setup_module() -> Any:
 def _completed(
     argv: list[str], stdout: str = "", returncode: int = 0, stderr: str = ""
 ) -> subprocess.CompletedProcess[str]:
-    """Build one native-command result without executing a host command."""
+    """Build one native-command result without executing a host command.
+
+    Examples:
+        >>> _completed(["claude", "--version"], returncode=7).returncode
+        7
+    """
     return subprocess.CompletedProcess(argv, returncode, stdout, stderr)
 
 
@@ -71,7 +76,8 @@ def _install_native_boundary(
     calls: list[tuple[list[str], dict[str, object]]] = []
     state = {"claude_installed": claude_installed}
 
-    def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Return deterministic CLI probe responses and record every invocation."""
         command = list(argv)
         calls.append((command, kwargs))
         if command == ["codex", "--version"]:
@@ -112,7 +118,7 @@ def _install_native_boundary(
             return _completed(command, returncode=1)
         return _completed(command, stderr="unsupported mocked command", returncode=2)
 
-    monkeypatch.setattr(setup.subprocess, "run", fake_run)
+    monkeypatch.setattr(setup.subprocess, "run", _fake_run)
     monkeypatch.setattr(setup.shutil, "which", lambda executable: executable)
     return calls
 
@@ -139,14 +145,28 @@ def _redirect_user_state(setup: Any, monkeypatch: pytest.MonkeyPatch, root: Path
 
 
 def _reencode_untrusted_approval(payload: dict[str, object]) -> str:
-    """Model an attacker who can recompute a public checksum but lacks the host signing key."""
+    """Model an attacker who can recompute a public checksum but lacks the host signing key.
+
+    Examples:
+        >>> token = _reencode_untrusted_approval({"action": "configure"})
+        >>> len(token.rsplit(".", 1)[-1])
+        64
+    """
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     encoded = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
     return f"{encoded}.{hashlib.sha256(raw).hexdigest()}"
 
 
 def _age_journal_records(journal: Path, seconds: int) -> None:
-    """Shift every journal record's timestamp into the past by ``seconds``."""
+    """Shift every journal record's timestamp into the past by ``seconds``.
+
+    Examples:
+        >>> journal = getfixture("tmp_path") / "journal.jsonl"
+        >>> _ = journal.write_text('{"timestamp": 10}\\n')
+        >>> _age_journal_records(journal, 3)
+        >>> json.loads(journal.read_text())["timestamp"]
+        7
+    """
     aged = []
     for line in journal.read_text(encoding="utf-8").splitlines():
         record = json.loads(line)
@@ -525,10 +545,11 @@ def test_missing_cli_fails_closed_without_guessing_an_install_command(
     _redirect_user_state(setup, monkeypatch, tmp_path / "user-state")
     calls = _install_native_boundary(setup, monkeypatch)
 
-    def missing_claude(executable: str) -> str | None:
+    def _missing_claude(executable: str) -> str | None:
+        """Hide Claude while leaving Codex discoverable on the fake PATH."""
         return None if executable == "claude" else executable
 
-    monkeypatch.setattr(setup.shutil, "which", missing_claude)
+    monkeypatch.setattr(setup.shutil, "which", _missing_claude)
     result = _invoke(setup, capsys, tmp_path)
 
     assert result["status"] == "blocked"
@@ -736,11 +757,12 @@ def test_action_bound_approvals_cannot_cross_from_configuration_to_authenticatio
     calls = _install_native_boundary(setup, monkeypatch, claude_installed=True, claude_authenticated=True)
     live_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
-    def fake_live(*args: object, **kwargs: object) -> bool:
+    def _fake_live(*args: object, **kwargs: object) -> bool:
+        """Record live-verification attempts without contacting a provider."""
         live_calls.append((args, kwargs))
         return True
 
-    monkeypatch.setattr(setup, "_verify_live", fake_live)
+    monkeypatch.setattr(setup, "_verify_live", _fake_live)
     configuration_plan = _invoke(setup, capsys, tmp_path)
     authentication_plan = _invoke(setup, capsys, tmp_path, "--action", "authenticate")
     live_plan = _invoke(setup, capsys, tmp_path, "--action", "verify-live")
@@ -789,11 +811,12 @@ def test_action_specific_authentication_and_live_approvals_execute_only_their_ex
     calls = _install_native_boundary(setup, monkeypatch, claude_installed=True, claude_authenticated=True)
     live_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
-    def fake_live(*args: object, **kwargs: object) -> bool:
+    def _fake_live(*args: object, **kwargs: object) -> bool:
+        """Record live-verification attempts without contacting a provider."""
         live_calls.append((args, kwargs))
         return True
 
-    monkeypatch.setattr(setup, "_verify_live", fake_live)
+    monkeypatch.setattr(setup, "_verify_live", _fake_live)
     authentication_plan = _invoke(setup, capsys, tmp_path, "--action", "authenticate")
     calls.clear()
     authentication = _invoke(
@@ -1131,7 +1154,8 @@ def test_concurrent_approval_replay_check_cannot_allow_two_native_configurations
     lock_open_count = 0
     lock_path = user_root / "bridge-setup" / "locks" / "claude-user.lock"
 
-    def gate_lock_creation(path: str, flags: int, mode: int = 0o777) -> int:
+    def _gate_lock_creation(path: str, flags: int, mode: int = 0o777) -> int:
+        """Synchronize competing lock opens to exercise exclusive creation."""
         nonlocal lock_open_count
         should_wait = False
         if Path(path) == lock_path and flags & setup.os.O_EXCL:
@@ -1143,11 +1167,12 @@ def test_concurrent_approval_replay_check_cannot_allow_two_native_configurations
                 lock_barrier.wait(timeout=5)
         return real_open(path, flags, mode)
 
-    monkeypatch.setattr(setup.os, "open", gate_lock_creation)
+    monkeypatch.setattr(setup.os, "open", _gate_lock_creation)
     exit_codes: list[int] = []
     errors: list[BaseException] = []
 
-    def apply_same_approval() -> None:
+    def _apply_same_approval() -> None:
+        """Run one approved setup action from a competing worker thread."""
         try:
             exit_codes.append(
                 setup.main(
@@ -1164,8 +1189,8 @@ def test_concurrent_approval_replay_check_cannot_allow_two_native_configurations
         except BaseException as error:  # pragma: no cover - asserted below; keeps concurrent errors visible.
             errors.append(error)
 
-    first = threading.Thread(target=apply_same_approval)
-    second = threading.Thread(target=apply_same_approval)
+    first = threading.Thread(target=_apply_same_approval)
+    second = threading.Thread(target=_apply_same_approval)
     first.start()
     second.start()
     first.join(timeout=10)

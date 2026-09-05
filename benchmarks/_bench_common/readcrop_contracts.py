@@ -164,7 +164,20 @@ def build_readcrop_contract(task: Mapping[str, Any], *, source: str) -> Readcrop
 
 
 def parse_readcrop_answer(text: str) -> ReadcropAnswer:
-    """Parse one exact JSON answer object and reject incomplete envelopes."""
+    """Parse exactly the signature, parameters, and behavior fields from JSON.
+
+    Signature and behavior must be non-blank strings. Parameters may be an empty
+    list; otherwise each item must be a non-blank string. Preserve string text
+    and parameter order, returning parameters as a tuple. Raise ``ValueError``
+    for invalid JSON, missing or extra keys, and invalid field values.
+
+    Examples:
+        >>> answer = parse_readcrop_answer('{"signature": "f(x)", "parameters": ["x"], "behavior": "Return x."}')
+        >>> answer.parameters
+        ('x',)
+        >>> answer.signature
+        'f(x)'
+    """
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -307,12 +320,28 @@ def _required_behavior_facts(
 
 
 def _normalize(value: str) -> str:
-    """Normalize answer text for identifier-preserving recall checks."""
+    """Lowercase text and collapse whitespace while retaining identifier punctuation.
+
+    Examples:
+        >>> _normalize("  Use   input_value  ")
+        'use input_value'
+    """
     return re.sub(r"\s+", " ", value).strip().lower()
 
 
 def _parameter_names(source: str) -> tuple[str, ...]:
-    """Extract ordered non-receiver parameters from one symbol source body."""
+    """Extract parameters from the first function yielded by the parsed source's AST walk.
+
+    Collect positional-only, ordinary, then keyword-only names; append variadic
+    positional and keyword names last. Drop a leading ``self`` or ``cls``.
+    Raise ``ValueError`` for unparsable source or source without a function.
+
+    Examples:
+        >>> _parameter_names("def f(self, x, *, limit=1): pass")
+        ('x', 'limit')
+        >>> _parameter_names("def f(x, *args, flag=False, **kwargs): pass")
+        ('x', 'flag', 'args', 'kwargs')
+    """
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:

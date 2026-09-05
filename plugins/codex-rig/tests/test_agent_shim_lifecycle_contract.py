@@ -34,7 +34,7 @@ EXPECTED_ROLES = {
 }
 
 
-def load_contract() -> dict[str, object]:
+def _load_contract() -> dict[str, object]:
     """Load the lifecycle contract as one JSON object."""
     payload = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
     assert isinstance(payload, dict)
@@ -43,7 +43,7 @@ def load_contract() -> dict[str, object]:
 
 def test_public_grammar_scope_and_exit_contract_are_frozen() -> None:
     """Prevent lifecycle scope or user interaction from widening silently."""
-    contract = load_contract()
+    contract = _load_contract()
 
     assert contract["schema"] == 1
     assert contract["release"] == "0.2.0"
@@ -82,7 +82,7 @@ def test_public_grammar_scope_and_exit_contract_are_frozen() -> None:
 
 def test_exact_whole_roster_and_target_names_are_frozen() -> None:
     """Prevent subset behavior, filename drift, or namespace-only cleanup."""
-    contract = load_contract()
+    contract = _load_contract()
     roles = contract["roles"]
     role_ids = [item["id"] for item in roles]
     targets = [item["target"] for item in roles]
@@ -104,7 +104,7 @@ def test_exact_whole_roster_and_target_names_are_frozen() -> None:
 
 def test_marker_state_and_input_bounds_are_complete() -> None:
     """Prevent ambiguous provenance parsing or unbounded lifecycle inputs."""
-    contract = load_contract()
+    contract = _load_contract()
     marker = contract["marker"]
     state = contract["state"]
 
@@ -163,7 +163,7 @@ def test_marker_state_and_input_bounds_are_complete() -> None:
 
 def test_target_matrix_preserves_every_untrusted_or_modified_file() -> None:
     """Prevent adoption, marker-only removal, or partial whole-roster mutation."""
-    contract = load_contract()
+    contract = _load_contract()
     matrix = {item["state"]: item for item in contract["target_classification"]}
 
     assert matrix["regular target without matching ownership state"] == {
@@ -198,7 +198,7 @@ class TestLifecycleApprovalContract:
 
     def test_has_identity_and_operation_bounds(self) -> None:
         """Keep approval inputs, observations, and bounds exact."""
-        approval = load_contract()["approval_plan"]
+        approval = _load_contract()["approval_plan"]
 
         assert approval["encoding"].startswith("json.dumps with ensure_ascii=true")
         assert approval["digest"].startswith("SHA-256 over the complete canonical plan bytes")
@@ -237,7 +237,7 @@ class TestLifecycleApprovalContract:
 
     def test_has_root_observation_schema(self) -> None:
         """Keep existing and not-yet-created root observations exact."""
-        approval = load_contract()["approval_plan"]
+        approval = _load_contract()["approval_plan"]
 
         assert set(approval["root_observation_fields"]) == {
             "exists",
@@ -277,7 +277,7 @@ class TestLifecycleApprovalContract:
 
     def test_has_recovery_observation_schema(self) -> None:
         """Keep recovery intent and evidence fields complete and bounded."""
-        approval = load_contract()["approval_plan"]
+        approval = _load_contract()["approval_plan"]
 
         assert approval["coordination_lock_intent_values"] == ["open-existing", "create-if-absent"]
         assert "refreshes every non-lock observation" in approval["coordination_lock_intent_rule"]
@@ -308,7 +308,7 @@ class TestLifecycleApprovalContract:
 
     def test_binds_digest_and_apply_inputs(self) -> None:
         """Keep canonical bytes and approved apply inputs immutable."""
-        approval = load_contract()["approval_plan"]
+        approval = _load_contract()["approval_plan"]
 
         vector = approval["canonical_test_vector"]
         vector_bytes = json.dumps(
@@ -341,7 +341,7 @@ class TestLifecycleApprovalContract:
 
     def test_has_top_level_schema(self) -> None:
         """Keep every top-level field and nested schema link exact."""
-        approval = load_contract()["approval_plan"]
+        approval = _load_contract()["approval_plan"]
 
         assert approval["top_level_field_schema"] == {
             "schema": "JSON integer exactly 1",
@@ -402,7 +402,7 @@ class TestLifecycleApprovalContract:
 
     def test_enforces_cross_field_rules(self) -> None:
         """Keep identities and package inputs mutually consistent."""
-        approval = load_contract()["approval_plan"]
+        approval = _load_contract()["approval_plan"]
 
         assert approval["top_level_cross_field_rules"] == {
             "action_scope": "action is install or remove and scope is user; no other action or scope is representable",
@@ -445,7 +445,7 @@ class TestLifecycleApprovalContract:
 
     def test_rejects_invalid_operation_intents(self) -> None:
         """Keep action-specific before-to-after intent rules exact."""
-        approval = load_contract()["approval_plan"]
+        approval = _load_contract()["approval_plan"]
 
         assert approval["operation_intent_consistency"] == {
             "noop": (
@@ -486,7 +486,7 @@ class TestLifecycleTransactionContract:
 
     def test_has_lock_and_journal_shape(self) -> None:
         """Keep lock validation and durable journal fields exact."""
-        transaction = load_contract()["transaction"]
+        transaction = _load_contract()["transaction"]
 
         assert transaction["lock"].startswith("one persistent 0600 coordination file")
         assert "link count one" in transaction["lock_validation"]
@@ -549,7 +549,7 @@ class TestLifecycleTransactionContract:
 
     def test_orders_mutation_phases(self) -> None:
         """Keep mutation order and no-clobber primitives exact."""
-        transaction = load_contract()["transaction"]
+        transaction = _load_contract()["transaction"]
 
         assert transaction["phases"] == [
             "read-only whole-roster preflight",
@@ -577,7 +577,7 @@ class TestLifecycleTransactionContract:
 
     def test_tracks_probe_cleanup(self) -> None:
         """Keep probe receipt progress and cleanup recoverable."""
-        transaction = load_contract()["transaction"]
+        transaction = _load_contract()["transaction"]
 
         assert transaction["probe_directory"].startswith("<state_root>/.probe-<transaction_nonce>")
         assert transaction["probe_artifacts"] == [
@@ -602,7 +602,7 @@ class TestLifecycleTransactionContract:
 
     def test_has_resumable_retirement(self) -> None:
         """Keep commit and rollback retirement resumable."""
-        transaction = load_contract()["transaction"]
+        transaction = _load_contract()["transaction"]
 
         assert transaction["transaction_retirement_order"] == [
             "remove remaining exact journal-listed artifact files including state.publish.json when present",
@@ -628,7 +628,7 @@ class TestLifecycleTransactionContract:
 
     def test_has_durable_successors(self) -> None:
         """Keep journal and operation successor states monotonic."""
-        transaction = load_contract()["transaction"]
+        transaction = _load_contract()["transaction"]
 
         assert transaction["journal_state_successors"] == {
             "PREPARING": ["PREPARED", "RECOVERY_REQUIRED"],
@@ -661,7 +661,7 @@ class TestLifecycleTransactionContract:
 
     def test_recognizes_exact_crash_observations(self) -> None:
         """Keep intent-specific recoverable observations exact."""
-        transaction = load_contract()["transaction"]
+        transaction = _load_contract()["transaction"]
 
         assert transaction["journal_operation_crash_observations"] == {
             "noop": {"VERIFIED": ["the exact unchanged before and after observation"]},
@@ -712,7 +712,7 @@ class TestLifecycleTransactionContract:
 
     def test_restores_monotonic_progress(self) -> None:
         """Keep rollback progress monotonic through restored state."""
-        transaction = load_contract()["transaction"]
+        transaction = _load_contract()["transaction"]
 
         assert transaction["journal_operation_rollback_progress"] == [
             "NOT_STARTED",
@@ -734,7 +734,7 @@ class TestLifecycleRecoveryContract:
 
     def test_fails_closed(self) -> None:
         """Keep recovery evidence-preserving and idempotent."""
-        recovery = load_contract()["recovery"]
+        recovery = _load_contract()["recovery"]
 
         assert "never forward-resume mutation" in recovery["policy"]
         assert recovery["idempotent"] is True
@@ -749,7 +749,7 @@ class TestLifecycleRecoveryContract:
 
     def test_has_ordered_decision_matrix(self) -> None:
         """Keep exact rollback rows and fallback priority frozen."""
-        recovery = load_contract()["recovery"]
+        recovery = _load_contract()["recovery"]
 
         assert recovery["rollback_decision_matrix"] == [
             {
@@ -827,7 +827,7 @@ class TestLifecycleRecoveryContract:
 
     def test_selects_one_terminal_path(self) -> None:
         """Keep rollback selection and terminal behavior deterministic."""
-        recovery = load_contract()["recovery"]
+        recovery = _load_contract()["recovery"]
 
         assert recovery["rollback_matrix_selection_rule"] == (
             "evaluate rows by ascending unique priority; exact rows 1 through 6 are mutually exclusive; the final "
@@ -853,7 +853,7 @@ class TestLifecycleRecoveryContract:
 
     def test_keeps_pristine_paths_zero_write(self) -> None:
         """Keep pristine doctor, status, and remove outcomes zero-write."""
-        contract = load_contract()
+        contract = _load_contract()
 
         assert contract["pristine_exit_outcomes"] == {
             "doctor": {
@@ -882,7 +882,7 @@ class TestLifecycleRecoveryContract:
 
 def test_rollback_contract_reaches_terminal_retirement_from_prepared_create() -> None:
     """Keep a crash before create publication recoverable through retirement."""
-    contract = load_contract()
+    contract = _load_contract()
     transaction = contract["transaction"]
     recovery = contract["recovery"]
 
@@ -911,7 +911,7 @@ def test_rollback_contract_reaches_terminal_retirement_from_prepared_create() ->
 
 def test_doctor_and_approved_apply_probes_do_not_contradict_zero_write_status() -> None:
     """Prevent read-only diagnostics from secretly depending on mutating probes."""
-    contract = load_contract()
+    contract = _load_contract()
     doctor = contract["doctor"]
     invariants = contract["zero_write_invariants"]
 
@@ -945,7 +945,7 @@ def test_doctor_and_approved_apply_probes_do_not_contradict_zero_write_status() 
 
 def test_thin_shim_format_is_exact_and_contains_no_role_body() -> None:
     """Prevent generator implementations from inventing incompatible shim bytes."""
-    contract = load_contract()
+    contract = _load_contract()
     shim = contract["shim_format"]
     thin_link = contract["thin_link"]
 
@@ -999,7 +999,7 @@ def test_thin_shim_format_is_exact_and_contains_no_role_body() -> None:
 
 def test_verifier_argv_survives_json_and_toml_parsing() -> None:
     """Prevent legal quoted or backslashed paths from changing verifier arguments."""
-    contract = load_contract()
+    contract = _load_contract()
     encoding_rule = contract["shim_format"]["dynamic_fields"]["toml_escaped_verifier_argv_json"]
     argv = [
         '/tmp/python"quoted',
@@ -1022,7 +1022,7 @@ def test_python_310_toml_parser_is_exactly_pinned() -> None:
 
 def test_runtime_unknowns_have_named_evidence_owners() -> None:
     """Prevent platform limitations from being presented as closed contracts."""
-    contract = load_contract()
+    contract = _load_contract()
     owners = contract["runtime_evidence_owners"]
 
     assert set(owners) == {

@@ -58,6 +58,7 @@ def test_scan_falls_back_to_serial_when_process_pool_is_forbidden(
         """Reject process-pool construction like the managed sandbox."""
 
         def __init__(self, *_args: object, **_kwargs: object) -> None:
+            """Raise the sandbox error as soon as the pool is constructed."""
             raise PermissionError(errno.EPERM, "Operation not permitted")
 
     monkeypatch.setattr(_graph_mod, "ProcessPoolExecutor", ForbiddenPool)
@@ -503,7 +504,8 @@ class TestAtomicIndexWrite:
         original_replace = _rwgate_mod.os.replace
         attempts = 0
 
-        def fail_twice(path, destination):
+        def _fail_twice(path, destination):
+            """Raise transient Windows sharing errors for the first two replaces."""
             nonlocal attempts
             if Path(path) == temp and attempts < 2:
                 attempts += 1
@@ -514,7 +516,7 @@ class TestAtomicIndexWrite:
 
         monkeypatch.setattr(_rwgate_mod.sys, "platform", "win32")
         monkeypatch.setattr(_rwgate_mod.time, "sleep", lambda _delay: None)
-        monkeypatch.setattr(_rwgate_mod.os, "replace", fail_twice)
+        monkeypatch.setattr(_rwgate_mod.os, "replace", _fail_twice)
 
         _replace_with_windows_retry(temp, target)
 

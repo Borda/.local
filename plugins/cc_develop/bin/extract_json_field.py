@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""extract_json_field.py — recover a JSON object from text and print a field.
+"""Recover the rightmost complete JSON object from text and print a requested field.
 
 Replaces the inline ``python -c`` fallback used by ``develop:plan`` when ``jq``
 is unavailable or the agent response wraps JSON in prose. Two operations,
@@ -9,12 +9,11 @@ selected by the ``<field>`` argument:
   object as a compact one-line string (matches the prior inline-code contract).
 * Any other ``<field>`` — extract that top-level key's value. Strings print raw
   (no surrounding quotes); non-strings print as JSON (e.g. ``true``, ``42``,
-  ``[1,2]``).
+  ``[1, 2]``).
 
-Recovery strategy mirrors the prior inline code: scan every ``{`` position in
-the input text from right to left and return the first balanced object that
-parses cleanly. This tolerates prose preamble before the JSON, trailing prose
-after it, and reasoning blocks that contain stray ``{`` characters.
+Recovery scans candidate object starts, discards objects nested within another
+successfully parsed object, and returns the rightmost remaining object. This
+tolerates surrounding prose and stray opening braces before the answer.
 
 Usage:
     python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/extract_json_field.py" \\
@@ -116,7 +115,7 @@ def format_field(value: Any) -> str:
     """Format a JSON value for stdout.
 
     Strings print raw (no surrounding quotes) so shells can capture them
-    cleanly; every other type prints as compact JSON.
+    cleanly; every other type uses ``json.dumps`` with its default spacing.
 
     Args:
         value: Any JSON-decoded value.

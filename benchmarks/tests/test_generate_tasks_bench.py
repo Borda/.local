@@ -648,11 +648,12 @@ class TestValidateFn:
 
         captured_args: list[list] = []
 
-        def fake_sq(sq: Any, args: list, index: Any, repo: Any) -> dict:
+        def _fake_sq(sq: Any, args: list, index: Any, repo: Any) -> dict:
+            """Record query arguments and return an empty caller result."""
             captured_args.append(args)
             return {"called_by": [], "count": 0}
 
-        with patch.object(script_gen_bench, "run_scan_query", side_effect=fake_sq):
+        with patch.object(script_gen_bench, "run_scan_query", side_effect=_fake_sq):
             script_gen_bench._validate_fn(task, MagicMock(), tmp_path / "idx.json", tmp_path)
 
         assert captured_args, "run_scan_query must be called at least once"
@@ -1413,7 +1414,8 @@ class TestValidateOss:
 
         call_counter = {"n": 0}
 
-        def sq_side_effect(sq: Any, args: list, index: Any, repo: Any) -> dict:
+        def _sq_side_effect(sq: Any, args: list, index: Any, repo: Any) -> dict:
+            """Count queries and return the matching undocumented or uncovered payload."""
             call_counter["n"] += 1
             if args[0] == "undocumented":
                 return undoc_payload
@@ -1421,7 +1423,7 @@ class TestValidateOss:
                 return uncov_payload
             return None  # type: ignore[return-value]
 
-        with patch.object(script_gen_bench, "run_scan_query", side_effect=sq_side_effect):
+        with patch.object(script_gen_bench, "run_scan_query", side_effect=_sq_side_effect):
             ok, live_gt, reason = script_gen_bench._validate_oss(task, MagicMock(), tmp_path / "idx.json", tmp_path)
 
         assert ok is True, reason
@@ -1535,17 +1537,20 @@ class TestTaskType:
         real_json_dump = json.dump
         serialized_payloads: list[object] = []
 
-        def dump_plain_json(value: object, file: Any, **kwargs: Any) -> None:
-            def contains_task_type(item: object) -> bool:
+        def _dump_plain_json(value: object, file: Any, **kwargs: Any) -> None:
+            """Reject enum instances recursively before recording and serializing the task payload."""
+
+            def _contains_task_type(item: object) -> bool:
+                """Detect task-type enum instances in nested dictionary keys, values, or lists."""
                 if isinstance(item, script_gen_bench.TaskType):
                     return True
                 if isinstance(item, dict):
-                    return any(contains_task_type(key) or contains_task_type(value) for key, value in item.items())
+                    return any(_contains_task_type(key) or _contains_task_type(value) for key, value in item.items())
                 if isinstance(item, list):
-                    return any(contains_task_type(value) for value in item)
+                    return any(_contains_task_type(value) for value in item)
                 return False
 
-            assert not contains_task_type(value)
+            assert not _contains_task_type(value)
             serialized_payloads.append(value)
             real_json_dump(value, file, **kwargs)
 
@@ -1555,7 +1560,7 @@ class TestTaskType:
             patch.object(
                 script_gen_bench, "VALIDATORS", {script_gen_bench.TaskType.SYMBOL_EXTRACTION: lambda *_: (True, {}, "")}
             ),
-            patch.object(script_gen_bench.json, "dump", side_effect=dump_plain_json),
+            patch.object(script_gen_bench.json, "dump", side_effect=_dump_plain_json),
         ):
             script_gen_bench.main(repo_path=str(tmp_path), update=True)
 
@@ -2893,7 +2898,8 @@ class TestMainUnitBehavior:
 
         processed_ids: list[str] = []
 
-        def tracking_validator(task: dict, sq: Any, index: Any, repo: Any) -> tuple:
+        def _tracking_validator(task: dict, sq: Any, index: Any, repo: Any) -> tuple:
+            """Record the validated task identifier and accept its fixture contract."""
             processed_ids.append(task["id"])
             return True, {}, ""
 
@@ -2901,7 +2907,7 @@ class TestMainUnitBehavior:
             patch.object(script_gen_bench, "find_codemap_bin", return_value=fake_sq),
             patch.object(script_gen_bench, "resolve_index_path", return_value=fake_index),
             patch.object(
-                script_gen_bench, "VALIDATORS", {script_gen_bench.TaskType.SYMBOL_EXTRACTION: tracking_validator}
+                script_gen_bench, "VALIDATORS", {script_gen_bench.TaskType.SYMBOL_EXTRACTION: _tracking_validator}
             ),
         ):
             script_gen_bench.main(repo_path=str(tmp_path), task="SE-01")
@@ -2978,7 +2984,8 @@ class TestMainUnitBehavior:
 
         processed: list[str] = []
 
-        def tracking_validator(task: dict, sq: Any, index: Any, repo: Any) -> tuple:
+        def _tracking_validator(task: dict, sq: Any, index: Any, repo: Any) -> tuple:
+            """Record the validated task identifier and accept its fixture contract."""
             processed.append(task["id"])
             return True, {}, ""
 
@@ -2986,7 +2993,7 @@ class TestMainUnitBehavior:
             patch.object(script_gen_bench, "find_codemap_bin", return_value=fake_sq),
             patch.object(script_gen_bench, "resolve_index_path", return_value=fake_index),
             patch.object(
-                script_gen_bench, "VALIDATORS", {script_gen_bench.TaskType.SYMBOL_EXTRACTION: tracking_validator}
+                script_gen_bench, "VALIDATORS", {script_gen_bench.TaskType.SYMBOL_EXTRACTION: _tracking_validator}
             ),
         ):
             script_gen_bench.main(repo_path=str(tmp_path), update=True)

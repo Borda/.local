@@ -28,8 +28,8 @@ _MARKER = "borda-ai-rig/foundry/"
 _SKILL_MD = Path(__file__).resolve().parent.parent / "skills" / "setup" / "SKILL.md"
 
 
-@pytest.fixture
-def env(tmp_path: Path) -> tuple[Path, Path]:
+@pytest.fixture(name="env")
+def _env(tmp_path: Path) -> tuple[Path, Path]:
     """Build a current installed plugin tree + a fake $HOME, return both.
 
     The plugin root sits where a real install puts it — under the fake home's
@@ -63,8 +63,8 @@ def env(tmp_path: Path) -> tuple[Path, Path]:
     return plugin, home
 
 
-@pytest.fixture
-def marked_env(env: tuple[Path, Path]) -> tuple[Path, Path]:
+@pytest.fixture(name="marked_env")
+def _marked_env(env: tuple[Path, Path]) -> tuple[Path, Path]:
     """Alias of :func:`env`, kept for tests that assert on current-version links.
 
     The distinction the two fixtures used to draw disappeared when ``env`` moved
@@ -75,7 +75,12 @@ def marked_env(env: tuple[Path, Path]) -> tuple[Path, Path]:
 
 
 def _stale_root(plugin: Path, version: str = "0.39.0") -> Path:
-    """Path of an older version of this plugin — same install-cache lineage."""
+    """Path of an older version of this plugin — same install-cache lineage.
+
+    Examples:
+        >>> _stale_root(Path("cache/foundry/0.40.0"), "0.39.0").as_posix()
+        'cache/foundry/0.39.0'
+    """
     return plugin.parent / version
 
 

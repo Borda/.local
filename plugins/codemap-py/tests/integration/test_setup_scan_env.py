@@ -38,12 +38,13 @@ _SH_ARGV = ["bash", str(SHIM)]
 
 
 @pytest.fixture(
+    name="launcher",
     params=[
         pytest.param(_PY_ARGV, id="py"),
         pytest.param(_SH_ARGV, id="sh-shim"),
-    ]
+    ],
 )
-def launcher(request: pytest.FixtureRequest) -> list[str]:
+def _launcher(request: pytest.FixtureRequest) -> list[str]:
     """Return the argv prefix for one of the two supported entry points.
 
     Returns:
@@ -52,7 +53,7 @@ def launcher(request: pytest.FixtureRequest) -> list[str]:
     return request.param
 
 
-def run_setup(
+def _run_setup(
     launcher: list[str],
     *args: str,
     env: dict[str, str] | None = None,
@@ -83,8 +84,8 @@ def run_setup(
     )
 
 
-@pytest.fixture()
-def fake_repo(tmp_path: Path) -> Path:
+@pytest.fixture(name="fake_repo")
+def _fake_repo(tmp_path: Path) -> Path:
     """Return a throwaway directory acting as a fake repo root.
 
     setup_scan_env.py falls back to the cwd when ``git rev-parse --show-toplevel``
@@ -96,8 +97,8 @@ def fake_repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
-@pytest.fixture()
-def isolated_tmpdir(tmp_path: Path) -> Path:
+@pytest.fixture(name="isolated_tmpdir")
+def _isolated_tmpdir(tmp_path: Path) -> Path:
     """Provide a fresh ``TMPDIR`` so per-PROJ_SLUG tmpfiles don't leak across tests.
 
     Returns:
@@ -118,7 +119,7 @@ class TestArgumentValidation:
 
     def test_unknown_flag(self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path) -> None:
         """An unknown long flag exits 3 with a stderr message."""
-        r = run_setup(
+        r = _run_setup(
             launcher,
             "--bogus",
             env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
@@ -129,7 +130,7 @@ class TestArgumentValidation:
 
     def test_arguments_without_value(self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path) -> None:
         """Reject an arguments option without a following value."""
-        r = run_setup(
+        r = _run_setup(
             launcher,
             "--arguments",
             env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
@@ -140,7 +141,7 @@ class TestArgumentValidation:
 
     def test_arguments_equals_form(self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path) -> None:
         """Accept the equals form of the arguments option."""
-        r = run_setup(
+        r = _run_setup(
             launcher,
             "--arguments=--incremental",
             env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
@@ -164,7 +165,7 @@ class TestMissingScanIndex:
         """Pointing ``CLAUDE_PLUGIN_ROOT`` at an empty dir surfaces the missing-binary error."""
         empty = tmp_path / "no-plugin"
         empty.mkdir()
-        r = run_setup(
+        r = _run_setup(
             launcher,
             "--arguments",
             "",
@@ -215,7 +216,7 @@ class TestHappyPath:
 
     def _run_minimal(self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path) -> dict[str, str]:
         """Run the minimal setup invocation and return the sourced state."""
-        r = run_setup(
+        r = _run_setup(
             launcher,
             "--arguments",
             "",
@@ -269,7 +270,7 @@ class TestHappyPath:
         """Derive the project name from an explicitly selected root."""
         other = tmp_path / "alt-project"
         other.mkdir()
-        r = run_setup(
+        r = _run_setup(
             launcher,
             "--arguments",
             f"--root {other}",
@@ -288,7 +289,7 @@ class TestHappyPath:
         other = tmp_path / "alt project with spaces"
         other.mkdir()
         raw_args = f"--root {shlex.quote(str(other))}"
-        r = run_setup(
+        r = _run_setup(
             launcher,
             "--arguments",
             raw_args,
@@ -302,7 +303,7 @@ class TestHappyPath:
 
     def test_root_dot_keeps_repo_basename(self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path) -> None:
         """Resolve like an absent ``--root`` — basename('.') would be empty."""
-        r = run_setup(
+        r = _run_setup(
             launcher,
             "--arguments",
             "--root .",
@@ -325,7 +326,7 @@ class TestIncrementalSentinel:
         self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path
     ) -> None:
         """Write the incremental sentinel when no prior index exists."""
-        r = run_setup(
+        r = _run_setup(
             launcher,
             "--arguments",
             "--incremental",
@@ -349,7 +350,7 @@ class TestIncrementalSentinel:
         cache_dir.mkdir(parents=True)
         (cache_dir / f"{fake_repo.name}.json").write_text("{}")
 
-        r = run_setup(
+        r = _run_setup(
             launcher,
             "--arguments",
             "--incremental",
@@ -367,7 +368,7 @@ class TestIncrementalSentinel:
         self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path
     ) -> None:
         """Ignore an option that only resembles the incremental flag."""
-        r = run_setup(
+        r = _run_setup(
             launcher,
             "--arguments",
             "--incremental-foo",
@@ -416,8 +417,8 @@ class TestShimDelegation:
         args = ("--arguments", "--root . --incremental")
         plugin_env = {"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT)}
 
-        py = run_setup(_PY_ARGV, *args, env={**plugin_env, "TMPDIR": str(py_tmp)}, cwd=str(fake_repo))
-        sh = run_setup(_SH_ARGV, *args, env={**plugin_env, "TMPDIR": str(sh_tmp)}, cwd=str(fake_repo))
+        py = _run_setup(_PY_ARGV, *args, env={**plugin_env, "TMPDIR": str(py_tmp)}, cwd=str(fake_repo))
+        sh = _run_setup(_SH_ARGV, *args, env={**plugin_env, "TMPDIR": str(sh_tmp)}, cwd=str(fake_repo))
 
         assert (py.returncode, sh.returncode) == (0, 0), f"py={py.stderr} sh={sh.stderr}"
         assert py.stderr == sh.stderr
@@ -428,7 +429,7 @@ class TestShimDelegation:
         """A non-zero exit from the port reaches the caller unchanged through the shim."""
         empty = tmp_path / "no-plugin"
         empty.mkdir()
-        r = run_setup(
+        r = _run_setup(
             _SH_ARGV,
             "--arguments",
             "",

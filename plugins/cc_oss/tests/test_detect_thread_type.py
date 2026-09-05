@@ -18,6 +18,7 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+        """Store the status and output consumed by the detector."""
         self.returncode = returncode
         self.stdout = stdout
 
@@ -204,7 +205,8 @@ def test_discussion_detection_via_graphql_fallback(tmp_path: Path, monkeypatch: 
         {"data": {"repository": {"discussion": {"title": "Q&A", "updatedAt": "2024-03-03T00:00:00Z"}}}}
     )
 
-    def fake_run(cmd: list[str], **_: object) -> _FakeCompleted:
+    def _fake_run(cmd: list[str], **_: object) -> _FakeCompleted:
+        """Return issue-empty and discussion-success responses for the fallback."""
         calls.append(cmd)
         if "graphql" in cmd:
             return _FakeCompleted(returncode=0, stdout=disc_payload)
@@ -212,7 +214,7 @@ def test_discussion_detection_via_graphql_fallback(tmp_path: Path, monkeypatch: 
 
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.setattr(dtt, "which", lambda _: "/fake/gh")
-    monkeypatch.setattr(dtt.subprocess, "run", fake_run)
+    monkeypatch.setattr(dtt.subprocess, "run", _fake_run)
     rc = dtt.main(["--number", "789"])
     assert rc == 0
     assert (tmp_path / "oss-detect-type-shared").read_text() == "discussion"
@@ -257,14 +259,15 @@ def test_malformed_success_payloads_emit_conservative_results(
     graphql_stdout: str,
     expected_type: str,
 ) -> None:
-    def fake_run(cmd: list[str], **_: object) -> _FakeCompleted:
+    def _fake_run(cmd: list[str], **_: object) -> _FakeCompleted:
+        """Return each parametrized payload through the corresponding endpoint."""
         if "graphql" in cmd:
             return _FakeCompleted(returncode=0, stdout=graphql_stdout)
         return _FakeCompleted(returncode=0, stdout=issue_stdout)
 
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.setattr(dtt, "which", lambda _: "/fake/gh")
-    monkeypatch.setattr(dtt.subprocess, "run", fake_run)
+    monkeypatch.setattr(dtt.subprocess, "run", _fake_run)
     rc = dtt.main(["--number", "1", "--report-mtime", "1704067200"])
 
     assert rc == 0
@@ -314,13 +317,14 @@ def test_url_input_normalised_before_detection(tmp_path: Path, monkeypatch: pyte
     issue_payload = json.dumps({"number": 7, "updated_at": "2024-01-01T00:00:00Z"})
     captured_cmds: list[list[str]] = []
 
-    def fake_run(cmd: list[str], **_: object) -> _FakeCompleted:
+    def _fake_run(cmd: list[str], **_: object) -> _FakeCompleted:
+        """Return the fixed issue payload while recording the requested command."""
         captured_cmds.append(cmd)
         return _FakeCompleted(returncode=0, stdout=issue_payload)
 
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.setattr(dtt, "which", lambda _: "/fake/gh")
-    monkeypatch.setattr(dtt.subprocess, "run", fake_run)
+    monkeypatch.setattr(dtt.subprocess, "run", _fake_run)
     rc = dtt.main(["--number", "https://github.com/owner/repo/issues/7"])
     assert rc == 0
     assert (tmp_path / "oss-detect-type-shared").read_text() == "issue"

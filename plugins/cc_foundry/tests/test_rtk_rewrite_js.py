@@ -58,7 +58,14 @@ def _run(command: str) -> dict:
 
 
 def _rewritten_to(result: dict) -> str | None:
-    """Extract the rewritten command from a hook result, or None on passthrough."""
+    """Extract the rewritten command from a hook result, or None on passthrough.
+
+    Examples:
+        >>> _rewritten_to({"hookSpecificOutput": {"updatedInput": {"command": "rtk git status"}}})
+        'rtk git status'
+        >>> _rewritten_to({}) is None
+        True
+    """
     try:
         return result["hookSpecificOutput"]["updatedInput"]["command"]
     except (KeyError, TypeError):

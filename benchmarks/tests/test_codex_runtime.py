@@ -15,7 +15,11 @@ BENCHMARKS = Path(__file__).resolve().parent.parent
 
 
 def _load() -> Any:
-    """Load the private runtime without importing a paid benchmark runner."""
+    """Load and register the private runtime without starting a provider or paid runner.
+
+    >>> _load().__name__
+    'benchmarks_codex_runtime'
+    """
     if str(BENCHMARKS) not in sys.path:
         sys.path.insert(0, str(BENCHMARKS))
     spec = importlib.util.spec_from_file_location(
@@ -29,7 +33,11 @@ def _load() -> Any:
 
 
 def _load_lifecycle() -> Any:
-    """Return the provider-neutral paid lifecycle owner."""
+    """Import the provider-neutral lifecycle library without executing a stage.
+
+    >>> _load_lifecycle().__name__
+    '_bench_common.paid_lifecycle'
+    """
     if str(BENCHMARKS) not in sys.path:
         sys.path.insert(0, str(BENCHMARKS))
     from _bench_common import paid_lifecycle
@@ -44,28 +52,43 @@ def _callbacks(
     fail_at: tuple[str, str] | None = None,
     invalid_at: tuple[str, str] | None = None,
 ) -> Any:
-    """Build observable callbacks for a no-model staged execution."""
+    """Build event-recording callbacks with optional failure coordinates for no-model execution.
 
-    def run_cell(task: str, arm: str) -> dict[str, str]:
+    >>> events = []
+    >>> callbacks = _callbacks(_load_lifecycle(), events, fail_at=("bad", "A_plain"))
+    >>> callbacks.run_cell("example", "A_plain")
+    {'task_id': 'example', 'arm': 'A_plain'}
+    >>> events
+    [('run', ('example', 'A_plain'))]
+    >>> callbacks.run_cell("bad", "A_plain")
+    Traceback (most recent call last):
+        ...
+    RuntimeError: fixture cell failed
+    """
+
+    def _run_cell(task: str, arm: str) -> dict[str, str]:
+        """Record the attempted cell, raising at the configured coordinate before returning its row."""
         events.append(("run", (task, arm)))
         if (task, arm) == fail_at:
             raise RuntimeError("fixture cell failed")
         return {"task_id": task, "arm": arm}
 
-    def validate_row(task: str, arm: str, row: dict[str, str]) -> None:
+    def _validate_row(task: str, arm: str, row: dict[str, str]) -> None:
+        """Record a copy of the row and reject the configured invalid cell."""
         events.append(("validate", (task, arm, dict(row))))
         if (task, arm) == invalid_at:
             raise ValueError("fixture row rejected")
 
-    def persist_metadata(path: Path, metadata: dict[str, Any]) -> None:
+    def _persist_metadata(path: Path, metadata: dict[str, Any]) -> None:
+        """Record lifecycle progress and replace the metadata file with deterministic JSON."""
         events.append(("metadata", (metadata["status"], metadata["persisted_cells"])))
         path.write_text(json.dumps(metadata, sort_keys=True), encoding="utf-8")
 
     return lifecycle.PaidStageCallbacks(
-        run_cell=run_cell,
-        validate_row=validate_row,
+        run_cell=_run_cell,
+        validate_row=_validate_row,
         prepare_run=lambda run_dir: events.append(("prepare", run_dir)),
-        persist_metadata=persist_metadata,
+        persist_metadata=_persist_metadata,
         emit_lifecycle=lambda event, values: events.append((event, dict(values))),
         emit_row=lambda row, completed, total, arm: events.append(("row", (dict(row), completed, total, arm))),
         write_checksums=lambda run_dir: events.append(("checksums", run_dir)),
@@ -74,7 +97,12 @@ def _callbacks(
 
 
 def _native_command(command: str, *, exit_code: int = 0, output: str = "", item_id: str = "cmd") -> str:
-    """Render one completed native command item as a JSONL event line."""
+    """Serialize a native command event, deriving failure status from its exit code.
+
+    >>> item = json.loads(_native_command("example", exit_code=2, output="failed"))["item"]
+    >>> item["status"], item["exit_code"], item["aggregated_output"]
+    ('failed', 2, 'failed')
+    """
     return json.dumps(
         {
             "type": "item.completed",
@@ -309,14 +337,15 @@ def test_paid_stage_marks_keyboard_interrupt_as_interrupted_and_finalizes(tmp_pa
     events: list[tuple[str, Any]] = []
     run_dir = tmp_path / "interrupted"
 
-    def interrupting_run_cell(task: str, arm: str) -> dict[str, str]:
+    def _interrupting_run_cell(task: str, arm: str) -> dict[str, str]:
+        """Interrupt the second arm while returning ordinary rows for other arms."""
         if arm == "B":
             raise KeyboardInterrupt("stop fixture")
         return {"task_id": task, "arm": arm}
 
     callbacks = _callbacks(lifecycle, events)
     callbacks = lifecycle.PaidStageCallbacks(
-        run_cell=interrupting_run_cell,
+        run_cell=_interrupting_run_cell,
         validate_row=callbacks.validate_row,
         prepare_run=callbacks.prepare_run,
         persist_metadata=callbacks.persist_metadata,

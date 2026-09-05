@@ -112,7 +112,14 @@ _DIAGNOSTIC_EXPIRY_AUDIT = "expiry-audit.jsonl"
 
 
 def hmac_identifier(secret: bytes, identifier: str) -> str:
-    """Project one runtime identifier to a deterministic privacy-safe digest."""
+    """Project one runtime identifier to a deterministic privacy-safe digest.
+
+    The identifier itself never appears in the result; callers should retain the secret outside telemetry artifacts.
+
+    Example:
+        >>> hmac_identifier(b"secret", "attempt-1")
+        '94e2abc45e43035e8777b11a249695ca119988b816649ae44b6f58d4f91f3a72'
+    """
     if not isinstance(secret, bytes) or not secret:
         raise TelemetryError("hmac-secret-required")
     if not isinstance(identifier, str) or not identifier:
@@ -121,7 +128,15 @@ def hmac_identifier(secret: bytes, identifier: str) -> str:
 
 
 def normalize_workload_key(value: str) -> str:
-    """Normalize a non-empty workload identity without accepting raw prompts."""
+    """Normalize a non-empty single-token workload identity without accepting raw prompts.
+
+    Unicode compatibility characters are folded, surrounding whitespace is removed, and case is normalized. Internal
+    whitespace, control characters, and values longer than 256 characters are rejected.
+
+    Example:
+        >>> normalize_workload_key("  Batch-Run  ")
+        'batch-run'
+    """
     if not isinstance(value, str):
         raise TelemetryError("workload-key-required")
     normalized = unicodedata.normalize("NFKC", value).strip().casefold()
@@ -133,15 +148,18 @@ def normalize_workload_key(value: str) -> str:
 
 
 def _workload_key_digest(workload_key: str) -> str:
+    """Hash an already-normalized workload key for retained telemetry evidence."""
     return hashlib.sha256(workload_key.encode("utf-8")).hexdigest()
 
 
 def _event_payload(row: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """Return an event payload mapping when a rollout row contains one."""
     payload = row.get("payload")
     return payload if isinstance(payload, Mapping) else None
 
 
 def _validated_usage(usage: Any, *, field_name: str) -> dict[str, int]:
+    """Validate token counters and return a typed copy with internally consistent totals."""
     if not isinstance(usage, Mapping):
         raise TelemetryError(f"{field_name}-missing")
     result: dict[str, int] = {}
@@ -162,6 +180,7 @@ def _validated_usage(usage: Any, *, field_name: str) -> dict[str, int]:
 
 
 def _token_usage(payload: Mapping[str, Any]) -> tuple[dict[str, int], dict[str, int] | None] | None:
+    """Extract cumulative and optional incremental token counters from a token-count event."""
     if payload.get("type") != "token_count":
         return None
     info = payload.get("info")
@@ -174,10 +193,12 @@ def _token_usage(payload: Mapping[str, Any]) -> tuple[dict[str, int], dict[str, 
 
 
 def _is_terminal(payload: Mapping[str, Any]) -> bool:
+    """Return whether an event payload marks completion of the current rollout turn."""
     return payload.get("type") in {"task_complete", "turn_complete", "response_complete"}
 
 
 def _reconstruct_usage(samples: Sequence[dict[str, int]]) -> tuple[dict[str, int], bool]:
+    """Reconstruct token totals from cumulative samples, accounting for counter resets."""
     if not samples:
         raise TelemetryError("token-usage-not-observed")
     total = dict.fromkeys(TOKEN_FIELDS, 0)

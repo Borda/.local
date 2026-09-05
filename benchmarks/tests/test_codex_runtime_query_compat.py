@@ -24,9 +24,14 @@ POSIX_SECURITY = pytest.mark.skipif(
 )
 
 
-@pytest.fixture(scope="module")
-def script_run_codex() -> Any:
-    """Load the Codex adapter without executing its command-line entry point."""
+@pytest.fixture(name="script_run_codex", scope="module")
+def _script_run_codex() -> Any:
+    """Load the Codex adapter without executing its command-line entry point.
+
+    Example:
+        >>> getfixture("script_run_codex").__name__
+        'run_codemap_codex'
+    """
     spec = importlib.util.spec_from_file_location("run_codemap_codex", SCRIPT_PATH)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load Codex adapter at {SCRIPT_PATH}")
@@ -37,7 +42,15 @@ def script_run_codex() -> Any:
 
 
 def _make_direct_runtime_bundle(root: Path) -> Path:
-    """Create the minimum source-shaped direct CLI runtime used by isolation tests."""
+    """Create the minimum source-shaped direct CLI runtime used by isolation tests.
+
+    Example:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     launcher = _make_direct_runtime_bundle(Path(directory))
+        ...     launcher.name, (launcher.parents[1] / "src/codemap_py/__init__.py").is_file()
+        ('codemap-py', True)
+    """
     runtime = root / "codemap-runtime"
     launcher = runtime / "bin" / "codemap-py"
     exclusions = runtime / "bin" / "_exclusions.py"
@@ -62,7 +75,15 @@ def _completed_stream(
     output_tokens: int = 2,
     commands: list[dict[str, Any]] | None = None,
 ) -> str:
-    """Build one official-shape completed Codex event stream."""
+    """Build one official-shape completed Codex event stream.
+
+    Example:
+        >>> events = [json.loads(line) for line in _completed_stream(output="example", input_tokens=0).splitlines()]
+        >>> [event["type"] for event in events]
+        ['thread.started', 'item.completed', 'turn.completed']
+        >>> events[1]["item"]["text"], events[-1]["usage"]["input_tokens"]
+        ('example', 0)
+    """
     events: list[dict[str, Any]] = [{"type": "thread.started", "thread_id": "fixture-thread"}]
     events.extend(
         {"type": "item.completed", "item": {"id": f"command-{index}", **command}}
@@ -117,7 +138,8 @@ def test_required_compliance_needs_successful_compact_delivery_by_arm(script_run
     """A query attempt, wrong delivery mode, or missing compact flag cannot comply."""
     task = {"id": "fixture", "prompt": "unchanged prompt", "type": "demo", "scoreable": True}
 
-    def run(arm: str, command: str) -> Any:
+    def _run(arm: str, command: str) -> Any:
+        """Evaluate one arm against synthetic completed query events."""
         runner = script_run_codex.CodexRunner(
             "fixture-model",
             tmp_path,
@@ -136,9 +158,9 @@ def test_required_compliance_needs_successful_compact_delivery_by_arm(script_run
         )
         return runner.run(task, arm)
 
-    direct = run("B_direct_required", '"$CODEMAP_BIN" query --compact rdeps pkg.core')
-    noncompact = run("B_direct_required", '"$CODEMAP_BIN" query rdeps pkg.core')
-    skill = run("C_skill_required", '"$CODEMAP_BIN" query --compact rdeps pkg.core')
+    direct = _run("B_direct_required", '"$CODEMAP_BIN" query --compact rdeps pkg.core')
+    noncompact = _run("B_direct_required", '"$CODEMAP_BIN" query rdeps pkg.core')
+    skill = _run("C_skill_required", '"$CODEMAP_BIN" query --compact rdeps pkg.core')
 
     assert direct.compliance is True
     assert direct.codemap_direct_successful_calls == 1
@@ -220,7 +242,8 @@ def test_staged_direct_cli_admission_executes_a_task_shaped_query(script_run_cod
     )
     calls: list[list[str]] = []
 
-    def command_runner(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+    def _command_runner(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        """Record query argv and return successful compact-query evidence."""
         calls.append(command)
         return SimpleNamespace(
             returncode=0,
@@ -233,7 +256,7 @@ def test_staged_direct_cli_admission_executes_a_task_shaped_query(script_run_cod
         repo_path,
         index_path,
         manifest_path=manifest_path,
-        command_runner=command_runner,
+        command_runner=_command_runner,
     )
 
     assert calls == [
@@ -1761,11 +1784,13 @@ def test_main_threads_an_explicit_manifest_path_into_task_loading_and_ordering(
     seen: dict[str, Path] = {}
     tasks = [{"id": "fixture", "prompt": "prompt", "type": "demo"}]
 
-    def load_tasks(_tasks_path: Path, selected_manifest: Path) -> list[dict[str, str]]:
+    def _load_tasks(_tasks_path: Path, selected_manifest: Path) -> list[dict[str, str]]:
+        """Record the selected manifest and return the fixture task list."""
         seen["tasks"] = selected_manifest
         return tasks
 
-    def order(revision: str, *_args: Any, **_kwargs: Any) -> tuple[str, ...]:
+    def _order(revision: str, *_args: Any, **_kwargs: Any) -> tuple[str, ...]:
+        """Record the revision and return the fixture treatment order."""
         seen["revision"] = Path(revision)
         return ("A_plain", "B_direct_required", "C_skill_required")
 
@@ -1773,15 +1798,17 @@ def test_main_threads_an_explicit_manifest_path_into_task_loading_and_ordering(
         """Provide deterministic preflight evidence without invoking Codex."""
 
         def __init__(self, *_args: Any, **kwargs: Any) -> None:
+            """Initialize the test double's fixture-controlled state."""
             seen["runner"] = kwargs["manifest_path"]
             self.timeout = kwargs["timeout"]
 
         def probe_arm(self, _arm: str) -> dict[str, bool]:
+            """Report fixture-controlled Codemap availability for a treatment arm."""
             return {"codemap_available": False}
 
-    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", load_tasks)
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", _load_tasks)
     monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda path: str(path))
-    monkeypatch.setattr(script_run_codex, "deterministic_arm_order", order)
+    monkeypatch.setattr(script_run_codex, "deterministic_arm_order", _order)
     monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
 
     script_run_codex.main(

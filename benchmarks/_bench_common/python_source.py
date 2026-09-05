@@ -141,7 +141,7 @@ PY_WALK_SKIP = frozenset({"__pycache__", ".venv", "venv"})
 
 
 def prune_walk_dirs(dirnames: list[str], *, skip: frozenset[str] = PY_WALK_SKIP) -> list[str]:
-    """In-place prune of an :func:`os.walk` ``dirnames`` list: drop dotfiles and ``skip`` names.
+    """Prune hidden and excluded directory names from an in-place source walk.
 
     Mutates ``dirnames[:]`` so ``os.walk`` does not descend into hidden/cruft/`skip` dirs, and
     returns it for convenience. This is the shared body behind every runner's walk loop.
@@ -176,7 +176,7 @@ def iter_py_files(root: Path, *, skip: frozenset[str] = PY_WALK_SKIP) -> Iterato
         skip: Directory names to prune (in addition to any dotfile-prefixed dir).
 
     Yields:
-        Absolute paths to candidate Python source files.
+        Candidate Python paths rooted at ``root``; relative roots yield relative paths.
 
     Examples:
         >>> import tempfile, pathlib
@@ -217,7 +217,7 @@ def walk_py_modules(
             evaluated *before* parsing, so unwanted files are never read.
 
     Yields:
-        ``(path, rel_path, tree)`` triples — absolute path, POSIX repo-relative path, parsed AST.
+        ``(path, rel_path, tree)`` triples: path rooted at ``root``, POSIX repo-relative path, and parsed AST.
 
     Examples:
         >>> import tempfile, pathlib

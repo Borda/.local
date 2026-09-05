@@ -17,11 +17,23 @@ def _conftest_session(
     *,
     builder_result: Exception | None = None,
 ) -> tuple[SimpleNamespace, tuple[Path, ...]]:
-    """Drive the session hooks over disposable manifest paths and builders."""
+    """Start a mocked manifest session over disposable paths, retaining the state needed for restoration.
+
+    The caller must finish the session before undoing the supplied monkeypatch.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory, pytest.MonkeyPatch.context() as patch:
+    ...     session, outputs = _conftest_session(Path(directory), patch)
+    ...     [path.read_text() for path in outputs]
+    ...     manifest_session.finish_session(session)
+    ...     outputs[0].read_text(), outputs[1].exists()
+    ['regenerated', 'regenerated']
+    ('pre-existing', False)
+    """
     outputs = tuple(tmp_path / name for name in ("existing.json", "absent.json"))
     builders = (tmp_path / "builder.py",)
 
-    def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+    def _fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         """Rewrite every declared output the way a real builder would, or fail."""
         if builder_result is not None:
             raise builder_result
@@ -31,7 +43,7 @@ def _conftest_session(
 
     monkeypatch.setattr(manifest_session, "_GENERATED_MANIFEST_PATHS", outputs)
     monkeypatch.setattr(manifest_session, "_MANIFEST_BUILDERS", builders)
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", _fake_run)
     outputs[0].write_text("pre-existing", encoding="utf-8")
     session = SimpleNamespace(config=SimpleNamespace())
 
@@ -68,14 +80,14 @@ def test_builder_failure_restores_pre_existing_manifest_bytes(tmp_path: Path, mo
     """A build that fails after overwriting an output still leaves the checkout intact."""
     outputs = tuple(tmp_path / name for name in ("existing.json", "absent.json"))
 
-    def failing_builder(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+    def _failing_builder(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         """Overwrite the pre-existing output, then fail like a partially-run chain."""
         outputs[0].write_text("half-written", encoding="utf-8")
         raise subprocess.CalledProcessError(1, command, output="", stderr="stopped mid-chain")
 
     monkeypatch.setattr(manifest_session, "_GENERATED_MANIFEST_PATHS", outputs)
     monkeypatch.setattr(manifest_session, "_MANIFEST_BUILDERS", (tmp_path / "builder.py",))
-    monkeypatch.setattr(subprocess, "run", failing_builder)
+    monkeypatch.setattr(subprocess, "run", _failing_builder)
     outputs[0].write_text("pre-existing", encoding="utf-8")
     session = SimpleNamespace(config=SimpleNamespace())
 

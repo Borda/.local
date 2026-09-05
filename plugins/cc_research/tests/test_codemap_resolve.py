@@ -82,11 +82,12 @@ def test_research_wrapper_supplies_the_research_prefix(monkeypatch):
     flag = _load(_RESEARCH_BIN / "codemap-flag.py", "research_codemap_flag_under_test")
     captured: dict[str, list[str]] = {}
 
-    def fake_run(cmd, **kwargs):
+    def _fake_run(cmd, **kwargs):
+        """Return the wrapper's successful boolean response and record argv."""
         captured["cmd"] = cmd
         return subprocess.CompletedProcess(cmd, 0, stdout="true\n")
 
-    monkeypatch.setattr(flag.subprocess, "run", fake_run)
+    monkeypatch.setattr(flag.subprocess, "run", _fake_run)
     flag._run_resolver("auto", "sess")
 
     argv = captured["cmd"]

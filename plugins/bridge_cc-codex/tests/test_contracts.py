@@ -155,7 +155,14 @@ CLAUDE_SKILL_CONTRACTS = {
 
 
 def _read_json(path: Path) -> dict[str, object]:
-    """Read one JSON contract object with an exact top-level object assertion."""
+    """Read one JSON contract object with an exact top-level object assertion.
+
+    Examples:
+        >>> path = getfixture("tmp_path") / "contract.json"
+        >>> _ = path.write_text('{"type": "object"}')
+        >>> _read_json(path)["type"]
+        'object'
+    """
     parsed = json.loads(path.read_text(encoding="utf-8"))
     assert isinstance(parsed, dict), f"{path} must contain a JSON object"
     return parsed

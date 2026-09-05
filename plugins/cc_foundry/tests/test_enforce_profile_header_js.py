@@ -48,12 +48,22 @@ pytestmark = pytest.mark.skipif(
 
 
 def _state_file(report_dir_line: str) -> str:
-    """Build the initial profile-state fragment with the given ``REPORT_DIR`` line."""
+    """Build the initial profile-state fragment with the given ``REPORT_DIR`` line.
+
+    Examples:
+        >>> _state_file("REPORT_DIR=x").splitlines()[:2]
+        ['REPORT_DIR=x', 'SINCE=24h']
+    """
     return f"{report_dir_line}\nSINCE=24h\nSESSION_ID=\nTOP_N=5\n"
 
 
 def _ask_payload(**overrides: object) -> dict:
-    """Build a PreToolUse AskUserQuestion payload, applying `overrides`."""
+    """Build a PreToolUse AskUserQuestion payload, applying `overrides`.
+
+    Examples:
+        >>> _ask_payload(cwd="/work")["cwd"]
+        '/work'
+    """
     payload: dict = {
         "hook_event_name": "PreToolUse",
         "tool_name": "AskUserQuestion",
@@ -83,7 +93,12 @@ def _run(tmp_path: Path, payload: dict, *, session_id_env: str | None = CSID, tm
 
 
 def _denial_reason(result: dict) -> str | None:
-    """Denial reason emitted by the hook, or None when it did not deny."""
+    """Denial reason emitted by the hook, or None when it did not deny.
+
+    Examples:
+        >>> _denial_reason({"hookSpecificOutput": {"permissionDecision": "allow"}}) is None
+        True
+    """
     hook_output = result.get("hookSpecificOutput", {})
     if hook_output.get("permissionDecision") != "deny":
         return None
@@ -109,8 +124,8 @@ def _call_export(name: str, *args: object) -> object:
     return json.loads(proc.stdout)
 
 
-@pytest.fixture
-def profile_run(tmp_path: Path) -> tuple[Path, Path, str]:
+@pytest.fixture(name="profile_run")
+def _profile_run(tmp_path: Path) -> tuple[Path, Path, str]:
     """Stage a profile run that reached Step 1: report dir on disk plus its state file.
 
     Returns the report dir, the sentinel file, and the project cwd the relative sentinel value resolves against.

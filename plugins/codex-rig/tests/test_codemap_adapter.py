@@ -18,7 +18,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 ADAPTER_PATH = PLUGIN_ROOT / "shared" / "codemap_adapter.py"
 
 
-def load_adapter() -> ModuleType:
+def _load_adapter() -> ModuleType:
     """Load the adapter module directly, mirroring this suite's other shared-script tests."""
     specification = importlib.util.spec_from_file_location("codemap_adapter", ADAPTER_PATH)
     assert specification is not None
@@ -104,7 +104,7 @@ sys.exit(2)
 def test_probe_absent_when_codemap_py_not_on_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Report `absent` without running any subprocess when the binary is missing."""
     monkeypatch.setenv("PATH", str(tmp_path))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     result = adapter.probe_codemap()
 
@@ -116,7 +116,7 @@ def test_probe_available_when_doctor_reports_supported(monkeypatch: pytest.Monke
     """Report ``available`` once ``doctor --json`` returns a supported interpreter."""
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _CLEAN_QUERY, 0))
     monkeypatch.setenv("PATH", str(tmp_path))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     result = adapter.probe_codemap()
 
@@ -140,7 +140,7 @@ def test_explicit_codemap_bin_wins_over_path_for_probe_and_query(
     explicit_launcher = explicit_bin / ("codemap-py.bat" if os.name == "nt" else "codemap-py")
     monkeypatch.setenv("CODEMAP_BIN", str(explicit_launcher))
     monkeypatch.setenv("PATH", str(path_bin))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     context = adapter.gather_structural_context("review")
 
@@ -174,7 +174,7 @@ def test_invalid_explicit_codemap_bin_fails_closed(
         configured.symlink_to(target_dir / ("codemap-py.bat" if os.name == "nt" else "codemap-py"))
     monkeypatch.setenv("CODEMAP_BIN", str(configured))
     monkeypatch.setenv("PATH", str(path_bin))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     context = adapter.gather_structural_context("review")
 
@@ -189,7 +189,7 @@ def test_empty_codemap_bin_falls_back_to_path(monkeypatch: pytest.MonkeyPatch, t
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _CLEAN_QUERY, 0))
     monkeypatch.setenv("CODEMAP_BIN", "")
     monkeypatch.setenv("PATH", str(tmp_path))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     context = adapter.gather_structural_context("review")
 
@@ -200,24 +200,26 @@ def test_empty_codemap_bin_falls_back_to_path(monkeypatch: pytest.MonkeyPatch, t
 
 def test_gather_context_resolves_once_and_reuses_launcher_for_compact_queries(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep doctor and query on one launcher even if PATH changes after the probe."""
-    adapter = load_adapter()
+    adapter = _load_adapter()
     launcher = "/explicit/codemap-py"
     resolved: list[None] = []
     commands: list[list[str]] = []
 
-    def resolve():
+    def _resolve():
+        """Return the fixed launcher resolution and count resolution attempts."""
         resolved.append(None)
         return adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher")
 
-    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+    def _run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        """Return healthy doctor/query payloads while recording command arguments."""
         commands.append(argv)
         if argv[1] == "doctor":
             monkeypatch.setenv("PATH", "/changed-after-doctor")
             return 0, _HEALTHY_DOCTOR, None
         return 0, _CLEAN_QUERY, None
 
-    monkeypatch.setattr(adapter, "_resolve_codemap_executable", resolve)
-    monkeypatch.setattr(adapter, "_run_json", run_json)
+    monkeypatch.setattr(adapter, "_resolve_codemap_executable", _resolve)
+    monkeypatch.setattr(adapter, "_run_json", _run_json)
 
     context = adapter.gather_structural_context("review")
 
@@ -228,7 +230,7 @@ def test_gather_context_resolves_once_and_reuses_launcher_for_compact_queries(mo
 
 def test_analysis_query_uses_only_supported_compact_deps_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
     """Prevent the managed analysis mapping from passing symbol-only flags to deps."""
-    adapter = load_adapter()
+    adapter = _load_adapter()
     launcher = "/explicit/codemap-py"
     commands: list[list[str]] = []
     monkeypatch.setattr(
@@ -237,11 +239,12 @@ def test_analysis_query_uses_only_supported_compact_deps_arguments(monkeypatch: 
         lambda: adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher"),
     )
 
-    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+    def _run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        """Return the matching doctor or query fixture while recording arguments."""
         commands.append(argv)
         return (0, _HEALTHY_DOCTOR, None) if argv[1] == "doctor" else (0, _CLEAN_QUERY, None)
 
-    monkeypatch.setattr(adapter, "_run_json", run_json)
+    monkeypatch.setattr(adapter, "_run_json", _run_json)
 
     context = adapter.gather_structural_context("analysis", target="pkg.core")
 
@@ -258,7 +261,7 @@ def test_probe_incompatible_when_interpreter_unsupported(monkeypatch: pytest.Mon
     unsupported = dict(_HEALTHY_DOCTOR, supported=False)
     _write_fake_codemap_py(tmp_path, _fake_script(unsupported, 0, _CLEAN_QUERY, 0))
     monkeypatch.setenv("PATH", str(tmp_path))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     result = adapter.probe_codemap()
 
@@ -269,7 +272,7 @@ def test_probe_incompatible_when_doctor_exits_nonzero(monkeypatch: pytest.Monkey
     """Report ``incompatible`` when ``doctor --json`` itself fails."""
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 1, _CLEAN_QUERY, 0))
     monkeypatch.setenv("PATH", str(tmp_path))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     result = adapter.probe_codemap()
 
@@ -282,7 +285,7 @@ def test_simulated_windows_configured_launchers_are_accepted_case_insensitively(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, extension: str
 ) -> None:
     """Accept Windows executable filename conventions without requiring a POSIX execute bit."""
-    adapter = load_adapter()
+    adapter = _load_adapter()
     launcher = tmp_path / f"codemap-py{extension}"
     launcher.write_text("launcher", encoding="utf-8")
 
@@ -294,7 +297,7 @@ def test_simulated_windows_configured_launchers_are_accepted_case_insensitively(
 def test_gather_context_absent_never_runs_queries(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Absence is non-fatal and short-circuits before any query subprocess runs."""
     monkeypatch.setenv("PATH", str(tmp_path))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     context = adapter.gather_structural_context("implementation", target="pkg.mod")
 
@@ -306,7 +309,7 @@ def test_gather_context_available_when_all_queries_clean(monkeypatch: pytest.Mon
     """Report `available` when the probe is healthy and every mapped query is exhaustive."""
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _CLEAN_QUERY, 0))
     monkeypatch.setenv("PATH", str(tmp_path))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     context = adapter.gather_structural_context("implementation", target="pkg.mod")
 
@@ -316,12 +319,13 @@ def test_gather_context_available_when_all_queries_clean(monkeypatch: pytest.Mon
 
 def test_skip_route_persists_auditable_context_without_resolving_codemap(monkeypatch: pytest.MonkeyPatch) -> None:
     """A localized edit records its skip decision without spawning Codemap work."""
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
-    def unexpected_resolution() -> object:
+    def _unexpected_resolution() -> object:
+        """Fail if the skip route attempts optional launcher resolution."""
         raise AssertionError("skip must not resolve a Codemap launcher")
 
-    monkeypatch.setattr(adapter, "_resolve_codemap_executable", unexpected_resolution)
+    monkeypatch.setattr(adapter, "_resolve_codemap_executable", _unexpected_resolution)
 
     context = adapter.gather_structural_context("implementation", target="pkg.mod::edit", query_kind="skip")
 
@@ -350,7 +354,7 @@ def test_fact_routes_run_doctor_and_exactly_one_compact_query(
     expected_query: list[str],
 ) -> None:
     """Each explicit fact route bounds Codemap work to one doctor and one compact query."""
-    adapter = load_adapter()
+    adapter = _load_adapter()
     launcher = "/explicit/codemap-py"
     commands: list[list[str]] = []
     monkeypatch.setattr(
@@ -359,11 +363,12 @@ def test_fact_routes_run_doctor_and_exactly_one_compact_query(
         lambda: adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher"),
     )
 
-    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+    def _run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        """Return healthy doctor/query payloads for target-shape route checks."""
         commands.append(argv)
         return (0, _HEALTHY_DOCTOR, None) if argv[1] == "doctor" else (0, _CLEAN_QUERY, None)
 
-    monkeypatch.setattr(adapter, "_run_json", run_json)
+    monkeypatch.setattr(adapter, "_run_json", _run_json)
 
     context = adapter.gather_structural_context("implementation", target=target, query_kind=query_kind)
 
@@ -376,7 +381,7 @@ def test_fact_routes_run_doctor_and_exactly_one_compact_query(
 
 def test_fact_route_without_target_records_bounded_error_after_doctor(monkeypatch: pytest.MonkeyPatch) -> None:
     """A fact route with no target does not guess or execute a query subprocess."""
-    adapter = load_adapter()
+    adapter = _load_adapter()
     launcher = "/explicit/codemap-py"
     commands: list[list[str]] = []
     monkeypatch.setattr(
@@ -385,11 +390,12 @@ def test_fact_route_without_target_records_bounded_error_after_doctor(monkeypatc
         lambda: adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher"),
     )
 
-    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+    def _run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        """Return only the healthy doctor payload for the targetless fact route."""
         commands.append(argv)
         return 0, _HEALTHY_DOCTOR, None
 
-    monkeypatch.setattr(adapter, "_run_json", run_json)
+    monkeypatch.setattr(adapter, "_run_json", _run_json)
 
     context = adapter.gather_structural_context("implementation", query_kind="callers")
 
@@ -419,7 +425,7 @@ def test_fact_routes_degrade_without_query_for_missing_or_malformed_target(
     monkeypatch: pytest.MonkeyPatch, query_kind: str, target: str | None
 ) -> None:
     """Required compact facts never infer missing, incomplete, or module-only symbol targets."""
-    adapter = load_adapter()
+    adapter = _load_adapter()
     launcher = "/explicit/codemap-py"
     commands: list[list[str]] = []
     monkeypatch.setattr(
@@ -428,11 +434,12 @@ def test_fact_routes_degrade_without_query_for_missing_or_malformed_target(
         lambda: adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher"),
     )
 
-    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+    def _run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        """Return healthy doctor/query payloads for malformed-target route checks."""
         commands.append(argv)
         return 0, _HEALTHY_DOCTOR, None
 
-    monkeypatch.setattr(adapter, "_run_json", run_json)
+    monkeypatch.setattr(adapter, "_run_json", _run_json)
 
     context = adapter.gather_structural_context("implementation", target=target, query_kind=query_kind)
 
@@ -444,12 +451,13 @@ def test_fact_routes_degrade_without_query_for_missing_or_malformed_target(
 
 def test_invalid_query_kind_fails_before_launcher_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reject invalid routes at the public API boundary before optional work starts."""
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
-    def unexpected_resolution() -> object:
+    def _unexpected_resolution() -> object:
+        """Fail if invalid query-kind validation resolves the optional launcher."""
         raise AssertionError("invalid query kind must fail before resolving Codemap")
 
-    monkeypatch.setattr(adapter, "_resolve_codemap_executable", unexpected_resolution)
+    monkeypatch.setattr(adapter, "_resolve_codemap_executable", _unexpected_resolution)
 
     with pytest.raises(ValueError, match="unknown query kind"):
         adapter.gather_structural_context("implementation", query_kind="not-a-route")
@@ -459,7 +467,7 @@ def test_gather_context_degraded_when_not_covered_present(monkeypatch: pytest.Mo
     """Report `degraded` when a query returns non-exhaustive completeness metadata."""
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _DEGRADED_QUERY, 0))
     monkeypatch.setenv("PATH", str(tmp_path))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     context = adapter.gather_structural_context("review")
 
@@ -470,7 +478,7 @@ def test_gather_context_stale_when_query_reports_stale(monkeypatch: pytest.Monke
     """Report `stale` when a query's index block flags the index older than source."""
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _STALE_QUERY, 0))
     monkeypatch.setenv("PATH", str(tmp_path))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     context = adapter.gather_structural_context("audit")
 
@@ -483,7 +491,7 @@ def test_gather_context_composes_stale_and_gap_reported_by_one_query(
     """Keep both caveats when a single query is stale and non-exhaustive at once."""
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _STALE_DEGRADED_QUERY, 0))
     monkeypatch.setenv("PATH", str(tmp_path))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     context = adapter.gather_structural_context("audit")
 
@@ -493,7 +501,7 @@ def test_gather_context_composes_stale_and_gap_reported_by_one_query(
 
 def test_gather_context_composes_stale_and_gap_split_across_queries(monkeypatch: pytest.MonkeyPatch) -> None:
     """Compose caveats raised by different queries so neither batch member masks the other."""
-    adapter = load_adapter()
+    adapter = _load_adapter()
     launcher = "/explicit/codemap-py"
     monkeypatch.setattr(
         adapter,
@@ -501,12 +509,13 @@ def test_gather_context_composes_stale_and_gap_split_across_queries(monkeypatch:
         lambda: adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher"),
     )
 
-    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+    def _run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        """Select stale or degraded query evidence by subcommand while recording calls."""
         if argv[1] == "doctor":
             return 0, _HEALTHY_DOCTOR, None
         return (0, _STALE_QUERY, None) if argv[3] == "undocumented" else (0, _DEGRADED_QUERY, None)
 
-    monkeypatch.setattr(adapter, "_run_json", run_json)
+    monkeypatch.setattr(adapter, "_run_json", _run_json)
 
     context = adapter.gather_structural_context("audit")
 
@@ -521,7 +530,7 @@ def test_query_records_the_index_path_the_provider_reported_for_itself(
     """Record each query's own index path so provenance names the file that answered."""
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _AGREEING_QUERY, 0))
     monkeypatch.setenv("PATH", str(tmp_path))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     context = adapter.gather_structural_context("review")
 
@@ -538,7 +547,7 @@ def test_provider_without_index_path_records_none_and_claims_no_divergence(
     """Tolerate a provider predating the field: absence stays absent, never back-filled."""
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _CLEAN_QUERY, 0))
     monkeypatch.setenv("PATH", str(tmp_path))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     context = adapter.gather_structural_context("review")
 
@@ -560,7 +569,7 @@ def test_divergent_index_path_is_recorded_as_evidence_without_changing_status(
     """
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _DIVERGENT_QUERY, 0))
     monkeypatch.setenv("PATH", str(tmp_path))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     context = adapter.gather_structural_context("review")
 
@@ -589,7 +598,7 @@ def test_not_indexed_exit_records_the_addressed_path_and_its_divergence(
     not_indexed = {"error": "index is not valid JSON", "path": _DIVERGENT_INDEX_PATH}
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, not_indexed, 3))
     monkeypatch.setenv("PATH", str(tmp_path))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     context = adapter.gather_structural_context("review")
 
@@ -604,7 +613,7 @@ def test_not_indexed_exit_without_a_path_key_claims_nothing(monkeypatch: pytest.
     not_indexed = {"error": "module not indexed", "module": "pkg.missing", "suggestions": []}
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, not_indexed, 3))
     monkeypatch.setenv("PATH", str(tmp_path))
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     context = adapter.gather_structural_context("review")
 
@@ -614,19 +623,20 @@ def test_not_indexed_exit_without_a_path_key_claims_nothing(monkeypatch: pytest.
 
 def test_divergence_is_recorded_per_query_not_once_per_batch(monkeypatch: pytest.MonkeyPatch) -> None:
     """Attribute divergence to the query that diverged, leaving an agreeing sibling unaccused."""
-    adapter = load_adapter()
+    adapter = _load_adapter()
     monkeypatch.setattr(
         adapter,
         "_resolve_codemap_executable",
         lambda: adapter.LauncherResolution("/explicit/codemap-py", adapter.STATUS_AVAILABLE, "test launcher"),
     )
 
-    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+    def _run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        """Select agreeing or divergent query evidence by subcommand."""
         if argv[1] == "doctor":
             return 0, _HEALTHY_DOCTOR, None
         return (0, _AGREEING_QUERY, None) if argv[3] == "undocumented" else (0, _DIVERGENT_QUERY, None)
 
-    monkeypatch.setattr(adapter, "_run_json", run_json)
+    monkeypatch.setattr(adapter, "_run_json", _run_json)
 
     context = adapter.gather_structural_context("audit")
 
@@ -636,7 +646,7 @@ def test_divergence_is_recorded_per_query_not_once_per_batch(monkeypatch: pytest
 
 def test_gather_context_rejects_unknown_category(tmp_path: Path) -> None:
     """Refuse an undefined category rather than silently mapping it to an empty query set."""
-    adapter = load_adapter()
+    adapter = _load_adapter()
 
     with pytest.raises(ValueError, match="unknown category"):
         adapter.gather_structural_context("not-a-real-category")
@@ -653,7 +663,7 @@ def test_standard_batch_without_target_runs_only_target_free_queries(
     monkeypatch: pytest.MonkeyPatch, category: str, expected_subcommands: list[str]
 ) -> None:
     """A targetless standard batch omits target-requiring queries rather than reporting a false gap."""
-    adapter = load_adapter()
+    adapter = _load_adapter()
     launcher = "/explicit/codemap-py"
     commands: list[list[str]] = []
     monkeypatch.setattr(
@@ -662,11 +672,12 @@ def test_standard_batch_without_target_runs_only_target_free_queries(
         lambda: adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher"),
     )
 
-    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+    def _run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        """Return healthy doctor/query payloads while recording target-free batch calls."""
         commands.append(argv)
         return (0, _HEALTHY_DOCTOR, None) if argv[1] == "doctor" else (0, _CLEAN_QUERY, None)
 
-    monkeypatch.setattr(adapter, "_run_json", run_json)
+    monkeypatch.setattr(adapter, "_run_json", _run_json)
 
     context = adapter.gather_structural_context(category, target=None)
 
@@ -679,7 +690,7 @@ def test_standard_batch_of_only_target_requiring_queries_keeps_its_bounded_error
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Never report `available` off zero executed queries when every mapped query needs a target."""
-    adapter = load_adapter()
+    adapter = _load_adapter()
     launcher = "/explicit/codemap-py"
     commands: list[list[str]] = []
     monkeypatch.setitem(adapter.CATEGORY_QUERIES, "targeted-only", (adapter.QuerySpec("rdeps", requires_target=True),))
@@ -689,11 +700,12 @@ def test_standard_batch_of_only_target_requiring_queries_keeps_its_bounded_error
         lambda: adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher"),
     )
 
-    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+    def _run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        """Return a healthy doctor payload for a query that must not execute."""
         commands.append(argv)
         return 0, _HEALTHY_DOCTOR, None
 
-    monkeypatch.setattr(adapter, "_run_json", run_json)
+    monkeypatch.setattr(adapter, "_run_json", _run_json)
 
     context = adapter.gather_structural_context("targeted-only", target=None)
 
@@ -834,7 +846,7 @@ def test_root_scoped_query_runs_against_real_cli(monkeypatch: pytest.MonkeyPatch
     )
     assert scan.returncode == 0, scan.stderr
 
-    adapter = load_adapter()
+    adapter = _load_adapter()
     resolution = adapter._resolve_codemap_executable()
     assert resolution.launcher is not None
     outcome = adapter._run_one_query(

@@ -36,7 +36,12 @@ ACTIVE_AGENTIC_SUITE = next(
 
 
 def _make_task(mod: Any, **kwargs: Any) -> Any:
-    """Return a minimal valid Task, overriding fields via kwargs."""
+    """Build a minimal valid task, applying supplied fields over the synthetic defaults.
+
+    >>> task = _make_task(getfixture("script_run_agentic"), id="example", difficulty="hard")
+    >>> task.id, task.difficulty, task.type
+    ('example', 'hard', 'fix')
+    """
     defaults = {
         "id": "BA-01",
         "type": "fix",
@@ -49,13 +54,26 @@ def _make_task(mod: Any, **kwargs: Any) -> Any:
 
 
 def _minimal_index(modules: list[dict]) -> dict:
-    """Return a minimal codemap index dict with the given module list."""
+    """Wrap the supplied module list without copying or enriching its contents.
+
+    >>> modules = [{"name": "example"}]
+    >>> _minimal_index(modules)
+    {'modules': [{'name': 'example'}]}
+    >>> _minimal_index(modules)["modules"] is modules
+    True
+    """
     return {"modules": modules}
 
 
-@pytest.fixture()
-def tmp_index(tmp_path: Path, script_run_agentic: Any) -> Path:
-    """Write a minimal codemap index to a temporary file and return its path."""
+@pytest.fixture(name="tmp_index")
+def _tmp_index(tmp_path: Path, script_run_agentic: Any) -> Path:
+    """Write a minimal codemap index to a temporary file and return its path.
+
+    Example:
+        >>> modules = json.loads(getfixture("tmp_index").read_text())["modules"]
+        >>> len(modules), sum(module["name"].startswith("tests.") for module in modules)
+        (4, 1)
+    """
     data = _minimal_index(
         [
             {
@@ -89,9 +107,15 @@ def tmp_index(tmp_path: Path, script_run_agentic: Any) -> Path:
     return index_file
 
 
-@pytest.fixture()
-def ground_truth(tmp_index: Path, script_run_agentic: Any) -> Any:
-    """GroundTruth instance loaded from the tmp_index fixture."""
+@pytest.fixture(name="ground_truth")
+def _ground_truth(tmp_index: Path, script_run_agentic: Any) -> Any:
+    """Build ground truth from the synthetic index, keeping test importers outside production expectations.
+
+    >>> truth = getfixture("ground_truth")
+    >>> expected = truth.expected["BA-01"]
+    >>> len(expected), any(name.startswith("tests.") for name in expected)
+    (2, False)
+    """
     task = _make_task(
         script_run_agentic,
         id="BA-01",
@@ -677,12 +701,13 @@ class TestProviderParityTaskIntegration:
             log_path=tmp_path / "tool-calls.jsonl",
         )
 
-        def native_result(_task: Any, arm: str, **_kwargs: Any) -> Any:
+        def _native_result(_task: Any, arm: str, **_kwargs: Any) -> Any:
+            """Return unsuccessful native result evidence for the selected arm."""
             return script_run_agentic.BenchmarkRun(
                 arm=arm, task_id=task.id, task_type=task.type, model="haiku", success=False
             )
 
-        with patch.object(script_run_agentic.ModelRunner, "run", side_effect=native_result):
+        with patch.object(script_run_agentic.ModelRunner, "run", side_effect=_native_result):
             legacy = benchmark._run_single(
                 task,
                 "haiku",
@@ -755,9 +780,11 @@ class TestProviderParityTaskIntegration:
                 *,
                 timeout: int,
             ) -> None:
+                """Initialize the test double's fixture-controlled state."""
                 observed["timeout"] = timeout
 
             def run(self, selected_task: Any, selected_arm: str, **_kwargs: Any) -> Any:
+                """Return the scenario-specific benchmark result without invoking a provider."""
                 return script_run_agentic.BenchmarkRun(
                     arm=selected_arm,
                     task_id=selected_task.id,
@@ -767,6 +794,7 @@ class TestProviderParityTaskIntegration:
                 )
 
             def _system_prompt(self, _task_type: str, _arm: str) -> str:
+                """Return a fixed prompt envelope for the fixture runner."""
                 return "fixture envelope"
 
         with patch.object(script_run_agentic, "ModelRunner", FixtureRunner):
@@ -858,13 +886,14 @@ class TestProviderParityTaskIntegration:
             log_path=tmp_path / "tool-calls.jsonl",
         )
 
-        def no_call_result(_task: Any, arm: str, **_kwargs: Any) -> Any:
+        def _no_call_result(_task: Any, arm: str, **_kwargs: Any) -> Any:
+            """Return a successful fixture result without observed tool calls."""
             return script_run_agentic.BenchmarkRun(
                 arm=arm, task_id="BA-01", task_type="fix", model="haiku", success=True
             )
 
         with (
-            patch.object(script_run_agentic.ModelRunner, "run", side_effect=no_call_result),
+            patch.object(script_run_agentic.ModelRunner, "run", side_effect=_no_call_result),
             patch.object(benchmark.gt, "score", return_value=script_run_agentic.QualityScore(scored=True)),
         ):
             auto = benchmark._run_single(
@@ -2260,7 +2289,7 @@ class TestConfigIsolation:
         task = script_run_agentic.Task(id="fixture", type="fix", prompt="answer")
         commands: dict[str, list[str]] = {}
 
-        def capture_command(
+        def _capture_command(
             _self: Any,
             cmd: list[str],
             result: Any,
@@ -2268,10 +2297,11 @@ class TestConfigIsolation:
             cwd: Any = None,
             arm: str = "",
         ) -> None:
+            """Record argv by arm and supply minimal input-token usage."""
             commands[arm] = cmd
             result.input_tokens = 1
 
-        with patch.object(script_run_agentic.ModelRunner, "_stream_events", capture_command):
+        with patch.object(script_run_agentic.ModelRunner, "_stream_events", _capture_command):
             runner.run(task, arm)
             runner.run(task, "plain")
 
@@ -2289,6 +2319,7 @@ class TestZeroTokenRetryPredicate:
 
     @staticmethod
     def _runner_and_task(script_run_agentic: Any, tmp_path: Path) -> tuple[Any, Any]:
+        """Create a disposable repository with a runner and minimal task, without running the task."""
         repo = tmp_path / "repo"
         repo.mkdir()
         runner = script_run_agentic.ModelRunner("haiku", "fixture-model", repo, timeout=600)
@@ -2302,14 +2333,15 @@ class TestZeroTokenRetryPredicate:
         runner, task = self._runner_and_task(script_run_agentic, tmp_path)
         calls: list[str] = []
 
-        def timeout_stream(
+        def _timeout_stream(
             _self: Any, cmd: list[str], result: Any, update_fn: Any = None, cwd: Any = None, arm: str = ""
         ) -> None:
+            """Record the arm and supply this scenario's timeout evidence."""
             calls.append(arm)
             result.elapsed_s = 600.0
 
         monkeypatch.setattr(script_run_agentic.time, "sleep", lambda _s: None)
-        with patch.object(script_run_agentic.ModelRunner, "_stream_events", timeout_stream):
+        with patch.object(script_run_agentic.ModelRunner, "_stream_events", _timeout_stream):
             runner.run(task, "plain")
 
         assert calls == ["plain"]
@@ -2321,15 +2353,16 @@ class TestZeroTokenRetryPredicate:
         runner, task = self._runner_and_task(script_run_agentic, tmp_path)
         calls: list[str] = []
 
-        def timeout_stream(
+        def _timeout_stream(
             _self: Any, cmd: list[str], result: Any, update_fn: Any = None, cwd: Any = None, arm: str = ""
         ) -> None:
+            """Record the arm and supply this scenario's timeout evidence."""
             calls.append(arm)
             result.elapsed_s = 5.0
             result.error = "timeout (600s)"
 
         monkeypatch.setattr(script_run_agentic.time, "sleep", lambda _s: None)
-        with patch.object(script_run_agentic.ModelRunner, "_stream_events", timeout_stream):
+        with patch.object(script_run_agentic.ModelRunner, "_stream_events", _timeout_stream):
             result = runner.run(task, "plain")
 
         assert calls == ["plain"]
@@ -2342,14 +2375,15 @@ class TestZeroTokenRetryPredicate:
         runner, task = self._runner_and_task(script_run_agentic, tmp_path)
         calls: list[str] = []
 
-        def failing_stream(
+        def _failing_stream(
             _self: Any, cmd: list[str], result: Any, update_fn: Any = None, cwd: Any = None, arm: str = ""
         ) -> None:
+            """Record the arm and leave the streamed result unsuccessful."""
             calls.append(arm)
             result.elapsed_s = 0.5
 
         monkeypatch.setattr(script_run_agentic.time, "sleep", lambda _s: None)
-        with patch.object(script_run_agentic.ModelRunner, "_stream_events", failing_stream):
+        with patch.object(script_run_agentic.ModelRunner, "_stream_events", _failing_stream):
             runner.run(task, "plain")
 
         assert len(calls) == 3
@@ -2366,16 +2400,17 @@ class TestZeroTokenRetryPredicate:
         sandboxes: list[Path] = []
         inherited: list[bool] = []
 
-        def editing_stream(
+        def _editing_stream(
             _self: Any, cmd: list[str], result: Any, update_fn: Any = None, cwd: Any = None, arm: str = ""
         ) -> None:
+            """Record inherited edits and create a fresh edit in the current sandbox."""
             inherited.append((cwd / "agent-edit.txt").exists())
             (cwd / "agent-edit.txt").write_text("edited\n", encoding="utf-8")
             sandboxes.append(cwd)
             result.elapsed_s = 0.5
 
         monkeypatch.setattr(script_run_agentic.time, "sleep", lambda _s: None)
-        with patch.object(script_run_agentic.ModelRunner, "_stream_events", editing_stream):
+        with patch.object(script_run_agentic.ModelRunner, "_stream_events", _editing_stream):
             runner.run(task, "plain")
 
         assert len(sandboxes) == 3
@@ -2455,8 +2490,8 @@ class TestZeroTokenRetryPredicate:
 
 
 class TestModelRunnerSystemPrompt:
-    @pytest.fixture()
-    def runner(self, script_run_agentic: Any, tmp_path: Path) -> Any:
+    @pytest.fixture(name="runner")
+    def _runner(self, script_run_agentic: Any, tmp_path: Path) -> Any:
         """Minimal ModelRunner for testing prompt assembly."""
         return script_run_agentic.ModelRunner(
             model_short="haiku",
@@ -2555,8 +2590,8 @@ class TestPromptSymmetry:
         "Copy EVERY module from the codemap result",
     )
 
-    @pytest.fixture()
-    def runner(self, script_run_agentic: Any, tmp_path: Path) -> Any:
+    @pytest.fixture(name="runner")
+    def _runner(self, script_run_agentic: Any, tmp_path: Path) -> Any:
         """Minimal ModelRunner for prompt assembly."""
         return script_run_agentic.ModelRunner(
             model_short="haiku",
@@ -2942,8 +2977,8 @@ class TestResolveRelativeBase:
 class TestScanRepoImporters:
     """AST scan builds a tool-independent {module: importers} map across import forms."""
 
-    @pytest.fixture()
-    def scanned_repo(self, tmp_path: Path) -> Path:
+    @pytest.fixture(name="scanned_repo")
+    def _scanned_repo(self, tmp_path: Path) -> Path:
         """Create a src-layout package exercising every import form plus a test file."""
         pkg = tmp_path / "src" / "app"
         (pkg / "sub").mkdir(parents=True)
@@ -2984,8 +3019,8 @@ class TestScanRepoImporters:
 class TestGroundTruthAstOracle:
     """GroundTruth uses the AST scan (not the index) as the rdep oracle and logs divergences."""
 
-    @pytest.fixture()
-    def ast_gt(self, tmp_path: Path, script_run_agentic: Any) -> Any:
+    @pytest.fixture(name="ast_gt")
+    def _ast_gt(self, tmp_path: Path, script_run_agentic: Any) -> Any:
         """Build a package where the index under-records rdeps vs the AST scan."""
         pkg = tmp_path / "src" / "app"
         pkg.mkdir(parents=True)
@@ -3061,8 +3096,8 @@ class TestFixFamilyPromptSymmetry:
     _ARMS = ("plain", "codemap", "semble", "combined")
     _FIX_TYPES = ("fix_single", "fix_multicaller", "read_crop")
 
-    @pytest.fixture()
-    def runner(self, script_run_agentic: Any, tmp_path: Path) -> Any:
+    @pytest.fixture(name="runner")
+    def _runner(self, script_run_agentic: Any, tmp_path: Path) -> Any:
         """Minimal ModelRunner for prompt assembly."""
         return script_run_agentic.ModelRunner(
             model_short="haiku",
@@ -3311,8 +3346,8 @@ class TestReportRendering:
         run.quality = script.QualityScore(scored=True, erec=erec, rrec=erec, chunk_hit_rate=chunk)
         return run
 
-    @pytest.fixture()
-    def report(self, script_run_agentic: Any) -> Any:
+    @pytest.fixture(name="report")
+    def _report(self, script_run_agentic: Any) -> Any:
         """Report with a plain+codemap success pair and one codemap failure."""
         tasks = [script_run_agentic.Task(id="BA-01", type="blast_radius_analysis", prompt="p")]
         results = [
@@ -3391,8 +3426,8 @@ class TestReportFixFamilySuppression:
 class TestAtomicSnapshot:
     """_save_snapshot writes via a temp file + os.replace so an interrupt cannot truncate it."""
 
-    @pytest.fixture()
-    def benchmark(self, script_run_agentic: Any, tmp_index: Path, tmp_path: Path) -> Any:
+    @pytest.fixture(name="benchmark")
+    def _benchmark(self, script_run_agentic: Any, tmp_index: Path, tmp_path: Path) -> Any:
         """Minimal Benchmark whose output path lives in a writable temp dir."""
         task = script_run_agentic.Task(id="BA-01", type="blast_radius_analysis", prompt="p")
         out = tmp_path / "results.json"
@@ -3433,6 +3468,7 @@ class TestAtomicSnapshot:
         real_replace = script_run_agentic.os.replace
 
         def _spy_replace(src: Any, dst: Any) -> Any:
+            """Record source and destination before performing the real atomic replacement."""
             seen["src"], seen["dst"] = str(src), str(dst)
             return real_replace(src, dst)
 
@@ -3465,8 +3501,8 @@ class TestAtomicSnapshot:
 class TestDegenerateLoopClassification:
     """A grep-heavy zero-skill BA codemap run is degenerate_grep_loop, not a plain no-call."""
 
-    @pytest.fixture()
-    def benchmark(self, script_run_agentic: Any, tmp_index: Path, tmp_path: Path) -> Any:
+    @pytest.fixture(name="benchmark")
+    def _benchmark(self, script_run_agentic: Any, tmp_index: Path, tmp_path: Path) -> Any:
         """Benchmark whose only task is a blast-radius (non-fix) codemap task."""
         task = script_run_agentic.Task(
             id="BA-01",
@@ -3544,8 +3580,8 @@ class TestDegenerateLoopClassification:
 class TestTop10InDegree:
     """top10_expected ranks central rdeps by in-degree (reverse-dep count), not dep_count."""
 
-    @pytest.fixture()
-    def gt(self, script_run_agentic: Any, tmp_path: Path) -> Any:
+    @pytest.fixture(name="gt")
+    def _gt(self, script_run_agentic: Any, tmp_path: Path) -> Any:
         """Index with 11 reverse deps: reverse1..reverse10 imported once; reverse11 has high dep_count."""
         modules: list[dict] = [{"name": "app.target", "direct_imports": [], "dep_count": 0, "status": "ok"}]
         for i in range(1, 11):
@@ -3659,11 +3695,12 @@ def test_stage_transport_enables_native_edits_only_for_executable_workspaces(
     """
     commands: list[list[str]] = []
 
-    def stream(cmd: list[str], **_kwargs: Any) -> Any:
+    def _stream(cmd: list[str], **_kwargs: Any) -> Any:
+        """Record argv and return successful stream-completion metadata."""
         commands.append(cmd)
         return SimpleNamespace(error=None, stderr="", returncode=0, exc_timeout=False, elapsed_s=0.1)
 
-    monkeypatch.setattr(script_run_agentic, "stream_claude", stream)
+    monkeypatch.setattr(script_run_agentic, "stream_claude", _stream)
     runner = script_run_agentic.ModelRunner("haiku", script_run_agentic.MODELS["haiku"], tmp_path, timeout=1)
 
     runner.run_stage_events(
@@ -3706,6 +3743,7 @@ class TestQueryArmIsolation:
         def _fake_stream(
             self: Any, cmd: Any, result: Any, update_fn: Any = None, cwd: Any = None, arm: Any = None
         ) -> None:
+            """Write a stray sandbox edit and populate synthetic token usage."""
             seen["cwd"] = cwd
             (cwd / "MUTATED.txt").write_text("agent wrote this")  # simulate a stray edit in the sandbox
             result.input_tokens = 10

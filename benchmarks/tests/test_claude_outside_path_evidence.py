@@ -75,7 +75,14 @@ def test_external_path_evidence_keeps_successful_host_access_quarantined(
 
 
 def _read_events(file_path: str) -> list[dict[str, Any]]:
-    """Return one successful external Read transcript naming *file_path*."""
+    """Pair a Read request for the supplied path with a successful result sharing its tool identifier.
+
+    >>> request, response = _read_events("example.py")
+    >>> call = request["message"]["content"][0]
+    >>> result = response["message"]["content"][0]
+    >>> call["input"], call["id"] == result["tool_use_id"], result["is_error"]
+    ({'file_path': 'example.py'}, True, False)
+    """
     return [
         {
             "type": "assistant",

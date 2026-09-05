@@ -18,6 +18,7 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+        """Store the status and output returned by a fake Git command."""
         self.returncode = returncode
         self.stdout = stdout
 
@@ -39,6 +40,7 @@ def test_golden_zeroarg_invocation_constructs_expected_commands(monkeypatch: pyt
     calls: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Return changed files on the discovery call and empty output thereafter."""
         calls.append(list(cmd))
         call_n[0] += 1
         stdout = "src/a.py\ndocs/b.md\n" if call_n[0] == 1 else ""
@@ -72,6 +74,7 @@ def test_no_changed_files_no_commit(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Record commands while making the working tree appear unchanged."""
         calls.append(list(cmd))
         return _FakeCompleted(returncode=0, stdout="")
 
@@ -87,6 +90,7 @@ def test_changed_files_stages_and_commits(monkeypatch: pytest.MonkeyPatch) -> No
     calls: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Return one changed file, then successful responses for Git mutations."""
         calls.append(list(cmd))
         call_n[0] += 1
         stdout = "foo.py\n" if call_n[0] == 1 else ""
@@ -107,6 +111,7 @@ def test_changed_files_are_added_before_commit_with_exact_args(monkeypatch: pyte
     calls: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Return two changed paths followed by successful Git responses."""
         calls.append(list(cmd))
         call_n[0] += 1
         stdout = "src/a.py\ndocs/file with spaces.md\n" if call_n[0] == 1 else ""
@@ -129,6 +134,7 @@ def test_git_add_failure_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
     call_n = [0]
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Raise only for ``git add`` after reporting one changed file."""
         call_n[0] += 1
         if call_n[0] == 1:
             return _FakeCompleted(returncode=0, stdout="src/a.py\n")
@@ -149,6 +155,7 @@ def test_changed_files_commit_message_contains_lint(monkeypatch: pytest.MonkeyPa
     commit_msgs: list[str] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Expose the commit message after reporting one changed file."""
         call_n[0] += 1
         if call_n[0] == 1:
             return _FakeCompleted(returncode=0, stdout="changed.py\n")
@@ -168,6 +175,7 @@ def test_commit_failure_forwards_exit_code(monkeypatch: pytest.MonkeyPatch) -> N
     call_n = [0]
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Return a failing commit response after reporting one changed file."""
         call_n[0] += 1
         if call_n[0] == 1:
             return _FakeCompleted(returncode=0, stdout="bar.py\n")

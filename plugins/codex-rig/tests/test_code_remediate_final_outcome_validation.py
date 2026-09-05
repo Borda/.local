@@ -49,7 +49,12 @@ VALIDATOR = _load_validator()
 
 
 def _status_counts(statuses: tuple[str, ...], observed: list[str]) -> dict[str, int]:
-    """Return complete status counts required by the validator contract."""
+    """Return complete status counts required by the validator contract.
+
+    Example:
+        >>> _status_counts(("valid", "invalid"), ["valid", "valid"])
+        {'valid': 2, 'invalid': 0}
+    """
     return {status: observed.count(status) for status in statuses}
 
 

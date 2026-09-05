@@ -19,7 +19,15 @@ from check_cli_flag_drift import (
 
 
 def _make_script(base: Path, plugin: str, name: str, body: str) -> Path:
-    """Write a bin/ script under ``base/<plugin>/bin/<name>`` and return its path."""
+    """Write a bin/ script under ``base/<plugin>/bin/<name>`` and return its path.
+
+    Examples:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     path = _make_script(Path(directory), "demo", "tool.py", "print('ok')\\n")
+        ...     (path.as_posix().endswith("demo/bin/tool.py"), path.read_text() == "print('ok')\\n")
+        (True, True)
+    """
     bin_dir = base / plugin / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     path = bin_dir / name
@@ -28,7 +36,15 @@ def _make_script(base: Path, plugin: str, name: str, body: str) -> Path:
 
 
 def _make_skill(base: Path, plugin: str, skill: str, body: str) -> Path:
-    """Write a SKILL.md under ``base/<plugin>/skills/<skill>/SKILL.md`` and return it."""
+    """Write a SKILL.md under ``base/<plugin>/skills/<skill>/SKILL.md`` and return it.
+
+    Examples:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     path = _make_skill(Path(directory), "demo", "audit", "# Audit\\n")
+        ...     (path.as_posix().endswith("demo/skills/audit/SKILL.md"), path.read_text() == "# Audit\\n")
+        (True, True)
+    """
     skill_dir = base / plugin / "skills" / skill
     skill_dir.mkdir(parents=True, exist_ok=True)
     path = skill_dir / "SKILL.md"
@@ -182,7 +198,12 @@ class TestFindDrift:
 
 
 def _docstring_script(usage: str, prose: str = "") -> str:
-    """Build a bin/ script whose docstring carries ``usage`` inside a Usage: block."""
+    """Build a bin/ script whose docstring carries ``usage`` inside a Usage: block.
+
+    Examples:
+        >>> "Usage:\\npython tool.py --help" in _docstring_script("python tool.py --help")
+        True
+    """
     return f'"""tool.py — a summary.\n\n{prose}Usage:\n{usage}\n"""\n{_ARGPARSE_BODY}'
 
 

@@ -55,8 +55,8 @@ def _patch_task(repo: Path) -> dict[str, object]:
     }
 
 
-@pytest.fixture
-def patch_repo(tmp_path: Path) -> Path:
+@pytest.fixture(name="patch_repo")
+def _patch_repo(tmp_path: Path) -> Path:
     """Create a clean baseline with a failing staged target and a passing regression."""
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -75,7 +75,12 @@ def patch_repo(tmp_path: Path) -> Path:
 
 
 def _answer() -> str:
-    """Return the candidate diff that repairs the staged target without editing it."""
+    """Build a fenced candidate patch that changes only the application value, not its oracle.
+
+    >>> lines = _answer().splitlines()
+    >>> lines[0], lines[-1], [line for line in lines if line.startswith("+    ")]
+    ('```diff', '```', ["+    return 'fixed'"])
+    """
     return (
         "```diff\n"
         "diff --git a/src/app.py b/src/app.py\n"
@@ -91,7 +96,14 @@ def _answer() -> str:
 
 
 def _already_passing_fixture(task: dict[str, object]) -> dict[str, object]:
-    """Return a fixture variant whose baseline target incorrectly already passes."""
+    """Copy a task and weaken its oracle to accept the broken baseline without mutating the original.
+
+    >>> task = {"test_fixture_patch": "assert value == 'fixed'"}
+    >>> _already_passing_fixture(task)
+    {'test_fixture_patch': "assert value == 'broken'"}
+    >>> task
+    {'test_fixture_patch': "assert value == 'fixed'"}
+    """
     task = dict(task)
     task["test_fixture_patch"] = str(task["test_fixture_patch"]).replace("'fixed'", "'broken'")
     return task
@@ -147,7 +159,13 @@ def test_patch_agent_workspace_rejects_a_clean_source_head_switch(patch_repo: Pa
 
 
 def _ambient_pytest_launcher() -> str:
-    """Return the pytest launcher the benchmark environment would admit."""
+    """Prefer the explicit benchmark pytest launcher, falling back to executable discovery on PATH.
+
+    >>> with pytest.MonkeyPatch.context() as patch:
+    ...     patch.setenv(mutation_isolation.PATCH_PYTEST_ENV, "fixture-pytest")
+    ...     _ambient_pytest_launcher()
+    'fixture-pytest'
+    """
     launcher = os.environ.get(mutation_isolation.PATCH_PYTEST_ENV) or shutil.which("pytest")
     if launcher is None:
         pytest.fail("the benchmark test environment must provide a pytest launcher on PATH")
@@ -202,7 +220,7 @@ def test_patch_test_command_prioritizes_worktree_without_hiding_environment_depe
     pytest_launcher = Path(_ambient_pytest_launcher()).absolute()
     runtime = mutation_isolation.patch_test_runtime_identity()
 
-    def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         """Capture the test environment without starting pytest."""
         captured["argv"] = argv
         captured.update(kwargs)
@@ -211,7 +229,7 @@ def test_patch_test_command_prioritizes_worktree_without_hiding_environment_depe
     monkeypatch.setenv("PYTHONPATH", "/host/editable/source")
     monkeypatch.delenv("PYTHONNOUSERSITE", raising=False)
     monkeypatch.setattr(mutation_isolation, "patch_test_runtime_identity", lambda: runtime)
-    monkeypatch.setattr(mutation_isolation.subprocess, "run", fake_run)
+    monkeypatch.setattr(mutation_isolation.subprocess, "run", _fake_run)
 
     result = mutation_isolation._run_test_command(
         patch_repo,

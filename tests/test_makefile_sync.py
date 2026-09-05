@@ -61,9 +61,9 @@ def _run_make(
     return subprocess.run(args, cwd=ROOT, env=env, capture_output=True, text=True, check=False)
 
 
-@pytest.fixture
-def fake_claude(tmp_path: Path) -> FakeClaude:
-    """Provide a Claude CLI stub that records invocations and simulates installation failures."""
+@pytest.fixture(name="fake_claude")
+def _fake_claude(tmp_path: Path) -> FakeClaude:
+    """Write a Claude CLI stub and empty invocation log without executing the stub."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     log = tmp_path / "claude-invocations.log"
@@ -82,9 +82,9 @@ def fake_claude(tmp_path: Path) -> FakeClaude:
     return FakeClaude(bin_dir=bin_dir, log=log)
 
 
-@pytest.fixture
-def sandbox_home(tmp_path: Path) -> Path:
-    """Create an isolated home directory with an empty Claude plugin registry."""
+@pytest.fixture(name="sandbox_home")
+def _sandbox_home(tmp_path: Path) -> Path:
+    """Create an isolated home with empty plugin registries, leaving the actual user home untouched."""
     home = tmp_path / "home"
     plugins_dir = home / ".claude" / "plugins"
     (plugins_dir / "cache").mkdir(parents=True)
@@ -94,9 +94,9 @@ def sandbox_home(tmp_path: Path) -> Path:
     return home
 
 
-@pytest.fixture
-def fake_codex_sync_script(tmp_path: Path) -> FakeScript:
-    """Provide a Codex sync stub that records arguments without changing real state."""
+@pytest.fixture(name="fake_codex_sync_script")
+def _fake_codex_sync_script(tmp_path: Path) -> FakeScript:
+    """Write an argument-recording sync stub without executing it or creating its future log."""
     path = tmp_path / "fake_sync_codex.py"
     log = tmp_path / "codex-sync.log"
     path.write_text(
@@ -108,9 +108,9 @@ def fake_codex_sync_script(tmp_path: Path) -> FakeScript:
     return FakeScript(path=path, log=log)
 
 
-@pytest.fixture
-def fake_codex_home_sync_script(tmp_path: Path) -> FakeScript:
-    """Provide a session-policy sync stub that records its arguments."""
+@pytest.fixture(name="fake_codex_home_sync_script")
+def _fake_codex_home_sync_script(tmp_path: Path) -> FakeScript:
+    """Write a session-policy sync stub whose future log stays inside the fixture directory."""
     path = tmp_path / "fake_sync_codex_session_policy.py"
     log = tmp_path / "codex-home-sync.log"
     path.write_text(

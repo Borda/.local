@@ -34,26 +34,26 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from _hook_env import hook_tmp_base
+from _hook_env import _hook_tmp_base
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
-@pytest.fixture
-def sid(tmp_path: Path) -> Iterator[str]:
+@pytest.fixture(name="sid")
+def _sid(tmp_path: Path) -> Iterator[str]:
     """Yield a unique session id; clean its ``claude-state-<id>`` dir on teardown.
 
-    Base resolved via ``hook_tmp_base()`` so teardown targets the same directory the hook's ``getSentinelDir()`` writes
+    Base resolved via ``_hook_tmp_base()`` so teardown targets the same directory the hook's ``getSentinelDir()`` writes
     on this platform.
     """
     s = f"pytest-{tmp_path.name}"
     yield s
-    shutil.rmtree(hook_tmp_base() / f"claude-state-{s}", ignore_errors=True)
+    shutil.rmtree(_hook_tmp_base() / f"claude-state-{s}", ignore_errors=True)
 
 
-@pytest.fixture
-def tmp_home(tmp_path: Path) -> Path:
+@pytest.fixture(name="tmp_home")
+def _tmp_home(tmp_path: Path) -> Path:
     """Return an isolated HOME so audit-log writes don't pollute the real user dir."""
     h = tmp_path / "home"
     (h / ".claude" / "logs").mkdir(parents=True)
@@ -70,7 +70,12 @@ def _pre_agent(
     run_in_background: bool = False,
     name: str | None = None,
 ) -> dict:
-    """Build a ``PreToolUse`` payload for an ``Agent()`` tool call."""
+    """Build a ``PreToolUse`` payload for an ``Agent()`` tool call.
+
+    Examples:
+        >>> _pre_agent("s", "u", run_in_background=True)["tool_input"]["run_in_background"]
+        True
+    """
     tool_input: dict = {"subagent_type": subagent_type, "description": "x", "prompt": "p"}
     if run_in_background:
         tool_input["run_in_background"] = True
@@ -90,6 +95,10 @@ def _post_agent(sid: str, tool_use_id: str) -> dict:
 
     Mirrors the live payload where PostToolUse's ``tool_input`` omits ``run_in_background`` — the hook must recover
     background-ness from the ``pending/`` marker written at PreToolUse.
+
+    Examples:
+        >>> "run_in_background" in _post_agent("s", "u")["tool_input"]
+        False
     """
     return {
         "hook_event_name": "PostToolUse",
@@ -106,7 +115,12 @@ def _subagent_start(
     agent_type: str = "foundry:sw-engineer",
     tool_use_id: str | None = None,
 ) -> dict:
-    """Build a ``SubagentStart`` payload."""
+    """Build a ``SubagentStart`` payload.
+
+    Examples:
+        >>> _subagent_start("s", "a", tool_use_id="u")["tool_use_id"]
+        'u'
+    """
     payload: dict = {
         "hook_event_name": "SubagentStart",
         "agent_id": agent_id,
@@ -119,7 +133,12 @@ def _subagent_start(
 
 
 def _subagent_stop(sid: str, agent_id: str) -> dict:
-    """Build a ``SubagentStop`` payload."""
+    """Build a ``SubagentStop`` payload.
+
+    Examples:
+        >>> _subagent_stop("s", "a")["hook_event_name"]
+        'SubagentStop'
+    """
     return {
         "hook_event_name": "SubagentStop",
         "agent_id": agent_id,
@@ -128,7 +147,12 @@ def _subagent_stop(sid: str, agent_id: str) -> dict:
 
 
 def _pre_skill(sid: str, tool_use_id: str, skill: str) -> dict:
-    """Build a ``PreToolUse`` payload for a ``Skill()`` call."""
+    """Build a ``PreToolUse`` payload for a ``Skill()`` call.
+
+    Examples:
+        >>> _pre_skill("s", "u", "audit")["tool_input"]["skill"]
+        'audit'
+    """
     return {
         "hook_event_name": "PreToolUse",
         "tool_name": "Skill",
@@ -139,7 +163,12 @@ def _pre_skill(sid: str, tool_use_id: str, skill: str) -> dict:
 
 
 def _post_skill(sid: str, tool_use_id: str, skill: str) -> dict:
-    """Build a ``PostToolUse`` payload for a ``Skill()`` call."""
+    """Build a ``PostToolUse`` payload for a ``Skill()`` call.
+
+    Examples:
+        >>> _post_skill("s", "u", "audit")["hook_event_name"]
+        'PostToolUse'
+    """
     return {
         "hook_event_name": "PostToolUse",
         "tool_name": "Skill",
@@ -150,7 +179,12 @@ def _post_skill(sid: str, tool_use_id: str, skill: str) -> dict:
 
 
 def _pre_bash(sid: str, tool_use_id: str) -> dict:
-    """Build a ``PreToolUse`` payload for a ``Bash`` call."""
+    """Build a ``PreToolUse`` payload for a ``Bash`` call.
+
+    Examples:
+        >>> _pre_bash("s", "u")["tool_name"]
+        'Bash'
+    """
     return {
         "hook_event_name": "PreToolUse",
         "tool_name": "Bash",
@@ -165,6 +199,10 @@ def _pre_tool_with_cwd(sid: str, tool_use_id: str, cwd: str, tool_name: str = "R
 
     Mirrors the live CC hook contract where PreToolUse payloads include ``cwd`` but no ``agent_id`` — the field
     ``touchAgentLastActive`` uses to attribute worktree activity.
+
+    Examples:
+        >>> _pre_tool_with_cwd("s", "u", "/work")["cwd"]
+        '/work'
     """
     return {
         "hook_event_name": "PreToolUse",
@@ -177,7 +215,12 @@ def _pre_tool_with_cwd(sid: str, tool_use_id: str, cwd: str, tool_name: str = "R
 
 
 def _pre_compact(sid: str, transcript_path: str) -> dict:
-    """Build a ``PreCompact`` payload pointing at a transcript file."""
+    """Build a ``PreCompact`` payload pointing at a transcript file.
+
+    Examples:
+        >>> _pre_compact("s", "t.jsonl")["transcript_path"]
+        't.jsonl'
+    """
     return {
         "hook_event_name": "PreCompact",
         "transcript_path": transcript_path,

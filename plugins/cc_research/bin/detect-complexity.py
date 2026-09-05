@@ -1,13 +1,29 @@
 #!/usr/bin/env python3
-"""detect-complexity.py — decide whether a judge program warrants the architect / Codex passes.
+"""Classify whether a judge program warrants architect and Codex review passes.
 
-Prints "true" when the program names more than one scope file, declares
-`agent_strategy: arch`, or mentions a cross-domain keyword; "false" otherwise.
-A missing or unreadable program is a "simple" program, not an error — the judge steps
-treat false as "skip the extra pass", which is the safe default when scope is unknown.
+Purpose:
+    Apply the deterministic complexity signals consumed by the research judge workflow
+    before it spends extra review passes.
 
-Usage: COMPLEX=$(python detect-complexity.py <program-path>)
-Exit codes: 0 = verdict printed · 2 = missing <program-path> argument
+Scope:
+    Read one local judge-program text file without executing it. Classify as complex
+    when more than one scope-file line is present, ``agent_strategy: arch`` is declared,
+    or a cross-domain keyword matches; otherwise classify as simple.
+
+Usage:
+    Run ``python detect-complexity.py <program-path>`` and read ``true`` or ``false``
+    from stdout.
+
+Outputs:
+    Print one lowercase boolean verdict and return 0; print a diagnostic and return
+    status 2 when the required path argument is absent.
+
+Failure:
+    Missing or unreadable program files are conservatively classified as simple; malformed
+    text is decoded with replacement characters rather than aborting the judge workflow.
+
+Used by:
+    Research judge skills that gate optional architect/Codex passes on program scope.
 """
 
 from __future__ import annotations
@@ -36,7 +52,14 @@ def _lines(program: Path) -> list[str]:
 
 
 def _strategy(lines: list[str]) -> str:
-    """Value of the first `agent_strategy:` line, mirroring grep -m1 | sed | tr -d '\\r\\n'."""
+    """Return the first ``agent_strategy:`` value, preserving shell-compatible trimming.
+
+    Examples:
+        >>> _strategy(['agent_strategy: arch', 'agent_strategy: simple'])
+        'arch'
+        >>> _strategy(['# no strategy'])
+        ''
+    """
     for line in lines:
         if "agent_strategy:" in line:
             # Greedy `.*` matches through the LAST occurrence on the line, as sed does.
@@ -45,6 +68,11 @@ def _strategy(lines: list[str]) -> str:
 
 
 def main(argv: list[str]) -> int:
+    """Print the complexity verdict for argv's program path, or return 2 when absent.
+
+    ``argv`` includes the executable name. Missing or unreadable files yield ``false`` through :func:`_lines`; the
+    inspected program is never executed.
+    """
     program = argv[1] if len(argv) > 1 else ""
     if not program:
         print("detect-complexity: missing <program-path> argument", file=sys.stderr)

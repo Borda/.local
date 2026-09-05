@@ -16,8 +16,8 @@ import pytest
 import extract_code_blocks as ecb
 
 
-@pytest.fixture()
-def md_dir(tmp_path: Path) -> Path:
+@pytest.fixture(name="md_dir")
+def _md_dir(tmp_path: Path) -> Path:
     """Directory with two .md files containing known code blocks."""
     (tmp_path / "a.md").write_text(
         "# Doc\n\n```bash\necho hello\nls -la\n```\n\n```text\nPlain prose sentence.\n```\n",

@@ -18,12 +18,25 @@ _spec.loader.exec_module(ps)
 
 
 def _manifest() -> list[dict[str, object]]:
-    """Return a one-entry manifest matching the tmp tree built below."""
+    """Return a one-entry manifest matching the tmp tree built below.
+
+    Examples:
+        >>> _manifest()[0]["copies"]
+        ['b/hook.js', 'c/hook.js']
+    """
     return [{"canonical": "a/hook.js", "copies": ["b/hook.js", "c/hook.js"]}]
 
 
 def _tree(root: Path, canonical: str, b: str, c: str) -> None:
-    """Create a/hook.js, b/hook.js, c/hook.js with the given contents."""
+    """Create a/hook.js, b/hook.js, c/hook.js with the given contents.
+
+    Examples:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     _tree(Path(directory), "A", "B", "C")
+        ...     (Path(directory) / "b" / "hook.js").read_text()
+        'B'
+    """
     for sub, content in (("a", canonical), ("b", b), ("c", c)):
         (root / sub).mkdir(parents=True, exist_ok=True)
         (root / sub / "hook.js").write_text(content, encoding="utf-8")

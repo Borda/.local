@@ -8,7 +8,15 @@ from benchmarks._bench_common import readcrop_contracts as contracts
 
 
 def _task() -> dict[str, object]:
-    """Return one source-backed read-crop fixture."""
+    """Build a fresh read-crop task requiring both source parameter names.
+
+    >>> task = _task()
+    >>> task["symbol"], task["expected_keywords"]
+    ('Example.method', ['value', 'flag'])
+    >>> task["expected_keywords"].clear()
+    >>> _task()["expected_keywords"]
+    ['value', 'flag']
+    """
     return {
         "id": "RC-fixture",
         "type": "read_crop",

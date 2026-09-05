@@ -14,6 +14,14 @@ import check_bash_persistence as cbp
 
 
 def _skill(tmp_path: Path, content: str) -> Path:
+    """Write one isolated skill fixture and return its ``SKILL.md`` path.
+
+    Examples:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     _skill(Path(directory), "# Demo").read_text() == "# Demo"
+        True
+    """
     skill_dir = tmp_path / "myplugin" / "skills" / "myskill"
     skill_dir.mkdir(parents=True)
     f = skill_dir / "SKILL.md"

@@ -38,14 +38,17 @@ class TestToSlug:
 
 class TestGetSentinelPath:
     def _mock_git(self, repo_root: str, branch: str):
-        def fake_check_output(cmd, **_kwargs):
+        """Patch Git lookups to return a deterministic repository and branch."""
+
+        def _fake_check_output(cmd, **_kwargs):
+            """Return the requested deterministic repository metadata."""
             if "--show-toplevel" in cmd:
                 return repo_root + "\n"
             if "--show-current" in cmd:
                 return branch + "\n"
             raise AssertionError(f"unexpected git command: {cmd}")
 
-        return patch("compute_commit_sentinel.subprocess.check_output", side_effect=fake_check_output)
+        return patch("compute_commit_sentinel.subprocess.check_output", side_effect=_fake_check_output)
 
     def test_basic_path(self, monkeypatch) -> None:
         # Force a deterministic base dir — get_sentinel_path prefers TMPDIR

@@ -24,15 +24,18 @@ import _runtime_log as rl
 
 @pytest.fixture(autouse=True)
 def _enable_logging(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enable runtime logging for every test in this module."""
     # tests/conftest.py disables telemetry globally; the logging suite needs it on.
     monkeypatch.setenv("CODEMAP_LOGGING", "true")
 
 
 def _lines(path: Path) -> list[dict]:
+    """Decode JSON Lines records from a runtime log file."""
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
 def _logs_root(root: Path) -> Path:
+    """Return the repository-local runtime log directory."""
     return root / ".cache" / "codemap" / "logs"
 
 
@@ -113,6 +116,7 @@ def test_logging_failure_never_raises(tmp_path: Path, monkeypatch: pytest.Monkey
     root.mkdir()
 
     def _boom(*_a: object, **_k: object) -> None:
+        """Raise the expected OS error to model an unavailable log directory."""
         raise OSError("disk full")
 
     monkeypatch.setattr(Path, "mkdir", _boom)

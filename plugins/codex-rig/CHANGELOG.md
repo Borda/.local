@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.3
+
+- Expand Python utility and test-helper docstrings with executable examples; make ordinary test helpers and fixture implementations private while preserving pytest injection names and required interfaces. Keep docstring lines within 120 characters and regenerate package hashes for the documented payload.
+
 ## 0.14.2
 
 - Read generated selection Markdown as UTF-8 in the packaged presentation regression so Windows locale defaults do not corrupt Unicode assertions or fail the installed-package gate.

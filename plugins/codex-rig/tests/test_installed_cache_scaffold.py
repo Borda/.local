@@ -24,12 +24,17 @@ CARD_SEPARATOR = b"--- codex-rig-role-card ---\n"
 MARKETPLACE_PATH = REPO_ROOT / ".agents" / "plugins" / "marketplace.json"
 
 
-def sha256(path: Path) -> str:
-    """Return the lowercase SHA-256 digest for one file."""
+def _sha256(path: Path) -> str:
+    """Return the lowercase SHA-256 digest for one file.
+
+    Example:
+        >>> len(_sha256(PLUGIN_ROOT / "package-manifest.json"))
+        64
+    """
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def load_package_builder() -> Any:
+def _load_package_builder() -> Any:
     """Load the package builder that owns publication file discovery."""
     path = PLUGIN_ROOT / "scripts" / "build_package.py"
     spec = importlib.util.spec_from_file_location("codex_rig_cache_package_builder", path)
@@ -114,15 +119,15 @@ def test_package_manifest_covers_regular_payloads_and_modes() -> None:
 
     recorded = {item["path"]: (item["sha256"], int(item["mode"], 8)) for item in records}
     discovered: dict[str, tuple[str, int]] = {}
-    for path in load_package_builder().iter_payload_files():
+    for path in _load_package_builder().iter_payload_files():
         assert not path.is_symlink()
         relative = path.relative_to(PLUGIN_ROOT).as_posix()
         assert ".." not in Path(relative).parts
-        discovered[relative] = (sha256(path), stat.S_IMODE(path.stat().st_mode))
+        discovered[relative] = (_sha256(path), stat.S_IMODE(path.stat().st_mode))
     assert recorded == discovered
 
 
-def write_fake_codex(path: Path, version: str, *, installed: bool = True, enabled: bool = True) -> None:
+def _write_fake_codex(path: Path, version: str, *, installed: bool = True, enabled: bool = True) -> None:
     """Write an absolute executable that returns one bounded plugin-list fixture."""
     entries = []
     if installed:
@@ -141,7 +146,7 @@ def write_fake_codex(path: Path, version: str, *, installed: bool = True, enable
     path.chmod(0o755)
 
 
-def installed_fixture(
+def _installed_fixture(
     tmp_path: Path,
     *,
     installed: bool = True,
@@ -163,11 +168,11 @@ def installed_fixture(
     if missing_card:
         (installed_root / "roles" / "challenger" / "ROLE.md").unlink()
     codex_binary = tmp_path / "codex-runtime"
-    write_fake_codex(codex_binary, version, installed=installed, enabled=enabled)
+    _write_fake_codex(codex_binary, version, installed=installed, enabled=enabled)
     return home, installed_root, codex_binary
 
 
-def run_verifier(
+def _run_verifier(
     home: Path,
     installed_root: Path,
     codex_binary: Path,
@@ -196,15 +201,15 @@ def run_verifier(
             "--role",
             "challenger",
             "--role-sha256",
-            role_sha256 or (sha256(role_path) if role_path.exists() else recorded_role_digest),
+            role_sha256 or (_sha256(role_path) if role_path.exists() else recorded_role_digest),
             "--manifest-sha256",
-            manifest_sha256 or sha256(manifest_path),
+            manifest_sha256 or _sha256(manifest_path),
             "--helper-sha256",
-            helper_sha256 or sha256(verifier),
+            helper_sha256 or _sha256(verifier),
             "--codex-binary",
             str(codex_binary),
             "--codex-sha256",
-            sha256(codex_binary),
+            _sha256(codex_binary),
         ],
         check=False,
         capture_output=True,
@@ -212,7 +217,7 @@ def run_verifier(
     )
 
 
-def failure_payload(result: subprocess.CompletedProcess[bytes]) -> dict[str, object]:
+def _failure_payload(result: subprocess.CompletedProcess[bytes]) -> dict[str, object]:
     """Decode one exact unavailable bootstrap envelope."""
     assert result.returncode == 4
     assert result.stderr == b""
@@ -227,8 +232,8 @@ def failure_payload(result: subprocess.CompletedProcess[bytes]) -> dict[str, obj
 @POSIX_ONLY
 def test_verifier_emits_exact_installed_card_bytes(tmp_path: Path) -> None:
     """Prove the active cache copy emits its verified bytes without source fallback."""
-    home, installed_root, codex_binary = installed_fixture(tmp_path)
-    result = run_verifier(home, installed_root, codex_binary)
+    home, installed_root, codex_binary = _installed_fixture(tmp_path)
+    result = _run_verifier(home, installed_root, codex_binary)
     card = (installed_root / "roles" / "challenger" / "ROLE.md").read_bytes()
     first_line, separator, emitted_card = result.stdout.partition(CARD_SEPARATOR)
 
@@ -239,7 +244,7 @@ def test_verifier_emits_exact_installed_card_bytes(tmp_path: Path) -> None:
     assert json.loads(first_line) == {
         "protocol": 1,
         "role_id": "challenger",
-        "role_sha256": sha256(installed_root / "roles" / "challenger" / "ROLE.md"),
+        "role_sha256": _sha256(installed_root / "roles" / "challenger" / "ROLE.md"),
         "status": "ok",
     }
     assert emitted_card == card
@@ -249,14 +254,14 @@ def test_verifier_emits_exact_installed_card_bytes(tmp_path: Path) -> None:
 @POSIX_ONLY
 def test_verifier_accepts_exact_manager_profile(tmp_path: Path, hooks: bool) -> None:
     """Keep linked bootstrap valid for both declared manager package variants."""
-    home, installed_root, codex_binary = installed_fixture(tmp_path)
+    home, installed_root, codex_binary = _installed_fixture(tmp_path)
     manifest_path = installed_root / "package-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["release_profile"] = "shim-enabled"
     manifest["features"] = {"manager": True, "hooks": hooks, "mcp": False, "generated_shims": True}
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-    result = run_verifier(home, installed_root, codex_binary)
+    result = _run_verifier(home, installed_root, codex_binary)
 
     assert result.returncode == 0, result.stdout
     assert CARD_SEPARATOR in result.stdout
@@ -265,15 +270,15 @@ def test_verifier_accepts_exact_manager_profile(tmp_path: Path, hooks: bool) -> 
 @POSIX_ONLY
 def test_verifier_rejects_plugin_manifest_content_not_bound_by_package_manifest(tmp_path: Path) -> None:
     """Prevent same-version plugin metadata tampering from emitting a role card."""
-    home, installed_root, codex_binary = installed_fixture(tmp_path)
+    home, installed_root, codex_binary = _installed_fixture(tmp_path)
     plugin_manifest_path = installed_root / ".codex-plugin" / "plugin.json"
     plugin_manifest = json.loads(plugin_manifest_path.read_text(encoding="utf-8"))
     plugin_manifest["description"] = "tampered but same identity"
     plugin_manifest_path.write_text(json.dumps(plugin_manifest), encoding="utf-8")
 
-    result = run_verifier(home, installed_root, codex_binary)
+    result = _run_verifier(home, installed_root, codex_binary)
 
-    assert failure_payload(result)["reason"] == "package-identity-mismatch"
+    assert _failure_payload(result)["reason"] == "package-identity-mismatch"
     assert CARD_SEPARATOR not in result.stdout
 
 
@@ -281,7 +286,7 @@ def test_verifier_rejects_plugin_manifest_content_not_bound_by_package_manifest(
 @POSIX_ONLY
 def test_verifier_rejects_unsupported_package_schema(tmp_path: Path, schema: int | None) -> None:
     """Prevent missing or future package schemas from entering the trust chain."""
-    home, installed_root, codex_binary = installed_fixture(tmp_path)
+    home, installed_root, codex_binary = _installed_fixture(tmp_path)
     manifest_path = installed_root / "package-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if schema is None:
@@ -290,16 +295,16 @@ def test_verifier_rejects_unsupported_package_schema(tmp_path: Path, schema: int
         manifest["schema"] = schema
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-    result = run_verifier(home, installed_root, codex_binary)
+    result = _run_verifier(home, installed_root, codex_binary)
 
-    assert failure_payload(result)["reason"] == "manifest-invalid"
+    assert _failure_payload(result)["reason"] == "manifest-invalid"
     assert CARD_SEPARATOR not in result.stdout
 
 
 @POSIX_ONLY
 def test_verifier_bounds_invalid_role_envelope(tmp_path: Path) -> None:
     """Prevent malformed role arguments from expanding or injecting diagnostics."""
-    home, installed_root, codex_binary = installed_fixture(tmp_path)
+    home, installed_root, codex_binary = _installed_fixture(tmp_path)
     verifier = installed_root / "scripts" / "verify_role_link.py"
     result = subprocess.run(
         [sys.executable, str(verifier), "--role", "bad\n" + "x" * 1000],
@@ -322,13 +327,13 @@ def test_verifier_bounds_invalid_role_envelope(tmp_path: Path) -> None:
 @POSIX_ONLY
 def test_verifier_stops_oversized_oracle_output(tmp_path: Path) -> None:
     """Prevent an oversized runtime response from being buffered or trusted."""
-    home, installed_root, codex_binary = installed_fixture(tmp_path)
+    home, installed_root, codex_binary = _installed_fixture(tmp_path)
     codex_binary.write_text("#!/bin/sh\nyes x\n", encoding="utf-8")
     codex_binary.chmod(0o755)
 
-    result = run_verifier(home, installed_root, codex_binary)
+    result = _run_verifier(home, installed_root, codex_binary)
 
-    assert failure_payload(result)["reason"] == "active-package-oracle-oversized"
+    assert _failure_payload(result)["reason"] == "active-package-oracle-oversized"
     assert CARD_SEPARATOR not in result.stdout
 
 
@@ -350,17 +355,17 @@ def test_verifier_rejects_negative_link_states(
     tmp_path: Path, fixture_options: dict[str, bool], overrides: dict[str, str], reason: str
 ) -> None:
     """Prevent inactive or inconsistent links from emitting role instructions."""
-    home, installed_root, codex_binary = installed_fixture(tmp_path, **fixture_options)
-    result = run_verifier(home, installed_root, codex_binary, **overrides)
+    home, installed_root, codex_binary = _installed_fixture(tmp_path, **fixture_options)
+    result = _run_verifier(home, installed_root, codex_binary, **overrides)
 
-    assert failure_payload(result)["reason"] == reason
+    assert _failure_payload(result)["reason"] == reason
     assert b"Treat every important claim" not in result.stdout
 
 
 @POSIX_ONLY
 def test_verifier_ignores_hostile_path_lookup(tmp_path: Path) -> None:
     """Prevent inherited PATH from substituting the active-package oracle."""
-    home, installed_root, codex_binary = installed_fixture(tmp_path)
+    home, installed_root, codex_binary = _installed_fixture(tmp_path)
     hostile_bin = tmp_path / "hostile-bin"
     hostile_bin.mkdir()
     marker = tmp_path / "hostile-codex-ran"
@@ -368,7 +373,7 @@ def test_verifier_ignores_hostile_path_lookup(tmp_path: Path) -> None:
     hostile_codex.write_text(f"#!/bin/sh\ntouch '{marker}'\n", encoding="utf-8")
     hostile_codex.chmod(0o755)
 
-    result = run_verifier(home, installed_root, codex_binary, path_override=str(hostile_bin))
+    result = _run_verifier(home, installed_root, codex_binary, path_override=str(hostile_bin))
 
     assert result.returncode == 0
     assert not marker.exists()

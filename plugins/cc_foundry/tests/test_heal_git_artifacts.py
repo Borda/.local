@@ -38,23 +38,30 @@ class _FakeKernel32:
     """Minimal Win32 stand-in exposing only what the Windows branch calls."""
 
     def __init__(self, *, handle: int, last_error: int = 0) -> None:
+        """Store the configured Win32 handle and last-error result."""
         self._handle = handle
         self._last_error = last_error
         self.closed: list[int] = []
 
     def OpenProcess(self, access: int, inherit: bool, pid: int) -> int:  # noqa: N802 - Win32 name
+        """Return the configured fake process handle."""
         return self._handle
 
     def CloseHandle(self, handle: int) -> bool:  # noqa: N802 - Win32 name
+        """Record closure of ``handle`` and report Win32 success."""
         self.closed.append(handle)
         return True
 
     def GetLastError(self) -> int:  # noqa: N802 - Win32 name
+        """Return the configured Win32 last-error value."""
         return self._last_error
 
 
 class _FakeWindll:
+    """Minimal ``ctypes.windll`` stand-in exposing the supplied ``kernel32`` fake."""
+
     def __init__(self, kernel32: _FakeKernel32) -> None:
+        """Expose ``kernel32`` through the fake DLL namespace."""
         self.kernel32 = kernel32
 
 
@@ -77,24 +84,27 @@ class TestPidLivenessPosix:
     def test_permission_error_counts_as_alive(self, monkeypatch):
         """Another user's process exists — EPERM answers the question yes."""
 
-        def raise_perm(pid, sig):
+        def _raise_perm(pid, sig):
+            """Raise the permission error representing another user's live process."""
             raise PermissionError
 
-        monkeypatch.setattr(_mod.os, "kill", raise_perm)
+        monkeypatch.setattr(_mod.os, "kill", _raise_perm)
         assert _mod._pid_alive_posix(12345) is True
 
     def test_missing_process_is_dead(self, monkeypatch):
-        def raise_lookup(pid, sig):
+        def _raise_lookup(pid, sig):
+            """Raise the missing-process error for this liveness case."""
             raise ProcessLookupError
 
-        monkeypatch.setattr(_mod.os, "kill", raise_lookup)
+        monkeypatch.setattr(_mod.os, "kill", _raise_lookup)
         assert _mod._pid_alive_posix(12345) is False
 
     def test_oserror_is_dead(self, monkeypatch):
-        def raise_os(pid, sig):
+        def _raise_os(pid, sig):
+            """Raise the generic OS error treated as a dead process."""
             raise OSError
 
-        monkeypatch.setattr(_mod.os, "kill", raise_os)
+        monkeypatch.setattr(_mod.os, "kill", _raise_os)
         assert _mod._pid_alive_posix(12345) is False
 
 
@@ -135,12 +145,13 @@ class TestSimulatedWindowsPidLiveness:
     def test_simulated_windows_branch_never_uses_os_kill(self, monkeypatch):
         """Avoid probing a live Windows process through a disruptive signal."""
 
-        def forbidden(*_args, **_kwargs):
+        def _forbidden(*_args, **_kwargs):
+            """Fail if the simulated Windows branch probes through ``os.kill``."""
             raise AssertionError("os.kill must not be called on the Windows branch")
 
         kernel = _FakeKernel32(handle=5)
         monkeypatch.setattr(ctypes, "windll", _FakeWindll(kernel), raising=False)
-        monkeypatch.setattr(_mod.os, "kill", forbidden)
+        monkeypatch.setattr(_mod.os, "kill", _forbidden)
         monkeypatch.setattr(_mod.os, "name", "nt")
         assert _mod.pid_alive(4242) is True
 
@@ -211,6 +222,7 @@ class TestClassifyWorktree:
     )
 
     def _tier(self, name: str, **over):
+        """Classify a worktree using this test's baseline fields and overrides."""
         return _mod.classify_worktree(name, **{**self.BASE, **over})
 
     def test_main_tree_never_touched(self):
@@ -249,6 +261,7 @@ class TestClassifyWorktree:
 
 class TestSweepLocks:
     def _write(self, tmp_path: Path, name: str, body: str, age_minutes: float = 0.0) -> Path:
+        """Write one lock fixture, optionally backdating its modification time."""
         path = tmp_path / name
         path.write_text(body, encoding="utf-8")
         if age_minutes:
@@ -313,14 +326,15 @@ class TestSweepWorktrees:
         past = time.time() - 60 * 86400
         os.utime(wt, (past, past))
 
-        def fake_git(args, cwd=None):
+        def _fake_git(args, cwd=None):
+            """Return registered worktree and dirty-status fixture output."""
             if args[0] == "worktree":
                 return f"worktree {tmp_path}\nworktree {wt.resolve()}"
             if args[0] == "status":
                 return " M a.py\n M b.py"
             return ""
 
-        monkeypatch.setattr(_mod, "_git", fake_git)
+        monkeypatch.setattr(_mod, "_git", _fake_git)
         states = _mod.sweep_worktrees(tmp_path, root, 14, ("agent-",), time.time())
         assert states[0].tier is WorktreeTier.DIRTY
         assert states[0].dirty_files == 2
@@ -328,6 +342,7 @@ class TestSweepWorktrees:
 
 class TestCli:
     def _run(self, argv, monkeypatch, tmp_path, capsys):
+        """Run the CLI with repository discovery stubbed to ``tmp_path``."""
         monkeypatch.setattr(_mod, "_git", lambda args, cwd=None: str(tmp_path) if args[0] == "rev-parse" else "")
         rc = _mod.main(argv)
         return rc, capsys.readouterr().out

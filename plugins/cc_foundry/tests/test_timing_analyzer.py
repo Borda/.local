@@ -11,7 +11,14 @@ import timing_analyzer as ta
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> Path:
-    """Write rows as JSONL to *path* and return it."""
+    """Write rows as JSONL to *path* and return it.
+
+    Examples:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     _write_jsonl(Path(directory) / "rows.jsonl", [{"n": 1}]).read_text() == '{"n": 1}\\n'
+        True
+    """
     path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
     return path
 
@@ -155,8 +162,14 @@ def test_resolve_agent_ms_outside_window_falls_back():
     assert ta.resolve_agent_ms(row, pairs) == 80
 
 
-@pytest.fixture()
-def synthetic_logs(tmp_path: Path) -> tuple[Path, Path]:
+@pytest.fixture(name="synthetic_logs")
+def _synthetic_logs(tmp_path: Path) -> tuple[Path, Path]:
+    """Build deterministic timing and invocation logs spanning aggregation buckets.
+
+    Examples:
+        >>> [path.name for path in getfixture("synthetic_logs")]
+        ['timings.jsonl', 'invocations.jsonl']
+    """
     timings = _write_jsonl(
         tmp_path / "timings.jsonl",
         [

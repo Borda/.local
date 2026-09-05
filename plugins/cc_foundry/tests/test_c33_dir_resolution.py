@@ -10,17 +10,18 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from _hook_env import bash_runs_posix_script
+from _hook_env import _bash_runs_posix_script
 
 # Capability probe, not a platform test: a Windows host with Git Bash on PATH runs
 # these fine, while the WSL launcher stub (`bash.exe` with no distribution) does not.
 pytestmark = pytest.mark.skipif(
-    not bash_runs_posix_script(),
+    not _bash_runs_posix_script(),
     reason="`bash` on PATH does not execute POSIX scripts (WSL launcher stub or absent)",
 )
 
 
 def _bash(script: str) -> subprocess.CompletedProcess:
+    """Run one Bash fixture script and capture its completed process."""
     return subprocess.run(["bash", "-c", script], capture_output=True, text=True)
 
 

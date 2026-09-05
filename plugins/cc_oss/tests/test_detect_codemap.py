@@ -290,6 +290,7 @@ class TestCurrency:
         monkeypatch.setenv("TMPDIR", str(tmp_path))
 
         def _which(name: str) -> str | None:
+            """Expose both codemap and currency probe executables."""
             return "/usr/bin/check-index-currency" if name == "check-index-currency" else "/usr/bin/codemap-py"
 
         with (
@@ -312,6 +313,7 @@ class TestCurrency:
         monkeypatch.setenv("TMPDIR", str(tmp_path))
 
         def _which(name: str) -> str | None:
+            """Expose codemap while making the optional currency probe absent."""
             return None if name == "check-index-currency" else "/usr/bin/codemap-py"
 
         with mock.patch("detect_codemap.shutil.which", side_effect=_which):

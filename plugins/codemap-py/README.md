@@ -136,7 +136,7 @@ Files that fail to parse are marked degraded rather than silently treated as com
 
 Possible future work includes broader dynamic-behavior evidence, deeper cross-language support, and richer freshness diagnostics. Those are opportunities rather than promises; the current contract remains static Python analysis with explicit coverage metadata.
 
-Claude's optional Python hooks provide ambient index status, session-sharded telemetry, skill-start records, and a narrow redundant-import-grep guard. Codex ships hooks for session seeding, ambient preamble/guard behavior, and runtime-scoped tool records, while its host does not provide a Codemap skill-start hook. Both runtimes' hooks fail open and are not required for indexing or querying; the difference is an evidence boundary, not a query-engine capability difference.
+Claude's optional Python hooks provide ambient index status, session-sharded telemetry, skill-start records, and a narrow redundant-import-grep guard. Codex ships hooks for session seeding, ambient preamble/guard behavior, and runtime-scoped tool records, while its host does not provide a Codemap skill-start hook. The hooks suppress expected parsing and filesystem failures and are not required for indexing or querying; this is not a guarantee against every malformed event. Skill/tool logging expects mapping-shaped `tool_input` when that field is truthy. The runtime difference is an evidence boundary, not a query-engine capability difference.
 
 Performance and token use vary with repository size, model, index freshness, query choice, and whether an agent continues exploring after a result. Historical benchmark runs are exploratory and repository/model-specific; they do not establish universal savings or quality guarantees. See the [benchmark record](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md) for methods and caveats.
 
@@ -639,6 +639,8 @@ Run only the command for the runtime you installed into.
 - [`CHANGELOG.md`](https://github.com/Borda/AI-Rig/blob/main/plugins/codemap-py/CHANGELOG.md) records versioned runtime and documentation changes.
 
 ## 🙏 Contributing and feedback
+
+Python hook module docstrings describe their event inputs, local side effects, output envelopes, and failure handling. Pure helper examples run as doctests in the repository pytest suite; hook lifecycle and filesystem behavior use pytest fixtures.
 
 Open an issue in [Borda/AI-Rig](https://github.com/Borda/AI-Rig) with the codemap-py version, CPython version, command, project layout, and the complete error or coverage block. Keep benchmark task IDs and repository-specific fixtures in benchmark evidence, not in shipped plugin docs. Changes to skills, hooks, manifests, or runtime contracts require synchronized README updates and the plugin checks described in the repository authoring guidance.
 

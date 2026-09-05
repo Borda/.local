@@ -84,7 +84,22 @@ def _source_models(path: Path) -> dict[str, str]:
 
 
 def _replace_models(existing: str, models: dict[str, str]) -> str:
-    """Update only the two managed root settings while rejecting duplicates."""
+    """Replace managed root settings while preserving table settings and comments.
+
+    Values in ``models`` must already be quoted TOML string literals. Insert
+    missing managed keys before the first table, or at the end of a table-free
+    document. Raise ``SyncError`` for duplicate or unsupported root assignments.
+    Return new text without reading or writing any files.
+
+    Examples:
+        >>> models = {"model": '"primary"', "review_model": '"reviewer"'}
+        >>> print(_replace_models("[profile]\\nmodel = 'custom'\\n", models))
+        model = "primary"
+        review_model = "reviewer"
+        [profile]
+        model = 'custom'
+        <BLANKLINE>
+    """
     seen: set[str] = set()
     lines: list[str] = []
     insertion_index: int | None = None
@@ -124,7 +139,18 @@ def _replace_models(existing: str, models: dict[str, str]) -> str:
 
 
 def _policy_block(policy: str) -> str:
-    """Wrap the repository policy in authenticated ownership markers."""
+    """Wrap policy text in checksum-bearing ownership markers.
+
+    Ensure a trailing newline before computing the UTF-8 digest. Reject nested
+    ownership markers with ``SyncError``; the checksum detects changed content
+    but does not authenticate its author.
+
+    Examples:
+        >>> _policy_block("Example policy") == _policy_block("Example policy\\n")
+        True
+        >>> _policy_block("Example policy").endswith(END_MARKER)
+        True
+    """
     body = policy if policy.endswith("\n") else f"{policy}\n"
     if BEGIN_PREFIX in body or END_MARKER.rstrip("\n") in body:
         raise SyncError("source policy must not contain ownership markers")

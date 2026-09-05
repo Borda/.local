@@ -45,8 +45,8 @@ class Site:
         file: Path the site was found in.
         var: Name of the variable the resolver output is assigned to.
         script: Which resolver script (`resolve_shared_path.py` or `resolve_skill_subdir.py`).
-        extractable: True when every use of `var` after the assignment, within the
-            same fence, is a `cat` invocation and nothing else.
+        extractable: True when every recognized use after the assignment is on a
+            line starting with ``cat``, with empty-guard lines ignored.
     """
 
     file: pathlib.Path
@@ -71,13 +71,14 @@ def _strip_comment(line: str) -> str:
 
 
 def classify_site(var: str, lines: list[str], start: int) -> bool:
-    """Decide whether `var`, assigned at `lines[start]`, is used only via `cat`.
+    """Check whether recognized variable uses occur only on lines starting with cat.
 
     Scans every line after `start` within the same fence (`lines` is one fence's
     lines). A ``[ -z "$VAR" ]`` empty-guard line is dropped -- it is not a use, just a
     fail-fast check on the resolver's own success. Blank and comment-only lines are
-    also not uses. Any surviving use that is not a bare `cat "$VAR..."` invocation
-    disqualifies extraction. A var with **zero** uses is not extractable either -- that
+    also not uses. Any surviving use on a line not starting with ``cat`` disqualifies
+    extraction. This is a textual heuristic, not a shell parser: pipelines and later
+    commands on a ``cat`` line are not analyzed. A var with **zero** uses is not extractable either -- that
     is a dead assignment, a different problem than a live cat-only one, and claiming it
     as a win would misreport a bug as a saving.
 
@@ -153,6 +154,7 @@ def scan(root: pathlib.Path) -> tuple[dict[str, int], list[Site]]:
 
 
 def main() -> None:
+    """Print resolver-site counts and optionally list heuristic extraction candidates."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", type=pathlib.Path, help="plugin directory to scan, e.g. plugins/cc_foundry")
     parser.add_argument("--list-extractable", action="store_true", help="print each extractable site's file:var")

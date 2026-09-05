@@ -23,15 +23,25 @@ _IMPL = _DEVELOP.parent / "cc_oss" / "bin" / "codemap_cache.py"
 _HAS_OSS_IMPLEMENTATION = _IMPL.is_file()
 
 
-@pytest.fixture(scope="module")
-def doc_text() -> str:
-    """Return the develop-side codemap context document."""
+@pytest.fixture(name="doc_text", scope="module")
+def _doc_text() -> str:
+    """Return the develop-side codemap context document.
+
+    >>> text = getfixture("doc_text")
+    >>> "index_stamp" in text
+    True
+    """
     return _DOC.read_text(encoding="utf-8")
 
 
-@pytest.fixture(scope="module")
-def impl_text() -> str:
-    """Return the installed oss-side cache implementation."""
+@pytest.fixture(name="impl_text", scope="module")
+def _impl_text() -> str:
+    """Return the installed oss-side cache implementation.
+
+    >>> text = getfixture("impl_text")
+    >>> "index_stamp" in text
+    True
+    """
     return _IMPL.read_text(encoding="utf-8")
 
 

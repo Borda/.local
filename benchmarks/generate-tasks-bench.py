@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ground truth generator and validator for benchmarks/tasks-bench.json.
+"""Generate and validate benchmark task ground truth against a local repository.
 
 Runs the scan-query commands implied by each task and validates (or refreshes)
 the ground_truth dict stored in the task file.
@@ -422,15 +422,18 @@ class _CallFinder(ast.NodeVisitor):
     """
 
     def __init__(self, simple_name: str, rel_module: str, callers: set[str]) -> None:
+        """Bind the call-name filter and caller-owned output set to an empty scope stack."""
         self._simple_name = simple_name
         self._rel_module = rel_module
         self._callers = callers
         self._scope_stack: list[str] = []
 
     def _scope(self) -> str:
+        """Return the dotted enclosing scope or the module-level sentinel."""
         return ".".join(self._scope_stack) if self._scope_stack else "<module>"
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """Visit a function body while its name is on the enclosing-scope stack."""
         self._scope_stack.append(node.name)
         self.generic_visit(node)
         self._scope_stack.pop()
@@ -438,11 +441,13 @@ class _CallFinder(ast.NodeVisitor):
     visit_AsyncFunctionDef = visit_FunctionDef
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        """Visit a class body while its name is on the enclosing-scope stack."""
         self._scope_stack.append(node.name)
         self.generic_visit(node)
         self._scope_stack.pop()
 
     def visit_Call(self, node: ast.Call) -> None:
+        """Record matching simple or attribute calls inside named scopes, then visit their children."""
         matched = (isinstance(node.func, ast.Name) and node.func.id == self._simple_name) or (
             isinstance(node.func, ast.Attribute) and node.func.attr == self._simple_name
         )
@@ -579,11 +584,13 @@ class _BareImportCollector(ast.NodeVisitor):
     """Collect direct-import bindings by Python lexical scope."""
 
     def __init__(self, rel_module: str) -> None:
+        """Initialize lexical import bindings relative to the importing module's package."""
         self.bindings: dict[tuple[str, ...], dict[str, tuple[str, str]]] = {}
         self._package_parts = rel_module.split(".")[:-1]
         self._scope: list[str] = []
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        """Record original import names and aliases in the current lexical scope."""
         if not node.module:
             return
         if node.level:
@@ -2737,13 +2744,25 @@ def _safe_repo_file(repo: Path, relative_path: Any) -> tuple[Path | None, str | 
 
 
 class _DefinitionFinder(ast.NodeVisitor):
-    """Record function and method qualified names with their definition lines."""
+    """Record function and method qualified names with their definition lines.
+
+    Include nested definitions under their enclosing function or class names.
+    If a qualified name is repeated, retain its last visited definition line.
+
+    Examples:
+        >>> finder = _DefinitionFinder()
+        >>> finder.visit(ast.parse("class Example:\\n    def run(self): pass\\n"))
+        >>> finder.definitions
+        {'Example.run': 2}
+    """
 
     def __init__(self) -> None:
+        """Initialize an empty definition map and enclosing-scope stack."""
         self.definitions: dict[str, int] = {}
         self._scope: list[str] = []
 
     def _visit_definition(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        """Record a function's line and descend with its name included in nested scopes."""
         qname = ".".join([*self._scope, node.name])
         self.definitions[qname] = node.lineno
         self._scope.append(node.name)
@@ -2751,9 +2770,11 @@ class _DefinitionFinder(ast.NodeVisitor):
         self._scope.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """Record a synchronous definition and visit its nested definitions."""
         self._visit_definition(node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        """Record an asynchronous definition using the same scope rules as synchronous code."""
         self._visit_definition(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:

@@ -19,7 +19,12 @@ from _bench_common import paid_lifecycle  # noqa: E402
 
 
 def _readcrop_row() -> dict[str, Any]:
-    """Return one source-bound ReadCrop task without target-repository coupling."""
+    """Build an in-memory ReadCrop row with deterministic source and a minimal contract double.
+
+    >>> row = _readcrop_row()
+    >>> row["source"], row["contract"].provider_binding()
+    ('def method(): pass\\n', {'task': 'readcrop'})
+    """
     contract = SimpleNamespace(
         task_id="RC-01",
         oracle_sha256="a" * 64,
@@ -34,7 +39,12 @@ def _readcrop_row() -> dict[str, Any]:
 
 
 def _readcrop_task(script_run_agentic: Any) -> dict[str, Any]:
-    """Build a real ReadCrop contract for no-model stage execution tests."""
+    """Build a real ReadCrop contract from inline source without starting a provider process.
+
+    >>> row = _readcrop_task(getfixture("script_run_agentic"))
+    >>> row["contract"].task_id == row["task"]["id"]
+    True
+    """
     task = {
         "id": "RC-fixture",
         "type": "read_crop",
@@ -435,23 +445,26 @@ def test_shared_paid_lifecycle_retains_completed_claude_cells_after_a_transport_
     """
     events: list[tuple[str, object]] = []
 
-    def persist(path: Path, payload: Any) -> None:
+    def _persist(path: Path, payload: Any) -> None:
+        """Replace lifecycle metadata with sorted UTF-8 JSON."""
         path.write_text(json.dumps(dict(payload), sort_keys=True), encoding="utf-8")
 
-    def run_cell(task: str, arm: str) -> dict[str, Any]:
+    def _run_cell(task: str, arm: str) -> dict[str, Any]:
+        """Record each attempted arm and simulate transport failure for the optional-use arm."""
         events.append(("cell", (task, arm)))
         if arm == "B_auto":
             raise RuntimeError("fake Claude transport failure")
         return {"task_id": task, "arm": arm, "tool_result_tokens": None}
 
-    def validate(_task: str, _arm: str, row: dict[str, Any]) -> None:
+    def _validate(_task: str, _arm: str, row: dict[str, Any]) -> None:
+        """Require unavailable tool-result usage to remain unknown rather than becoming zero."""
         assert row["tool_result_tokens"] is None
 
     callbacks = paid_lifecycle.PaidStageCallbacks(
-        run_cell=run_cell,
-        validate_row=validate,
+        run_cell=_run_cell,
+        validate_row=_validate,
         prepare_run=lambda run_dir: (run_dir / "input-snapshot.json").write_text("{}", encoding="utf-8"),
-        persist_metadata=persist,
+        persist_metadata=_persist,
         emit_lifecycle=lambda kind, payload: events.append((kind, dict(payload))),
         emit_row=lambda row, completed, total, arm: events.append(("row", (row, completed, total, arm))),
         write_checksums=paid_lifecycle.write_checksums,
@@ -494,7 +507,8 @@ def test_paid_readcrop_fake_stream_persists_native_events_and_null_tool_usage(
     task = _readcrop_task(script_run_agentic)
 
     @contextlib.contextmanager
-    def workspace(_repo_path: Path, _index_path: Path, arm: str) -> Any:
+    def _workspace(_repo_path: Path, _index_path: Path, arm: str) -> Any:
+        """Yield the fixture source through the workspace context-manager boundary."""
         entered.append(arm)
         try:
             yield source, None
@@ -515,13 +529,15 @@ def test_paid_readcrop_fake_stream_persists_native_events_and_null_tool_usage(
         """Return a deterministic local stream without launching Claude."""
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize the test double's fixture-controlled state."""
             pass
 
         def run_stage_events(self, **_kwargs: Any) -> tuple[list[dict[str, Any]], float, None]:
+            """Return synthetic native events and elapsed time without starting Claude."""
             return native_events, 0.25, None
 
     monkeypatch.setattr(script_run_agentic, "ModelRunner", FakeRunner)
-    monkeypatch.setattr(script_run_agentic, "_claude_readcrop_workspace", workspace)
+    monkeypatch.setattr(script_run_agentic, "_claude_readcrop_workspace", _workspace)
     monkeypatch.setattr(script_run_agentic, "_source_pair_unchanged", lambda *_args: True)
 
     run_dir = tmp_path / "run"
@@ -567,16 +583,19 @@ def test_paid_claude_rows_forward_to_the_shared_rich_renderer(
     rendered: list[tuple[str, str, Any]] = []
 
     @contextlib.contextmanager
-    def workspace(_repo_path: Path, _index_path: Path, _arm: str) -> Any:
+    def _workspace(_repo_path: Path, _index_path: Path, _arm: str) -> Any:
+        """Yield the fixture source through the workspace context-manager boundary."""
         yield source, None
 
     class FakeRunner:
         """Return one deterministic answer without launching Claude."""
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize the test double's fixture-controlled state."""
             pass
 
         def run_stage_events(self, **_kwargs: Any) -> tuple[list[dict[str, Any]], float, None]:
+            """Return synthetic native events and elapsed time without starting Claude."""
             return (
                 [
                     {
@@ -602,7 +621,7 @@ def test_paid_claude_rows_forward_to_the_shared_rich_renderer(
             )
 
     monkeypatch.setattr(script_run_agentic, "ModelRunner", FakeRunner)
-    monkeypatch.setattr(script_run_agentic, "_claude_readcrop_workspace", workspace)
+    monkeypatch.setattr(script_run_agentic, "_claude_readcrop_workspace", _workspace)
     monkeypatch.setattr(script_run_agentic, "_source_pair_unchanged", lambda *_args: True)
     monkeypatch.setattr(
         script_run_agentic.presentation,
@@ -769,24 +788,29 @@ def test_paid_executable_stage_preserves_canonical_diff_oracle_and_workspace_cle
         """Record the canonical worktree protocol without making a Git worktree."""
 
         def __init__(self, number: int) -> None:
+            """Initialize the test double's fixture-controlled state."""
             self.worktree = tmp_path / f"agent-worktree-{number}"
             self.worktree.mkdir()
             self.index_path = self.worktree / "derived-index.json"
             self.index_path.write_text("{}", encoding="utf-8")
 
         def capture_diff(self) -> str:
+            """Record and return the canonical diff associated with this workspace."""
             diff = f"canonical diff {self.worktree.name}"
             captured_diffs.append(diff)
             return diff
 
         def index_unchanged(self) -> bool:
+            """Report an unchanged index for this clean-workspace scenario."""
             return True
 
         def cleanup(self) -> bool:
+            """Implement the test home or workspace cleanup boundary."""
             cleaned.append(self.worktree)
             return True
 
-    def create_workspace(*_args: Any) -> FakeWorkspace:
+    def _create_workspace(*_args: Any) -> FakeWorkspace:
+        """Create and retain a numbered workspace double for lifecycle assertions."""
         workspace = FakeWorkspace(len(created) + 1)
         created.append(workspace)
         return workspace
@@ -795,6 +819,7 @@ def test_paid_executable_stage_preserves_canonical_diff_oracle_and_workspace_cle
         """Expose the exact independent oracle result expected by the stage row."""
 
         def as_dict(self) -> dict[str, Any]:
+            """Serialize passing patch, oracle, and cleanup evidence for the fixture contract."""
             return {
                 "baseline_failed": True,
                 "patch_applied": True,
@@ -806,7 +831,8 @@ def test_paid_executable_stage_preserves_canonical_diff_oracle_and_workspace_cle
                 "error": None,
             }
 
-    def execute(source: Path, contract: Any, diff: str) -> FakeExecution:
+    def _execute(source: Path, contract: Any, diff: str) -> FakeExecution:
+        """Record patch execution inputs and return passing execution evidence."""
         executed.append((source, contract, diff))
         return FakeExecution()
 
@@ -814,11 +840,13 @@ def test_paid_executable_stage_preserves_canonical_diff_oracle_and_workspace_cle
         """Return local Claude event fixtures while preserving C's success evidence."""
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize the test double's fixture-controlled state."""
             pass
 
         def run_stage_events(
             self, *, arm: str, writable: bool = False, **_kwargs: Any
         ) -> tuple[list[dict[str, Any]], float, None]:
+            """Return synthetic native events and elapsed time without starting Claude."""
             writable_modes.append(writable)
             events: list[dict[str, Any]] = []
             if arm == "C_strict":
@@ -871,8 +899,8 @@ def test_paid_executable_stage_preserves_canonical_diff_oracle_and_workspace_cle
             return events, 0.25, None
 
     monkeypatch.setattr(script_run_agentic, "ModelRunner", FakeRunner)
-    monkeypatch.setattr(script_run_agentic, "create_executable_agent_workspace", create_workspace)
-    monkeypatch.setattr(script_run_agentic, executor_name, execute)
+    monkeypatch.setattr(script_run_agentic, "create_executable_agent_workspace", _create_workspace)
+    monkeypatch.setattr(script_run_agentic, executor_name, _execute)
     monkeypatch.setattr(script_run_agentic, "_source_pair_unchanged", lambda *_args: True)
 
     run_dir = tmp_path / "run"

@@ -23,26 +23,26 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from _hook_env import hook_tmp_base
+from _hook_env import _hook_tmp_base
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
-@pytest.fixture
-def sid(tmp_path: Path) -> Iterator[str]:
+@pytest.fixture(name="sid")
+def _sid(tmp_path: Path) -> Iterator[str]:
     """Yield a unique session id; clean its ``claude-state-<id>`` dir on teardown.
 
-    Base resolved via ``hook_tmp_base()`` so teardown targets the same directory the hook's ``getSentinelDir()`` writes
+    Base resolved via ``_hook_tmp_base()`` so teardown targets the same directory the hook's ``getSentinelDir()`` writes
     on this platform.
     """
     s = f"pytest-{tmp_path.name}"
     yield s
-    shutil.rmtree(hook_tmp_base() / f"claude-state-{s}", ignore_errors=True)
+    shutil.rmtree(_hook_tmp_base() / f"claude-state-{s}", ignore_errors=True)
 
 
-@pytest.fixture
-def tmp_home(tmp_path: Path) -> Path:
+@pytest.fixture(name="tmp_home")
+def _tmp_home(tmp_path: Path) -> Path:
     """Return an isolated HOME with a stubbed foundry plugin cache containing one agent.
 
     Writes ``~/.claude/plugins/cache/borda-ai-rig/foundry/0.0.1/agents/sw-engineer.md``
@@ -64,7 +64,12 @@ def tmp_home(tmp_path: Path) -> Path:
 
 
 def _pre_agent(subagent_type: str, session_id: str) -> dict:
-    """Build a ``PreToolUse(Agent)`` payload for the given subagent_type."""
+    """Build a ``PreToolUse(Agent)`` payload for the given subagent_type.
+
+    Examples:
+        >>> _pre_agent("foundry:sw-engineer", "s")["tool_input"]["subagent_type"]
+        'foundry:sw-engineer'
+    """
     return {
         "hook_event_name": "PreToolUse",
         "tool_name": "Agent",
@@ -74,7 +79,12 @@ def _pre_agent(subagent_type: str, session_id: str) -> dict:
 
 
 def _session_start(session_id: str) -> dict:
-    """Build a ``SessionStart`` payload."""
+    """Build a ``SessionStart`` payload.
+
+    Examples:
+        >>> _session_start("s") == {"hook_event_name": "SessionStart", "session_id": "s"}
+        True
+    """
     return {"hook_event_name": "SessionStart", "session_id": session_id}
 
 

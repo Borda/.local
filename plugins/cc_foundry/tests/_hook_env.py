@@ -7,8 +7,8 @@ whichever ``conftest`` module was registered under that name first, which under 
 entirely.
 
 Fixtures still belong in ``conftest.py`` — pytest injects those by name with no import at all. These two are not
-fixtures: :func:`hook_tmp_base` is called from plain module-level helpers that tests invoke directly, and
-:func:`bash_runs_posix_script` is evaluated inside a module-level ``skipif``, where a fixture cannot reach.
+fixtures: :func:`_hook_tmp_base` is called from plain module-level helpers that tests invoke directly, and
+:func:`_bash_runs_posix_script` is evaluated inside a module-level ``skipif``, where a fixture cannot reach.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from pathlib import Path
 
 
 @functools.lru_cache(maxsize=1)
-def hook_tmp_base() -> Path:
+def _hook_tmp_base() -> Path:
     """Return the temp base the foundry hooks write sentinel state into.
 
     Mirrors the ``getSentinelDir()`` every hook defines identically —
@@ -43,7 +43,7 @@ def hook_tmp_base() -> Path:
         Directory holding ``claude-state-<sid>`` and ``claude-push-auth-*``.
 
     Examples:
-        >>> hook_tmp_base().is_absolute()
+        >>> _hook_tmp_base().is_absolute()
         True
     """
     if sys.platform != "win32":
@@ -64,7 +64,7 @@ def hook_tmp_base() -> Path:
 
 
 @functools.lru_cache(maxsize=1)
-def bash_runs_posix_script() -> bool:
+def _bash_runs_posix_script() -> bool:
     """Probe whether the ``bash`` on PATH actually executes a POSIX script.
 
     A capability probe, never a platform test. On Windows ``bash`` frequently
@@ -76,7 +76,7 @@ def bash_runs_posix_script() -> bool:
         True when ``bash -c`` ran and produced the expected stdout.
 
     Examples:
-        >>> isinstance(bash_runs_posix_script(), bool)
+        >>> isinstance(_bash_runs_posix_script(), bool)
         True
     """
     try:

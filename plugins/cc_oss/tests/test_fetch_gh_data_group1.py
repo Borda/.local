@@ -17,6 +17,7 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+        """Store the status and output returned by a fake GitHub CLI command."""
         self.returncode = returncode
         self.stdout = stdout
 

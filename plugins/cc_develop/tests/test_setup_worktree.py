@@ -27,18 +27,26 @@ TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$")
 FROZEN_TS = "2026-05-22T10-00-00Z"
 
 
-@pytest.fixture
-def sentinel_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Point ``_sentinel_dir()`` at an isolated dir via ``$TMPDIR``, kept apart from the CWD run dir."""
+@pytest.fixture(name="sentinel_dir")
+def _sentinel_dir_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point ``_sentinel_dir()`` at an isolated dir via ``$TMPDIR``, kept apart from the CWD run dir.
+
+    >>> getfixture("sentinel_dir").is_dir()
+    True
+    """
     base = tmp_path / "sentinels"
     base.mkdir()
     monkeypatch.setenv("TMPDIR", str(base))
     return base
 
 
-@pytest.fixture
-def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> str:
-    """Pin ``main()``'s timestamp to ``FROZEN_TS`` so a sentinel path can be predicted exactly."""
+@pytest.fixture(name="frozen_clock")
+def _frozen_clock(monkeypatch: pytest.MonkeyPatch) -> str:
+    """Pin ``main()``'s timestamp to ``FROZEN_TS`` so a sentinel path can be predicted exactly.
+
+    >>> getfixture("frozen_clock")
+    '2026-05-22T10-00-00Z'
+    """
     frozen = datetime(2026, 5, 22, 10, 0, 0, tzinfo=timezone.utc)
     monkeypatch.setattr(setup_worktree, "datetime", SimpleNamespace(now=lambda tz: frozen.astimezone(tz)))
     return FROZEN_TS
@@ -218,7 +226,7 @@ class TestSentinelSymlinkHardening:
         original_link = setup_worktree.os.link
         link_destinations: list[Path] = []
 
-        def link_after_symlink_swap(
+        def _link_after_symlink_swap(
             source: str | bytes | os.PathLike[str], destination: str | bytes | os.PathLike[str]
         ) -> None:
             """Install the attacker link at the last possible point before final-path creation."""
@@ -227,7 +235,7 @@ class TestSentinelSymlinkHardening:
             sentinel_path.symlink_to(victim)
             original_link(source, destination)
 
-        monkeypatch.setattr(setup_worktree.os, "link", link_after_symlink_swap)
+        monkeypatch.setattr(setup_worktree.os, "link", _link_after_symlink_swap)
 
         rc = setup_worktree.main(["--sentinel", "swt-evil"])
 

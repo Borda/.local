@@ -115,10 +115,11 @@ class TestStartCommand:
         # Capture real create_sentinel BEFORE patching so the closure does not recurse.
         real_create = health_sentinel.create_sentinel
 
-        def fixed_create(skill_id: str) -> tuple[int, Path]:
+        def _fixed_create(skill_id: str) -> tuple[int, Path]:
+            """Create a sentinel with this test's fixed clock and temp directory."""
             return real_create(skill_id, tmp_dir=tmp_path, now=1700000000)
 
-        monkeypatch.setattr(health_sentinel, "create_sentinel", fixed_create)
+        monkeypatch.setattr(health_sentinel, "create_sentinel", _fixed_create)
 
         rc = health_sentinel.main(["start", "audit"])
         assert rc == 0
@@ -226,9 +227,10 @@ class TestMainSkillIdValidation:
         """Valid skill_id (alphanum + _ -) passes validation and creates sentinel."""
         real_create = health_sentinel.create_sentinel
 
-        def fixed_create(sid: str) -> tuple[int, Path]:
+        def _fixed_create(sid: str) -> tuple[int, Path]:
+            """Create a sentinel with this test's fixed clock and temp directory."""
             return real_create(sid, tmp_dir=tmp_path, now=1700000000)
 
-        monkeypatch.setattr(health_sentinel, "create_sentinel", fixed_create)
+        monkeypatch.setattr(health_sentinel, "create_sentinel", _fixed_create)
         rc = health_sentinel.main(["start", "valid-skill_1"])
         assert rc == 0

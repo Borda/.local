@@ -22,7 +22,7 @@ HOOK_CONFIG = PLUGIN_ROOT / "hooks" / "hooks.json"
 HOOK_SCRIPT = PLUGIN_ROOT / "hooks" / "session_start.py"
 
 
-def snapshot(root: Path) -> tuple[tuple[object, ...], ...]:
+def _snapshot(root: Path) -> tuple[tuple[object, ...], ...]:
     """Capture bytes and mutation-relevant metadata while excluding atime."""
     rows = []
     for path in [root, *sorted(root.rglob("*"))]:
@@ -43,7 +43,7 @@ def snapshot(root: Path) -> tuple[tuple[object, ...], ...]:
     return tuple(rows)
 
 
-def hook_input() -> bytes:
+def _hook_input() -> bytes:
     """Return one minimal valid SessionStart event."""
     return json.dumps(
         {
@@ -89,11 +89,11 @@ def test_hook_reuses_manager_doctor_and_preserves_real_home(tmp_path: Path) -> N
     environment["PLUGIN_ROOT"] = str(PLUGIN_ROOT)
     environment["CODEX_HOME"] = str(home)
     environment["PATH"] = f"{tmp_path}{os.pathsep}{environment.get('PATH', '')}"
-    before = snapshot(tmp_path)
+    before = _snapshot(tmp_path)
 
     completed = subprocess.run(
         [sys.executable, str(HOOK_SCRIPT)],
-        input=hook_input(),
+        input=_hook_input(),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=environment,
@@ -108,7 +108,7 @@ def test_hook_reuses_manager_doctor_and_preserves_real_home(tmp_path: Path) -> N
     assert "active_package: plugin root is not the selected cache-version path" in result["systemMessage"]
     assert "No files changed" in result["systemMessage"]
     assert "Run $codex-rig:agent-shims status" in result["systemMessage"]
-    assert snapshot(tmp_path) == before
+    assert _snapshot(tmp_path) == before
 
 
 @_posix_doctor_only
@@ -123,11 +123,11 @@ def test_hook_surfaces_one_bounded_block_reason(tmp_path: Path) -> None:
     environment["PLUGIN_ROOT"] = str(PLUGIN_ROOT)
     environment["CODEX_HOME"] = str(home)
     environment["PATH"] = str(tmp_path)
-    before = snapshot(tmp_path)
+    before = _snapshot(tmp_path)
 
     completed = subprocess.run(
         [sys.executable, str(HOOK_SCRIPT)],
-        input=hook_input(),
+        input=_hook_input(),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=environment,
@@ -143,7 +143,7 @@ def test_hook_surfaces_one_bounded_block_reason(tmp_path: Path) -> None:
     assert "executables:" not in message
     assert "Codex executable was not found" not in message
     assert "No files changed" in message
-    assert snapshot(tmp_path) == before
+    assert _snapshot(tmp_path) == before
 
 
 def test_invalid_hook_input_fails_open_without_traceback(tmp_path: Path) -> None:

@@ -15,6 +15,14 @@ from check_orphaned_bin import OrphanFinding, find_orphans, is_referenced, iter_
 
 
 def _make_plugin(base: Path, plugin: str, scripts: list[str]) -> Path:
+    """Create a plugin bin-tree fixture with the requested script names.
+
+    Examples:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     (_make_plugin(Path(directory), "demo", ["tool.py"]) / "bin" / "tool.py").is_file()
+        True
+    """
     plugin_dir = base / plugin / "bin"
     plugin_dir.mkdir(parents=True)
     for name in scripts:

@@ -15,7 +15,12 @@ BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
 
 
 def _load_rescorer() -> Any:
-    """Load the hyphen-named offline Claude rescorer module."""
+    """Load and register the offline rescorer without reading or rewriting result artifacts.
+
+    >>> module = _load_rescorer()
+    >>> module is sys.modules["rescore_claude_agentic_test"]
+    True
+    """
     module_name = "rescore_claude_agentic_test"
     spec = importlib.util.spec_from_file_location(module_name, BENCHMARKS_DIR / "rescore-claude-agentic.py")
     assert spec is not None and spec.loader is not None

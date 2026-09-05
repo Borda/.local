@@ -1,5 +1,31 @@
 #!/usr/bin/env python3
-"""Emit host-specific index context and trigger a runtime-attributed background refresh."""
+"""Emit codemap index context before a user prompt.
+
+Purpose:
+    Tell the active host whether a Python project's structural codemap is available and
+    trigger a bounded background refresh when the index is stale.
+
+Scope:
+    Read project and index metadata, write a persistent session marker and temporary
+    refresh/preamble sentinels, and emit the host-specific ``UserPromptSubmit`` envelope.
+    The hook never edits source files.
+
+Usage:
+    Invoke as a Claude or Codex ``UserPromptSubmit`` hook with the host JSON payload on
+    standard input.
+
+Outputs:
+    Print plain preamble text for Claude or one JSON hook envelope for Codex; refresh
+    requests and session markers are best-effort local side effects.
+
+Failure:
+    Malformed stdin is treated as an empty event, and unavailable Git falls back to
+    local state; either case may still emit context. Expected I/O, type, and value errors
+    are suppressed so prompt submission can continue.
+
+Used by:
+    The codemap-py hook configuration for Claude and Codex prompt submission events.
+"""
 
 from __future__ import annotations
 

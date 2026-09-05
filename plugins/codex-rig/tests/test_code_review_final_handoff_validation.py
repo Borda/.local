@@ -33,7 +33,12 @@ VALIDATOR = _load_validator()
 
 
 def _result(recommendation: str) -> dict[str, object]:
-    """Return one assessed PR result with a structured decision."""
+    """Return one assessed PR result with a structured decision.
+
+    Example:
+        >>> _result("accept-as-is")["metadata"]["review_decision"]["recommendation"]
+        'accept-as-is'
+    """
     return {
         "metadata": {
             "scope": "pr",
@@ -48,7 +53,12 @@ def _result(recommendation: str) -> dict[str, object]:
 
 
 def _handoff(recommendation: str, suggestion: str) -> dict[str, object]:
-    """Return one compact assessed PR snapshot with the supplied suggestion."""
+    """Return one compact assessed PR snapshot with the supplied suggestion.
+
+    Example:
+        >>> _handoff("accept-as-is", "approved")["tables"][0]["heading"]
+        'PR Snapshot'
+    """
     rows = [
         ("PR", "[#1399 — Pack targets](https://github.com/example/project/pull/1399)"),
         ("Author", "@contributor"),

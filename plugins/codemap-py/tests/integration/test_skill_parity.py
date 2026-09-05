@@ -132,7 +132,11 @@ _CUSTOM_ROOT_INDEX_SNIPPETS = (
 
 
 def _direct_caller_routing_violations(skill_text: str) -> list[str]:
-    """Return a violation when ambiguous caller wording can select a transitive query."""
+    """Return a violation when ambiguous caller wording can select a transitive query.
+
+    >>> _direct_caller_routing_violations(_DIRECT_CALLER_ROUTING_RULES[1])
+    []
+    """
     if any(rule in skill_text.lower() for rule in _DIRECT_CALLER_ROUTING_RULES):
         return []
     return ["ambiguous direct-caller wording lacks the fn-rdeps routing rule"]
@@ -152,7 +156,11 @@ def _claude_query_current_repository_violations(skill_text: str) -> list[str]:
 
 
 def _claude_query_frontmatter_violations(skill_text: str) -> list[str]:
-    """Return violations when query-code can invoke arbitrary Bash instead of its read-only CLI surface."""
+    """Return violations when query-code can invoke arbitrary Bash instead of its read-only CLI surface.
+
+    >>> _claude_query_frontmatter_violations("---\\nallowed-tools: Read\\n---")
+    ['query-code must allow only the PATH or installed absolute `codemap-py query` launchers, Read, and Write']
+    """
     frontmatter = skill_text.split("---", 2)[1]
     if _CLAUDE_QUERY_ALLOWED_TOOLS in frontmatter:
         return []
@@ -233,7 +241,11 @@ def test_roster_checker_rejects_synthetic_violations(tmp_path: Path, mutation: s
 
 
 def _extract_mode_table(text: str) -> str:
-    """Return the pinned five-mode CLI table's rows, verbatim, stopping at the first non-row line."""
+    """Return the pinned five-mode CLI table's rows, verbatim, stopping at the first non-row line.
+
+    >>> _extract_mode_table("| Mode | Exit |\\n| --- | --- |\\n| plan | 0 |\\nend")
+    '| Mode | Exit |\\n| --- | --- |\\n| plan | 0 |'
+    """
     lines = text.splitlines()
     start = next(i for i, line in enumerate(lines) if line.strip().startswith("| Mode") and "Exit" in line)
     rows: list[str] = []
@@ -278,6 +290,9 @@ def _not_for_skill_refs(full_text: str) -> set[str]:
 
     Deliberately tolerant of prose-wording differences (explicitly allowed latitude per capability-contract.md's parity
     requirements) — only *which skill* is referenced counts.
+
+    >>> _not_for_skill_refs("NOT for: $codemap-py:scan-codebase users")
+    {'scan-codebase'}
     """
     refs: set[str] = set()
     for clause in _NOT_FOR_RE.findall(full_text):
@@ -537,7 +552,11 @@ def _skill_text(runtime_dir: Path, skill_name: str) -> str:
 
 
 def _flat(text: str) -> str:
-    """Lowercased, whitespace-collapsed text — for prose snippet checks across line breaks."""
+    """Lowercase and collapse whitespace for prose checks across line breaks.
+
+    >>> _flat(" Read\\n  ONLY ")
+    'read only'
+    """
     return " ".join(text.lower().split())
 
 

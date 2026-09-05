@@ -62,7 +62,13 @@ HARDLINKS_SUPPORTED = _supports_hardlinks()
 
 
 def _request(tmp_path: Path, **overrides: Any) -> bridge_call.Request:
-    """Build one small local request with explicit, deterministic routing values."""
+    """Build one small local request with explicit, deterministic routing values.
+
+    Examples:
+        >>> request = _request(getfixture("tmp_path"))
+        >>> request.verb, request.direction
+        ('advise', 'claude_to_codex')
+    """
     values: dict[str, Any] = {
         "verb": "advise",
         "task": "Report completion.",
@@ -79,7 +85,14 @@ def _request(tmp_path: Path, **overrides: Any) -> bridge_call.Request:
 
 
 def _core(status: str = "complete", *, details: list[str] | None = None, **overrides: object) -> dict[str, object]:
-    """Return a valid peer result fixture with optional transcript-only detail."""
+    """Return a valid peer result fixture with optional transcript-only detail.
+
+    Examples:
+        >>> _core("failed", details=["timeout"])["status"]
+        'failed'
+        >>> _core()["findings"]
+        []
+    """
     core: dict[str, object] = {
         "status": status,
         "verdict": "Finished deterministically.",
@@ -96,7 +109,13 @@ def _core(status: str = "complete", *, details: list[str] | None = None, **overr
 def _outcome(
     *, core: dict[str, object] | None = None, error: str | None = None, timed_out: bool = False
 ) -> bridge_call.ChildOutcome:
-    """Create a fake child result using the real JSONL parser's event shapes."""
+    """Create a fake child result using the real JSONL parser's event shapes.
+
+    Examples:
+        >>> result = _outcome(error="unsupported effort")
+        >>> result.returncode, result.timed_out
+        (1, False)
+    """
     records: list[dict[str, object]] = [{"type": "thread.started", "thread_id": "session-fixed"}]
     if core is not None:
         records.append({"type": "item.completed", "item": {"text": json.dumps(core)}})
@@ -114,7 +133,13 @@ def _outcome(
 
 
 def _claude_outcome(core: dict[str, object]) -> bridge_call.ChildOutcome:
-    """Create one Claude print-mode response at the provider process boundary."""
+    """Create one Claude print-mode response at the provider process boundary.
+
+    Examples:
+        >>> result = _claude_outcome({"status": "complete"})
+        >>> json.loads(result.stdout)["structured_output"]["status"]
+        'complete'
+    """
     return bridge_call.ChildOutcome(
         json.dumps({"structured_output": core, "usage": {"input": 3, "output": 2}}), "", 0, False, None
     )
@@ -367,32 +392,32 @@ def test_windows_health_descriptor_rejects_hard_link_after_nofollow_open(
     closed: list[int] = []
     create_file_calls: list[tuple[str, int]] = []
 
-    def create_file(
+    def _create_file(
         path: str, access: int, share: int, security: object, disposition: int, flags: int, template: object
     ) -> int:
         """Capture the Windows no-follow open and return its owned descriptor handle."""
         create_file_calls.append((path, flags))
         return descriptor
 
-    def fstat(opened: int) -> SimpleNamespace:
+    def _fstat(opened: int) -> SimpleNamespace:
         """Prove common validation inspects the exact descriptor opened by CreateFile."""
         assert opened == descriptor
         return SimpleNamespace(st_mode=stat.S_IFREG, st_nlink=2)
 
-    def close_handle(handle: int) -> None:
+    def _close_handle(handle: int) -> None:
         """Fail if the external API closes a handle already owned by the descriptor layer."""
         pytest.fail(f"unexpected handle close: {handle}")
 
     fake_ctypes = SimpleNamespace(
         c_void_p=lambda value: SimpleNamespace(value=value),
-        windll=SimpleNamespace(kernel32=SimpleNamespace(CreateFileW=create_file, CloseHandle=close_handle)),
+        windll=SimpleNamespace(kernel32=SimpleNamespace(CreateFileW=_create_file, CloseHandle=_close_handle)),
     )
     fake_msvcrt = SimpleNamespace(open_osfhandle=lambda handle, flags: descriptor)
     fake_os = SimpleNamespace(
         name="nt",
         O_WRONLY=os.O_WRONLY,
         O_APPEND=os.O_APPEND,
-        fstat=fstat,
+        fstat=_fstat,
         close=closed.append,
         fdopen=lambda *args, **kwargs: pytest.fail("hard-linked descriptor reached fdopen"),
     )
@@ -411,11 +436,13 @@ def test_reparse_point_health_member_is_rejected_before_the_windows_open_path(mo
     """Prevent Windows reparse metadata from being treated as a regular health file."""
     monkeypatch.setattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400, raising=False)
 
-    class Metadata:
+    class _Metadata:
+        """Represent a regular file carrying the Windows reparse flag."""
+
         st_mode = stat.S_IFREG
         st_file_attributes = 0x400
 
-    assert bridge_call._is_link_or_reparse_point(Metadata()) is True
+    assert bridge_call._is_link_or_reparse_point(_Metadata()) is True
 
 
 @pytest.mark.skipif(not DIRECTORY_SYMLINKS_SUPPORTED, reason="requires directory symlink creation capability")
@@ -487,11 +514,12 @@ def test_structured_unsupported_effort_retries_once_and_records_substitution(
     """Prevent an unsupported-effort loop from repeatedly charging or dispatching peers."""
     attempts: list[str] = []
 
-    def fake_child(command: list[str], workspace: Path, timeout: float) -> bridge_call.ChildOutcome:
+    def _fake_child(command: list[str], workspace: Path, timeout: float) -> bridge_call.ChildOutcome:
+        """Return a child rejection so the retry policy can be inspected."""
         attempts.append(next(item for item in command if item.startswith("model_reasoning_effort=")))
         return _outcome(error="target rejected effort")
 
-    monkeypatch.setattr(bridge_call, "_run_child", fake_child)
+    monkeypatch.setattr(bridge_call, "_run_child", _fake_child)
     result = bridge_call.run_request(_request(tmp_path, effort="high", supported_efforts=("low", "medium", "high")))
 
     assert attempts == ['model_reasoning_effort="high"', 'model_reasoning_effort="medium"']
@@ -509,11 +537,12 @@ def test_general_review_runs_read_only_exec_and_returns_a_compact_envelope(
     """Prevent native review prose from bypassing the bridge's structured-result contract."""
     commands: list[list[str]] = []
 
-    def fake_child(command: list[str], workspace: Path, timeout: float) -> bridge_call.ChildOutcome:
+    def _fake_child(command: list[str], workspace: Path, timeout: float) -> bridge_call.ChildOutcome:
+        """Return a structured review result without starting a child process."""
         commands.append(command)
         return _outcome(core=_core(details=["Reviewed the full local diff."]))
 
-    monkeypatch.setattr(bridge_call, "_run_child", fake_child)
+    monkeypatch.setattr(bridge_call, "_run_child", _fake_child)
     result = bridge_call.run_request(_request(tmp_path, verb="review"))
 
     assert commands[0][:2] == ["codex", "exec"]
@@ -688,15 +717,18 @@ def test_output_overflow_detected_while_draining_a_completed_leader_is_terminal(
     captured: list[bridge_call._ChildOutputBuffer] = []
     terminated: list[bool] = []
 
-    class Process:
+    class _Process:
+        """Expose the minimal completed-process surface used by the drain path."""
+
         stdout = object()
         stderr = object()
         returncode = 0
 
         def poll(self) -> int:
+            """Report that the fake process has already exited."""
             return 0
 
-    monkeypatch.setattr(bridge_call.subprocess, "Popen", lambda *args, **kwargs: Process())
+    monkeypatch.setattr(bridge_call.subprocess, "Popen", lambda *args, **kwargs: _Process())
     monkeypatch.setattr(
         bridge_call,
         "_start_output_readers",
@@ -722,11 +754,12 @@ def test_timeout_retries_read_only_once_at_a_lower_tier_but_never_implement(
     """Prevent a timeout retry from escalating cost, duplicating implement edits, or looping on advise."""
     efforts: list[str] = []
 
-    def timeout_child(command: list[str], workspace: Path, timeout: float) -> bridge_call.ChildOutcome:
+    def _timeout_child(command: list[str], workspace: Path, timeout: float) -> bridge_call.ChildOutcome:
+        """Return a timeout result while recording each retry effort."""
         efforts.append(next(item for item in command if item.startswith("model_reasoning_effort=")))
         return _outcome(timed_out=True)
 
-    monkeypatch.setattr(bridge_call, "_run_child", timeout_child)
+    monkeypatch.setattr(bridge_call, "_run_child", _timeout_child)
     advise = bridge_call.run_request(_request(tmp_path, effort="medium", supported_efforts=("low", "medium")))
     floor = bridge_call.run_request(_request(tmp_path, effort="low", supported_efforts=("low", "medium")))
     implement = bridge_call.run_request(
@@ -853,11 +886,12 @@ def test_reverse_read_only_maximum_budgets_both_hard_cutoff_attempts(
     """Prevent the reverse retry path from outliving the MCP host deadline."""
     hard_cutoffs: list[float] = []
 
-    def timeout_child(command: list[str], workspace: Path, timeout: float) -> bridge_call.ChildOutcome:
+    def _timeout_child(command: list[str], workspace: Path, timeout: float) -> bridge_call.ChildOutcome:
+        """Return timeout outcomes while recording each bounded retry deadline."""
         hard_cutoffs.append(timeout)
         return _outcome(timed_out=True)
 
-    monkeypatch.setattr(bridge_call, "_run_child", timeout_child)
+    monkeypatch.setattr(bridge_call, "_run_child", _timeout_child)
     maximum = bridge_mcp.MAX_MCP_TIMEOUT_SECONDS_BY_VERB["advise"]
     result = bridge_call.run_request(
         _request(
@@ -957,10 +991,12 @@ def test_background_dispatch_leaves_pid_ownership_to_the_supervisor(
 ) -> None:
     """Prevent the launcher from racing its supervisor's record writes or losing the result."""
 
-    class Process:
+    class _Process:
+        """Expose only a stable PID for background-launch assertions."""
+
         pid = 123
 
-    monkeypatch.setattr(bridge_call.subprocess, "Popen", lambda *args, **kwargs: Process())
+    monkeypatch.setattr(bridge_call.subprocess, "Popen", lambda *args, **kwargs: _Process())
     started = bridge_call.start_background(_request(tmp_path, background=True))
     record_path = tmp_path.resolve() / ".temp" / "bridge" / "jobs" / f"{started['job_id']}.json"
     record = json.loads(record_path.read_text(encoding="utf-8"))
@@ -983,7 +1019,13 @@ def test_background_dispatch_leaves_pid_ownership_to_the_supervisor(
 
 
 def _finished_envelope() -> dict[str, object]:
-    """Return a complete valid public envelope for stored-job-result fixtures."""
+    """Return a complete valid public envelope for stored-job-result fixtures.
+
+    Examples:
+        >>> envelope = _finished_envelope()
+        >>> envelope["status"], envelope["direction"]
+        ('complete', 'claude_to_codex')
+    """
     return {
         "status": "complete",
         "verdict": "done",
@@ -1038,16 +1080,19 @@ def test_help_token_matching_requires_word_boundaries() -> None:
 def test_background_dispatch_omits_unselected_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Prevent a host-default background request from passing a null subprocess argument."""
 
-    class Process:
+    class _Process:
+        """Provide the child API needed to inspect inherited environment state."""
+
         pid = 123
 
     commands: list[list[object]] = []
 
-    def fake_popen(command: list[object], **kwargs: object) -> Process:
+    def _fake_popen(command: list[object], **kwargs: object) -> _Process:
+        """Record background argv and return a process with a stable PID."""
         commands.append(command)
-        return Process()
+        return _Process()
 
-    monkeypatch.setattr(bridge_call.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(bridge_call.subprocess, "Popen", _fake_popen)
     bridge_call.start_background(_request(tmp_path, background=True, model=None))
 
     assert commands
@@ -1109,13 +1154,14 @@ def test_simulated_windows_stalled_probe_uses_tasklist_and_never_signals(
     )
     probes: list[list[str]] = []
 
-    def fake_tasklist(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _fake_tasklist(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Return tasklist's no-process response for the Windows probe."""
         probes.append(command)
         return subprocess.CompletedProcess(command, 0, stdout="INFO: No tasks are running.", stderr="")
 
     monkeypatch.setattr(bridge_call.os, "name", "nt")
     monkeypatch.setattr(bridge_call.os, "kill", lambda *args: pytest.fail("liveness probe signalled a PID"))
-    monkeypatch.setattr(bridge_call.subprocess, "run", fake_tasklist)
+    monkeypatch.setattr(bridge_call.subprocess, "run", _fake_tasklist)
 
     assert bridge_call.job_status(tmp_path, job_id)["status"] == "stalled"
     assert probes and probes[0][0] == "tasklist"
@@ -1169,14 +1215,15 @@ def test_cancel_marker_arriving_before_a_retry_stops_the_second_attempt(
     job_path = paths.jobs / f"{job_id}.json"
     attempts: list[str] = []
 
-    def timeout_then_cancelled(
+    def _timeout_then_cancelled(
         command: list[str], workspace: Path, timeout: float, job: Path | None = None
     ) -> bridge_call.ChildOutcome:
+        """Write the cancellation marker while returning a timeout."""
         attempts.append(command[-1])
         bridge_call._write_json(job_path.with_name(f"{job_id}.cancel.json"), {"job_id": job_id})
         return _outcome(timed_out=True)
 
-    monkeypatch.setattr(bridge_call, "_run_child", timeout_then_cancelled)
+    monkeypatch.setattr(bridge_call, "_run_child", _timeout_then_cancelled)
     result = bridge_call.run_request(
         _request(tmp_path, effort="medium", supported_efforts=("low", "medium")), _job_path=job_path
     )
@@ -1197,10 +1244,11 @@ def test_supervisor_internal_failure_writes_a_terminal_failed_record(
         paths.jobs / f"{job_id}.json", {"job_id": job_id, "status": "queued", "pid": None, "result": None}
     )
 
-    def exploding_run_request(*args: object, **kwargs: object) -> dict[str, object]:
+    def _exploding_run_request(*args: object, **kwargs: object) -> dict[str, object]:
+        """Raise the supervisor error whose terminal record is asserted."""
         raise ValueError("artifact store exploded")
 
-    monkeypatch.setattr(bridge_call, "run_request", exploding_run_request)
+    monkeypatch.setattr(bridge_call, "run_request", _exploding_run_request)
     exit_code = bridge_call.main(
         ["implement", "--task", "Fail internally.", "--job-id", job_id, "--supervisor", "--workspace", str(tmp_path)]
     )
@@ -1233,11 +1281,12 @@ def test_write_verb_effort_failure_is_reported_without_a_second_attempt(
     """Prevent a failed write-capable child from being rerun against an already-edited worktree."""
     attempts: list[list[str]] = []
 
-    def failing_child(command: list[str], workspace: Path, timeout: float) -> bridge_call.ChildOutcome:
+    def _failing_child(command: list[str], workspace: Path, timeout: float) -> bridge_call.ChildOutcome:
+        """Return a child rejection without permitting a write retry."""
         attempts.append(command)
         return _outcome(error="target rejected effort")
 
-    monkeypatch.setattr(bridge_call, "_run_child", failing_child)
+    monkeypatch.setattr(bridge_call, "_run_child", _failing_child)
     result = bridge_call.run_request(
         _request(tmp_path, verb="implement", effort="high", supported_efforts=("low", "medium", "high"))
     )
@@ -1250,10 +1299,11 @@ def test_write_verb_effort_failure_is_reported_without_a_second_attempt(
 def test_workspace_state_degrades_when_git_is_unavailable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Prevent a machine without Git from crashing write-capable dispatch instead of degrading."""
 
-    def missing_git(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _missing_git(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Model a host where the Git executable cannot be started."""
         raise FileNotFoundError("git")
 
-    monkeypatch.setattr(bridge_call.subprocess, "run", missing_git)
+    monkeypatch.setattr(bridge_call.subprocess, "run", _missing_git)
 
     assert bridge_call._workspace_state(tmp_path) == []
 
@@ -1270,7 +1320,8 @@ def test_supervisor_preserves_a_cancellation_requested_during_its_final_record_w
     original_write_json = bridge_call._write_json
     cancellation_injected = False
 
-    def fake_run_request(request: bridge_call.Request, **kwargs: object) -> dict[str, object]:
+    def _fake_run_request(request: bridge_call.Request, **kwargs: object) -> dict[str, object]:
+        """Return a completed result for the supervisor race scenario."""
         return {
             "status": "complete",
             "verdict": "The child completed before the owner cancelled.",
@@ -1293,15 +1344,16 @@ def test_supervisor_preserves_a_cancellation_requested_during_its_final_record_w
             "direction": "claude_to_codex",
         }
 
-    def write_with_racing_cancellation(path: Path, value: dict[str, object]) -> None:
+    def _write_with_racing_cancellation(path: Path, value: dict[str, object]) -> None:
+        """Inject cancellation immediately before the final record write."""
         nonlocal cancellation_injected
         if path == record_path and value.get("result") is not None and not cancellation_injected:
             cancellation_injected = True
             bridge_call.cancel_job(tmp_path, job_id)
         original_write_json(path, value)
 
-    monkeypatch.setattr(bridge_call, "run_request", fake_run_request)
-    monkeypatch.setattr(bridge_call, "_write_json", write_with_racing_cancellation)
+    monkeypatch.setattr(bridge_call, "run_request", _fake_run_request)
+    monkeypatch.setattr(bridge_call, "_write_json", _write_with_racing_cancellation)
 
     exit_code = bridge_call.main(
         [
@@ -1332,10 +1384,11 @@ def test_diagnostics_detect_missing_help_flag_without_live_request(
 ) -> None:
     """Prevent static setup from reporting success when a required CLI option disappeared."""
 
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Return a diagnostic payload missing the required option."""
         return subprocess.CompletedProcess(command, 0, stdout="exec resume review --json", stderr="")
 
-    monkeypatch.setattr(bridge_diagnose.subprocess, "run", fake_run)
+    monkeypatch.setattr(bridge_diagnose.subprocess, "run", _fake_run)
     result = bridge_diagnose.diagnose("codex", tmp_path, live=False)
 
     assert result["live"] is False
@@ -1349,11 +1402,12 @@ def test_static_diagnosis_binds_itself_to_one_complete_installed_payload(
     """Prevent sync from accepting a doctor detached from its manifests, setup core, or schemas."""
     baseline = bridge_diagnose._load_baseline()
 
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Return the baseline flags for the selected host executable."""
         target = "codex" if command[0] == "codex" else "claude"
         return subprocess.CompletedProcess(command, 0, stdout=" ".join(baseline[target]["required"]), stderr="")
 
-    monkeypatch.setattr(bridge_diagnose.subprocess, "run", fake_run)
+    monkeypatch.setattr(bridge_diagnose.subprocess, "run", _fake_run)
     result = bridge_diagnose.diagnose("claude", tmp_path, live=False)
     expected_version = json.loads(
         (Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
@@ -1468,11 +1522,12 @@ def test_cli_implement_is_the_only_write_capable_verb(
     """Prevent implement from becoming read-only or a read-only verb from gaining write access."""
     commands: dict[str, list[str]] = {}
 
-    def fake_child(command: list[str], *args: object) -> bridge_call.ChildOutcome:
+    def _fake_child(command: list[str], *args: object) -> bridge_call.ChildOutcome:
+        """Return a completed child result for each CLI verb."""
         commands[verb] = command
         return _outcome(core=_core())
 
-    monkeypatch.setattr(bridge_call, "_run_child", fake_child)
+    monkeypatch.setattr(bridge_call, "_run_child", _fake_child)
 
     for verb in ("implement", "advise", "review"):
         exit_code = bridge_call.main([verb, "--task", "Make the bounded change.", "--workspace", str(tmp_path)])
@@ -1494,12 +1549,13 @@ def test_mcp_exposes_implement_and_refuses_the_retired_delegate_tool(
     """Prevent the reverse bridge from dropping implement or resurrecting a second write-capable tool name."""
     captured: list[bridge_call.Request] = []
 
-    def fake_run_request(request: bridge_call.Request, *, host: str) -> dict[str, object]:
+    def _fake_run_request(request: bridge_call.Request, *, host: str) -> dict[str, object]:
+        """Return a compact success while recording the selected host."""
         captured.append(request)
         assert host == "claude"
         return {"status": "complete"}
 
-    monkeypatch.setattr(bridge_mcp, "run_request", fake_run_request)
+    monkeypatch.setattr(bridge_mcp, "run_request", _fake_run_request)
     listed = {tool["name"] for tool in bridge_mcp.tool_definitions()}
 
     response = bridge_mcp.handle_message(
@@ -1725,11 +1781,12 @@ def test_mcp_refuses_write_verbs_from_a_home_or_root_workspace(monkeypatch: pyte
     """Prevent a host that launches the server from $HOME from rooting acceptEdits runs there."""
     dispatched: list[str] = []
 
-    def fake_run_request(request: bridge_call.Request, **kwargs: object) -> dict[str, object]:
+    def _fake_run_request(request: bridge_call.Request, **kwargs: object) -> dict[str, object]:
+        """Return a completed advisory result for the trusted-workspace check."""
         dispatched.append(request.verb)
         return {"status": "complete"}
 
-    monkeypatch.setattr(bridge_mcp, "run_request", fake_run_request)
+    monkeypatch.setattr(bridge_mcp, "run_request", _fake_run_request)
 
     response = bridge_mcp.handle_message(
         {
@@ -1787,12 +1844,13 @@ def test_mcp_uses_trusted_workspace_instead_of_model_argument(tmp_path: Path, mo
     """Prevent a reverse bridge request from escaping the MCP launch workspace."""
     captured: list[bridge_call.Request] = []
 
-    def fake_run_request(request: bridge_call.Request, *, host: str) -> dict[str, object]:
+    def _fake_run_request(request: bridge_call.Request, *, host: str) -> dict[str, object]:
+        """Return a result tied to the request workspace and run identifier."""
         captured.append(request)
         assert host == "claude"
         return {"status": "complete", "run_id": request.run_id}
 
-    monkeypatch.setattr(bridge_mcp, "run_request", fake_run_request)
+    monkeypatch.setattr(bridge_mcp, "run_request", _fake_run_request)
     result = bridge_mcp.handle_message(
         {
             "jsonrpc": "2.0",
@@ -1816,11 +1874,12 @@ def test_reverse_mcp_uses_a_claude_compatible_schema_and_keeps_peer_details_in_t
     commands: list[list[str]] = []
     peer_detail = "The provider emitted this verbose diagnostic only for the saved transcript."
 
-    def fake_child(command: list[str], workspace: Path, timeout: float) -> bridge_call.ChildOutcome:
+    def _fake_child(command: list[str], workspace: Path, timeout: float) -> bridge_call.ChildOutcome:
+        """Return Claude detail that should remain in the transcript."""
         commands.append(command)
         return _claude_outcome(_core(details=[peer_detail]))
 
-    monkeypatch.setattr(bridge_call, "_run_child", fake_child)
+    monkeypatch.setattr(bridge_call, "_run_child", _fake_child)
     response = bridge_mcp.handle_message(
         {
             "jsonrpc": "2.0",
@@ -1864,13 +1923,14 @@ def test_mcp_implement_runs_real_supervisor_with_claude_write_permissions(
     marker = tmp_path / "implemented-marker.txt"
     peer_detail = "The fake provider's private implementation detail belongs only in the transcript."
 
-    def fake_child(command: list[str], workspace: Path, timeout: float) -> bridge_call.ChildOutcome:
+    def _fake_child(command: list[str], workspace: Path, timeout: float) -> bridge_call.ChildOutcome:
+        """Write the marker and return Claude's bounded implementation result."""
         commands.append(command)
         assert workspace == tmp_path.resolve()
         marker.write_text("implemented by fake Claude child\n", encoding="utf-8")
         return _claude_outcome(_core(files_touched=[marker.name], details=[peer_detail]))
 
-    monkeypatch.setattr(bridge_call, "_run_child", fake_child)
+    monkeypatch.setattr(bridge_call, "_run_child", _fake_child)
     response = bridge_mcp.handle_message(
         {
             "jsonrpc": "2.0",
@@ -2121,19 +2181,23 @@ def test_child_receives_incremented_trusted_depth(tmp_path: Path, monkeypatch: p
     """Prevent a peer process from inheriting its parent's depth and permitting another hop."""
     environments: list[dict[str, str]] = []
 
-    class Process:
+    class _Process:
+        """Provide the completed child API needed by depth propagation tests."""
+
         returncode = 0
 
         def communicate(self, timeout: float) -> tuple[str, str]:
+            """Return empty streams for the inherited-depth child check."""
             return "", ""
 
-    def fake_popen(command: list[str], **kwargs: object) -> Process:
+    def _fake_popen(command: list[str], **kwargs: object) -> _Process:
+        """Record child launch kwargs and return the protocol-compatible process."""
         environments.append(kwargs["env"])
-        return Process()
+        return _Process()
 
     monkeypatch.setenv(bridge_call.DEPTH_ENVIRONMENT_VARIABLE, "2")
     monkeypatch.setenv("BRIDGE_TEST_UNRELATED_SECRET", "must-not-propagate")
-    monkeypatch.setattr(bridge_call.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(bridge_call.subprocess, "Popen", _fake_popen)
 
     bridge_call._run_child(["fake-peer"], tmp_path, timeout=1.0)
 
@@ -2176,19 +2240,23 @@ def test_simulated_windows_child_launch_uses_a_new_process_group_without_posix_s
     """Prevent the portable Windows branch from passing POSIX-only process-launch options."""
     launches: list[dict[str, object]] = []
 
-    class Process:
+    class _Process:
+        """Provide a successful process for the simulated Windows launch."""
+
         returncode = 0
 
         def communicate(self, timeout: float) -> tuple[str, str]:
+            """Return empty streams for the simulated Windows launch."""
             return "", ""
 
-    def fake_popen(command: list[str], **kwargs: object) -> Process:
+    def _fake_popen(command: list[str], **kwargs: object) -> _Process:
+        """Record Windows creation flags and return the fake child."""
         launches.append(kwargs)
-        return Process()
+        return _Process()
 
     monkeypatch.setattr(bridge_call.os, "name", "nt")
     monkeypatch.setattr(bridge_call.subprocess, "CREATE_NEW_PROCESS_GROUP", 2468, raising=False)
-    monkeypatch.setattr(bridge_call.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(bridge_call.subprocess, "Popen", _fake_popen)
 
     outcome = bridge_call._run_child(["fake-peer"], tmp_path, timeout=1.0)
 
@@ -2284,11 +2352,14 @@ def test_posix_termination_falls_back_when_killpg_is_unavailable(
     killed: list[bool] = []
     waited: list[float] = []
 
-    class Process:
+    class _Process:
+        """Track direct-kill fallback calls and their bounded wait result."""
+
         pid = 42
         returncode = None
 
         def wait(self, timeout: float) -> int:
+            """Wait for the bounded direct-kill fallback and report its result."""
             waited.append(timeout)
             assert killed == [True]
             if wait_result == "timeout":
@@ -2299,11 +2370,12 @@ def test_posix_termination_falls_back_when_killpg_is_unavailable(
             return self.returncode
 
         def kill(self) -> None:
+            """Record the fallback kill request without touching a real process."""
             killed.append(True)
 
     monkeypatch.setattr(bridge_call.os, "name", "posix")
     monkeypatch.delattr(bridge_call.os, "killpg", raising=False)
-    process = Process()
+    process = _Process()
     bridge_call._terminate_process_group(process)
 
     assert killed == [True]
@@ -2331,20 +2403,24 @@ def test_simulated_windows_termination_uses_tree_kill_before_the_leader_can_exit
         lambda command, **kwargs: tree_kills.append(command) or subprocess.CompletedProcess(command, tree_status),
     )
 
-    class Process:
+    class _Process:
+        """Track Windows termination calls without launching a real process."""
+
         pid = 42
         returncode = None
 
         def kill(self) -> None:
+            """Record the simulated Windows child kill request."""
             killed.append(True)
 
         def wait(self, timeout: float) -> int:
+            """Return the simulated Windows child's exit status."""
             assert tree_kills
             assert 0 < timeout <= 2
             self.returncode = 1
             return self.returncode
 
-    process = Process()
+    process = _Process()
     bridge_call._terminate_process_group(process)
 
     assert tree_kills == [["taskkill", "/PID", "42", "/T", "/F"]]
@@ -2385,13 +2461,14 @@ def test_simulated_windows_cancel_never_uses_taskkill_for_a_persisted_pid(
     job_id = "55555555-5555-4555-8555-555555555555"
     bridge_call._write_json(paths.jobs / f"{job_id}.json", {"job_id": job_id, "status": "running", "pid": 42})
 
-    def fail_on_taskkill(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _fail_on_taskkill(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Fail if cooperative cancellation unexpectedly invokes ``taskkill``."""
         if command[0] == "taskkill":
             pytest.fail("taskkill was run")
         return subprocess.CompletedProcess(command, 0, stdout='"codex.exe","42"', stderr="")
 
     monkeypatch.setattr(bridge_call.os, "name", "nt")
-    monkeypatch.setattr(bridge_call.subprocess, "run", fail_on_taskkill)
+    monkeypatch.setattr(bridge_call.subprocess, "run", _fail_on_taskkill)
 
     cancelled = bridge_call.cancel_job(tmp_path, job_id)
 

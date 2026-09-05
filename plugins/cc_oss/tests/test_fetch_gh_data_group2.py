@@ -19,12 +19,18 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+        """Store the status and output returned by a fake GitHub CLI command."""
         self.returncode = returncode
         self.stdout = stdout
 
 
 def _b64(text: str) -> str:
-    """Encode UTF-8 text as base64 without a trailing newline."""
+    """Encode UTF-8 text as base64 without a trailing newline.
+
+    Examples:
+        >>> _b64("hello")
+        'aGVsbG8='
+    """
     return base64.b64encode(text.encode("utf-8")).decode("ascii")
 
 
@@ -158,6 +164,14 @@ def test_validate_args_slash_in_branch_allowed() -> None:
 
 
 def _records(data_file: Path) -> list[dict]:
+    """Read non-empty JSONL records from a fetch output fixture.
+
+    Examples:
+        >>> path = getfixture("tmp_path") / "records.jsonl"
+        >>> _ = path.write_text('{"ok": true}\\n\\n{"ok": false}\\n')
+        >>> _records(path)
+        [{'ok': True}, {'ok': False}]
+    """
     if not data_file.exists():
         return []
     return [json.loads(line) for line in data_file.read_text(encoding="utf-8").splitlines() if line]
@@ -180,6 +194,7 @@ def _stub_gh_run(payload_map: dict[str, str]):
     ordered_keys = sorted(payload_map, key=len, reverse=True)
 
     def _run(cmd, *args, **kwargs):  # type: ignore[no-untyped-def]
+        """Return the configured GitHub response for one mocked API call."""
         # cmd = [gh_path, "api", api_path, "--jq", expr?]
         api_path = cmd[2] if len(cmd) >= 3 else ""
         for needle in ordered_keys:
@@ -295,6 +310,7 @@ def test_branch_names_containing_slash_are_encoded_in_protection_path(
     captured_paths: list[str] = []
 
     def _run(cmd, *args, **kwargs):  # type: ignore[no-untyped-def]
+        """Capture API paths and return the branch-protection fixture when requested."""
         api_path = cmd[2] if len(cmd) >= 3 else ""
         captured_paths.append(api_path)
         if api_path.endswith("/branches/release/1.x/protection"):
@@ -353,6 +369,7 @@ def test_codeowners_fallback_to_root(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     """Fall back to the root ownership file when the GitHub-specific path is absent."""
 
     def _run(cmd, *args, **kwargs):  # type: ignore[no-untyped-def]
+        """Return the configured CODEOWNERS fallback response."""
         api_path = cmd[2] if len(cmd) >= 3 else ""
         if api_path.endswith(".github/CODEOWNERS"):
             return _FakeCompleted(returncode=1, stdout="")

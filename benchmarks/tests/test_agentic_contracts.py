@@ -16,7 +16,12 @@ from benchmarks._bench_common import agentic_contracts
 
 
 def _task(**overrides: Any) -> dict[str, Any]:
-    """Build one minimal task declaring the production-importer contract."""
+    """Build a production-importer task, replacing defaults with explicit overrides.
+
+    >>> task = _task(primary_module="example.core")
+    >>> task["primary_module"], task["answer_contract"]
+    ('example.core', {'fields': ['production_importers']})
+    """
     task = {
         "id": "BA-TEST",
         "primary_module": "pkg.trainer.trainer",
@@ -27,19 +32,32 @@ def _task(**overrides: Any) -> dict[str, Any]:
 
 
 def _write(root: Path, relative: str, source: str) -> None:
-    """Write one module into a synthetic source tree."""
+    """Create missing parents and replace a synthetic module's UTF-8 source.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     root = Path(directory)
+    ...     _write(root, "pkg/example.py", "VALUE = 3")
+    ...     (root / "pkg/example.py").read_text(encoding="utf-8")
+    'VALUE = 3'
+    """
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(source, encoding="utf-8")
 
 
-@pytest.fixture()
-def mixed_import_tree(tmp_path: Path) -> Path:
+@pytest.fixture(name="mixed_import_tree")
+def _mixed_import_tree(tmp_path: Path) -> Path:
     """Source tree whose only importer uses one mixed ``from`` statement.
 
     ``utilities`` is a package holding a real ``parsing`` submodule, so the importer's statement resolves one alias
     concretely and one not at all. The module under test (``pkg.trainer.trainer``) is reached only through the package
     import that statement also carries.
+
+    Example:
+        >>> root = getfixture("mixed_import_tree")
+        >>> (root / "pkg/utilities/parsing.py").is_file(), (root / "pkg/trainer/trainer.py").is_file()
+        (True, True)
     """
     root = tmp_path / "src"
     for package in ("pkg", "pkg.trainer", "pkg.utilities"):
@@ -102,7 +120,12 @@ def test_oracle_uses_the_shared_import_convention(mixed_import_tree: Path) -> No
 
 
 def _evidence_oracle() -> agentic_contracts.AgenticOracle:
-    """Oracle with one expected importer, for raw-text evidence scoring."""
+    """Build an oracle expecting exactly one importer for raw-text evidence scoring.
+
+    >>> oracle = _evidence_oracle()
+    >>> oracle.fields, oracle.expected
+    (('production_importers',), {'production_importers': ('pkg.core',)})
+    """
     return agentic_contracts.AgenticOracle(
         task_id="BA-TEST",
         fields=("production_importers",),

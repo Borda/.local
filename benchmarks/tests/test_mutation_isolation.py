@@ -20,16 +20,18 @@ def test_isolated_cell_restores_baseline_after_success_error_and_timeout(
     created: list[Path] = []
     restored: list[Path] = []
 
-    def create() -> Path:
+    def _create() -> Path:
+        """Create and record a uniquely numbered disposable cell directory."""
         worktree = tmp_path / f"cell-{len(created)}"
         worktree.mkdir()
         created.append(worktree)
         return worktree
 
-    def restore(worktree: Path) -> None:
+    def _restore(worktree: Path) -> None:
+        """Record the worktree handed to the restoration callback."""
         restored.append(worktree)
 
-    cell = IsolatedMutationCell(create, restore)
+    cell = IsolatedMutationCell(_create, _restore)
     if failure is None:
         assert cell.run(lambda worktree: worktree.name) == "cell-0"
     else:
@@ -45,13 +47,14 @@ def test_retry_and_test_or_scorer_failure_each_receive_a_fresh_baseline(tmp_path
     created: list[Path] = []
     restored: list[Path] = []
 
-    def create() -> Path:
+    def _create() -> Path:
+        """Create and record a uniquely numbered disposable cell directory."""
         worktree = tmp_path / f"cell-{len(created)}"
         worktree.mkdir()
         created.append(worktree)
         return worktree
 
-    cell = IsolatedMutationCell(create, restored.append)
+    cell = IsolatedMutationCell(_create, restored.append)
     for error in (AssertionError("target test failed"), ValueError("scorer failed")):
         with pytest.raises(type(error), match=str(error)):
             cell.run(lambda _worktree, failure=error: (_ for _ in ()).throw(failure))

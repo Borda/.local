@@ -41,11 +41,12 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture()
-def run_guard() -> Callable[..., dict]:
+@pytest.fixture(name="run_guard")
+def _run_guard() -> Callable[..., dict]:
     """Return a callable that feeds one payload to the hook and parses its stdout."""
 
     def _run(path: str, *, tool_name: str = "Edit", key: str = "file_path") -> dict:
+        """Run the hook with one write-shaped payload and parse its result."""
         payload = json.dumps({"tool_name": tool_name, "tool_input": {key: path}})
         proc = subprocess.run(
             ["node", str(HOOK)],
@@ -62,7 +63,12 @@ def run_guard() -> Callable[..., dict]:
 
 
 def _asks(result: dict) -> bool:
-    """Check whether the hook requested user confirmation."""
+    """Check whether the hook requested user confirmation.
+
+    Examples:
+        >>> (_asks({"hookSpecificOutput": {"permissionDecision": "ask"}}), _asks({}))
+        (True, False)
+    """
     try:
         return result["hookSpecificOutput"]["permissionDecision"] == "ask"
     except (KeyError, TypeError):

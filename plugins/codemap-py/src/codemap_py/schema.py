@@ -166,6 +166,8 @@ VALID_CALL_RESOLUTIONS: frozenset[str] = frozenset({Resolution.IMPORT, Resolutio
 
 
 class Symbol(TypedDict, total=False):
+    """Describe one indexed class, function, or method and its optional evidence."""
+
     name: str
     qualified_name: str
     type: SymbolType

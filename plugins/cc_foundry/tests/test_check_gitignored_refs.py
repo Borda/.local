@@ -14,8 +14,8 @@ import pytest
 import check_gitignored_refs as cgr
 
 
-@pytest.fixture
-def repo(tmp_path: Path) -> Path:
+@pytest.fixture(name="repo")
+def _repo(tmp_path: Path) -> Path:
     """Minimal git checkout with one gitignored private plan document.
 
     Mirrors the incident this check guards: `.plans/` is gitignored and holds a

@@ -17,7 +17,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 SYNC_SCRIPT = PLUGIN_ROOT / "scripts" / "sync_codex.py"
 
 
-def load_sync() -> ModuleType:
+def _load_sync() -> ModuleType:
     """Load the packaged sync entrypoint without package imports."""
     specification = importlib.util.spec_from_file_location("codex_rig_sync_codex", SYNC_SCRIPT)
     assert specification is not None and specification.loader is not None
@@ -26,7 +26,7 @@ def load_sync() -> ModuleType:
     return module
 
 
-def marketplace_fixture(tmp_path: Path) -> Path:
+def _marketplace_fixture(tmp_path: Path) -> Path:
     """Create the installed marketplace files consumed by global setup."""
     root = tmp_path / "marketplace"
     plugin = root / "plugins" / "codex-rig"
@@ -40,7 +40,7 @@ def marketplace_fixture(tmp_path: Path) -> Path:
     return root
 
 
-def fake_runner(
+def _fake_runner(
     marketplace_root: Path,
     calls: list[tuple[str, ...]],
     *,
@@ -51,7 +51,8 @@ def fake_runner(
     metadata = marketplace_root / ".codex-marketplace-install.json"
     metadata.write_text(json.dumps({"ref_name": configured_ref}), encoding="utf-8")
 
-    def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Record a sync command and return the configured marketplace response."""
         rendered = tuple(str(item) for item in command)
         calls.append(rendered)
         if rendered[1:5] == ("plugin", "marketplace", "list", "--json"):
@@ -94,19 +95,19 @@ def fake_runner(
             return subprocess.CompletedProcess(command, 0, json.dumps({"ok": True, "live": False}), "")
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    return run
+    return _run
 
 
 def test_native_sync_refreshes_latest_and_installs_global_instructions(tmp_path: Path) -> None:
     """Refresh and clean-install the latest plugins without shell interpolation."""
-    module = load_sync()
-    root = marketplace_fixture(tmp_path)
+    module = _load_sync()
+    root = _marketplace_fixture(tmp_path)
     calls: list[tuple[str, ...]] = []
     output = io.StringIO()
 
     result = module.sync_codex(
         module.parse_args([]),
-        run=fake_runner(root, calls),
+        run=_fake_runner(root, calls),
         environ={"CODEX_HOME": str(tmp_path / "home")},
         stdout=output,
     )
@@ -140,13 +141,14 @@ def test_native_sync_refreshes_latest_and_installs_global_instructions(tmp_path:
 
 def test_native_sync_runs_free_installed_bridge_diagnosis(tmp_path: Path) -> None:
     """Verify machine-wide Bridge prerequisites without paid model inference."""
-    module = load_sync()
-    root = marketplace_fixture(tmp_path)
+    module = _load_sync()
+    root = _marketplace_fixture(tmp_path)
     doctor = root / "plugins" / "bridge_cc-codex" / "bin" / "bridge_diagnose.py"
     calls: list[tuple[str, ...]] = []
-    base_run = fake_runner(root, calls)
+    base_run = _fake_runner(root, calls)
 
-    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Return configured Bridge version/diagnosis responses and delegate the rest."""
         rendered = tuple(str(item) for item in command)
         if rendered == ("python", "--version"):
             calls.append(rendered)
@@ -159,7 +161,7 @@ def test_native_sync_runs_free_installed_bridge_diagnosis(tmp_path: Path) -> Non
     output = io.StringIO()
     result = module.sync_codex(
         module.parse_args(["--no-codex-global-agents"]),
-        run=run,
+        run=_run,
         environ={},
         stdout=output,
     )
@@ -172,12 +174,13 @@ def test_native_sync_runs_free_installed_bridge_diagnosis(tmp_path: Path) -> Non
 
 def test_native_sync_rejects_bridge_python_below_minimum(tmp_path: Path) -> None:
     """Prevent a green sync when the MCP launcher cannot run Bridge."""
-    module = load_sync()
-    root = marketplace_fixture(tmp_path)
+    module = _load_sync()
+    root = _marketplace_fixture(tmp_path)
     calls: list[tuple[str, ...]] = []
-    base_run = fake_runner(root, calls)
+    base_run = _fake_runner(root, calls)
 
-    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Return an old Bridge Python version and delegate unrelated commands."""
         if command == ["python", "--version"]:
             calls.append(tuple(command))
             return subprocess.CompletedProcess(command, 0, "Python 3.9.19\n", "")
@@ -186,7 +189,7 @@ def test_native_sync_rejects_bridge_python_below_minimum(tmp_path: Path) -> None
     with pytest.raises(module.SyncError, match="found Python 3.9.19"):
         module.sync_codex(
             module.parse_args(["--no-codex-global-agents"]),
-            run=run,
+            run=_run,
             environ={},
             stdout=io.StringIO(),
         )
@@ -196,13 +199,14 @@ def test_native_sync_rejects_bridge_python_below_minimum(tmp_path: Path) -> None
 
 def test_native_sync_rejects_failed_bridge_static_diagnosis(tmp_path: Path) -> None:
     """Keep missing Claude CLI compatibility visible after installation."""
-    module = load_sync()
-    root = marketplace_fixture(tmp_path)
+    module = _load_sync()
+    root = _marketplace_fixture(tmp_path)
     doctor = root / "plugins" / "bridge_cc-codex" / "bin" / "bridge_diagnose.py"
     calls: list[tuple[str, ...]] = []
-    base_run = fake_runner(root, calls)
+    base_run = _fake_runner(root, calls)
 
-    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Return a failed Bridge diagnosis and delegate unrelated sync commands."""
         rendered = tuple(str(item) for item in command)
         if rendered == ("python", str(doctor), "--direction", "claude"):
             calls.append(rendered)
@@ -213,7 +217,7 @@ def test_native_sync_rejects_failed_bridge_static_diagnosis(tmp_path: Path) -> N
     with pytest.raises(module.SyncError, match="Bridge static diagnosis failed"):
         module.sync_codex(
             module.parse_args(["--no-codex-global-agents"]),
-            run=run,
+            run=_run,
             environ={},
             stdout=io.StringIO(),
         )
@@ -221,14 +225,14 @@ def test_native_sync_rejects_failed_bridge_static_diagnosis(tmp_path: Path) -> N
 
 def test_native_sync_replaces_local_marketplace_with_git_source(tmp_path: Path) -> None:
     """Restore canonical refresh semantics when a local marketplace is configured."""
-    module = load_sync()
-    root = marketplace_fixture(tmp_path)
+    module = _load_sync()
+    root = _marketplace_fixture(tmp_path)
     calls: list[tuple[str, ...]] = []
     output = io.StringIO()
 
     result = module.sync_codex(
         module.parse_args(["--no-codex-global-agents"]),
-        run=fake_runner(root, calls, source_type="local"),
+        run=_fake_runner(root, calls, source_type="local"),
         environ={},
         stdout=output,
     )
@@ -251,13 +255,13 @@ def test_native_sync_replaces_local_marketplace_with_git_source(tmp_path: Path) 
 
 def test_native_sync_no_clean_refreshes_without_removing_plugins(tmp_path: Path) -> None:
     """Keep no-clean limited to plugin removal rather than marketplace freshness."""
-    module = load_sync()
-    root = marketplace_fixture(tmp_path)
+    module = _load_sync()
+    root = _marketplace_fixture(tmp_path)
     calls: list[tuple[str, ...]] = []
 
     result = module.sync_codex(
         module.parse_args(["--no-clean", "--no-codex-global-agents"]),
-        run=fake_runner(root, calls, source_type="local"),
+        run=_fake_runner(root, calls, source_type="local"),
         environ={},
         stdout=io.StringIO(),
     )
@@ -271,12 +275,13 @@ def test_native_sync_no_clean_refreshes_without_removing_plugins(tmp_path: Path)
 
 def test_native_sync_adds_pinned_marketplace_when_absent(tmp_path: Path) -> None:
     """Forward one explicit ref without relying on shell quoting."""
-    module = load_sync()
-    root = marketplace_fixture(tmp_path)
+    module = _load_sync()
+    root = _marketplace_fixture(tmp_path)
     calls: list[tuple[str, ...]] = []
     listings = 0
 
-    def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Expose the first empty marketplace listing before the configured retry listing."""
         nonlocal listings
         rendered = tuple(str(item) for item in command)
         calls.append(rendered)
@@ -303,7 +308,7 @@ def test_native_sync_adds_pinned_marketplace_when_absent(tmp_path: Path) -> None
 
     result = module.sync_codex(
         module.parse_args(["--codex-ref", "codex-rig-v0.3.0", "--no-codex-global-agents"]),
-        run=run,
+        run=_run,
         environ={},
         stdout=io.StringIO(),
     )
@@ -323,14 +328,14 @@ def test_native_sync_adds_pinned_marketplace_when_absent(tmp_path: Path) -> None
 
 def test_native_sync_rejects_existing_ref_mismatch_without_changes(tmp_path: Path) -> None:
     """Fail before refresh when the configured marketplace tracks another ref."""
-    module = load_sync()
-    root = marketplace_fixture(tmp_path)
+    module = _load_sync()
+    root = _marketplace_fixture(tmp_path)
     calls: list[tuple[str, ...]] = []
 
     with pytest.raises(module.SyncError, match="marketplace tracks"):
         module.sync_codex(
             module.parse_args(["--codex-ref", "codex-rig-v0.3.0"]),
-            run=fake_runner(root, calls, configured_ref="codex-rig-v0.2.4"),
+            run=_fake_runner(root, calls, configured_ref="codex-rig-v0.2.4"),
             environ={},
             stdout=io.StringIO(),
         )
@@ -342,11 +347,12 @@ def test_native_sync_rejects_existing_ref_mismatch_without_changes(tmp_path: Pat
 
 def test_native_sync_requires_both_managed_plugins_after_install(tmp_path: Path) -> None:
     """Reject a partial restore that enables Codex Rig without Codemap."""
-    module = load_sync()
-    root = marketplace_fixture(tmp_path)
+    module = _load_sync()
+    root = _marketplace_fixture(tmp_path)
     calls: list[tuple[str, ...]] = []
 
-    def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Return deterministic marketplace and plugin-list responses for restore checks."""
         rendered = tuple(str(item) for item in command)
         calls.append(rendered)
         if rendered[1:5] == ("plugin", "marketplace", "list", "--json"):
@@ -362,7 +368,7 @@ def test_native_sync_requires_both_managed_plugins_after_install(tmp_path: Path)
     with pytest.raises(module.SyncError, match="Codemap is not uniquely enabled"):
         module.sync_codex(
             module.parse_args(["--no-codex-global-agents"]),
-            run=run,
+            run=_run,
             environ={},
             stdout=io.StringIO(),
         )
@@ -370,16 +376,17 @@ def test_native_sync_requires_both_managed_plugins_after_install(tmp_path: Path)
 
 def test_native_sync_clear_removes_plugin_and_managed_block(tmp_path: Path) -> None:
     """Route teardown through the same portable Python entrypoint."""
-    module = load_sync()
+    module = _load_sync()
     calls: list[tuple[str, ...]] = []
 
-    def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Record clear commands and return successful empty process results."""
         calls.append(tuple(str(item) for item in command))
         return subprocess.CompletedProcess(command, 0, "", "")
 
     result = module.sync_codex(
         module.parse_args(["clear"]),
-        run=run,
+        run=_run,
         environ={"CODEX_HOME": str(tmp_path / "home")},
         stdout=io.StringIO(),
     )
@@ -402,10 +409,11 @@ def test_native_sync_clear_removes_plugin_and_managed_block(tmp_path: Path) -> N
 
 def test_native_sync_clear_removes_managed_block_when_codex_is_missing(tmp_path: Path) -> None:
     """Keep local teardown usable after the Codex executable was removed."""
-    module = load_sync()
+    module = _load_sync()
     calls: list[tuple[str, ...]] = []
 
-    def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Model a missing Codex executable while allowing local teardown to succeed."""
         calls.append(tuple(str(item) for item in command))
         if command[0] == "codex":
             raise FileNotFoundError("codex")
@@ -414,7 +422,7 @@ def test_native_sync_clear_removes_managed_block_when_codex_is_missing(tmp_path:
     output = io.StringIO()
     result = module.sync_codex(
         module.parse_args(["clear"]),
-        run=run,
+        run=_run,
         environ={"CODEX_HOME": str(tmp_path / "home")},
         stdout=output,
     )
@@ -439,12 +447,13 @@ def test_native_sync_clear_removes_managed_block_when_codex_is_missing(tmp_path:
 
 def test_system_runner_resolves_simulated_windows_batch_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
     """Launch a resolved Codex batch shim through the Windows command processor."""
-    module = load_sync()
+    module = _load_sync()
 
-    def which(command: str) -> str | None:
+    def _which(command: str) -> str | None:
+        """Resolve only the simulated Windows batch launcher."""
         return {"codex": r"C:\Program Files\Codex\codex.cmd"}.get(command)
 
-    monkeypatch.setattr(module.shutil, "which", which)
+    monkeypatch.setattr(module.shutil, "which", _which)
 
     resolved, shell = module._resolve_system_command(["codex", "plugin", "list"], windows=True)
 
@@ -471,7 +480,7 @@ def test_system_runner_rejects_simulated_windows_batch_shell_syntax(
     monkeypatch: pytest.MonkeyPatch, argument: str
 ) -> None:
     """Reject user-controlled values that cmd.exe could reinterpret."""
-    module = load_sync()
+    module = _load_sync()
     monkeypatch.setattr(module.shutil, "which", lambda _command: r"C:\fixture\codex.cmd")
 
     with pytest.raises(OSError, match="unsafe Windows batch command"):

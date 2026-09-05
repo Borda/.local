@@ -19,6 +19,7 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
+        """Store the status and streams consumed by the audit runner."""
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
@@ -28,6 +29,7 @@ def _dispatch(responses: dict[str, tuple[int, str]]) -> Any:
     """Build a subprocess.run fake dispatching on binary + first subcommand."""
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Dispatch a fake response by executable and first subcommand."""
         binary = Path(cmd[0]).name
         subcmd = cmd[1] if len(cmd) > 1 else ""
         key = f"{binary} {subcmd}".strip()
@@ -374,6 +376,7 @@ def test_no_tags_falls_back_to_initial_commit(
     initial_sha = "deadbeef"
 
     def _seq_run(cmd: list[str], **_: Any) -> _FakeCompleted:
+        """Return the scripted no-tag audit responses in call order."""
         binary = Path(cmd[0]).name
         subcmd = cmd[1] if len(cmd) > 1 else ""
         if binary == "git" and subcmd == "describe":

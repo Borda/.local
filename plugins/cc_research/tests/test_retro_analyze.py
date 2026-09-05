@@ -80,7 +80,14 @@ class TestRunWilcoxon:
 
 
 def _write_jsonl(path: Path, records: list[dict[str, object]]) -> None:
-    """Write a list of records as one JSON object per line."""
+    """Write a list of records as one JSON object per line.
+
+    Examples:
+        >>> path = getfixture("tmp_path") / "records.jsonl"
+        >>> _write_jsonl(path, [{"status": "baseline"}, {"status": "candidate"}])
+        >>> len(path.read_text().splitlines())
+        2
+    """
     path.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
 
 

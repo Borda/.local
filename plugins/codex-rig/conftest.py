@@ -54,7 +54,12 @@ _WINDOWS_UNSUPPORTED_PATHS = (
 
 
 def _unsupported_collection_paths(platform: str) -> tuple[str, ...]:
-    """Return exact lifecycle files that cannot run on the selected platform."""
+    """Return exact lifecycle files that cannot run on the selected platform.
+
+    Example:
+        >>> _unsupported_collection_paths("win32")[0]
+        'scripts/_agent_shim_posix.py'
+    """
     return _WINDOWS_UNSUPPORTED_PATHS if platform == "win32" else ()
 
 
@@ -78,8 +83,8 @@ _CANONICAL_SCRIPT_MODULES = (
 )
 
 
-@pytest.fixture(autouse=True)
-def isolate_canonical_script_modules() -> Iterator[None]:
+@pytest.fixture(name="isolate_canonical_script_modules", autouse=True)
+def _isolate_canonical_script_modules() -> Iterator[None]:
     """Keep test-loaded script classes isolated from doctest collection modules."""
     saved = {name: sys.modules[name] for name in _CANONICAL_SCRIPT_MODULES if name in sys.modules}
     for name in _CANONICAL_SCRIPT_MODULES:

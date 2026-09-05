@@ -209,7 +209,16 @@ def _prompt_sha256(prompt: str) -> str:
 
 
 def _normalized_cost_units(usage: dict[str, Any]) -> float:
-    """Recompute the versioned normalized cost proxy from token evidence."""
+    """Recompute the versioned normalized cost proxy from token evidence.
+
+    Cached input tokens receive a tenth of the uncached-input weight and output tokens receive four times the weight;
+    the result is rounded to three decimals. Validation of counter types and relationships happens before this helper
+    is called.
+
+    Example:
+        >>> _normalized_cost_units({"input_tokens": 100, "cached_input_tokens": 40, "output_tokens": 5})
+        84.0
+    """
     uncached = max(int(usage["input_tokens"]) - int(usage["cached_input_tokens"]), 0)
     return round(uncached + 0.1 * int(usage["cached_input_tokens"]) + 4.0 * int(usage["output_tokens"]), 3)
 
@@ -228,6 +237,7 @@ def _parse_observed_at(value: str) -> datetime:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
+    """Read one JSON object from ``path`` and reject top-level arrays or scalars."""
     with path.open(encoding="utf-8") as handle:
         payload = json.load(handle)
     if not isinstance(payload, dict):
@@ -236,6 +246,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    """Read non-empty JSON Lines rows, requiring each row to be an object."""
     records: list[dict[str, Any]] = []
     with path.open(encoding="utf-8") as handle:
         for line_no, line in enumerate(handle, start=1):
@@ -250,6 +261,12 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _load_cases(path: Path) -> tuple[dict[str, dict[str, Any]], dict[str, float]]:
+    """Load behavioral cases and scoring thresholds while preserving expected finding order.
+
+    Each case is indexed by its unique non-empty ID and retains both the original finding list and a set for metric
+    comparisons. Missing thresholds receive permissive defaults so callers can validate the case schema independently
+    from gate policy.
+    """
     payload = _read_json(path)
     cases_raw = payload.get("cases", [])
     if not isinstance(cases_raw, list):
@@ -380,6 +397,11 @@ def _load_route_tasks(
 def _validate_observation(
     record: dict[str, Any], cases: dict[str, dict[str, Any]]
 ) -> tuple[str, str, set[str], float, str, str, str | None]:
+    """Validate one observation and return normalized fields used by metric aggregation.
+
+    Confidence is constrained to [0.0, 1.0], reported findings are converted to a set, and timestamps are checked for
+    timezone information while their original text is retained for output provenance.
+    """
     case_id = record.get("case_id")
     if not isinstance(case_id, str) or case_id not in cases:
         raise ValueError(f"unknown behavioral case_id: {case_id!r}")
@@ -417,6 +439,7 @@ def _validate_observation(
 
 
 def _metrics(tp: int, fp: int, fn: int) -> dict[str, float]:
+    """Return recall, precision, and F1 rounded for the published summary."""
     raw = _raw_metrics(tp, fp, fn)
     return {
         "recall": _round3(raw["recall"]),
@@ -434,6 +457,11 @@ def _score(
     require_live_routes: bool = False,
     layout: str = "source",
 ) -> dict[str, Any]:
+    """Score recorded observations after validating case, route, pairing, freshness, and live-evidence contracts.
+
+    The returned payload keeps raw gate metrics alongside rounded presentation values and marks fixture-only evidence
+    separately from current live observations. No model invocation or source-fixture mutation occurs here.
+    """
     cases, thresholds = _load_cases(cases_path)
     route_policy = _load_route_policy(route_policy_path)
     route_tasks = _load_route_tasks(route_tasks_path, route_policy, cases)
@@ -570,6 +598,7 @@ def _score(
 def _summarize_counts_raw(
     counts: Counter[str], confidence_errors: list[float], overconfidence: list[float]
 ) -> dict[str, Any]:
+    """Compute unrounded quality and confidence metrics for one aggregate bucket."""
     metrics = _raw_metrics(counts["tp"], counts["fp"], counts["fn"])
     confidence_mae = _safe_div(sum(confidence_errors), len(confidence_errors))
     mean_overconfidence = _safe_div(sum(overconfidence), len(overconfidence))
@@ -586,6 +615,7 @@ def _summarize_counts_raw(
 
 
 def _round_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    """Round floating-point fields in an aggregate summary without changing counters."""
     return {key: _round3(value) if isinstance(value, float) else value for key, value in summary.items()}
 
 
@@ -742,6 +772,7 @@ def _summarize_freshness(
     fixture_observations: int,
     live_observations: int,
 ) -> dict[str, Any]:
+    """Summarize observation recency and distinguish fixture, live, and timestamp-missing rows."""
     latest = max(observed_timestamps) if observed_timestamps else None
     latest_age_days = None
     if latest is not None:
@@ -795,6 +826,7 @@ def _threshold_failures(overall: dict[str, Any], thresholds: dict[str, float]) -
 
 
 def main() -> int:
+    """Parse calibration-score arguments, validate inputs, write the score, and return its process status."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cases", required=True, type=Path, help="Behavioral case-set JSON.")
     parser.add_argument("--observations", required=True, type=Path, help="JSONL observations to score.")

@@ -182,6 +182,14 @@ def _result_module(result: dict) -> str:
 
     Returns:
         Dotted module name, or empty string when none can be derived.
+
+    Examples:
+        >>> _result_module({"query": "pkg.mod", "module": "ignored"})
+        'pkg.mod'
+        >>> _result_module({"qname": "pkg.mod::Thing"})
+        'pkg.mod'
+        >>> _result_module({"status": "error"})
+        ''
     """
     module = result.get("query") or result.get("module") or result.get("target")
     if module:
@@ -206,6 +214,16 @@ def _module_answers_from_batch(batch: dict) -> dict[str, dict[str, object]]:
 
     Returns:
         Mapping of dotted module name to ``{query_name: result_payload}``.
+
+    Examples:
+        >>> batch = {"batch": [
+        ...     {"cmd": "rdeps", "ok": True, "result": {"module": "pkg.mod"}},
+        ...     {"cmd": "fn-rdeps", "ok": True,
+        ...      "result": {"qname": "pkg.mod::Thing"}},
+        ...     {"cmd": "rdeps", "ok": False, "result": {"module": "pkg.mod"}},
+        ... ]}
+        >>> _module_answers_from_batch(batch)
+        {'pkg.mod': {'rdeps': {'module': 'pkg.mod'}, 'fn-rdeps': {'qname': 'pkg.mod::Thing'}}}
     """
     by_module: dict[str, dict[str, object]] = {}
     for item in batch.get("batch", []):
@@ -270,6 +288,18 @@ def _reuse_verdict(artifact: dict, git_sha: str, scanned_at: str, index_stamp: s
 
     Returns:
         ``(reuse, reason)`` — ``reuse`` False on any staleness signal.
+
+    Examples:
+        >>> answers = {"rdeps": {"importers": []}}
+        >>> artifact = {"prefix": {
+        ...     "git_sha": "abc", "scanned_at": "2026-01-01T00:00:00Z",
+        ...     "index_stamp": "10:20", "answers": answers,
+        ...     "content_hash": _content_hash(answers),
+        ... }}
+        >>> _reuse_verdict(artifact, "abc", "2026-01-01T00:00:00Z", "10:20")
+        (True, 'fresh')
+        >>> _reuse_verdict(artifact, "abc", "2026-01-01T00:00:00Z", "11:21")
+        (False, 'index_stamp_mismatch')
     """
     prefix = artifact.get("prefix", {})
     art_sha = str(prefix.get("git_sha", ""))

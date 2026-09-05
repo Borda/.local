@@ -28,7 +28,7 @@ REMEDIATION_COLUMNS = [
 ]
 
 
-def load_finalizer() -> Any:
+def _load_finalizer() -> Any:
     """Load the standalone finalizer without requiring a package import."""
     assert FINALIZER.is_file(), FINALIZER
     specification = importlib.util.spec_from_file_location("codex_rig_final_handoff", FINALIZER)
@@ -38,7 +38,7 @@ def load_finalizer() -> Any:
     return module
 
 
-def load_shared_validator() -> Any:
+def _load_shared_validator() -> Any:
     """Load the shared artifact validator without requiring a package import."""
     specification = importlib.util.spec_from_file_location("codex_rig_final_validator", SHARED_VALIDATOR)
     assert specification is not None and specification.loader is not None
@@ -47,7 +47,7 @@ def load_shared_validator() -> Any:
     return module
 
 
-def load_result_writer() -> Any:
+def _load_result_writer() -> Any:
     """Load the standalone result writer without requiring a package import."""
     specification = importlib.util.spec_from_file_location("codex_rig_result_writer", RESULT_WRITER)
     assert specification is not None and specification.loader is not None
@@ -56,8 +56,13 @@ def load_result_writer() -> Any:
     return module
 
 
-def handoff_payload() -> dict[str, object]:
-    """Return a valid remediation handoff covering two distinct sources."""
+def _handoff_payload() -> dict[str, object]:
+    """Return a valid remediation handoff covering two distinct sources.
+
+    Example:
+        >>> _handoff_payload()["branch"]
+        'standard'
+    """
     return {
         "schema_version": 1,
         "skill": "code-remediate",
@@ -129,9 +134,9 @@ def handoff_payload() -> dict[str, object]:
 
 def test_standard_handoff_renders_complete_deterministic_markdown() -> None:
     """Render every required section while escaping table delimiters and newlines."""
-    finalizer = load_finalizer()
+    finalizer = _load_finalizer()
 
-    rendered = finalizer.render_handoff(handoff_payload())
+    rendered = finalizer.render_handoff(_handoff_payload())
 
     assert rendered.startswith("**Outcome**\n\nRemediation Summary: One item fixed; one remains external.\n")
     assert "**Final Outcome Table**" in rendered
@@ -141,13 +146,13 @@ def test_standard_handoff_renders_complete_deterministic_markdown() -> None:
     assert not any(line.startswith("#") for line in rendered.splitlines())
     assert "\x1b[" not in rendered
     assert rendered.endswith("Ledger: .reports/codex/code-remediate/run/action-items.md\n")
-    assert finalizer.render_handoff(handoff_payload()) == rendered
+    assert finalizer.render_handoff(_handoff_payload()) == rendered
 
 
 def test_handoff_renders_symbol_details_immediately_below_table() -> None:
     """Keep long table text readable through validated under-table references."""
-    finalizer = load_finalizer()
-    payload = handoff_payload()
+    finalizer = _load_finalizer()
+    payload = _handoff_payload()
     tables = payload["tables"]
     assert isinstance(tables, list)
     table = tables[0]
@@ -162,8 +167,8 @@ def test_handoff_renders_symbol_details_immediately_below_table() -> None:
 
 def test_handoff_rejects_unreferenced_table_detail() -> None:
     """Reject detail text that has no compact symbol in its owning table."""
-    finalizer = load_finalizer()
-    payload = handoff_payload()
+    finalizer = _load_finalizer()
+    payload = _handoff_payload()
     tables = payload["tables"]
     assert isinstance(tables, list)
     tables[0]["details"] = [{"id": "O1", "text": "No table cell refers to this detail."}]
@@ -174,8 +179,8 @@ def test_handoff_rejects_unreferenced_table_detail() -> None:
 
 def test_handoff_rejects_an_omitted_source_even_when_counts_are_rewritten() -> None:
     """Reject a table that hides one declared source behind self-consistent aggregate counts."""
-    finalizer = load_finalizer()
-    payload = handoff_payload()
+    finalizer = _load_finalizer()
+    payload = _handoff_payload()
     tables = payload["tables"]
     assert isinstance(tables, list)
     second_row = tables[0]["rows"].pop()
@@ -191,8 +196,8 @@ def test_handoff_rejects_an_omitted_source_even_when_counts_are_rewritten() -> N
 
 def test_terminal_code_review_close_forbids_tables() -> None:
     """Preserve the review close branch's plain-prose no-table contract."""
-    finalizer = load_finalizer()
-    payload = handoff_payload()
+    finalizer = _load_finalizer()
+    payload = _handoff_payload()
     payload["skill"] = "code-review"
     payload["branch"] = "closed"
 
@@ -202,8 +207,8 @@ def test_terminal_code_review_close_forbids_tables() -> None:
 
 def test_assessed_code_review_handoff_requires_a_canonical_outcome() -> None:
     """Keep assessed review prose limited to its machine-bound recommendation."""
-    finalizer = load_finalizer()
-    payload = handoff_payload()
+    finalizer = _load_finalizer()
+    payload = _handoff_payload()
     payload.update(
         skill="code-review",
         branch="assessed",
@@ -239,8 +244,8 @@ def test_assessed_code_review_handoff_requires_a_canonical_outcome() -> None:
 
 def test_caller_contract_renders_exact_requested_bytes() -> None:
     """Keep an explicit strict output contract free of added workflow prose."""
-    finalizer = load_finalizer()
-    payload = handoff_payload()
+    finalizer = _load_finalizer()
+    payload = _handoff_payload()
     payload["branch"] = "caller-contract"
     payload["tables"] = []
     payload["source_records"] = []
@@ -263,7 +268,7 @@ def test_cli_render_and_check_bind_exact_file_digests(tmp_path: Path) -> None:
     handoff = tmp_path / "final-handoff.json"
     final = tmp_path / "final.md"
     validation = tmp_path / "final-handoff.validation.json"
-    handoff.write_text(json.dumps(handoff_payload()), encoding="utf-8")
+    handoff.write_text(json.dumps(_handoff_payload()), encoding="utf-8")
 
     rendered = subprocess.run(
         [
@@ -392,7 +397,7 @@ def _write_schema_v2_change_analysis(tmp_path: Path) -> Path:
     final_path = tmp_path / "final.md"
     validation_path = tmp_path / "final-handoff.validation.json"
     handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
-    finalizer = load_finalizer()
+    finalizer = _load_finalizer()
     validation = finalizer.render_files(handoff_path, final_path, validation_path)
     result = {
         "schema_version": 2,
@@ -433,7 +438,7 @@ def _write_schema_v2_change_analysis(tmp_path: Path) -> Path:
 def test_schema_v2_result_requires_digest_bound_final_output(tmp_path: Path) -> None:
     """Accept an intact final handoff and reject post-render presentation drift."""
     result_path = _write_schema_v2_change_analysis(tmp_path)
-    validator = load_shared_validator()
+    validator = _load_shared_validator()
 
     validator.validate("change-analysis", tmp_path, result_path)
 
@@ -453,13 +458,13 @@ def test_schema_v2_candidate_promotes_to_the_canonical_result_path(tmp_path: Pat
     handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
     handoff["artifacts"][0]["path"] = str(canonical_path)
     handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
-    validation = load_finalizer().render_files(
+    validation = _load_finalizer().render_files(
         handoff_path, Path(binding["rendered_path"]), Path(binding["validation_path"])
     )
     binding.update(handoff_sha256=validation["handoff_sha256"], rendered_sha256=validation["rendered_sha256"])
     candidate_path.write_text(json.dumps(result), encoding="utf-8")
 
-    validator = load_shared_validator()
+    validator = _load_shared_validator()
     validator.validate("change-analysis", tmp_path, candidate_path)
     candidate_path.replace(canonical_path)
     validator.validate("change-analysis", tmp_path, canonical_path)
@@ -476,14 +481,14 @@ def test_schema_v2_rejects_noncanonical_result_artifact_paths(tmp_path: Path, ar
     handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
     handoff["artifacts"][0]["path"] = artifact_path
     handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
-    validation = load_finalizer().render_files(
+    validation = _load_finalizer().render_files(
         handoff_path, Path(binding["rendered_path"]), Path(binding["validation_path"])
     )
     binding.update(handoff_sha256=validation["handoff_sha256"], rendered_sha256=validation["rendered_sha256"])
     result_path.write_text(json.dumps(result), encoding="utf-8")
 
     with pytest.raises(SystemExit, match="result-artifact-path-mismatch"):
-        load_shared_validator().validate("change-analysis", tmp_path, result_path)
+        _load_shared_validator().validate("change-analysis", tmp_path, result_path)
 
 
 @pytest.mark.skipif(not SYMLINKS_AVAILABLE, reason="host cannot create symlinks")
@@ -496,9 +501,9 @@ def test_schema_v2_rejects_canonical_result_symlink_escaping_the_run_directory(t
     canonical_result.symlink_to(escaped_result)
 
     with pytest.raises(SystemExit, match="result-artifact-path-mismatch"):
-        load_result_writer().validate_artifact_path(result_path, str(canonical_result))
+        _load_result_writer().validate_artifact_path(result_path, str(canonical_result))
     with pytest.raises(SystemExit, match="result-artifact-path-mismatch"):
-        load_shared_validator().validate("change-analysis", tmp_path, result_path)
+        _load_shared_validator().validate("change-analysis", tmp_path, result_path)
 
 
 def test_schema_v2_rejects_duplicate_confidence_gaps_and_closures(tmp_path: Path) -> None:
@@ -515,7 +520,7 @@ def test_schema_v2_rejects_duplicate_confidence_gaps_and_closures(tmp_path: Path
     result_path.write_text(json.dumps(result), encoding="utf-8")
 
     with pytest.raises(SystemExit, match="duplicate-confidence-gap"):
-        load_shared_validator().validate("change-analysis", tmp_path, result_path)
+        _load_shared_validator().validate("change-analysis", tmp_path, result_path)
 
 
 def test_schema_v2_accepts_documented_workspace_relative_handoff_paths(
@@ -532,7 +537,7 @@ def test_schema_v2_accepts_documented_workspace_relative_handoff_paths(
     result_path.write_text(json.dumps(result), encoding="utf-8")
     monkeypatch.chdir(tmp_path.parent)
 
-    load_shared_validator().validate("change-analysis", tmp_path, result_path)
+    _load_shared_validator().validate("change-analysis", tmp_path, result_path)
 
 
 def test_historical_schema_v1_result_remains_readable_without_final_handoff(tmp_path: Path) -> None:
@@ -543,4 +548,4 @@ def test_historical_schema_v1_result_remains_readable_without_final_handoff(tmp_
     result["metadata"].pop("final_handoff")
     result_path.write_text(json.dumps(result), encoding="utf-8")
 
-    load_shared_validator().validate("change-analysis", tmp_path, result_path)
+    _load_shared_validator().validate("change-analysis", tmp_path, result_path)

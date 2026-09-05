@@ -6,8 +6,16 @@ import subprocess
 from pathlib import Path
 
 
-def raw_codemap_launchers_are_runnable(repo_root: Path) -> bool:
-    """Return whether both shipped raw Codemap launchers can run on this host."""
+def _raw_codemap_launchers_are_runnable(repo_root: Path) -> bool:
+    """Probe both raw launchers, returning false for launch errors, timeouts, or nonzero exits.
+
+    The missing-checkout example cannot start a subprocess because neither executable exists.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     _raw_codemap_launchers_are_runnable(Path(directory))
+    False
+    """
     for name in ("scan-index", "scan-query"):
         launcher = repo_root / "plugins" / "codemap-py" / "bin" / name
         try:

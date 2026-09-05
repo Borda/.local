@@ -26,6 +26,12 @@ def paid_approval_token(scope_sha256: str) -> str:
 
     The token is a copy/paste guard, not a secret or cryptographic credential. Full SHA-256 remains stored in scope
     metadata; sixteen hexadecimal characters provide a 64-bit stale-scope discriminator for the single current scope.
+
+    Raise ``ValueError`` unless the input contains exactly 64 lowercase hex digits.
+
+    Examples:
+        >>> paid_approval_token("0123456789abcdef" * 4)
+        '0123456789abcdef'
     """
     if _SCOPE_SHA256_RE.fullmatch(scope_sha256) is None:
         raise ValueError("scope SHA-256 must contain 64 lowercase hexadecimal characters")
@@ -33,7 +39,21 @@ def paid_approval_token(scope_sha256: str) -> str:
 
 
 def paid_approval_matches(received: str | None, scope_sha256: str) -> bool:
-    """Accept an unambiguous lowercase prefix or legacy full hash for one current scope."""
+    """Check a lowercase hash prefix against the validated current scope hash.
+
+    Accept 16 through 64 hexadecimal characters. Missing, malformed, or
+    mismatched tokens return ``False``; an invalid scope hash raises
+    ``ValueError`` even when the received token is missing.
+
+    Examples:
+        >>> scope = "0123456789abcdef" * 4
+        >>> paid_approval_matches(scope[:16], scope)
+        True
+        >>> paid_approval_matches(scope[:15], scope)
+        False
+        >>> paid_approval_matches(None, scope)
+        False
+    """
     paid_approval_token(scope_sha256)
     if received is None or re.fullmatch(r"[0-9a-f]{16,64}", received) is None:
         return False

@@ -21,6 +21,7 @@ class _FakePopen:
     """Stand-in for ``subprocess.Popen`` exposing a readable ``stdout`` stream."""
 
     def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+        """Provide a return code and readable output stream for the runner."""
         self.returncode = returncode
         self.stdout = io.StringIO(stdout)
 
@@ -39,6 +40,7 @@ def _patch_subprocess(
     recorded: list[dict[str, Any]] = []
 
     def _fake_popen(cmd: list[str], **kwargs: Any) -> _FakePopen:
+        """Record process argv/kwargs and return the configured fake process."""
         recorded.append({"cmd": list(cmd), **kwargs})
         return _FakePopen(returncode=returncode, stdout=stdout)
 
@@ -48,7 +50,12 @@ def _patch_subprocess(
 
 
 def _make_lines(n: int) -> str:
-    """Build a string with ``n`` numbered lines (``line-1`` … ``line-n``)."""
+    """Build a string with ``n`` numbered lines (``line-1`` … ``line-n``).
+
+    Examples:
+        >>> _make_lines(3)
+        'line-1\\nline-2\\nline-3'
+    """
     return "\n".join(f"line-{i + 1}" for i in range(n))
 
 

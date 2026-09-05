@@ -73,19 +73,24 @@ PERSONAL_ABSOLUTE_PATH = re.compile(
 )
 
 
-def load_json(path: Path) -> dict[str, object]:
+def _load_json(path: Path) -> dict[str, object]:
     """Load one UTF-8 JSON object."""
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert isinstance(payload, dict)
     return payload
 
 
-def normalized_text(path: Path) -> str:
-    """Collapse Markdown wrapping while preserving semantic token order."""
+def _normalized_text(path: Path) -> str:
+    """Collapse Markdown wrapping while preserving semantic token order.
+
+    Example:
+        >>> _normalized_text(PLUGIN_ROOT / "README.md").startswith("#")
+        True
+    """
     return " ".join(path.read_text(encoding="utf-8").split())
 
 
-def load_shared_artifact_validator() -> Any:
+def _load_shared_artifact_validator() -> Any:
     """Load the packaged artifact validator without relying on package imports."""
     path = PLUGIN_ROOT / "shared" / "validate-artifacts.py"
     spec = importlib.util.spec_from_file_location("codex_rig_shared_artifact_validator", path)
@@ -95,7 +100,7 @@ def load_shared_artifact_validator() -> Any:
     return module
 
 
-def load_package_validator() -> Any:
+def _load_package_validator() -> Any:
     """Load the package validator without relying on package imports."""
     path = PLUGIN_ROOT / "scripts" / "validate_package.py"
     spec = importlib.util.spec_from_file_location("codex_rig_package_validator", path)
@@ -105,7 +110,7 @@ def load_package_validator() -> Any:
     return module
 
 
-def load_package_builder() -> Any:
+def _load_package_builder() -> Any:
     """Load the package builder that owns publication file discovery."""
     path = PLUGIN_ROOT / "scripts" / "build_package.py"
     spec = importlib.util.spec_from_file_location("codex_rig_release_package_builder", path)
@@ -115,7 +120,7 @@ def load_package_builder() -> Any:
     return module
 
 
-def write_payload_manifest(package_root: Path, *relative_paths: str) -> None:
+def _write_payload_manifest(package_root: Path, *relative_paths: str) -> None:
     """Declare the exact synthetic publication files inspected by the validator."""
     payload = {"files": [{"path": relative} for relative in relative_paths]}
     (package_root / "package-manifest.json").write_text(json.dumps(payload), encoding="utf-8", newline="\n")
@@ -133,11 +138,11 @@ def test_package_validator_rejects_simulated_windows_user_profile_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, payload: bytes
 ) -> None:
     """Reject absolute Windows user-profile paths from public payloads."""
-    validator = load_package_validator()
+    validator = _load_package_validator()
     package_root = tmp_path / "package"
     package_root.mkdir()
     (package_root / "runtime.txt").write_bytes(payload)
-    write_payload_manifest(package_root, "runtime.txt")
+    _write_payload_manifest(package_root, "runtime.txt")
     monkeypatch.setattr(validator, "PACKAGE_ROOT", package_root)
 
     with pytest.raises(ValueError, match=r"private material in payload: runtime\.txt"):
@@ -157,11 +162,11 @@ def test_package_validator_accepts_non_private_simulated_windows_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, payload: bytes
 ) -> None:
     """Keep portable and non-profile Windows paths publishable."""
-    validator = load_package_validator()
+    validator = _load_package_validator()
     package_root = tmp_path / "package"
     package_root.mkdir()
     (package_root / "runtime.txt").write_bytes(payload)
-    write_payload_manifest(package_root, "runtime.txt")
+    _write_payload_manifest(package_root, "runtime.txt")
     monkeypatch.setattr(validator, "PACKAGE_ROOT", package_root)
 
     validator.validate_publication_payload()
@@ -171,18 +176,18 @@ def test_package_validator_ignores_unmanifested_generated_reports(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Inspect declared publication bytes without treating retained reports as payload."""
-    validator = load_package_validator()
+    validator = _load_package_validator()
     package_root = tmp_path / "package"
     (package_root / ".reports" / "calibration").mkdir(parents=True)
     (package_root / ".reports" / "calibration" / "result.json").write_bytes(b'"' + b"/Users/" + b'Alice/project"')
     (package_root / "runtime.txt").write_text("portable runtime\n", encoding="utf-8", newline="\n")
-    write_payload_manifest(package_root, "runtime.txt")
+    _write_payload_manifest(package_root, "runtime.txt")
     monkeypatch.setattr(validator, "PACKAGE_ROOT", package_root)
 
     validator.validate_publication_payload()
 
 
-def write_merge_resolution(path: Path, **overrides: object) -> dict[str, object]:
+def _write_merge_resolution(path: Path, **overrides: object) -> dict[str, object]:
     """Write one complete merge-resolution fixture with explicit override fields."""
     payload: dict[str, object] = {
         "schema_version": 1,
@@ -203,8 +208,13 @@ def write_merge_resolution(path: Path, **overrides: object) -> dict[str, object]
     return payload
 
 
-def parse_frontmatter(path: Path) -> dict[str, str]:
-    """Parse the flat scalar fields used by packaged skill and role cards."""
+def _parse_frontmatter(path: Path) -> dict[str, str]:
+    """Parse the flat scalar fields used by packaged skill and role cards.
+
+    Example:
+        >>> _parse_frontmatter(PLUGIN_ROOT / "skills" / "code-review" / "SKILL.md")["name"]
+        'code-review'
+    """
     lines = path.read_text(encoding="utf-8").splitlines()
     assert lines and lines[0] == "---", path
     closing_index = lines.index("---", 1)
@@ -216,9 +226,9 @@ def parse_frontmatter(path: Path) -> dict[str, str]:
     return fields
 
 
-def package_files() -> set[str]:
+def _package_files() -> set[str]:
     """Return all regular release payload paths except the self-hashing manifest."""
-    return {path.relative_to(PLUGIN_ROOT).as_posix() for path in load_package_builder().iter_payload_files()}
+    return {path.relative_to(PLUGIN_ROOT).as_posix() for path in _load_package_builder().iter_payload_files()}
 
 
 def test_skill_roster_names_and_manifest_records_are_exact() -> None:
@@ -229,11 +239,11 @@ def test_skill_roster_names_and_manifest_records_are_exact() -> None:
     assert {"review", "resolve"}.isdisjoint(discovered)
 
     for skill_id in EXPECTED_SKILLS:
-        fields = parse_frontmatter(skill_root / skill_id / "SKILL.md")
+        fields = _parse_frontmatter(skill_root / skill_id / "SKILL.md")
         assert fields["name"] == skill_id
         assert fields["description"]
 
-    manifest = load_json(PLUGIN_ROOT / "package-manifest.json")
+    manifest = _load_json(PLUGIN_ROOT / "package-manifest.json")
     assert manifest["skills"] == [
         {"id": skill_id, "path": f"skills/{skill_id}/SKILL.md"} for skill_id in EXPECTED_SKILLS
     ]
@@ -253,7 +263,7 @@ def test_installed_markdown_has_no_source_checkout_only_paths() -> None:
 
 def test_skill_dependencies_are_cache_local_and_manifested() -> None:
     """Prevent installed skills from referring to missing or source-tree-only dependencies."""
-    manifest = load_json(PLUGIN_ROOT / "package-manifest.json")
+    manifest = _load_json(PLUGIN_ROOT / "package-manifest.json")
     recorded_paths = {record["path"] for record in manifest["files"]}
 
     for skill_id in EXPECTED_SKILLS:
@@ -274,7 +284,7 @@ def test_skill_dependencies_are_cache_local_and_manifested() -> None:
             assert dependency.is_file(), (skill_id, relative)
             assert dependency.relative_to(PLUGIN_ROOT).as_posix() in recorded_paths, (skill_id, relative)
 
-    assert recorded_paths == package_files()
+    assert recorded_paths == _package_files()
 
 
 def test_kaggle_reference_set_is_exact_and_manifested() -> None:
@@ -283,7 +293,7 @@ def test_kaggle_reference_set_is_exact_and_manifested() -> None:
     discovered = {path.name for path in references_root.glob("*.md")}
     assert discovered == EXPECTED_KAGGLE_REFERENCES
 
-    manifest = load_json(PLUGIN_ROOT / "package-manifest.json")
+    manifest = _load_json(PLUGIN_ROOT / "package-manifest.json")
     recorded_paths = {record["path"] for record in manifest["files"]}
     expected_paths = {f"skills/kaggle/references/{name}" for name in EXPECTED_KAGGLE_REFERENCES}
     assert expected_paths <= recorded_paths
@@ -298,7 +308,7 @@ def test_role_roster_frontmatter_and_runtime_records_are_exact() -> None:
     expected_records = []
     for role_id, (model, sandbox_mode) in EXPECTED_ROLES.items():
         role_path = role_root / role_id / "ROLE.md"
-        fields = parse_frontmatter(role_path)
+        fields = _parse_frontmatter(role_path)
         assert fields == {
             "role_id": role_id,
             "name": f"codex-rig-{role_id}",
@@ -322,14 +332,14 @@ def test_role_roster_frontmatter_and_runtime_records_are_exact() -> None:
             }
         )
 
-    manifest = load_json(PLUGIN_ROOT / "package-manifest.json")
+    manifest = _load_json(PLUGIN_ROOT / "package-manifest.json")
     assert manifest["roles"] == expected_records
 
 
 def test_release_profile_declares_only_packaged_lifecycle_features() -> None:
     """Keep shim-manager and hook metadata aligned while MCP remains absent."""
-    manifest = load_json(PLUGIN_ROOT / "package-manifest.json")
-    plugin = load_json(PLUGIN_ROOT / ".codex-plugin" / "plugin.json")
+    manifest = _load_json(PLUGIN_ROOT / "package-manifest.json")
+    plugin = _load_json(PLUGIN_ROOT / ".codex-plugin" / "plugin.json")
     assert plugin["description"].startswith("Thirteen evidence-first Codex workflows")
     assert plugin["interface"]["capabilities"] == [
         "13 workflow skills and 1 legacy-shim lifecycle manager",
@@ -353,7 +363,7 @@ def test_release_profile_declares_only_packaged_lifecycle_features() -> None:
     assert "mcpServers" not in plugin
 
     forbidden_roots = {"manager", "mcp", "shims"}
-    for relative in package_files():
+    for relative in _package_files():
         path = Path(relative)
         assert path.parts[0] not in forbidden_roots
         assert relative != ".mcp.json"
@@ -363,7 +373,7 @@ def test_release_profile_declares_only_packaged_lifecycle_features() -> None:
 
 def test_manage_and_sync_preserve_installed_plugin_state() -> None:
     """Prevent management workflows from treating the installed cache as editable source."""
-    manage = normalized_text(PLUGIN_ROOT / "skills" / "manage" / "SKILL.md").lower()
+    manage = _normalized_text(PLUGIN_ROOT / "skills" / "manage" / "SKILL.md").lower()
     for required in (
         "installed plugin tree is immutable input",
         "never edit this skill's plugin cache",
@@ -372,7 +382,7 @@ def test_manage_and_sync_preserve_installed_plugin_state() -> None:
     ):
         assert required in manage
 
-    sync = normalized_text(PLUGIN_ROOT / "skills" / "sync" / "SKILL.md").lower()
+    sync = _normalized_text(PLUGIN_ROOT / "skills" / "sync" / "SKILL.md").lower()
     for required in (
         "never copy files into an installed cache",
         "sync never mutates external agent files",
@@ -389,7 +399,7 @@ def test_manage_and_sync_preserve_installed_plugin_state() -> None:
 
 def test_audit_prompt_efficiency_requires_cost_and_value_evidence() -> None:
     """Prevent recurring skill audits from rewarding shorter but weaker instructions."""
-    audit = normalized_text(PLUGIN_ROOT / "skills" / "audit" / "SKILL.md")
+    audit = _normalized_text(PLUGIN_ROOT / "skills" / "audit" / "SKILL.md")
     for required in (
         "Prompt Efficiency",
         "prompt-efficiency.md",
@@ -404,7 +414,7 @@ def test_audit_prompt_efficiency_requires_cost_and_value_evidence() -> None:
     ):
         assert required in audit
 
-    validator = load_shared_artifact_validator()
+    validator = _load_shared_artifact_validator()
     assert validator.SKILL_REQUIREMENTS["audit"] == {
         "files": {
             "audit-ledger.md": [
@@ -431,7 +441,7 @@ def test_audit_prompt_efficiency_requires_cost_and_value_evidence() -> None:
 
 def test_audit_calibration_rejects_length_only_prompt_compression() -> None:
     """Keep a scored adversarial case for prompt-cost optimization regressions."""
-    cases = load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
+    cases = _load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
     case = next(item for item in cases if item["id"] == "audit-prompt-efficiency-overcompression")
     assert case["target"] == "audit"
     assert case["expected_findings"] == [
@@ -444,7 +454,7 @@ def test_audit_calibration_rejects_length_only_prompt_compression() -> None:
 
 def test_commit_contract_requires_exact_history_rewrite_authorization() -> None:
     """Prevent ordinary commit requests from authorizing edits to existing history."""
-    contract = normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
+    contract = _normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
     for required in (
         "creating a new commit does not authorize rewriting an existing commit",
         "unless the user explicitly requests that exact history operation",
@@ -455,14 +465,14 @@ def test_commit_contract_requires_exact_history_rewrite_authorization() -> None:
     ):
         assert required in contract
 
-    cases = load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
+    cases = _load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
     history_case = next(case for case in cases if case["id"] == "manage-implicit-history-rewrite")
     assert history_case["expected_findings"] == ["history-rewrite-not-explicitly-authorized"]
 
 
 def test_commit_contract_requires_descriptive_user_facing_handoffs() -> None:
     """Keep commit handoffs specific enough to audit without reading the diff."""
-    contract = normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
+    contract = _normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
     for required in (
         "required user-facing commit summary",
         "hash and title",
@@ -478,7 +488,7 @@ def test_commit_contract_requires_descriptive_user_facing_handoffs() -> None:
 
 def test_commit_contract_requires_detailed_changes_and_impacts() -> None:
     """Prevent terse commit bodies that hide behavior or operational impact."""
-    contract = normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
+    contract = _normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
     for required in (
         "changes:",
         "impact:",
@@ -493,7 +503,7 @@ def test_commit_contract_requires_detailed_changes_and_impacts() -> None:
 
 def test_commit_contract_keeps_verification_change_specific_and_compact() -> None:
     """Prevent verification chronology and unrelated gates from bloating commits."""
-    contract = normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
+    contract = _normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
     for required in (
         "only final checks that materially validate the committed surfaces",
         "consolidate closely related checks",
@@ -509,8 +519,8 @@ def test_commit_contract_keeps_verification_change_specific_and_compact() -> Non
 
 def test_approval_contract_keeps_runtime_reason_short_and_prefix_safe() -> None:
     """Prevent approval UI prompts from duplicating commands or detailed pre-briefs."""
-    native_contract = normalized_text(PLUGIN_ROOT / "shared" / "native-skill-contract.md").lower()
-    agent_contract = normalized_text(PLUGIN_ROOT / "assets" / "AGENTS.md").lower()
+    native_contract = _normalized_text(PLUGIN_ROOT / "shared" / "native-skill-contract.md").lower()
+    agent_contract = _normalized_text(PLUGIN_ROOT / "assets" / "AGENTS.md").lower()
     for contract in (native_contract, agent_contract):
         for required in (
             "all intentional approval requests",
@@ -522,7 +532,7 @@ def test_approval_contract_keeps_runtime_reason_short_and_prefix_safe() -> None:
         ):
             assert required in contract
 
-    commit_contract = normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
+    commit_contract = _normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
     assert "application of the general approval contract" in commit_contract
     assert "do not create a temporary or persistent commit-message file" in commit_contract
     assert "one message argument" in commit_contract
@@ -532,7 +542,7 @@ def test_approval_contract_keeps_runtime_reason_short_and_prefix_safe() -> None:
 
 def test_commit_contract_preserves_literal_message_and_failure_boundaries() -> None:
     """Reject unsafe interpolation, hidden file fallback, and automatic repair commits."""
-    contract = normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
+    contract = _normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
     for required in (
         "show the complete secret-free message in chat",
         "shell-free argv",
@@ -601,7 +611,7 @@ def test_file_free_commit_preserves_reviewed_message(tmp_path: Path, transport: 
 
 def test_calibration_recurrence_cases_cover_each_escalation_stage() -> None:
     """Keep calibration fixtures aligned with the recurrence escalation contract."""
-    cases = load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
+    cases = _load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
     case_contract = {
         case["id"]: (case["target"], case["expected_findings"])
         for case in cases
@@ -632,7 +642,7 @@ def test_calibration_recurrence_cases_cover_each_escalation_stage() -> None:
 
 def test_calibration_model_stall_cases_cover_advisory_and_human_escalation() -> None:
     """Keep model-stall calibration fixtures aligned with the escalation contract."""
-    cases = load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
+    cases = _load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
     case_contract = {
         case["id"]: (case["target"], case["expected_findings"])
         for case in cases
@@ -706,7 +716,7 @@ def test_calibration_model_stall_fixture_observations_are_scored(monkeypatch: py
 
     stall_ids = {
         case["id"]
-        for case in load_json(calibration_dir / "behavioral-cases.json")["cases"]
+        for case in _load_json(calibration_dir / "behavioral-cases.json")["cases"]
         if case["id"].startswith("model-stall-")
     }
     scored_ids = {row["case_id"] for row in result["case_results"]}
@@ -805,7 +815,7 @@ def test_calibration_recurrence_policy_link_is_limited_to_retry_owners(
 
 def test_code_remediate_accepts_only_completed_intent_first_merge_states(tmp_path: Path) -> None:
     """Allow conflict-free evidence or one explicitly authorized completed merge."""
-    validator = load_shared_artifact_validator()
+    validator = _load_shared_artifact_validator()
     pr_dir = tmp_path / "pr"
     pr_dir.mkdir()
     path = pr_dir / "merge-resolution.json"
@@ -819,10 +829,10 @@ def test_code_remediate_accepts_only_completed_intent_first_merge_states(tmp_pat
     }
     target = {"local_head": "base-oid"}
 
-    write_merge_resolution(path)
+    _write_merge_resolution(path)
     validator._validate_code_remediate_merge_resolution(metadata, pr_dir, target)
 
-    write_merge_resolution(
+    _write_merge_resolution(
         path,
         conflicts_detected=True,
         status="completed",
@@ -843,11 +853,11 @@ def test_code_remediate_accepts_only_completed_intent_first_merge_states(tmp_pat
 
 def test_code_remediate_rejects_conflicts_without_merge_authorization(tmp_path: Path) -> None:
     """Prevent review remediation from bypassing target-merge authorization."""
-    validator = load_shared_artifact_validator()
+    validator = _load_shared_artifact_validator()
     pr_dir = tmp_path / "pr"
     pr_dir.mkdir()
     path = pr_dir / "merge-resolution.json"
-    write_merge_resolution(
+    _write_merge_resolution(
         path,
         conflicts_detected=True,
         status="completed",
@@ -871,7 +881,7 @@ def test_code_remediate_rejects_conflicts_without_merge_authorization(tmp_path: 
 
 def test_specialist_fallback_ladder_and_evidence_are_complete() -> None:
     """Prevent fallback routing from losing order, fidelity limits, or audit evidence."""
-    policy = normalized_text(PLUGIN_ROOT / "shared" / "specialist-orchestration.md")
+    policy = _normalized_text(PLUGIN_ROOT / "shared" / "specialist-orchestration.md")
     route_markers = (
         "1. A runtime-provided blank/default subagent",
         "2. An inline pass in the parent context",
@@ -901,7 +911,7 @@ def test_specialist_fallback_ladder_and_evidence_are_complete() -> None:
 
 def test_specialist_wave_joins_before_acceptance_without_expanding_fanout() -> None:
     """Keep parallel scheduling bounded by fixed packs, ownership, and final join."""
-    policy = normalized_text(PLUGIN_ROOT / "shared" / "specialist-orchestration.md")
+    policy = _normalized_text(PLUGIN_ROOT / "shared" / "specialist-orchestration.md")
 
     assert "## Bounded Dispatch Wave" in policy
     assert "one approved dispatch wave" in policy
@@ -912,7 +922,7 @@ def test_specialist_wave_joins_before_acceptance_without_expanding_fanout() -> N
     assert "Never add fan-out, overlap ownership, bypass approval, or start dependencies" in policy
     assert "equal-gate serial fallback" in policy
 
-    cases = load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
+    cases = _load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
     case = next(item for item in cases if item["id"] == "delegation-lead-bounded-dispatch-wave")
     assert case["target"] == "delegation-lead"
     assert case["expected_findings"] == [
@@ -939,7 +949,7 @@ def test_public_payload_has_no_private_release_references() -> None:
         "currently released" + "/default",
     )
     violations: list[tuple[str, str]] = []
-    for path in load_package_builder().iter_payload_files():
+    for path in _load_package_builder().iter_payload_files():
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
@@ -960,8 +970,8 @@ def test_public_payload_has_no_private_release_references() -> None:
     assert violations == []
 
 
-@pytest.fixture
-def canonical_parallel_flow() -> tuple[Path, str, str]:
+@pytest.fixture(name="canonical_parallel_flow")
+def _canonical_parallel_flow() -> tuple[Path, str, str]:
     """Load the one released text flow that carries every canonical endpoint."""
     architecture = PLUGIN_ROOT / "ARCHITECTURE.md"
     architecture_text = architecture.read_text(encoding="utf-8")

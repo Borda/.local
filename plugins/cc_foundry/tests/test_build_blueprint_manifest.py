@@ -25,13 +25,21 @@ VECTORS = json.loads(
 )
 
 
-def vector_params(group: str) -> list:
+def _vector_params(group: str) -> list:
     """Return the shared fixture's vectors for ``group`` as one ``pytest.param`` each."""
     return [pytest.param(vector, id=vector["id"]) for vector in VECTORS[group]]
 
 
 def _make_plugin(scan_dir: Path, name: str, skill_md: str = "", claude_md: str = "") -> Path:
-    """Create a minimal plugin tree under ``scan_dir`` and return its directory."""
+    """Create a minimal plugin tree under ``scan_dir`` and return its directory.
+
+    Examples:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     plugin = _make_plugin(Path(directory), "demo")
+        ...     (plugin.name, (plugin / ".claude-plugin" / "plugin.json").read_text())
+        ('demo', '{"name": "foundry", "version": "1.2.3"}\\n')
+    """
     plugin_dir = scan_dir / name
     (plugin_dir / ".claude-plugin").mkdir(parents=True)
     (plugin_dir / ".claude-plugin" / "plugin.json").write_text(PLUGIN_JSON, encoding="utf-8")
@@ -44,8 +52,8 @@ def _make_plugin(scan_dir: Path, name: str, skill_md: str = "", claude_md: str =
     return plugin_dir
 
 
-@pytest.fixture()
-def scan_dir(tmp_path: Path) -> Path:
+@pytest.fixture(name="scan_dir")
+def _scan_dir(tmp_path: Path) -> Path:
     """Scan directory holding all four target plugins; only cc_foundry has content."""
     root = tmp_path / "plugins"
     root.mkdir()
@@ -119,22 +127,22 @@ class TestSharedVectors:
     on avoiding.
     """
 
-    @pytest.mark.parametrize("vector", vector_params("normalize"))
+    @pytest.mark.parametrize("vector", _vector_params("normalize"))
     def test_normalize(self, vector: dict) -> None:
         """Produce the fixture's expected text for every shared vector."""
         assert bbm.normalize(vector["input"]) == vector["expected"]
 
-    @pytest.mark.parametrize("vector", vector_params("needs_bailout"))
+    @pytest.mark.parametrize("vector", _vector_params("needs_bailout"))
     def test_needs_bailout(self, vector: dict) -> None:
         """Agree with the fixture on heredocs and unterminated quotes."""
         assert bbm.needs_bailout(vector["input"]) is vector["expected"]
 
-    @pytest.mark.parametrize("vector", vector_params("split_logical_commands"))
+    @pytest.mark.parametrize("vector", _vector_params("split_logical_commands"))
     def test_split_logical_commands(self, vector: dict) -> None:
         """Split exactly as the fixture specifies."""
         assert bbm.split_logical_commands(vector["input"]) == vector["expected"]
 
-    @pytest.mark.parametrize("vector", vector_params("is_dangerous"))
+    @pytest.mark.parametrize("vector", _vector_params("is_dangerous"))
     def test_is_dangerous(self, vector: dict) -> None:
         """Classify every shared vector as the fixture specifies.
 

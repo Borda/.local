@@ -29,7 +29,12 @@ ARTIFACT_SKILLS = (
 
 
 def _output_contract(text: str) -> str:
-    """Return the explicit Output Contract section, not an earlier prose mention."""
+    """Return the explicit Output Contract section, not an earlier prose mention.
+
+    Example:
+        >>> _output_contract("intro\\n## Output Contract\\nresult").strip()
+        'result'
+    """
     return text.split("\n## Output Contract\n", maxsplit=1)[1]
 
 

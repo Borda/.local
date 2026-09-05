@@ -21,15 +21,25 @@ _ROUTE_ROW = re.compile(
 )
 
 
-def documented_route_selection() -> dict[str, str]:
-    """Return `{skill: selection}` parsed from the contract's route-selection table."""
+def _documented_route_selection() -> dict[str, str]:
+    """Return `{skill: selection}` parsed from the contract's route-selection table.
+
+    Example:
+        >>> _documented_route_selection()["implement"]
+        'adaptive — passes `--query-kind`'
+    """
     section = CONTRACT_PATH.read_text(encoding="utf-8").split("## Route selection per skill", 1)[1]
     table = section.split("\n\n## ", 1)[0]
     return {match["skill"]: match["selection"] for match in _ROUTE_ROW.finditer(table)}
 
 
-def skills_invoking_adapter() -> dict[str, str]:
-    """Return `{skill: adapter invocation line}` for every skill that calls the adapter."""
+def _skills_invoking_adapter() -> dict[str, str]:
+    """Return `{skill: adapter invocation line}` for every skill that calls the adapter.
+
+    Example:
+        >>> "implement" in _skills_invoking_adapter()
+        True
+    """
     invocations: dict[str, str] = {}
     for skill_file in sorted(SKILLS_ROOT.glob("*/SKILL.md")):
         for line in skill_file.read_text(encoding="utf-8").splitlines():
@@ -41,15 +51,15 @@ def skills_invoking_adapter() -> dict[str, str]:
 
 def test_route_selection_table_covers_every_adapter_consuming_skill() -> None:
     """Keep the documented table and the real consumer set identical in both directions."""
-    documented = documented_route_selection()
+    documented = _documented_route_selection()
 
-    assert set(documented) == set(skills_invoking_adapter())
+    assert set(documented) == set(_skills_invoking_adapter())
 
 
 def test_documented_selection_matches_each_skill_invocation() -> None:
     """Fail when a skill's documented route selection disagrees with its own invocation."""
-    documented = documented_route_selection()
-    invocations = skills_invoking_adapter()
+    documented = _documented_route_selection()
+    invocations = _skills_invoking_adapter()
 
     actual = {skill: "--query-kind" in line for skill, line in invocations.items()}
     expected = {skill: selection.startswith("adaptive") for skill, selection in documented.items()}
@@ -59,7 +69,7 @@ def test_documented_selection_matches_each_skill_invocation() -> None:
 
 def test_standard_batch_skills_are_the_documented_majority_choice() -> None:
     """Pin the recorded split so a silent flip of any row is a test failure, not a doc drift."""
-    documented = documented_route_selection()
+    documented = _documented_route_selection()
 
     adaptive = sorted(skill for skill, selection in documented.items() if selection.startswith("adaptive"))
 

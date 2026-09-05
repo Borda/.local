@@ -1,17 +1,28 @@
 #!/usr/bin/env python
-"""timing_analyzer.py — bucket Claude Code session clock time.
+"""Bucket Claude Code session clock time into an auditable Markdown report.
 
-Reads ``~/.claude/logs/{timings,invocations}.jsonl`` (written by the
-foundry plugin's ``task-log.js`` hook) and produces a markdown report
-that splits wall time per session into local-tool, agent-spawn, skill,
-``AskUserQuestion`` idle, and a main-loop reasoning residual.
+Purpose:
+    Attribute recorded session wall time to local tools, agent spawns, skills, user
+    prompts, and the residual main-loop reasoning bucket.
 
-Stdout: the path to the report file (``→ <path>``).  Warnings go to
-stderr.  Designed for the ``/foundry:profile`` skill.
+Scope:
+    Read ``~/.claude/logs/{timings,invocations}.jsonl`` from Foundry's timing hooks,
+    normalize duration fields, and render a report without invoking agents or modifying logs.
 
 Usage:
-    python "${CLAUDE_PLUGIN_ROOT}/bin/timing_analyzer.py" \\
-        --since 24h --output report.md
+    Run ``python ${CLAUDE_PLUGIN_ROOT}/bin/timing_analyzer.py --since 24h``; use
+    ``--output`` and ``--session-id`` to select the report destination and scope.
+
+Outputs:
+    Write one Markdown report, including clipped-duration counts in its legend, and
+    print its path as ``→ <path>`` (or an ASCII arrow when needed by the terminal).
+
+Failure:
+    Invalid duration specifications raise ``ValueError``. An empty session window prints
+    a diagnostic to stderr and returns 1; report-writing errors propagate to the caller.
+
+Used by:
+    Foundry's ``/foundry:profile`` skill and its session-time efficiency review.
 """
 
 from __future__ import annotations
@@ -448,7 +459,19 @@ def aggregate_sessions(
 
 
 def _fmt_hms(ms: int) -> str:
-    """Ms → ``HH:MM:SS``."""
+    """Format milliseconds as zero-padded hours, minutes, and seconds.
+
+    Clamp negative values to zero and discard subsecond remainders. Hours may
+    exceed two digits for long durations.
+
+    Examples:
+        >>> _fmt_hms(0)
+        '00:00:00'
+        >>> _fmt_hms(3_661_000)
+        '01:01:01'
+        >>> _fmt_hms(-1)
+        '00:00:00'
+    """
     s = max(0, ms) // 1000
     h, r = divmod(s, 3600)
     m, sec = divmod(r, 60)
@@ -456,7 +479,14 @@ def _fmt_hms(ms: int) -> str:
 
 
 def _fmt_pct(part: int, whole: int) -> str:
-    """Part/whole as percent, or 0.0% on zero whole."""
+    """Format ``part / whole`` as one decimal percent with a zero denominator guard.
+
+    Examples:
+        >>> _fmt_pct(1, 4)
+        '25.0%'
+        >>> _fmt_pct(1, 0)
+        '0.0%'
+    """
     return f"{(100 * part / whole):.1f}%" if whole else "0.0%"
 
 

@@ -25,9 +25,14 @@ from _bench_common.edit_patch_contracts import EditExecution, build_edit_task_co
 from _bench_common.provider_parity_contracts import load_task_suite  # noqa: E402
 
 
-@pytest.fixture(scope="module")
-def stage_fix() -> Any:
-    """Load the structural transport before its private fix-stage consumer."""
+@pytest.fixture(name="stage_fix", scope="module")
+def _stage_fix() -> Any:
+    """Load the structural transport before its private fix-stage consumer.
+
+    Example:
+        >>> getfixture("stage_fix").__name__
+        '_bench_codex.stage_fix'
+    """
     structural_path = BENCHMARKS / "run-codex-structural.py"
     spec = importlib.util.spec_from_file_location("codex_structural_for_stage_fix", structural_path)
     assert spec is not None and spec.loader is not None
@@ -40,7 +45,12 @@ def stage_fix() -> Any:
 
 
 def _source_row(*, captured_diff: object, tool_result_tokens: int | None = None) -> dict[str, object]:
-    """Build one replayable executable-stage telemetry row."""
+    """Build replay input while preserving the supplied diff object and optional token count.
+
+    >>> row = _source_row(captured_diff="example diff", tool_result_tokens=0)
+    >>> row["captured_diff"], row["tool_result_tokens"], row["raw_events"]
+    ('example diff', 0, [])
+    """
     return {
         "task_id": "fixture-task",
         "arm": "A_plain",
@@ -55,7 +65,12 @@ def _source_row(*, captured_diff: object, tool_result_tokens: int | None = None)
 
 
 def _rescored_row(*, tool_result_tokens: int | None) -> dict[str, object]:
-    """Return the minimal scoreable replay result for fixture parsers."""
+    """Build a compliant but unsuccessful replay result with explicit unknown or measured tool usage.
+
+    >>> row = _rescored_row(tool_result_tokens=None)
+    >>> row["tool_result_tokens"], row["primary_correct"], row["compliance"]
+    (None, False, True)
+    """
     return {
         "task_id": "fixture-task",
         "arm": "A_plain",
@@ -462,13 +477,15 @@ def test_patch_preflight_admits_clean_context_before_staging_fixture(
     home = SimpleNamespace(coordination_path=None, cleanup=lambda: None)
 
     @contextlib.contextmanager
-    def bind_workspace(*_args: Any, **_kwargs: Any) -> Any:
+    def _bind_workspace(*_args: Any, **_kwargs: Any) -> Any:
+        """Yield through the workspace-binding boundary without altering external state."""
         yield
 
     class Adapter:
         """Record when each arm validates the still-clean historical worktree."""
 
         def prepare_verified_home(self, arm: str, **_kwargs: Any) -> Any:
+            """Record preparation evidence and return the fixture-owned home."""
             events.append(f"prepare:{arm}")
             return home
 
@@ -479,7 +496,7 @@ def test_patch_preflight_admits_clean_context_before_staging_fixture(
         "stage_patch_task_agent_workspace",
         lambda *_args, **_kwargs: events.append("stage-fixture"),
     )
-    monkeypatch.setattr(structural, "bind_executable_agent_workspace", bind_workspace)
+    monkeypatch.setattr(structural, "bind_executable_agent_workspace", _bind_workspace)
 
     stage_fix.preflight_executable_agent_workspace(
         Adapter(),
@@ -540,7 +557,8 @@ def test_patch_cell_scores_the_exact_captured_worktree_diff(stage_fix: Any, monk
         ),
     )
 
-    def execute(_repo: Path, _contract: object, diff: str) -> EditExecution:
+    def _execute(_repo: Path, _contract: object, diff: str) -> EditExecution:
+        """Capture the candidate diff and return passing execution evidence for the fixture paths."""
         observed["diff"] = diff
         return EditExecution(
             patch_applied=True,
@@ -558,7 +576,7 @@ def test_patch_cell_scores_the_exact_captured_worktree_diff(stage_fix: Any, monk
         captured_diff=captured_diff,
         answer_re=stage_fix._PATCH_ANSWER_RE,
         query_arguments=stage_fix._PATCH_QUERY_ARGUMENTS,
-        execute_patch=execute,
+        execute_patch=_execute,
     )
 
     assert observed["diff"] == captured_diff
@@ -585,25 +603,29 @@ def test_executable_cells_and_preflight_keep_permission_verification_enabled(
     home = SimpleNamespace(coordination_path=None, cleanup=lambda: None, codemap_skill_path=None, env={})
 
     @contextlib.contextmanager
-    def bind_workspace(*_args: Any, **_kwargs: Any) -> Any:
+    def _bind_workspace(*_args: Any, **_kwargs: Any) -> Any:
+        """Yield through the workspace-binding boundary without altering external state."""
         yield
 
     class Adapter:
         """Capture the home preparation performed by executable cells."""
 
         def prepare_verified_home(self, *_args: Any, **kwargs: Any) -> Any:
+            """Record preparation evidence and return the fixture-owned home."""
             preparation_kwargs.append(kwargs)
             return home
 
         def build_command(self, *_args: Any, **_kwargs: Any) -> list[str]:
+            """Return fixed Codex argv without launching a command."""
             return ["codex", "exec"]
 
         def run_stream(self, *_args: Any, **_kwargs: Any) -> str:
+            """Return an empty transport stream without invoking Codex."""
             return ""
 
     structural = stage_fix._structural()
     monkeypatch.setattr(structural, "create_executable_agent_workspace", lambda *_args: workspace)
-    monkeypatch.setattr(structural, "bind_executable_agent_workspace", bind_workspace)
+    monkeypatch.setattr(structural, "bind_executable_agent_workspace", _bind_workspace)
     monkeypatch.setattr(structural, "_repo_sha", lambda _path: "baseline")
     monkeypatch.setattr(structural, "_git_porcelain_status", lambda _path: "")
     stage_fix.execute_executable_agent_cell(
@@ -669,26 +691,30 @@ def test_patch_cell_excludes_a_clean_source_head_switch(
     home = SimpleNamespace(coordination_path=None, cleanup=lambda: None, codemap_skill_path=None, env={})
 
     @contextlib.contextmanager
-    def bind_workspace(*_args: Any, **_kwargs: Any) -> Any:
+    def _bind_workspace(*_args: Any, **_kwargs: Any) -> Any:
+        """Yield through the workspace-binding boundary without altering external state."""
         yield
 
     structural = stage_fix._structural()
     monkeypatch.setattr(stage_fix, "create_executable_agent_workspace", lambda *_args, **_kwargs: workspace)
     monkeypatch.setattr(stage_fix, "stage_patch_task_agent_workspace", lambda *_args, **_kwargs: patch_workspace)
-    monkeypatch.setattr(structural, "bind_executable_agent_workspace", bind_workspace)
+    monkeypatch.setattr(structural, "bind_executable_agent_workspace", _bind_workspace)
     prepared: list[dict[str, Any]] = []
 
     class Adapter:
         """Provide the minimum home and stream surface for one agent-cell exclusion test."""
 
         def prepare_verified_home(self, *_args: Any, **kwargs: Any) -> Any:
+            """Record preparation evidence and return the fixture-owned home."""
             prepared.append(kwargs)
             return home
 
         def build_command(self, *_args: Any, **_kwargs: Any) -> list[str]:
+            """Return fixed Codex argv without launching a command."""
             return ["codex", "exec"]
 
         def run_stream(self, *_args: Any, **_kwargs: Any) -> str:
+            """Return an empty transport stream without invoking Codex."""
             return ""
 
     row = stage_fix.execute_executable_agent_cell(
@@ -1207,7 +1233,12 @@ def test_fix_stage_execution_is_controlled_only_by_dry_run(stage_fix: Any) -> No
 
 
 def _fm_parsed() -> SimpleNamespace:
-    """Return a minimal successful parse result for a Fix-Multi cell."""
+    """Build successful transport evidence with no observed tools and unknown tool-result usage.
+
+    >>> result = _fm_parsed()
+    >>> result.success, result.command_calls, result.tool_result_tokens
+    (True, 0, None)
+    """
     return SimpleNamespace(
         success=True,
         output_text="summary",
@@ -1231,7 +1262,12 @@ def _fm_parsed() -> SimpleNamespace:
 
 
 def _fm_execution(contract: Any, **overrides: Any) -> dict[str, Any]:
-    """Return a passing Fix-Multi execution dict with optional overrides."""
+    """Build passing execution evidence from contract paths, then apply explicit overrides.
+
+    >>> execution = _fm_execution(SimpleNamespace(expected_paths=("example.py",)), targeted_test_passed=False)
+    >>> execution["changed_paths"], execution["targeted_test_passed"], execution["cleanup_verified"]
+    (['example.py'], False, True)
+    """
     execution = {
         "baseline_failed": True,
         "patch_applied": True,
@@ -1247,7 +1283,17 @@ def _fm_execution(contract: Any, **overrides: Any) -> dict[str, Any]:
 
 
 def _fm_row(stage_fix: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, execution: dict[str, Any]) -> Any:
-    """Score one Fix-Multi cell against a supplied execution dict."""
+    """Score supplied execution evidence while replacing transport parsing and patch execution with local doubles.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> stage = getfixture("stage_fix")
+    >>> task = next(item for item in stage.load_task_suite(stage.FIX_MULTI_TASKS_PATH) if item["id"] == "FM-03")
+    >>> execution = _fm_execution(stage.build_fix_multi_contract(task))
+    >>> with TemporaryDirectory() as directory, pytest.MonkeyPatch.context() as patch:
+    ...     row = _fm_row(stage, patch, Path(directory), execution)
+    ...     row["primary_correct"], row["pooling_eligible"]
+    (True, True)
+    """
     task = next(task for task in stage_fix.load_task_suite(stage_fix.FIX_MULTI_TASKS_PATH) if task["id"] == "FM-03")
     contract = stage_fix.build_fix_multi_contract(task)
     monkeypatch.setattr(stage_fix.runtime, "parse_codex_jsonl", lambda *_args, **_kwargs: _fm_parsed())

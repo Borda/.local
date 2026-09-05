@@ -11,8 +11,8 @@ Usage:
 Outputs:
     A single status line on stdout and exit code 0 for valid invocations.
 Failure:
-    Missing, malformed, or unreadable configuration resolves to ``absent``;
-    argparse rejects unsupported flags with exit code 2.
+    An unavailable or malformed registry permits cache fallback; unreadable settings
+    supply no explicit disable flag. Argparse rejects unsupported flags with exit 2.
 Used by:
     Foundry's challenger and consumer skill availability checks. Every consumer
     plugin ships a byte-identical copy so none has to assume Foundry is installed
@@ -93,7 +93,11 @@ def _settings_explicitly_disabled(home: Path, project_root: Path | None = None) 
 
 
 def bridge_status(home: Path, project_root: Path | None = None) -> str:
-    """Return ``available``, ``disabled``, or ``absent`` for the bridge target."""
+    """Resolve bridge availability from registry evidence, fallback cache, and settings.
+
+    Consult the cache only when the registry cannot answer. A readable registry without the selector takes precedence
+    over stale cache directories. Apply project-over-global explicit disable settings after establishing presence.
+    """
     plugins_dir = home / ".claude" / "plugins"
     registered = _manifest_lookup(plugins_dir / "installed_plugins.json")
     installed = _cache_has_target(plugins_dir / "cache") if registered is None else registered

@@ -119,10 +119,11 @@ class TestRunJqWriteErrorPaths:
         target = tmp_path / "obj.json"
         target.write_text("{}", encoding="utf-8")
 
-        def fake_run(*_args: Any, stderr: Any = None, **_kw: Any) -> subprocess.CompletedProcess[str]:
+        def _fake_run(*_args: Any, stderr: Any = None, **_kw: Any) -> subprocess.CompletedProcess[str]:
+            """Return jq's configured nonzero result for this error path."""
             return subprocess.CompletedProcess(args=_args, returncode=3, stdout="", stderr="jq: parse error\n")
 
-        monkeypatch.setattr(jq_write.subprocess, "run", fake_run)
+        monkeypatch.setattr(jq_write.subprocess, "run", _fake_run)
         rc = jq_write.run_jq_write(target, ".bad(", [])
         assert rc == 2
         assert not (tmp_path / "obj.json.tmp").exists()
@@ -140,10 +141,11 @@ class TestRunJqWriteErrorPaths:
         target = tmp_path / "obj.json"
         target.write_text("{}", encoding="utf-8")
 
-        def boom(*_args: Any, **_kw: Any) -> Any:
+        def _boom(*_args: Any, **_kw: Any) -> Any:
+            """Simulate jq being unavailable on PATH."""
             raise FileNotFoundError("jq")
 
-        monkeypatch.setattr(jq_write.subprocess, "run", boom)
+        monkeypatch.setattr(jq_write.subprocess, "run", _boom)
         rc = jq_write.run_jq_write(target, ".", [])
         assert rc == 2
         assert not (tmp_path / "obj.json.tmp").exists()
@@ -158,12 +160,13 @@ class TestRunJqWriteErrorPaths:
         target = tmp_path / "obj.json"
         target.write_text("{}", encoding="utf-8")
 
-        def fake_run(*_args: Any, **_kw: Any) -> subprocess.CompletedProcess[str]:
+        def _fake_run(*_args: Any, **_kw: Any) -> subprocess.CompletedProcess[str]:
+            """Write the partial temporary result then report jq failure."""
             # Simulate jq writing something to .tmp before failing.
             (tmp_path / "obj.json.tmp").write_text("garbage", encoding="utf-8")
             return subprocess.CompletedProcess(args=_args, returncode=1, stdout="", stderr="")
 
-        monkeypatch.setattr(jq_write.subprocess, "run", fake_run)
+        monkeypatch.setattr(jq_write.subprocess, "run", _fake_run)
         rc = jq_write.run_jq_write(target, ".", [])
         assert rc == 2
         assert not (tmp_path / "obj.json.tmp").exists()

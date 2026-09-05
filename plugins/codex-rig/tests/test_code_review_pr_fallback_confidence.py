@@ -25,7 +25,7 @@ FALLBACK_CONFIDENCE_GAP = (
 )
 
 
-def load_validator() -> ModuleType:
+def _load_validator() -> ModuleType:
     """Load the shipped standalone code-review validator without installation."""
     assert REVIEW_VALIDATOR_PATH.is_file(), REVIEW_VALIDATOR_PATH
     specification = importlib.util.spec_from_file_location("code_review_pr_fallback_validator", REVIEW_VALIDATOR_PATH)
@@ -35,7 +35,7 @@ def load_validator() -> ModuleType:
     return module
 
 
-def load_shared_validator() -> ModuleType:
+def _load_shared_validator() -> ModuleType:
     """Load the shared validator used by PR remediation without installation."""
     specification = importlib.util.spec_from_file_location("shared_pr_fallback_validator", SHARED_VALIDATOR_PATH)
     assert specification is not None and specification.loader is not None
@@ -44,8 +44,13 @@ def load_shared_validator() -> ModuleType:
     return module
 
 
-def fallback_summary(*, limited_data: bool = True, unavailable_evidence: list[str] | None = None) -> dict[str, object]:
-    """Return the fallback fields persisted by the PR collector's online-review summary."""
+def _fallback_summary(*, limited_data: bool = True, unavailable_evidence: list[str] | None = None) -> dict[str, object]:
+    """Return the fallback fields persisted by the PR collector's online-review summary.
+
+    Example:
+        >>> _fallback_summary(limited_data=False)["limited_data"]
+        False
+    """
     return {
         "pr_metadata_transport": "public-https-fallback",
         "limited_data": limited_data,
@@ -53,24 +58,34 @@ def fallback_summary(*, limited_data: bool = True, unavailable_evidence: list[st
     }
 
 
-def review_result(confidence: float) -> dict[str, object]:
-    """Return the confidence surface consumed by the targeted validator helper."""
+def _review_result(confidence: float) -> dict[str, object]:
+    """Return the confidence surface consumed by the targeted validator helper.
+
+    Example:
+        >>> _review_result(0.8)["confidence"]
+        0.8
+    """
     return {"confidence": confidence}
 
 
-def review_metadata(confidence_gaps: list[str]) -> dict[str, object]:
-    """Return the confidence-gap surface consumed by the targeted validator helper."""
+def _review_metadata(confidence_gaps: list[str]) -> dict[str, object]:
+    """Return the confidence-gap surface consumed by the targeted validator helper.
+
+    Example:
+        >>> _review_metadata(["missing diff"])["confidence_gaps"]
+        ['missing diff']
+    """
     return {"confidence_gaps": confidence_gaps}
 
 
 def test_validate_pr_fallback_confidence_accepts_exact_gap_at_capped_confidence() -> None:
     """Allow limited public PR metadata only when its listed evidence gap caps confidence at 0.89."""
-    validator = load_validator()
+    validator = _load_validator()
 
     validator._validate_pr_fallback_confidence(
-        fallback_summary(),
-        review_result(0.89),
-        review_metadata([FALLBACK_CONFIDENCE_GAP]),
+        _fallback_summary(),
+        _review_result(0.89),
+        _review_metadata([FALLBACK_CONFIDENCE_GAP]),
     )
 
 
@@ -78,42 +93,42 @@ def test_validate_pr_fallback_confidence_accepts_exact_gap_at_capped_confidence(
     ("summary", "confidence_gaps", "confidence", "error"),
     [
         pytest.param(
-            fallback_summary(limited_data=False),
+            _fallback_summary(limited_data=False),
             [FALLBACK_CONFIDENCE_GAP],
             0.89,
             "pr-public-fallback-limitation-missing",
             id="limited-data-false",
         ),
         pytest.param(
-            fallback_summary(unavailable_evidence=[]),
+            _fallback_summary(unavailable_evidence=[]),
             [FALLBACK_CONFIDENCE_GAP],
             0.89,
             "pr-public-fallback-limitation-missing",
             id="unavailable-evidence-missing",
         ),
         pytest.param(
-            fallback_summary(unavailable_evidence=list(reversed(UNAVAILABLE_EVIDENCE))),
+            _fallback_summary(unavailable_evidence=list(reversed(UNAVAILABLE_EVIDENCE))),
             [FALLBACK_CONFIDENCE_GAP],
             0.89,
             "pr-public-fallback-evidence-not-sorted",
             id="unavailable-evidence-unsorted",
         ),
         pytest.param(
-            fallback_summary(),
+            _fallback_summary(),
             [],
             0.89,
             "pr-public-fallback-confidence-gap-missing",
             id="confidence-gap-missing",
         ),
         pytest.param(
-            fallback_summary(),
+            _fallback_summary(),
             ["Public HTTPS PR metadata fallback omitted evidence: reviews."],
             0.89,
             "pr-public-fallback-confidence-gap-missing",
             id="confidence-gap-mismatched",
         ),
         pytest.param(
-            fallback_summary(),
+            _fallback_summary(),
             [FALLBACK_CONFIDENCE_GAP],
             0.90,
             "pr-public-fallback-confidence-cap-exceeded",
@@ -125,36 +140,38 @@ def test_validate_pr_fallback_confidence_rejects_incomplete_or_overconfident_art
     summary: dict[str, object], confidence_gaps: list[str], confidence: float, error: str
 ) -> None:
     """Prevent missing limitations, altered gap text, or confidence that overstates public-only evidence."""
-    validator = load_validator()
+    validator = _load_validator()
 
     with pytest.raises(SystemExit, match=error):
-        validator._validate_pr_fallback_confidence(summary, review_result(confidence), review_metadata(confidence_gaps))
+        validator._validate_pr_fallback_confidence(
+            summary, _review_result(confidence), _review_metadata(confidence_gaps)
+        )
 
 
 def test_validate_pr_fallback_confidence_does_not_cap_normal_gh_metadata() -> None:
     """Keep the public-fallback cap out of fully collected GitHub CLI review artifacts."""
-    validator = load_validator()
+    validator = _load_validator()
     summary = {
         "pr_metadata_transport": "gh",
         "limited_data": False,
         "unavailable_evidence": [],
     }
 
-    validator._validate_pr_fallback_confidence(summary, review_result(0.95), review_metadata([]))
+    validator._validate_pr_fallback_confidence(summary, _review_result(0.95), _review_metadata([]))
 
 
 def test_shared_remediation_validator_enforces_the_same_public_fallback_cap() -> None:
     """Keep PR remediation from overstating the same limited public metadata evidence."""
-    validator = load_shared_validator()
+    validator = _load_shared_validator()
 
     validator._validate_pr_fallback_confidence(
-        fallback_summary(),
-        review_result(0.89),
-        review_metadata([FALLBACK_CONFIDENCE_GAP]),
+        _fallback_summary(),
+        _review_result(0.89),
+        _review_metadata([FALLBACK_CONFIDENCE_GAP]),
     )
     with pytest.raises(SystemExit, match="code-remediate-pr-public-fallback-confidence-cap-exceeded"):
         validator._validate_pr_fallback_confidence(
-            fallback_summary(),
-            review_result(0.90),
-            review_metadata([FALLBACK_CONFIDENCE_GAP]),
+            _fallback_summary(),
+            _review_result(0.90),
+            _review_metadata([FALLBACK_CONFIDENCE_GAP]),
         )

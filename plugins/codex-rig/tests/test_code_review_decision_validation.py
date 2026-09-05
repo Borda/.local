@@ -23,7 +23,12 @@ def _load_validator() -> ModuleType:
 
 
 def _result(*, critical: int = 0, high: int = 0, medium: int = 0, low: int = 0) -> dict[str, object]:
-    """Return a review result with one explicit severity-count vector."""
+    """Return a review result with one explicit severity-count vector.
+
+    Example:
+        >>> _result(high=1)["findings"]["high"]
+        1
+    """
     return {
         "status": "pass",
         "checks_failed": [],
@@ -32,7 +37,12 @@ def _result(*, critical: int = 0, high: int = 0, medium: int = 0, low: int = 0) 
 
 
 def _metadata(recommendation: str) -> dict[str, object]:
-    """Return a complete structured review decision for one recommendation."""
+    """Return a complete structured review decision for one recommendation.
+
+    Example:
+        >>> _metadata("accept-as-is")["review_decision"]["recommendation"]
+        'accept-as-is'
+    """
     return {
         "review_decision": {
             "recommendation": recommendation,

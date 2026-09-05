@@ -18,11 +18,11 @@ from typing import Any
 
 import pytest
 
-from _launcher_capability import raw_codemap_launchers_are_runnable
+from _launcher_capability import _raw_codemap_launchers_are_runnable
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 RAW_CODEMAP_LAUNCHERS = pytest.mark.skipif(
-    not raw_codemap_launchers_are_runnable(REPO_ROOT),
+    not _raw_codemap_launchers_are_runnable(REPO_ROOT),
     reason="raw scan-index/scan-query launchers cannot execute on this host",
 )
 
@@ -131,7 +131,9 @@ class TestCorrectnessInPrimaryVerdict:
 
 
 def _bins(script_run_cli: Any, scan_query_binary: Path, scan_index_binary: Path) -> tuple[Path, Path]:
-    """Return (scan_query_bin, scan_index_bin) resolved via the runner's own finder.
+    """Return the prevalidated query and index fixture paths in invocation order.
+
+    No finder or executable is invoked here; the runner argument is retained for fixture compatibility.
 
     Args:
         script_run_cli: Loaded Codemap CLI module.
@@ -140,6 +142,11 @@ def _bins(script_run_cli: Any, scan_query_binary: Path, scan_index_binary: Path)
 
     Returns:
         Tuple of resolved binary paths.
+
+    Example:
+        >>> query, index = Path("query"), Path("index")
+        >>> _bins(None, query, index) == (query, index)
+        True
     """
     _ = script_run_cli  # binaries come straight from the conftest fixtures
     return scan_query_binary, scan_index_binary

@@ -1,5 +1,29 @@
 #!/usr/bin/env python3
-"""Seed Claude's per-project session marker without blocking startup."""
+"""Seed the Claude codemap session marker without blocking startup.
+
+Purpose:
+    Persist the host-provided session identifier that the codemap telemetry hooks use to
+    join records from separate tool invocations.
+
+Scope:
+    Accept one Claude hook payload, write one platform-temp marker, and return promptly.
+    Resolve project identity through local Git-root markers without contacting
+    external services or reading source contents.
+
+Usage:
+    Invoke as a Claude session-start hook with the host event JSON on standard input.
+
+Outputs:
+    Write ``codemap-<project>-session`` below the platform temp directory; emit no
+    normal stdout content.
+
+Failure:
+    Non-Claude events, malformed payloads, missing session IDs, and marker write errors
+    are ignored so host startup remains fail-open.
+
+Used by:
+    Codemap-py's Claude session initialization and the sibling telemetry hooks.
+"""
 
 from __future__ import annotations
 

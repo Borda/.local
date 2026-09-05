@@ -5,8 +5,8 @@ Auto-loads all ``bin/`` Python scripts as importable modules so tests can ``from
 JS hook helpers ``run_hook`` and ``state_dir`` are exposed as pytest fixtures so test methods receive them as parameters
 — no explicit imports required.
 
-Non-fixture host-capability helpers (``hook_tmp_base``, ``bash_runs_posix_script``) live in ``_hook_env.py``, NOT here.
-Nothing may import this module by the bare name ``conftest``: ``ini_options.testpaths`` spans ``benchmarks`` and
+Non-fixture host-capability helpers (``_hook_tmp_base``, ``_bash_runs_posix_script``) live in ``_hook_env.py``, not
+here. Nothing may import this module by the bare name ``conftest``: ``ini_options.testpaths`` spans ``benchmarks`` and
 ``plugins``, every tree has its own ``conftest.py``, and under ``--import-mode=importlib`` the bare name resolves to
 whichever one loaded first — ``benchmarks/conftest.py`` in a full run.
 """
@@ -33,6 +33,7 @@ _HOOKS_DIR = _TESTS_DIR.parent / "hooks"
 
 
 def _load_bin_modules() -> None:
+    """Load Foundry bin scripts into ``sys.modules`` for direct test imports."""
     for script in sorted(_BIN_DIR.glob("*.py")):
         module_name = script.stem.replace("-", "_")
         if module_name in sys.modules:
@@ -48,8 +49,8 @@ def _load_bin_modules() -> None:
 _load_bin_modules()
 
 
-@pytest.fixture
-def run_hook() -> Callable[..., subprocess.CompletedProcess]:
+@pytest.fixture(name="run_hook")
+def _run_hook() -> Callable[..., subprocess.CompletedProcess]:
     """Return callable that spawns a foundry hook via ``node``.
 
     Strips ``OPENAI_API_KEY`` and ``ANTHROPIC_API_KEY`` so ``agent-router.js`` falls through to tier-3 fallback without
@@ -64,6 +65,7 @@ def run_hook() -> Callable[..., subprocess.CompletedProcess]:
         home: Path | None = None,
         env_extra: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess:
+        """Run one hook with the test's isolated environment and JSON payload."""
         env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(_HOOKS_DIR.parent)}
         if home is not None:
             env["HOME"] = str(home)
@@ -87,16 +89,17 @@ def run_hook() -> Callable[..., subprocess.CompletedProcess]:
     return _run
 
 
-@pytest.fixture
-def state_dir() -> Callable[[str], Path]:
+@pytest.fixture(name="state_dir")
+def _state_dir() -> Callable[[str], Path]:
     """Return callable that maps a session id to its ``claude-state-<sid>`` path.
 
-    Base comes from :func:`hook_tmp_base`, so the path tracks the hook's own ``getSentinelDir()`` on every platform
+    Base comes from :func:`_hook_tmp_base`, so the path tracks the hook's own ``getSentinelDir()`` on every platform
     instead of assuming ``/tmp``.
     """
-    from _hook_env import hook_tmp_base  # local: _TESTS_DIR is on sys.path only after this module loads
+    from _hook_env import _hook_tmp_base  # local: _TESTS_DIR is on sys.path only after this module loads
 
     def _state_dir(sid: str) -> Path:
-        return hook_tmp_base() / f"claude-state-{sid}"
+        """Return the hook state directory for one session id."""
+        return _hook_tmp_base() / f"claude-state-{sid}"
 
     return _state_dir

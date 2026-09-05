@@ -21,9 +21,13 @@ CODEX_QUERY_SKILL_PATH = BENCHMARKS_DIR.parent / "plugins" / "codemap-py" / "cod
 CLAUDE_QUERY_SKILL_PATH = BENCHMARKS_DIR.parent / "plugins" / "codemap-py" / "claude-skills" / "query-code" / "SKILL.md"
 
 
-@pytest.fixture(scope="module")
-def script_run_codex() -> Any:
-    """Load the Codex runner without executing its command-line entry point."""
+@pytest.fixture(name="script_run_codex", scope="module")
+def _script_run_codex() -> Any:
+    """Import the Codex runner for remediation tests without executing its command-line entry point.
+
+    >>> getfixture("script_run_codex").__name__
+    'remediation_run_codex'
+    """
     spec = importlib.util.spec_from_file_location("remediation_run_codex", CODEX_RUNNER_PATH)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load Codex runner at {CODEX_RUNNER_PATH}")
@@ -34,7 +38,12 @@ def script_run_codex() -> Any:
 
 
 def _review_task() -> dict[str, Any]:
-    """Return a small RV task whose nested questions must reach both providers."""
+    """Build an unscoreable review task with ordered count and caller-name subquestions.
+
+    >>> task = _review_task()
+    >>> task["scoreable"], [question["match"] for question in task["sub_questions"]]
+    (False, ['integer_extract', 'symbol_name_set'])
+    """
     return {
         "id": "RV-fixture",
         "type": "review_assistance",
@@ -72,18 +81,20 @@ def test_materialized_review_prompt_is_ordered_and_hashes_the_exact_delivered_by
     claude_commands: list[list[str]] = []
     claude = script_run_bench.BenchRunner("fixture", "fixture-model", tmp_path, tmp_path / "index.json")
 
-    def claude_stream(command: list[str], result: Any, *_args: Any, **_kwargs: Any) -> None:
+    def _claude_stream(command: list[str], result: Any, *_args: Any, **_kwargs: Any) -> None:
+        """Record the delivered command and mark the synthetic Claude result successful."""
         claude_commands.append(command)
         result.success = True
         result.input_tokens = 1
         result.output_tokens = 1
 
-    claude._stream = claude_stream
+    claude._stream = _claude_stream
     claude_result = claude.run(task, "plain")
 
     codex_commands: list[list[str]] = []
 
-    def codex_transport(command: list[str], **_kwargs: Any) -> str:
+    def _codex_transport(command: list[str], **_kwargs: Any) -> str:
+        """Record the delivered command and return a successful native Codex stream."""
         codex_commands.append(command)
         return "\n".join(
             (
@@ -92,7 +103,7 @@ def test_materialized_review_prompt_is_ordered_and_hashes_the_exact_delivered_by
             )
         )
 
-    codex = script_run_codex.CodexRunner("fixture-model", tmp_path, transport=codex_transport)
+    codex = script_run_codex.CodexRunner("fixture-model", tmp_path, transport=_codex_transport)
     codex_result = codex.run(task, "A_plain")
 
     assert claude_commands[-1][-1] == delivered

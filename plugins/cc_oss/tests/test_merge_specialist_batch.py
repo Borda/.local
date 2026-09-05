@@ -18,6 +18,7 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+        """Store the status and output returned by a fake Git command."""
         self.returncode = returncode
         self.stdout = stdout
 
@@ -33,6 +34,7 @@ def _patch_git(
     rc_by_sha = cherry_pick_rc_by_sha or {}
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Record Git calls and return configured cherry-pick/conflict output."""
         recorded.append(list(cmd))
         if cmd[1] == "cherry-pick":
             sha = cmd[3]  # [git, "cherry-pick", "--end-of-options", sha]

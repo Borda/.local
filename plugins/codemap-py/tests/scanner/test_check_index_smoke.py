@@ -35,8 +35,8 @@ def _completed(stdout: str, returncode: int = 0) -> subprocess.CompletedProcess[
     )
 
 
-@pytest.fixture
-def fake_smoke(monkeypatch: pytest.MonkeyPatch):
+@pytest.fixture(name="fake_smoke")
+def _fake_smoke(monkeypatch: pytest.MonkeyPatch):
     """Patch ``subprocess.run`` and ``Path.is_file`` inside ``check_index_smoke``.
 
     Yields a setter that tests use to declare the raw stdout the upstream
@@ -46,13 +46,15 @@ def fake_smoke(monkeypatch: pytest.MonkeyPatch):
     """
     state: dict[str, Any] = {"stdout": ""}
 
-    def fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+    def _fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        """Return a completed process containing the configured upstream output."""
         return _completed(state["stdout"])
 
-    monkeypatch.setattr(check_index_smoke.subprocess, "run", fake_run)
+    monkeypatch.setattr(check_index_smoke.subprocess, "run", _fake_run)
     monkeypatch.setattr(check_index_smoke.Path, "is_file", lambda self: True)
 
     def _set(stdout: str) -> None:
+        """Set the mocked upstream stdout consumed by the next wrapper call."""
         state["stdout"] = stdout
 
     return _set
@@ -239,10 +241,11 @@ class TestRunSmokeOSError:
     ) -> None:
         """OS-level failure to spawn the upstream script must be reported, not raised."""
 
-        def boom(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        def _boom(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            """Raise the expected spawn error for the wrapper's failure path."""
             raise OSError("exec failed")
 
-        monkeypatch.setattr(check_index_smoke.subprocess, "run", boom)
+        monkeypatch.setattr(check_index_smoke.subprocess, "run", _boom)
         monkeypatch.setattr(check_index_smoke.Path, "is_file", lambda self: True)
         rc = main(["--index-path", "/tmp/idx.json"])
         assert rc == 1

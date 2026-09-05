@@ -104,7 +104,22 @@ _SCHEMA_JSON_LD = """\
 
 
 def on_post_page(output, page, config):
-    """Inject JSON-LD schema markup into homepage <head>."""
+    """Insert site metadata before the homepage's first closing head tag.
+
+    Treat ``""``, ``"."``, and ``"./"`` as homepage URLs. Other pages and HTML
+    without the literal ``</head>`` tag pass through unchanged. ``config`` is
+    accepted for the MkDocs hook interface and is unused.
+
+    Examples:
+        >>> from types import SimpleNamespace
+        >>> on_post_page("<head></head>", SimpleNamespace(url="guide/"), None)
+        '<head></head>'
+        >>> html = on_post_page("<head></head>", SimpleNamespace(url=""), None)
+        >>> html.count('type="application/ld+json"')
+        1
+        >>> on_post_page("<body>Hello</body>", SimpleNamespace(url=""), None)
+        '<body>Hello</body>'
+    """
     if page.url in ("", ".", "./"):
         return output.replace("</head>", _SCHEMA_JSON_LD + "\n</head>", 1)
     return output

@@ -220,7 +220,13 @@ class TestCentralExcludingTests:
 
     @staticmethod
     def _production_indegree(index: dict) -> dict[str, int]:
-        """Compute production-only import counts without consulting stored metrics."""
+        """Compute production-only import counts without consulting stored metrics.
+
+        >>> TestCentralExcludingTests._production_indegree(
+        ...     {"modules": [{"is_test": False, "direct_imports": ["a"]}, {"is_test": True, "direct_imports": ["a"]}]}
+        ... )
+        {'a': 1}
+        """
         aliases = index.get("module_aliases", {})
         counts: dict[str, int] = {}
         for module in index["modules"]:
@@ -776,8 +782,8 @@ class TestRdepsNewFields:
 class TestRequireFeature:
     """_require_feature: pass/fail/edge cases for per-feature version guard."""
 
-    @pytest.fixture
-    def index_v3(self) -> dict:
+    @pytest.fixture(name="index_v3")
+    def _index_v3(self) -> dict:
         """Minimal index dict at scan_version=3 — the call-graph floor (CALL_GRAPH_MIN_VER)."""
         return {"scan_version": 3, "modules": []}
 
@@ -1431,7 +1437,11 @@ class TestUncovered:
 
     @staticmethod
     def _make_index(modules: list[dict], scan_version: int = 5) -> dict:
-        """Return a minimal hand-crafted index dict for unit-level tests."""
+        """Return a minimal hand-crafted index dict for unit-level tests.
+
+        >>> TestUncovered._make_index([], 7)["scan_version"]
+        7
+        """
         return {"scan_version": scan_version, "modules": modules}
 
     @staticmethod
@@ -1444,7 +1454,11 @@ class TestUncovered:
         fn_rdep_test_count: int = 0,
         mock_rdep_count: int = 0,
     ) -> dict:
-        """Return a stored-shape symbol dict matching the schema fields used by ``cmd_uncovered``."""
+        """Return a stored-shape symbol dict matching the schema fields used by ``cmd_uncovered``.
+
+        >>> TestUncovered._make_symbol("run")["qualified_name"]
+        'run'
+        """
         return {
             "name": name,
             "qualified_name": qualified_name or name,
@@ -1463,7 +1477,11 @@ class TestUncovered:
         sort: str = "loc",
         top: int = 20,
     ):
-        """Return an argparse.Namespace shim for direct ``cmd_uncovered`` invocation."""
+        """Return an argparse.Namespace shim for direct ``cmd_uncovered`` invocation.
+
+        >>> TestUncovered._ns(module="pkg").module
+        'pkg'
+        """
         import argparse
 
         return argparse.Namespace(module=module, all_modules=all_modules, sort=sort, top=top)
@@ -1974,7 +1992,11 @@ class TestDeadSymbols:
         exports: list[str] | None = None,
         loc: int = 10,
     ) -> dict:
-        """Return a stored-shape module dict matching the schema fields used by ``cmd_dead_symbols``."""
+        """Return a stored-shape module dict matching the schema fields used by ``cmd_dead_symbols``.
+
+        >>> TestDeadSymbols._make_module("pkg.mod")["status"]
+        'ok'
+        """
         return {
             "name": name,
             "status": "ok",
@@ -1997,7 +2019,11 @@ class TestDeadSymbols:
         mock_rdep_count: int = 0,
         sym_type: str = "function",
     ) -> dict:
-        """Return a stored-shape symbol dict matching the schema fields used by ``cmd_dead_symbols``."""
+        """Return a stored-shape symbol dict matching the schema fields used by ``cmd_dead_symbols``.
+
+        >>> TestDeadSymbols._make_symbol("run")["type"]
+        'function'
+        """
         return {
             "name": name,
             "qualified_name": qualified_name or name,
@@ -2010,7 +2036,11 @@ class TestDeadSymbols:
 
     @staticmethod
     def _ns(*, min_loc: int = 5):
-        """Return an argparse.Namespace shim for direct ``cmd_dead_symbols`` invocation."""
+        """Return an argparse.Namespace shim for direct ``cmd_dead_symbols`` invocation.
+
+        >>> TestDeadSymbols._ns(min_loc=8).min_loc
+        8
+        """
         import argparse
 
         return argparse.Namespace(min_loc=min_loc)
@@ -2871,7 +2901,11 @@ def _write_synthetic_coverage_file(
 def _invert_contexts(
     file_to_contexts: dict[str, dict[int, list[str]]],
 ) -> dict[str, dict[str, list[int]]]:
-    """Re-key context structure from ``{file: {line: [ctx]}}`` to ``{ctx: {file: [line]}}``."""
+    """Re-key context structure from ``{file: {line: [ctx]}}`` to ``{ctx: {file: [line]}}``.
+
+    >>> _invert_contexts({"m.py": {4: ["test"]}})
+    {'test': {'m.py': [4]}}
+    """
     out: dict[str, dict[str, list[int]]] = {}
     for path, per_line in file_to_contexts.items():
         for line, ctxs in per_line.items():
@@ -3053,8 +3087,8 @@ class TestCoverageScanIntegration:
 class TestCoverageQueryCommands:
     """Tests for `scan-query coverage` and `scan-query coverage-gap`."""
 
-    @pytest.fixture
-    def covered_project(self, tmp_path, scan_index):
+    @pytest.fixture(name="covered_project")
+    def _covered_project(self, tmp_path, scan_index):
         """Build a small project with a real .coverage file and a v10 index."""
         root = tmp_path / "covered"
         root.mkdir()

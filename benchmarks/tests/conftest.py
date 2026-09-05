@@ -34,6 +34,12 @@ def _load_module(module_name: str, filename: str):
 
     Returns:
         The loaded module with all public symbols accessible.
+
+    Example:
+        >>> module = _load_module("example_python_source", "_bench_common/python_source.py")
+        >>> module.__name__, sys.modules["example_python_source"] is module
+        ('example_python_source', True)
+        >>> _ = sys.modules.pop("example_python_source")
     """
     # Runners import private benchmark packages from their own directory; add it
     # because spec_from_file_location does not set it as sys.path[0].
@@ -47,51 +53,83 @@ def _load_module(module_name: str, filename: str):
     return mod
 
 
-@pytest.fixture(scope="session")
-def script_claude_stream():
-    """Load the shared Claude stream implementation."""
+@pytest.fixture(name="script_claude_stream", scope="session")
+def _script_claude_stream():
+    """Cache the shared Claude transport module for the test session without invoking a provider.
+
+    >>> getfixture("script_claude_stream").__name__
+    'benchmarks_claude_transport'
+    """
     return _load_module("benchmarks_claude_transport", "_bench_common/claude_transport.py")
 
 
-@pytest.fixture(scope="session")
-def script_python_source():
-    """Load shared Python-source import graph helpers."""
+@pytest.fixture(name="script_python_source", scope="session")
+def _script_python_source():
+    """Cache the source-analysis module for tests that inspect synthetic Python import graphs.
+
+    >>> getfixture("script_python_source").__name__
+    'benchmarks_python_source'
+    """
     return _load_module("benchmarks_python_source", "_bench_common/python_source.py")
 
 
-@pytest.fixture(scope="session")
-def script_benchmark_paths():
-    """Load shared benchmark-task paths and metadata helpers."""
+@pytest.fixture(name="script_benchmark_paths", scope="session")
+def _script_benchmark_paths():
+    """Cache benchmark path and metadata helpers without loading a provider runner.
+
+    >>> getfixture("script_benchmark_paths").__name__
+    'benchmarks_benchmark_paths'
+    """
     return _load_module("benchmarks_benchmark_paths", "_bench_common/benchmark_paths.py")
 
 
-@pytest.fixture(scope="session")
-def script_run_agentic():
-    """Load the Claude-only agentic runner."""
+@pytest.fixture(name="script_run_agentic", scope="session")
+def _script_run_agentic():
+    """Cache the agentic runner's definitions without entering its command-line entry point.
+
+    >>> getfixture("script_run_agentic").__name__
+    'run_claude_agentic'
+    """
     return _load_module("run_claude_agentic", "run-claude-agentic.py")
 
 
-@pytest.fixture(scope="session")
-def script_run_bench():
-    """Load the Claude-only structural runner."""
+@pytest.fixture(name="script_run_bench", scope="session")
+def _script_run_bench():
+    """Cache the structural runner's definitions without executing a benchmark or provider call.
+
+    >>> getfixture("script_run_bench").__name__
+    'run_claude_structural'
+    """
     return _load_module("run_claude_structural", "run-claude-structural.py")
 
 
-@pytest.fixture(scope="session")
-def script_run_cli():
-    """Provide the loaded Codemap CLI module."""
+@pytest.fixture(name="script_run_cli", scope="session")
+def _script_run_cli():
+    """Cache the CLI benchmark module without launching its subprocess benchmarks.
+
+    >>> getfixture("script_run_cli").__name__
+    'run_cli'
+    """
     return _load_module("run_cli", "run-codemap-cli.py")
 
 
-@pytest.fixture(scope="session")
-def script_gen_bench():
-    """Provide the loaded benchmark-task generator module."""
+@pytest.fixture(name="script_gen_bench", scope="session")
+def _script_gen_bench():
+    """Cache the benchmark-task generator without writing generated suites.
+
+    >>> getfixture("script_gen_bench").__name__
+    'generate_tasks_bench'
+    """
     return _load_module("generate_tasks_bench", "generate-tasks-bench.py")
 
 
-@pytest.fixture(scope="session")
-def script_gen_real_issues():
-    """Provide the loaded real-issue task generator module."""
+@pytest.fixture(name="script_gen_real_issues", scope="session")
+def _script_gen_real_issues():
+    """Cache the real-issue generator without fetching GitHub data or generating tasks.
+
+    >>> getfixture("script_gen_real_issues").__name__
+    'generate_tasks_real_issues'
+    """
     return _load_module("generate_tasks_real_issues", "generate-tasks-real-issues.py")
 
 
@@ -100,8 +138,8 @@ def script_gen_real_issues():
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="session")
-def scan_query_binary() -> Path:
+@pytest.fixture(name="scan_query_binary", scope="session")
+def _scan_query_binary() -> Path:
     """Path to scan-query binary; fails on POSIX when the tracked binary is absent.
 
     The enclosing tests use a collection-time launchability marker. Once selected,
@@ -110,6 +148,10 @@ def scan_query_binary() -> Path:
 
     Returns:
         Absolute path to the scan-query executable.
+
+    Example:
+        >>> getfixture("scan_query_binary").name
+        'scan-query'
     """
     binary = REPO_ROOT / "plugins" / "codemap-py" / "bin" / "scan-query"
     if not binary.exists():
@@ -117,8 +159,8 @@ def scan_query_binary() -> Path:
     return binary
 
 
-@pytest.fixture(scope="session")
-def scan_index_binary() -> Path:
+@pytest.fixture(name="scan_index_binary", scope="session")
+def _scan_index_binary() -> Path:
     """Path to scan-index binary; fails on POSIX when the tracked binary is absent.
 
     The enclosing tests use a collection-time launchability marker. Once selected,
@@ -127,6 +169,10 @@ def scan_index_binary() -> Path:
 
     Returns:
         Absolute path to the scan-index executable.
+
+    Example:
+        >>> getfixture("scan_index_binary").name
+        'scan-index'
     """
     binary = REPO_ROOT / "plugins" / "codemap-py" / "bin" / "scan-index"
     if not binary.exists():
@@ -134,8 +180,8 @@ def scan_index_binary() -> Path:
     return binary
 
 
-@pytest.fixture(scope="session")
-def sample_repo(tmp_path_factory: pytest.TempPathFactory, scan_index_binary: Path) -> tuple[Path, Path]:
+@pytest.fixture(name="sample_repo", scope="session")
+def _sample_repo(tmp_path_factory: pytest.TempPathFactory, scan_index_binary: Path) -> tuple[Path, Path]:
     """Clone psf/requests (shallow) and build a codemap index.
 
     Fails if clone or indexing fails after collection.
@@ -176,8 +222,8 @@ def sample_repo(tmp_path_factory: pytest.TempPathFactory, scan_index_binary: Pat
     return clone_dir, index_candidates[0]
 
 
-@pytest.fixture(scope="session")
-def pytorch_lightning_repo() -> Path:
+@pytest.fixture(name="pytorch_lightning_repo", scope="session")
+def _pytorch_lightning_repo() -> Path:
     """Path to a decorator-validated pytorch-lightning checkout.
 
     Checks ``PL_REPO_PATH`` env var first, then the pinned in-project clone
@@ -190,8 +236,8 @@ def pytorch_lightning_repo() -> Path:
     return PYTORCH_LIGHTNING_REPO
 
 
-@pytest.fixture(scope="session")
-def pytorch_lightning_index(pytorch_lightning_repo: Path, scan_query_binary: Path) -> Path:
+@pytest.fixture(name="pytorch_lightning_index", scope="session")
+def _pytorch_lightning_index(pytorch_lightning_repo: Path, scan_query_binary: Path) -> Path:
     """Decorator-validated pre-built Codemap index for pytorch-lightning.
 
     The index is expected at ``.cache/codemap/<repo-name>.json`` inside the

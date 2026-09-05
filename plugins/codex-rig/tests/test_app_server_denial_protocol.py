@@ -33,7 +33,7 @@ from app_server_denial_probe import (
 )
 
 
-def approval_request(
+def _approval_request(
     workspace: Path,
     output_path: Path,
     *,
@@ -59,7 +59,7 @@ def approval_request(
     }
 
 
-def completed_item(
+def _completed_item(
     workspace: Path,
     output_path: Path,
     *,
@@ -86,8 +86,13 @@ def completed_item(
     }
 
 
-def resolved_request(request_id: int = 41) -> dict[str, object]:
-    """Return one server acknowledgement for the approval callback."""
+def _resolved_request(request_id: int = 41) -> dict[str, object]:
+    """Return one server acknowledgement for the approval callback.
+
+    Example:
+        >>> _resolved_request()["params"]["requestId"]
+        41
+    """
     return {
         "jsonrpc": "2.0",
         "method": RESOLVED_METHOD,
@@ -95,8 +100,13 @@ def resolved_request(request_id: int = 41) -> dict[str, object]:
     }
 
 
-def recovery_turn() -> dict[str, object]:
-    """Return one fresh, completed local turn after the declined command."""
+def _recovery_turn() -> dict[str, object]:
+    """Return one fresh, completed local turn after the declined command.
+
+    Example:
+        >>> _recovery_turn()["params"]["item"]["type"]
+        'agentMessage'
+    """
     return {
         "jsonrpc": "2.0",
         "method": COMPLETED_METHOD,
@@ -109,10 +119,15 @@ def recovery_turn() -> dict[str, object]:
     }
 
 
-def primary_turn_completed(
+def _primary_turn_completed(
     *, thread_id: str = "thread-1", turn_id: str = "turn-1", status: str = "failed"
 ) -> dict[str, object]:
-    """Return the authoritative terminal event for the denied primary turn."""
+    """Return the authoritative terminal event for the denied primary turn.
+
+    Example:
+        >>> _primary_turn_completed(status="failed")["params"]["turn"]["status"]
+        'failed'
+    """
     return {
         "jsonrpc": "2.0",
         "method": TURN_COMPLETED_METHOD,
@@ -120,8 +135,13 @@ def primary_turn_completed(
     }
 
 
-def recovery_turn_completed() -> dict[str, object]:
-    """Return the authoritative successful terminal event for the fresh turn."""
+def _recovery_turn_completed() -> dict[str, object]:
+    """Return the authoritative successful terminal event for the fresh turn.
+
+    Example:
+        >>> _recovery_turn_completed()["params"]["turn"]["id"]
+        'turn-2'
+    """
     return {
         "jsonrpc": "2.0",
         "method": TURN_COMPLETED_METHOD,
@@ -129,8 +149,13 @@ def recovery_turn_completed() -> dict[str, object]:
     }
 
 
-def expected(workspace: Path, output_path: Path) -> DenialExpectation:
-    """Return the exact collector identity expected for a disposable probe."""
+def _expected(workspace: Path, output_path: Path) -> DenialExpectation:
+    """Return the exact collector identity expected for a disposable probe.
+
+    Example:
+        >>> _expected(Path("/work"), Path("/work/out")).thread_id
+        'thread-1'
+    """
     return DenialExpectation(
         thread_id="thread-1",
         turn_id="turn-1",
@@ -141,16 +166,21 @@ def expected(workspace: Path, output_path: Path) -> DenialExpectation:
     )
 
 
-def success_transcript(workspace: Path, output_path: Path) -> list[dict[str, object]]:
-    """Return the shortest transcript proving a denied command and recovery."""
+def _success_transcript(workspace: Path, output_path: Path) -> list[dict[str, object]]:
+    """Return the shortest transcript proving a denied command and recovery.
+
+    Example:
+        >>> len(_success_transcript(Path("/work"), Path("/work/out")))
+        6
+    """
     command = f"python collect_pr.py Borda/AI-Rig#17 --out {output_path}"
     return [
-        approval_request(workspace, output_path, command=command),
-        resolved_request(),
-        completed_item(workspace, output_path),
-        primary_turn_completed(),
-        recovery_turn(),
-        recovery_turn_completed(),
+        _approval_request(workspace, output_path, command=command),
+        _resolved_request(),
+        _completed_item(workspace, output_path),
+        _primary_turn_completed(),
+        _recovery_turn(),
+        _recovery_turn_completed(),
     ]
 
 
@@ -158,7 +188,7 @@ def test_command_approval_declines_exact_collector_and_requires_fresh_recovery(t
     """Emit one decline response only after every command identity field matches."""
     output_path = tmp_path / "collector-output"
 
-    result = validate_transcript(success_transcript(tmp_path, output_path), expected(tmp_path, output_path))
+    result = validate_transcript(_success_transcript(tmp_path, output_path), _expected(tmp_path, output_path))
 
     assert result.responses == ({"jsonrpc": "2.0", "id": 41, "result": {"decision": "decline"}},)
     assert result.recovery_turn_id == "turn-2"
@@ -175,23 +205,23 @@ def test_network_context_is_additional_evidence_for_an_exact_collector(tmp_path:
     output_path = tmp_path / "collector-output"
     command = f"python collect_pr.py Borda/AI-Rig#17 --out {output_path}"
     transcript = [
-        approval_request(
+        _approval_request(
             tmp_path,
             output_path,
             command=command,
             network_context={"host": "api.github.com", "protocol": "https"},
         ),
-        resolved_request(),
-        completed_item(tmp_path, output_path),
-        primary_turn_completed(),
-        recovery_turn(),
-        recovery_turn_completed(),
+        _resolved_request(),
+        _completed_item(tmp_path, output_path),
+        _primary_turn_completed(),
+        _recovery_turn(),
+        _recovery_turn_completed(),
     ]
     transcript[2]["params"]["item"]["networkApprovalContext"] = {
         "host": "api.github.com",
         "protocol": "https",
     }
-    probe = expected(tmp_path, output_path)
+    probe = _expected(tmp_path, output_path)
     probe = DenialExpectation(**{**probe.__dict__, "network_host": "api.github.com", "network_protocol": "https"})
 
     result = validate_transcript(transcript, probe)
@@ -202,14 +232,14 @@ def test_network_context_is_additional_evidence_for_an_exact_collector(tmp_path:
 def test_grouped_network_approval_without_command_identity_fails_closed(tmp_path: Path) -> None:
     """Never treat a shared host and protocol as proof of the collector operation."""
     output_path = tmp_path / "collector-output"
-    transcript = success_transcript(tmp_path, output_path)
-    transcript[0] = approval_request(
+    transcript = _success_transcript(tmp_path, output_path)
+    transcript[0] = _approval_request(
         tmp_path,
         output_path,
         command=None,
         network_context={"host": "api.github.com", "protocol": "https"},
     )
-    probe = expected(tmp_path, output_path)
+    probe = _expected(tmp_path, output_path)
     probe = DenialExpectation(**{**probe.__dict__, "network_host": "api.github.com", "network_protocol": "https"})
 
     with pytest.raises(ProtocolViolation, match="command-identity-mismatch"):
@@ -219,21 +249,21 @@ def test_grouped_network_approval_without_command_identity_fails_closed(tmp_path
 def test_approval_rejects_a_server_prompt_that_does_not_offer_decline(tmp_path: Path) -> None:
     """Never send a decision outside the choices advertised by App Server."""
     output_path = tmp_path / "collector-output"
-    transcript = success_transcript(tmp_path, output_path)
+    transcript = _success_transcript(tmp_path, output_path)
     transcript[0]["params"]["availableDecisions"] = ["accept"]
 
     with pytest.raises(ProtocolViolation, match="decline-decision-unavailable"):
-        validate_transcript(transcript, expected(tmp_path, output_path))
+        validate_transcript(transcript, _expected(tmp_path, output_path))
 
 
 @pytest.mark.parametrize(
     ("mutate", "match"),
     [
         (
-            lambda items: items.__setitem__(1, approval_request(Path("workspace"), Path("out"), request_id=42)),
+            lambda items: items.__setitem__(1, _approval_request(Path("workspace"), Path("out"), request_id=42)),
             "duplicate",
         ),
-        (lambda items: items.__setitem__(1, resolved_request(99)), "resolution"),
+        (lambda items: items.__setitem__(1, _resolved_request(99)), "resolution"),
         (lambda items: items[2]["params"]["item"].__setitem__("status", "completed"), "declined"),
         (
             lambda items: items.insert(
@@ -275,12 +305,12 @@ def test_protocol_drift_fails_closed(
 ) -> None:
     """Reject duplicate, incomplete, or execution-shaped denied transcripts."""
     output_path = tmp_path / "collector-output"
-    transcript = success_transcript(tmp_path, output_path)
+    transcript = _success_transcript(tmp_path, output_path)
 
     mutate(transcript)  # type: ignore[operator]
 
     with pytest.raises(ProtocolViolation, match=match):
-        validate_transcript(transcript, expected(tmp_path, output_path))
+        validate_transcript(transcript, _expected(tmp_path, output_path))
 
 
 @pytest.mark.parametrize(
@@ -300,9 +330,9 @@ def test_unexpected_command_or_network_identity_fails_closed(
 ) -> None:
     """Reject a fallback or destination that is not the fixed collector boundary."""
     output_path = tmp_path / "collector-output"
-    transcript = success_transcript(tmp_path, output_path)
-    transcript[0] = approval_request(tmp_path, output_path, command=command, network_context=network_context)
-    probe = expected(tmp_path, output_path)
+    transcript = _success_transcript(tmp_path, output_path)
+    transcript[0] = _approval_request(tmp_path, output_path, command=command, network_context=network_context)
+    probe = _expected(tmp_path, output_path)
     if network_context is not None:
         probe = DenialExpectation(**{**probe.__dict__, "network_host": "api.github.com", "network_protocol": "https"})
 
@@ -321,18 +351,18 @@ def test_unexpected_command_or_network_identity_fails_closed(
 def test_command_identity_rejects_marker_injection(tmp_path: Path, mutated_command: str) -> None:
     """Reject commands that contain the old markers but are not the exact collector command."""
     output_path = tmp_path / "collector-output"
-    transcript = success_transcript(tmp_path, output_path)
+    transcript = _success_transcript(tmp_path, output_path)
     transcript[0]["params"]["command"] = mutated_command.format(output=output_path)
 
     with pytest.raises(ProtocolViolation, match="command-identity-mismatch"):
-        validate_transcript(transcript, expected(tmp_path, output_path))
+        validate_transcript(transcript, _expected(tmp_path, output_path))
 
 
 @pytest.mark.parametrize("missing_from", ("approval", "completion"))
 def test_expected_network_context_is_required_on_request_and_completion(tmp_path: Path, missing_from: str) -> None:
     """Reject a destination-bound proof when either lifecycle record omits its context."""
     output_path = tmp_path / "collector-output"
-    transcript = success_transcript(tmp_path, output_path)
+    transcript = _success_transcript(tmp_path, output_path)
     network = {"host": "api.github.com", "protocol": "https"}
     transcript[0]["params"]["networkApprovalContext"] = dict(network)
     transcript[2]["params"]["item"]["networkApprovalContext"] = dict(network)
@@ -342,7 +372,7 @@ def test_expected_network_context_is_required_on_request_and_completion(tmp_path
         transcript[2]["params"]["item"].pop("networkApprovalContext")
     probe = DenialExpectation(
         **{
-            **expected(tmp_path, output_path).__dict__,
+            **_expected(tmp_path, output_path).__dict__,
             "network_host": "api.github.com",
             "network_protocol": "https",
         }
@@ -356,12 +386,12 @@ def test_expected_network_context_is_required_on_request_and_completion(tmp_path
 def test_declined_completion_must_repeat_exact_command_identity(tmp_path: Path, field: str) -> None:
     """Reject a matching item identifier whose authoritative command details drift."""
     output_path = tmp_path / "collector-output"
-    transcript = success_transcript(tmp_path, output_path)
+    transcript = _success_transcript(tmp_path, output_path)
     completed = transcript[2]["params"]["item"]
     completed[field] = "python broader_operation.py" if field == "command" else str(tmp_path / "other")
 
     with pytest.raises(ProtocolViolation, match="command-identity|cwd-correlation"):
-        validate_transcript(transcript, expected(tmp_path, output_path))
+        validate_transcript(transcript, _expected(tmp_path, output_path))
 
 
 def test_preexisting_or_created_output_path_fails_closed(tmp_path: Path) -> None:
@@ -370,13 +400,13 @@ def test_preexisting_or_created_output_path_fails_closed(tmp_path: Path) -> None
     output_path.mkdir()
 
     with pytest.raises(ProtocolViolation, match="output path"):
-        validate_transcript(success_transcript(tmp_path, output_path), expected(tmp_path, output_path))
+        validate_transcript(_success_transcript(tmp_path, output_path), _expected(tmp_path, output_path))
 
 
 def test_broader_command_item_start_fails_before_any_fallback_can_complete(tmp_path: Path) -> None:
     """Reject a second command item in the denied turn even without output data."""
     output_path = tmp_path / "collector-output"
-    transcript = success_transcript(tmp_path, output_path)
+    transcript = _success_transcript(tmp_path, output_path)
     transcript.insert(
         2,
         {
@@ -399,13 +429,13 @@ def test_broader_command_item_start_fails_before_any_fallback_can_complete(tmp_p
     )
 
     with pytest.raises(ProtocolViolation, match="command-execution-start-observed"):
-        validate_transcript(transcript, expected(tmp_path, output_path))
+        validate_transcript(transcript, _expected(tmp_path, output_path))
 
 
 def test_exact_expected_command_start_invalidates_denial_proof(tmp_path: Path) -> None:
     """Reject a matching collector start because decline must prevent all execution."""
     output_path = tmp_path / "collector-output"
-    transcript = success_transcript(tmp_path, output_path)
+    transcript = _success_transcript(tmp_path, output_path)
     transcript.insert(
         0,
         {
@@ -428,15 +458,16 @@ def test_exact_expected_command_start_invalidates_denial_proof(tmp_path: Path) -
     )
 
     with pytest.raises(ProtocolViolation, match="command-execution-start-observed"):
-        validate_transcript(transcript, expected(tmp_path, output_path))
+        validate_transcript(transcript, _expected(tmp_path, output_path))
 
 
 def test_output_path_created_during_transcript_fails_after_completion(tmp_path: Path) -> None:
     """Check the negative filesystem assertion both before and after protocol events."""
     output_path = tmp_path / "collector-output"
-    transcript = success_transcript(tmp_path, output_path)
+    transcript = _success_transcript(tmp_path, output_path)
 
-    def messages() -> object:
+    def _messages() -> object:
+        """Yield the valid transcript while creating the forbidden output path mid-stream."""
         yield transcript[0]
         yield transcript[1]
         yield transcript[2]
@@ -444,25 +475,25 @@ def test_output_path_created_during_transcript_fails_after_completion(tmp_path: 
         yield from transcript[3:]
 
     with pytest.raises(ProtocolViolation, match="output path exists after"):
-        validate_transcript(messages(), expected(tmp_path, output_path))
+        validate_transcript(_messages(), _expected(tmp_path, output_path))
 
 
 def test_resolution_and_declined_completion_must_follow_the_approval_request(tmp_path: Path) -> None:
     """Reject events that prove the right outcome but arrive in an unsafe protocol order."""
     output_path = tmp_path / "collector-output"
-    transcript = success_transcript(tmp_path, output_path)
+    transcript = _success_transcript(tmp_path, output_path)
 
     with pytest.raises(ProtocolViolation, match="unexpected-or-duplicate-resolution"):
-        validate_transcript([resolved_request(), *transcript], expected(tmp_path, output_path))
+        validate_transcript([_resolved_request(), *transcript], _expected(tmp_path, output_path))
     transcript[1], transcript[2] = transcript[2], transcript[1]
     with pytest.raises(ProtocolViolation, match="completed-before-approval-resolution"):
-        validate_transcript(transcript, expected(tmp_path, output_path))
+        validate_transcript(transcript, _expected(tmp_path, output_path))
 
 
 def test_recovery_command_start_or_terminal_before_local_item_fails_closed(tmp_path: Path) -> None:
     """Require a non-command recovery item before its authoritative successful terminal event."""
     output_path = tmp_path / "collector-output"
-    transcript = success_transcript(tmp_path, output_path)
+    transcript = _success_transcript(tmp_path, output_path)
     transcript.insert(
         3,
         {
@@ -477,20 +508,20 @@ def test_recovery_command_start_or_terminal_before_local_item_fails_closed(tmp_p
         },
     )
     with pytest.raises(ProtocolViolation, match="command-execution-start-observed"):
-        validate_transcript(transcript, expected(tmp_path, output_path))
-    transcript = success_transcript(tmp_path, output_path)
+        validate_transcript(transcript, _expected(tmp_path, output_path))
+    transcript = _success_transcript(tmp_path, output_path)
     transcript[4], transcript[5] = transcript[5], transcript[4]
     with pytest.raises(ProtocolViolation, match="recovery-turn-completed-before-local-item"):
-        validate_transcript(transcript, expected(tmp_path, output_path))
+        validate_transcript(transcript, _expected(tmp_path, output_path))
 
 
 @pytest.mark.parametrize(
     ("terminal_event", "match"),
     [
         (None, "authoritative-primary-turn-completion"),
-        (primary_turn_completed(thread_id="thread-other"), "thread-correlation-drift"),
-        (primary_turn_completed(turn_id="turn-other"), "primary-turn-completion-correlation-drift"),
-        (primary_turn_completed(status="inProgress"), "nonterminal-status"),
+        (_primary_turn_completed(thread_id="thread-other"), "thread-correlation-drift"),
+        (_primary_turn_completed(turn_id="turn-other"), "primary-turn-completion-correlation-drift"),
+        (_primary_turn_completed(status="inProgress"), "nonterminal-status"),
     ],
     ids=("missing", "wrong-thread", "wrong-turn", "nonterminal-status"),
 )
@@ -501,30 +532,30 @@ def test_primary_turn_terminal_event_is_required_and_correlated(
 ) -> None:
     """Reject missing, unrelated, or nonterminal primary completion evidence."""
     output_path = tmp_path / "collector-output"
-    transcript = success_transcript(tmp_path, output_path)
+    transcript = _success_transcript(tmp_path, output_path)
     if terminal_event is None:
         transcript.pop(3)
     else:
         transcript[3] = terminal_event
 
     with pytest.raises(ProtocolViolation, match=match):
-        validate_transcript(transcript, expected(tmp_path, output_path))
+        validate_transcript(transcript, _expected(tmp_path, output_path))
 
 
 def test_primary_terminal_must_precede_recovery_item(tmp_path: Path) -> None:
     """Reject a transcript that starts recovery before primary termination is authoritative."""
     output_path = tmp_path / "collector-output"
-    transcript = success_transcript(tmp_path, output_path)
+    transcript = _success_transcript(tmp_path, output_path)
     transcript[3], transcript[4] = transcript[4], transcript[3]
 
     with pytest.raises(ProtocolViolation, match="primary-turn-completion"):
-        validate_transcript(transcript, expected(tmp_path, output_path))
+        validate_transcript(transcript, _expected(tmp_path, output_path))
 
 
 def test_file_change_approval_or_item_fails_closed_as_post_denial_write_fallback(tmp_path: Path) -> None:
     """Reject an approval or lifecycle item that could write after the denied collector call."""
     output_path = tmp_path / "collector-output"
-    transcript = success_transcript(tmp_path, output_path)
+    transcript = _success_transcript(tmp_path, output_path)
     transcript.insert(
         3,
         {
@@ -535,8 +566,8 @@ def test_file_change_approval_or_item_fails_closed_as_post_denial_write_fallback
         },
     )
     with pytest.raises(ProtocolViolation, match="file-change-approval"):
-        validate_transcript(transcript, expected(tmp_path, output_path))
-    transcript = success_transcript(tmp_path, output_path)
+        validate_transcript(transcript, _expected(tmp_path, output_path))
+    transcript = _success_transcript(tmp_path, output_path)
     transcript[4] = {
         "jsonrpc": "2.0",
         "method": COMPLETED_METHOD,
@@ -548,13 +579,14 @@ def test_file_change_approval_or_item_fails_closed_as_post_denial_write_fallback
         },
     }
     with pytest.raises(ProtocolViolation, match="file-change-item"):
-        validate_transcript(transcript, expected(tmp_path, output_path))
+        validate_transcript(transcript, _expected(tmp_path, output_path))
 
 
 class FakeProcess:
     """Expose fixed App Server stdio while recording the live client's outbound frames."""
 
     def __init__(self, messages: list[dict[str, object]]) -> None:
+        """Initialize deterministic stdio streams for protocol tests."""
         self.stdin = io.StringIO()
         self.stdout = io.StringIO("".join(f"{json.dumps(message)}\n" for message in messages))
         self.pid = 123
@@ -671,7 +703,7 @@ def test_posix_cleanup_converts_signal_permission_error_to_protocol_failure(
         terminate_process(fake, platform="darwin")
 
 
-def installed_plugin(tmp_path: Path) -> tuple[Path, Path]:
+def _installed_plugin(tmp_path: Path) -> tuple[Path, Path]:
     """Create an exact minimal installed-package identity for the mocked App Server run."""
     codex_home = tmp_path / "codex-home"
     plugin_root = codex_home / "plugins" / "codex-rig" / "0.8.0"
@@ -723,9 +755,9 @@ def installed_plugin(tmp_path: Path) -> tuple[Path, Path]:
     return codex_home, plugin_root
 
 
-def live_probe_config(tmp_path: Path) -> LiveProbeConfig:
+def _live_probe_config(tmp_path: Path) -> LiveProbeConfig:
     """Build one valid disposable configuration for live-driver failure tests."""
-    codex_home, plugin_root = installed_plugin(tmp_path)
+    codex_home, plugin_root = _installed_plugin(tmp_path)
     codex_bin = tmp_path / "codex"
     codex_bin.write_text("placeholder", encoding="utf-8")
     workspace = tmp_path / "workdir"
@@ -759,7 +791,7 @@ def test_live_config_keeps_process_start_temp_root_when_tempfile_cache_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Keep live-path validation stable when another in-process test resets tempfile state."""
-    config = live_probe_config(tmp_path)
+    config = _live_probe_config(tmp_path)
     shifted_temp_root = tmp_path / "shifted-temp-root"
     shifted_temp_root.mkdir()
     monkeypatch.setattr(denial_probe.tempfile, "tempdir", str(shifted_temp_root))
@@ -769,7 +801,7 @@ def test_live_config_keeps_process_start_temp_root_when_tempfile_cache_changes(
 
 def test_live_config_rejects_overlapping_mutable_roots(tmp_path: Path) -> None:
     """Prevent probe-owned evidence from satisfying or mutating the tested workspace."""
-    config = live_probe_config(tmp_path)
+    config = _live_probe_config(tmp_path)
 
     with pytest.raises(ProtocolViolation, match="live-mutable-boundaries-overlap"):
         denial_probe._validate_live_config(replace(config, evidence_dir=config.workdir / "evidence"))
@@ -784,7 +816,7 @@ def test_live_config_rejects_overlapping_mutable_roots(tmp_path: Path) -> None:
 
 def test_live_config_verifies_non_skill_payload_against_bound_manifest(tmp_path: Path) -> None:
     """Reject a candidate whose full payload drifts while its selected skill stays unchanged."""
-    config = live_probe_config(tmp_path)
+    config = _live_probe_config(tmp_path)
     (config.plugin_root / "scripts" / "bootstrap.py").write_text(
         "# substituted fixture bootstrap\n", encoding="utf-8", newline="\n"
     )
@@ -793,7 +825,7 @@ def test_live_config_verifies_non_skill_payload_against_bound_manifest(tmp_path:
         denial_probe._validate_live_config(config)
 
 
-def successful_live_messages(config: LiveProbeConfig) -> list[dict[str, object]]:
+def _successful_live_messages(config: LiveProbeConfig) -> list[dict[str, object]]:
     """Return one complete denial exchange for post-cleanup suffix tests."""
     command = f"python collect_pr.py public-target --out {config.expectation.output_path}"
     return [
@@ -899,8 +931,8 @@ def test_live_probe_revalidates_queued_events_after_recovery_terminal(
     match: str,
 ) -> None:
     """Fail a live proof when an unsafe frame was already queued behind recovery."""
-    config = live_probe_config(tmp_path)
-    fake = FakeProcess([*successful_live_messages(config), late_event])
+    config = _live_probe_config(tmp_path)
+    fake = FakeProcess([*_successful_live_messages(config), late_event])
     monkeypatch.setattr(denial_probe, "terminate_process", lambda process: None)
 
     with pytest.raises(ProtocolViolation, match=match):
@@ -915,14 +947,14 @@ def test_live_probe_uses_exact_installed_skill_and_writes_only_sanitized_evidenc
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Drive mocked stdio through decline, recovery, package identity, and atomic evidence output."""
-    codex_home, plugin_root = installed_plugin(tmp_path)
+    codex_home, plugin_root = _installed_plugin(tmp_path)
     codex_bin = tmp_path / "codex"
     codex_bin.write_text("placeholder", encoding="utf-8")
     workspace = tmp_path / "workdir"
     workspace.mkdir()
     output_path = workspace / "collector-output"
     command = f"python collect_pr.py Borda/AI-Rig#17 --out {output_path}"
-    messages = [
+    _messages = [
         {"jsonrpc": "2.0", "id": 1, "result": {}},
         {"jsonrpc": "2.0", "id": 2, "result": {"thread": {"id": "thread-live"}}},
         {"jsonrpc": "2.0", "id": 3, "result": {"turn": {"id": "turn-primary"}}},
@@ -980,22 +1012,23 @@ def test_live_probe_uses_exact_installed_skill_and_writes_only_sanitized_evidenc
             "params": {"threadId": "thread-live", "turn": {"id": "turn-recovery", "items": [], "status": "completed"}},
         },
     ]
-    fake = FakeProcess(messages)
+    fake = FakeProcess(_messages)
     captured: dict[str, object] = {}
     cleanup_calls: list[FakeProcess] = []
 
-    def fake_popen(*args: object, **kwargs: object) -> FakeProcess:
+    def _fake_popen(*args: object, **kwargs: object) -> FakeProcess:
+        """Capture process-launch arguments and return the prepared fake process."""
         captured["args"] = args
         captured["kwargs"] = kwargs
         return fake
 
-    def fake_terminate(process: FakeProcess) -> None:
+    def _fake_terminate(process: FakeProcess) -> None:
         """Prove cleanup completes before the passing evidence file is published."""
         assert not (tmp_path / "evidence" / "denial-evidence.json").exists()
         cleanup_calls.append(process)
 
     monkeypatch.setenv("OPAQUE_ACCOUNT_TOKEN", "must-not-appear-in-evidence")
-    monkeypatch.setattr(denial_probe, "terminate_process", fake_terminate)
+    monkeypatch.setattr(denial_probe, "terminate_process", _fake_terminate)
     evidence_path = run_live_probe(
         LiveProbeConfig(
             codex_bin=codex_bin,
@@ -1018,7 +1051,7 @@ def test_live_probe_uses_exact_installed_skill_and_writes_only_sanitized_evidenc
             recovery_prompt="Respond with recovery only; run no command.",
             timeout_seconds=5,
         ),
-        popen=fake_popen,
+        popen=_fake_popen,
     )
 
     outbound = [json.loads(line) for line in fake.stdin.getvalue().splitlines()]
@@ -1052,14 +1085,15 @@ def test_live_probe_uses_exact_installed_skill_and_writes_only_sanitized_evidenc
 
 def test_live_probe_rechecks_workspace_after_process_cleanup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Reject a child-side mutation that lands after the first terminal snapshot."""
-    config = live_probe_config(tmp_path)
-    fake = FakeProcess(successful_live_messages(config))
+    config = _live_probe_config(tmp_path)
+    fake = FakeProcess(_successful_live_messages(config))
 
-    def mutating_cleanup(process: FakeProcess) -> None:
+    def _mutating_cleanup(process: FakeProcess) -> None:
+        """Create a late workspace file after the process reaches cleanup."""
         assert process is fake
         (config.workdir / "late-child-write").write_text("unexpected\n", encoding="utf-8", newline="\n")
 
-    monkeypatch.setattr(denial_probe, "terminate_process", mutating_cleanup)
+    monkeypatch.setattr(denial_probe, "terminate_process", _mutating_cleanup)
 
     with pytest.raises(ProtocolViolation, match="workdir-mutated-during-denial-probe"):
         run_live_probe(config, popen=lambda *args, **kwargs: fake)
@@ -1073,17 +1107,18 @@ def test_live_probe_rejects_post_cleanup_workspace_metadata_mutation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Detect a side effect that changes only existing workspace metadata."""
-    config = live_probe_config(tmp_path)
+    config = _live_probe_config(tmp_path)
     state = config.workdir / "state.txt"
     state.write_text("unchanged bytes\n", encoding="utf-8", newline="\n")
-    fake = FakeProcess(successful_live_messages(config))
+    fake = FakeProcess(_successful_live_messages(config))
     original = state.stat().st_mtime_ns
 
-    def mutating_cleanup(process: FakeProcess) -> None:
+    def _mutating_cleanup(process: FakeProcess) -> None:
+        """Change only existing workspace metadata after process cleanup begins."""
         assert process is fake
         os.utime(state, ns=(original + 1_000_000_000, original + 1_000_000_000))
 
-    monkeypatch.setattr(denial_probe, "terminate_process", mutating_cleanup)
+    monkeypatch.setattr(denial_probe, "terminate_process", _mutating_cleanup)
 
     with pytest.raises(ProtocolViolation, match="workdir-mutated-during-denial-probe"):
         run_live_probe(config, popen=lambda *args, **kwargs: fake)
@@ -1091,16 +1126,17 @@ def test_live_probe_rejects_post_cleanup_workspace_metadata_mutation(
 
 def test_live_probe_reverifies_candidate_after_process_cleanup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Reject persistent candidate-package mutation after pre-launch verification."""
-    config = live_probe_config(tmp_path)
-    fake = FakeProcess(successful_live_messages(config))
+    config = _live_probe_config(tmp_path)
+    fake = FakeProcess(_successful_live_messages(config))
 
-    def mutating_cleanup(process: FakeProcess) -> None:
+    def _mutating_cleanup(process: FakeProcess) -> None:
+        """Modify one installed payload after process cleanup to test re-verification."""
         assert process is fake
         (config.plugin_root / "scripts" / "bootstrap.py").write_text(
             "# changed while app server ran\n", encoding="utf-8", newline="\n"
         )
 
-    monkeypatch.setattr(denial_probe, "terminate_process", mutating_cleanup)
+    monkeypatch.setattr(denial_probe, "terminate_process", _mutating_cleanup)
 
     with pytest.raises(ProtocolViolation, match="installed-package-verification-failed"):
         run_live_probe(config, popen=lambda *args, **kwargs: fake)
@@ -1110,10 +1146,10 @@ def test_installed_fixture_identity_survives_restrictive_umask(tmp_path: Path, m
     """Reach the denial contract when fixture creation inherits a restrictive umask."""
     previous_umask = os.umask(0o077)
     try:
-        config = live_probe_config(tmp_path)
+        config = _live_probe_config(tmp_path)
     finally:
         os.umask(previous_umask)
-    fake = FakeProcess(successful_live_messages(config))
+    fake = FakeProcess(_successful_live_messages(config))
     monkeypatch.setattr(denial_probe, "terminate_process", lambda process: None)
 
     evidence_path = run_live_probe(config, popen=lambda *args, **kwargs: fake)
@@ -1125,14 +1161,14 @@ def test_live_probe_records_sanitized_failure_events_only_after_cleanup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Preserve bounded protocol shape for diagnosis without retaining sensitive payload values."""
-    codex_home, plugin_root = installed_plugin(tmp_path)
+    codex_home, plugin_root = _installed_plugin(tmp_path)
     codex_bin = tmp_path / "codex"
     codex_bin.write_text("placeholder", encoding="utf-8")
     workspace = tmp_path / "workdir"
     workspace.mkdir()
     output_path = workspace / "collector-output"
     evidence_path = tmp_path / "evidence" / "denial-evidence.json"
-    messages = [
+    _messages = [
         {"jsonrpc": "2.0", "id": 1, "result": {}},
         {"jsonrpc": "2.0", "id": 2, "result": {"thread": {"id": "raw-thread-secret"}}},
         {"jsonrpc": "2.0", "id": 3, "result": {"turn": {"id": "raw-turn-secret"}}},
@@ -1158,16 +1194,16 @@ def test_live_probe_records_sanitized_failure_events_only_after_cleanup(
             },
         },
     ]
-    fake = FakeProcess(messages)
+    fake = FakeProcess(_messages)
     cleanup_calls: list[FakeProcess] = []
 
-    def fake_terminate(process: FakeProcess) -> None:
+    def _fake_terminate(process: FakeProcess) -> None:
         """Prove diagnostic evidence is not published before cleanup finishes."""
         assert not evidence_path.exists()
         cleanup_calls.append(process)
 
     monkeypatch.setenv("OPAQUE_ACCOUNT_TOKEN", "raw-credential-secret")
-    monkeypatch.setattr(denial_probe, "terminate_process", fake_terminate)
+    monkeypatch.setattr(denial_probe, "terminate_process", _fake_terminate)
 
     with pytest.raises(ProtocolViolation, match="primary-turn-finished-before-decline-response"):
         run_live_probe(
@@ -1347,10 +1383,10 @@ def test_failure_event_sanitizer_allowlists_shape_and_discards_payload_values() 
 
 def test_failure_event_sanitizer_caps_events_and_alias_memory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Bound diagnostic evidence even when a failed server emits an unbounded stream."""
-    config = live_probe_config(tmp_path)
-    messages = []
+    config = _live_probe_config(tmp_path)
+    _messages = []
     for index in range(257):
-        messages.append(
+        _messages.append(
             {
                 "jsonrpc": "2.0",
                 "method": COMPLETED_METHOD,
@@ -1360,9 +1396,9 @@ def test_failure_event_sanitizer_caps_events_and_alias_memory(tmp_path: Path, mo
                 },
             }
         )
-    fake = FakeProcess(messages)
+    fake = FakeProcess(_messages)
 
-    fake.stdout = SlowReader("".join(f"{json.dumps(message)}\n" for message in messages))
+    fake.stdout = SlowReader("".join(f"{json.dumps(message)}\n" for message in _messages))
     monkeypatch.setattr(denial_probe, "terminate_process", lambda process: None)
 
     with pytest.raises(ProtocolViolation, match="app-server-pending-message-limit"):
@@ -1379,11 +1415,11 @@ def test_failure_event_sanitizer_caps_events_and_alias_memory(tmp_path: Path, mo
 
 def test_json_rpc_reader_caps_raw_message_queue_before_parsing() -> None:
     """Prevent a fast local server from retaining an unbounded queue of raw frames."""
-    messages = [
+    _messages = [
         {"jsonrpc": "2.0", "method": COMPLETED_METHOD, "params": {"item": {"type": "agentMessage"}}}
         for _ in range(denial_probe.MAX_BUFFERED_MESSAGES + 1)
     ]
-    fake = FakeProcess(messages)
+    fake = FakeProcess(_messages)
     client = denial_probe._JsonRpcStdio(fake, time.monotonic() + 5)
     client.reader.join(timeout=1)
 
@@ -1396,14 +1432,14 @@ def test_json_rpc_reader_caps_raw_message_queue_before_parsing() -> None:
 
 def test_live_probe_caps_post_start_raw_transcript_memory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Stop a live event flood before raw post-start payloads can grow without bound."""
-    config = live_probe_config(tmp_path)
-    messages = [
+    config = _live_probe_config(tmp_path)
+    _messages = [
         {"jsonrpc": "2.0", "id": 1, "result": {}},
         {"jsonrpc": "2.0", "id": 2, "result": {"thread": {"id": "raw-thread-secret"}}},
         {"jsonrpc": "2.0", "id": 3, "result": {"turn": {"id": "raw-turn-secret"}}},
     ]
     for index in range(257):
-        messages.append(
+        _messages.append(
             {
                 "jsonrpc": "2.0",
                 "method": COMPLETED_METHOD,
@@ -1418,8 +1454,8 @@ def test_live_probe_caps_post_start_raw_transcript_memory(tmp_path: Path, monkey
                 },
             }
         )
-    fake = FakeProcess(messages)
-    fake.stdout = SlowReader("".join(f"{json.dumps(message)}\n" for message in messages))
+    fake = FakeProcess(_messages)
+    fake.stdout = SlowReader("".join(f"{json.dumps(message)}\n" for message in _messages))
     monkeypatch.setattr(denial_probe, "terminate_process", lambda process: None)
 
     with pytest.raises(ProtocolViolation, match="app-server-transcript-message-limit"):
@@ -1438,12 +1474,12 @@ def test_live_probe_records_cleanup_failure_as_failure_after_attempt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Never publish passing evidence when process-tree cleanup itself is unproven."""
-    config = live_probe_config(tmp_path)
+    config = _live_probe_config(tmp_path)
     evidence_path = config.evidence_dir / "denial-evidence.json"
     fake = FakeProcess([{"jsonrpc": "2.0", "id": 1, "result": {}}])
     cleanup_attempted = False
 
-    def failing_cleanup(process: FakeProcess) -> None:
+    def _failing_cleanup(process: FakeProcess) -> None:
         """Model a bounded cleanup attempt whose process-tree result remains unsafe."""
         nonlocal cleanup_attempted
         assert process is fake
@@ -1451,7 +1487,7 @@ def test_live_probe_records_cleanup_failure_as_failure_after_attempt(
         cleanup_attempted = True
         raise ProtocolViolation("posix-process-group-still-running")
 
-    monkeypatch.setattr(denial_probe, "terminate_process", failing_cleanup)
+    monkeypatch.setattr(denial_probe, "terminate_process", _failing_cleanup)
 
     with pytest.raises(ProtocolViolation, match="probe-and-cleanup-failed"):
         run_live_probe(config, popen=lambda *args, **kwargs: fake)
@@ -1476,7 +1512,7 @@ def test_live_probe_rejects_oversized_json_rpc_without_persisting_payload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, oversized_payload: str
 ) -> None:
     """Bound a single hostile protocol line before JSON parsing or diagnostic retention."""
-    config = live_probe_config(tmp_path)
+    config = _live_probe_config(tmp_path)
     fake = FakeProcess([])
     fake.stdout = io.StringIO(oversized_payload + "\n")
     monkeypatch.setattr(denial_probe, "terminate_process", lambda process: None)
@@ -1494,13 +1530,14 @@ def test_live_probe_rejects_oversized_json_rpc_without_persisting_payload(
 
 def test_live_probe_records_startup_failure_without_exception_details(tmp_path: Path) -> None:
     """Diagnose a failed process start without persisting the original OS error or path."""
-    config = live_probe_config(tmp_path)
+    config = _live_probe_config(tmp_path)
 
-    def failing_popen(*args: object, **kwargs: object) -> FakeProcess:
+    def _failing_popen(*args: object, **kwargs: object) -> FakeProcess:
+        """Raise an unsanitized startup error for evidence-redaction coverage."""
         raise OSError("raw-startup-error-secret /raw/startup/path")
 
     with pytest.raises(ProtocolViolation, match="unexpected-probe-failure"):
-        run_live_probe(config, popen=failing_popen)
+        run_live_probe(config, popen=_failing_popen)
 
     evidence_path = config.evidence_dir / "denial-evidence.json"
     evidence_text = evidence_path.read_text(encoding="utf-8")
@@ -1518,7 +1555,7 @@ def test_failure_evidence_write_error_is_safe_and_leaves_no_partial_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Surface an atomic publication failure without retaining a partial diagnostic artifact."""
-    config = live_probe_config(tmp_path)
+    config = _live_probe_config(tmp_path)
     monkeypatch.setattr(
         denial_probe.os,
         "replace",
@@ -1573,7 +1610,12 @@ def test_cli_stderr_reduces_server_controlled_error_text_to_safe_code(
 
 
 def _control_messages() -> list[dict[str, object]]:
-    """Return a completed no-tool primary turn for a mocked control scenario."""
+    """Return a completed no-tool primary turn for a mocked control scenario.
+
+    Example:
+        >>> _control_messages()[0]["id"]
+        1
+    """
     return [
         {"jsonrpc": "2.0", "id": 1, "result": {}},
         {"jsonrpc": "2.0", "id": 2, "result": {"thread": {"id": "control-thread"}}},
@@ -1602,7 +1644,7 @@ def test_text_control_uses_only_fixed_no_tool_text_and_publishes_safe_summary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Prove A has no Skill input and reports only fixed control summary fields."""
-    config = replace(live_probe_config(tmp_path), scenario=LiveScenario.TEXT_CONTROL)
+    config = replace(_live_probe_config(tmp_path), scenario=LiveScenario.TEXT_CONTROL)
     fake = FakeProcess(_control_messages())
     monkeypatch.setattr(denial_probe, "terminate_process", lambda process: None)
 
@@ -1629,9 +1671,9 @@ def test_text_control_rejects_any_tool_or_approval_event(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str, expected: str
 ) -> None:
     """Reject tool and approval evidence before a control can be recorded as passing."""
-    config = replace(live_probe_config(tmp_path), scenario=LiveScenario.TEXT_CONTROL)
-    messages = _control_messages()
-    messages[3:3] = [
+    config = replace(_live_probe_config(tmp_path), scenario=LiveScenario.TEXT_CONTROL)
+    _messages = _control_messages()
+    _messages[3:3] = [
         {
             "jsonrpc": "2.0",
             "id": 91,
@@ -1642,7 +1684,7 @@ def test_text_control_rejects_any_tool_or_approval_event(
     monkeypatch.setattr(denial_probe, "terminate_process", lambda process: None)
 
     with pytest.raises(ProtocolViolation, match=expected):
-        run_live_probe(config, popen=lambda *args, **kwargs: FakeProcess(messages))
+        run_live_probe(config, popen=lambda *args, **kwargs: FakeProcess(_messages))
 
 
 @pytest.mark.parametrize(
@@ -1661,26 +1703,27 @@ def test_text_control_rejects_command_file_and_output_events(
     expected: str,
 ) -> None:
     """Make every observable mutating or command-producing control event fail closed."""
-    config = replace(live_probe_config(tmp_path), scenario=LiveScenario.TEXT_CONTROL)
+    config = replace(_live_probe_config(tmp_path), scenario=LiveScenario.TEXT_CONTROL)
     params: dict[str, object] = {"threadId": "control-thread", "turnId": "control-turn"}
     if item_type is not None:
         params["item"] = {"id": "unexpected", "type": item_type, "status": "inProgress"}
-    messages = _control_messages()
-    messages[3:3] = [{"jsonrpc": "2.0", "method": method, "params": params}]
+    _messages = _control_messages()
+    _messages[3:3] = [{"jsonrpc": "2.0", "method": method, "params": params}]
     monkeypatch.setattr(denial_probe, "terminate_process", lambda process: None)
 
     with pytest.raises(ProtocolViolation, match=expected):
-        run_live_probe(config, popen=lambda *args, **kwargs: FakeProcess(messages))
+        run_live_probe(config, popen=lambda *args, **kwargs: FakeProcess(_messages))
 
 
 def test_text_control_rejects_truncated_sanitized_evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Never publish a passing control when bounded diagnostic collection overflowed."""
-    config = replace(live_probe_config(tmp_path), scenario=LiveScenario.TEXT_CONTROL)
+    config = replace(_live_probe_config(tmp_path), scenario=LiveScenario.TEXT_CONTROL)
 
     class TruncatedRecorder(denial_probe._SanitizedEventRecorder):
         """Model the bounded recorder after it has already reached its event cap."""
 
         def __init__(self) -> None:
+            """Construct a recorder already marked as truncated."""
             super().__init__()
             self.events_truncated = True
 
@@ -1695,7 +1738,7 @@ def test_skill_control_uses_exact_skill_input_then_the_same_fixed_text(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Prove B differs from A solely by the validated `code-review` Skill input."""
-    config = replace(live_probe_config(tmp_path), scenario=LiveScenario.SKILL_CONTROL)
+    config = replace(_live_probe_config(tmp_path), scenario=LiveScenario.SKILL_CONTROL)
     fake = FakeProcess(_control_messages())
     monkeypatch.setattr(denial_probe, "terminate_process", lambda process: None)
 
@@ -1714,26 +1757,27 @@ def test_skill_control_uses_exact_skill_input_then_the_same_fixed_text(
 
 def test_matrix_stops_before_b_and_c_when_a_fails(tmp_path: Path) -> None:
     """Stop the single paid A-to-B-to-C invocation at its first failing scenario."""
-    first = replace(live_probe_config(tmp_path / "a"), scenario=LiveScenario.TEXT_CONTROL)
-    second = replace(live_probe_config(tmp_path / "b"), scenario=LiveScenario.SKILL_CONTROL, codex_bin=first.codex_bin)
-    third = replace(live_probe_config(tmp_path / "c"), scenario=LiveScenario.DENIAL, codex_bin=first.codex_bin)
+    first = replace(_live_probe_config(tmp_path / "a"), scenario=LiveScenario.TEXT_CONTROL)
+    second = replace(_live_probe_config(tmp_path / "b"), scenario=LiveScenario.SKILL_CONTROL, codex_bin=first.codex_bin)
+    third = replace(_live_probe_config(tmp_path / "c"), scenario=LiveScenario.DENIAL, codex_bin=first.codex_bin)
     observed: list[LiveScenario] = []
 
-    def fail_first(config: LiveProbeConfig) -> Path:
+    def _fail_first(config: LiveProbeConfig) -> Path:
+        """Fail the first matrix scenario so later paid scenarios are not invoked."""
         observed.append(config.scenario)
         raise ProtocolViolation("control-primary-turn-not-completed")
 
     with pytest.raises(ProtocolViolation, match="control-primary-turn-not-completed"):
-        run_live_scenarios((first, second, third), run_one=fail_first)
+        run_live_scenarios((first, second, third), run_one=_fail_first)
 
     assert observed == [LiveScenario.TEXT_CONTROL]
 
 
 def test_matrix_requires_distinct_disposable_roots(tmp_path: Path) -> None:
     """Reject a matrix that could carry mutable state between A, B, and C."""
-    first = replace(live_probe_config(tmp_path), scenario=LiveScenario.TEXT_CONTROL)
+    first = replace(_live_probe_config(tmp_path), scenario=LiveScenario.TEXT_CONTROL)
     second = replace(first, scenario=LiveScenario.SKILL_CONTROL)
-    third = replace(live_probe_config(tmp_path / "c"), scenario=LiveScenario.DENIAL, codex_bin=first.codex_bin)
+    third = replace(_live_probe_config(tmp_path / "c"), scenario=LiveScenario.DENIAL, codex_bin=first.codex_bin)
 
     with pytest.raises(ProtocolViolation, match="scenario-boundaries-reused"):
         run_live_scenarios((first, second, third), run_one=lambda config: config.evidence_dir)
@@ -1741,11 +1785,11 @@ def test_matrix_requires_distinct_disposable_roots(tmp_path: Path) -> None:
 
 def test_live_matrix_cli_uses_one_coordinator_invocation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Expose A-to-B-to-C through one explicit CLI boundary without global scenario arguments."""
-    first = replace(live_probe_config(tmp_path / "a"), scenario=LiveScenario.TEXT_CONTROL)
+    first = replace(_live_probe_config(tmp_path / "a"), scenario=LiveScenario.TEXT_CONTROL)
     configs = (
         first,
-        replace(live_probe_config(tmp_path / "b"), scenario=LiveScenario.SKILL_CONTROL, codex_bin=first.codex_bin),
-        replace(live_probe_config(tmp_path / "c"), scenario=LiveScenario.DENIAL, codex_bin=first.codex_bin),
+        replace(_live_probe_config(tmp_path / "b"), scenario=LiveScenario.SKILL_CONTROL, codex_bin=first.codex_bin),
+        replace(_live_probe_config(tmp_path / "c"), scenario=LiveScenario.DENIAL, codex_bin=first.codex_bin),
     )
     manifest = tmp_path / "matrix.json"
     manifest.write_text("{}\n", encoding="utf-8", newline="\n")
@@ -1779,9 +1823,9 @@ def test_live_error_notification_records_only_safe_category_and_retry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Preserve the schema-owned failure category and retry flag without raw error text."""
-    config = replace(live_probe_config(tmp_path), scenario=LiveScenario.TEXT_CONTROL)
-    messages = _control_messages()
-    messages[3:3] = [
+    config = replace(_live_probe_config(tmp_path), scenario=LiveScenario.TEXT_CONTROL)
+    _messages = _control_messages()
+    _messages[3:3] = [
         {
             "jsonrpc": "2.0",
             "method": "error",
@@ -1803,11 +1847,11 @@ def test_live_error_notification_records_only_safe_category_and_retry(
             },
         },
     ]
-    messages[-1]["params"]["turn"]["status"] = "failed"
+    _messages[-1]["params"]["turn"]["status"] = "failed"
     monkeypatch.setattr(denial_probe, "terminate_process", lambda process: None)
 
     with pytest.raises(ProtocolViolation, match="control-primary-turn-not-completed"):
-        run_live_probe(config, popen=lambda *args, **kwargs: FakeProcess(messages))
+        run_live_probe(config, popen=lambda *args, **kwargs: FakeProcess(_messages))
 
     evidence_text = (config.evidence_dir / "denial-evidence.json").read_text(encoding="utf-8")
     evidence = json.loads(evidence_text)
@@ -1822,15 +1866,15 @@ def test_live_error_notification_records_only_safe_category_and_retry(
 
 def test_matrix_rejects_cross_scenario_boundary_overlap(tmp_path: Path) -> None:
     """Prevent one scenario from nesting mutable state inside another scenario's root."""
-    first = replace(live_probe_config(tmp_path / "a"), scenario=LiveScenario.TEXT_CONTROL)
-    second_base = live_probe_config(tmp_path / "b")
+    first = replace(_live_probe_config(tmp_path / "a"), scenario=LiveScenario.TEXT_CONTROL)
+    second_base = _live_probe_config(tmp_path / "b")
     second = replace(
         second_base,
         scenario=LiveScenario.SKILL_CONTROL,
         codex_bin=first.codex_bin,
         workdir=first.codex_home / "nested-workdir",
     )
-    third = replace(live_probe_config(tmp_path / "c"), scenario=LiveScenario.DENIAL, codex_bin=first.codex_bin)
+    third = replace(_live_probe_config(tmp_path / "c"), scenario=LiveScenario.DENIAL, codex_bin=first.codex_bin)
 
     with pytest.raises(ProtocolViolation, match="scenario-boundaries-overlap"):
         run_live_scenarios((first, second, third), run_one=lambda config: config.evidence_dir)
@@ -1839,12 +1883,12 @@ def test_matrix_rejects_cross_scenario_boundary_overlap(tmp_path: Path) -> None:
 @pytest.mark.skipif(not SYMLINKS_AVAILABLE, reason="host cannot create symlinks")
 def test_matrix_rejects_cross_scenario_symlink_alias(tmp_path: Path) -> None:
     """Prevent distinct lexical roots from reusing one physical mutable boundary."""
-    first = replace(live_probe_config(tmp_path / "a"), scenario=LiveScenario.TEXT_CONTROL)
-    second_base = live_probe_config(tmp_path / "b")
+    first = replace(_live_probe_config(tmp_path / "a"), scenario=LiveScenario.TEXT_CONTROL)
+    second_base = _live_probe_config(tmp_path / "b")
     workdir_alias = tmp_path / "workdir-alias"
     workdir_alias.symlink_to(first.workdir, target_is_directory=True)
     second = replace(second_base, scenario=LiveScenario.SKILL_CONTROL, codex_bin=first.codex_bin, workdir=workdir_alias)
-    third = replace(live_probe_config(tmp_path / "c"), scenario=LiveScenario.DENIAL, codex_bin=first.codex_bin)
+    third = replace(_live_probe_config(tmp_path / "c"), scenario=LiveScenario.DENIAL, codex_bin=first.codex_bin)
 
     with pytest.raises(ProtocolViolation, match="scenario-boundaries-reused"):
         run_live_scenarios((first, second, third), run_one=lambda config: config.evidence_dir)
@@ -1861,10 +1905,10 @@ def test_matrix_rejects_cross_scenario_symlink_alias(tmp_path: Path) -> None:
 )
 def test_matrix_requires_identical_runtime_identity(tmp_path: Path, field: str, value: object) -> None:
     """Keep A/B/C causal by requiring one model, binary, and candidate package."""
-    first = replace(live_probe_config(tmp_path / "a"), scenario=LiveScenario.TEXT_CONTROL)
+    first = replace(_live_probe_config(tmp_path / "a"), scenario=LiveScenario.TEXT_CONTROL)
     overrides = {"scenario": LiveScenario.SKILL_CONTROL, "codex_bin": first.codex_bin, field: value}
-    second = replace(live_probe_config(tmp_path / "b"), **overrides)
-    third = replace(live_probe_config(tmp_path / "c"), scenario=LiveScenario.DENIAL, codex_bin=first.codex_bin)
+    second = replace(_live_probe_config(tmp_path / "b"), **overrides)
+    third = replace(_live_probe_config(tmp_path / "c"), scenario=LiveScenario.DENIAL, codex_bin=first.codex_bin)
 
     with pytest.raises(ProtocolViolation, match="scenario-runtime-identity-drift"):
         run_live_scenarios((first, second, third), run_one=lambda config: config.evidence_dir)
@@ -1873,7 +1917,7 @@ def test_matrix_requires_identical_runtime_identity(tmp_path: Path, field: str, 
 @pytest.mark.parametrize("timeout", (float("inf"), float("nan")))
 def test_live_config_rejects_nonfinite_timeout(tmp_path: Path, timeout: float) -> None:
     """Reject a matrix timeout that could defeat the finite live-run contract."""
-    config = replace(live_probe_config(tmp_path), timeout_seconds=timeout)
+    config = replace(_live_probe_config(tmp_path), timeout_seconds=timeout)
 
     with pytest.raises(ProtocolViolation, match="live-timeout-must-be-finite-positive"):
         denial_probe._validate_live_config(config)

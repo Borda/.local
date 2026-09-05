@@ -25,6 +25,14 @@ def _write_index(
     scanned_at: str = "2026-07-10T00:00:00+00:00",
     mtime_ns: int = _FIXED_MTIME_NS,
 ) -> Path:
+    """Create a deterministic codemap index fixture with a pinned file timestamp.
+
+    Examples:
+        >>> tmp_path = getfixture("tmp_path")
+        >>> path = _write_index(tmp_path, git_sha="demo")
+        >>> json.loads(path.read_text())["git_sha"]
+        'demo'
+    """
     idx = tmp_path / "index.json"
     idx.write_text(json.dumps({"git_sha": git_sha, "scanned_at": scanned_at, "modules": {}}))
     os.utime(idx, ns=(mtime_ns, mtime_ns))
@@ -32,6 +40,14 @@ def _write_index(
 
 
 def _write_batch(tmp_path: Path) -> Path:
+    """Create a batch fixture covering module, qname, failed, and uncovered results.
+
+    Examples:
+        >>> tmp_path = getfixture("tmp_path")
+        >>> path = _write_batch(tmp_path)
+        >>> json.loads(path.read_text())["count"]
+        5
+    """
     batch = {
         "batch": [
             {"ok": True, "index": 0, "cmd": "central", "result": {"central": []}},
@@ -113,6 +129,7 @@ class TestRead:
     """Read subcommand — freshness verdicts."""
 
     def _seed(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
+        """Write the standard batch fixture and drain its setup output before reads."""
         cache = tmp_path / "cache"
         codemap_cache.main(
             [

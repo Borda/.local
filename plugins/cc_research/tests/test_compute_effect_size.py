@@ -180,7 +180,9 @@ class _StdinStub:
     """Minimal stdin replacement supporting ``.read()`` for monkeypatch."""
 
     def __init__(self, content: str) -> None:
+        """Store parser input that ``read`` will return."""
         self._content = content
 
     def read(self) -> str:
+        """Return the configured stdin text to the parser under test."""
         return self._content

@@ -16,7 +16,16 @@ import verify_perm  # noqa: E402
 
 
 def _write_settings(path: Path, allow: list[str] | None) -> None:
-    """Write a minimal ``settings.json`` with the given allow list."""
+    """Write a minimal ``settings.json`` with the given allow list.
+
+    Examples:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     path = Path(directory) / "settings.json"
+        ...     _write_settings(path, ["Bash(ls:*)"])
+        ...     json.loads(path.read_text())["permissions"]["allow"]
+        ['Bash(ls:*)']
+    """
     payload: dict = {}
     if allow is not None:
         payload["permissions"] = {"allow": allow}
@@ -24,7 +33,16 @@ def _write_settings(path: Path, allow: list[str] | None) -> None:
 
 
 def _write_guide(path: Path, rules: list[str]) -> None:
-    """Write a minimal markdown guide with each rule on its own backticked line."""
+    """Write a minimal markdown guide with each rule on its own backticked line.
+
+    Examples:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     path = Path(directory) / "guide.md"
+        ...     _write_guide(path, ["Bash(ls:*)"])
+        ...     "`Bash(ls:*)`" in path.read_text()
+        True
+    """
     body = "\n".join(f"| `{r}` | desc | use |" for r in rules) + "\n"
     path.write_text(body, encoding="utf-8")
 
@@ -120,6 +138,7 @@ class TestMain:
     """Main: CLI — stdout format + exit codes across modes."""
 
     def _setup(self, tmp_path: Path, allow: list[str], guide_rules: list[str]) -> tuple[Path, Path]:
+        """Create paired settings and guide fixtures for one CLI assertion."""
         s = tmp_path / "settings.json"
         g = tmp_path / "guide.md"
         _write_settings(s, allow)

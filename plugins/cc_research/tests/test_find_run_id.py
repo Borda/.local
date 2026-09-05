@@ -42,6 +42,11 @@ def _make_run(
 
     Returns:
         Path to the created run directory.
+
+    Examples:
+        >>> run_dir = _make_run(getfixture("tmp_path"), "demo", "completed")
+        >>> json.loads((run_dir / "state.json").read_text())["status"]
+        'completed'
     """
     run_dir = parent / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -115,14 +120,15 @@ class TestFindRunIdNoFilter:
         real_stat = Path.stat
         seen: set[Path] = set()
 
-        def flaky_stat(self: Path, *args: object, **kwargs: object) -> os.stat_result:
+        def _flaky_stat(self: Path, *args: object, **kwargs: object) -> os.stat_result:
+            """Expose the vanished directory only during the later sort-key stat."""
             # Let the first stat (is_dir during enumeration) pass; fail the sort-key stat.
             if self == vanished and self in seen:
                 raise FileNotFoundError(self)
             seen.add(self)
             return real_stat(self, *args, **kwargs)  # type: ignore[arg-type]
 
-        monkeypatch.setattr(Path, "stat", flaky_stat)
+        monkeypatch.setattr(Path, "stat", _flaky_stat)
         # No exception; the surviving completed run is still resolved.
         assert find_run_id(tmp_path) == "survivor"
 

@@ -32,7 +32,11 @@ SUITE = Path(__file__).resolve().parent.parent / "suites" / "tasks-bench.json"
 
 
 def _task(task_id: str, task_type: str = "symbol_extraction", **extra: Any) -> dict:
-    """Build a minimal task dict for selection tests."""
+    """Build a task for selection tests, allowing explicit fields to override defaults.
+
+    >>> _task("example", "review", prompt="Inspect the module")
+    {'id': 'example', 'type': 'review', 'prompt': 'Inspect the module'}
+    """
     return {"id": task_id, "type": task_type, "prompt": f"prompt for {task_id}", **extra}
 
 
@@ -47,7 +51,12 @@ def _result_line(
     correct: bool = True,
     scored: bool = True,
 ) -> dict:
-    """Build a synthetic JSONL result line carrying provenance + a quality verdict."""
+    """Build a successful transport result with independently configurable scoring and provenance.
+
+    >>> row = _result_line("example", "A_plain", "fixture-model", correct=False, task_hash="changed")
+    >>> row["success"], row["task_hash"], row["quality"]
+    (True, 'changed', {'scored': True, 'correct': False, 'extraction_failed': False})
+    """
     return {
         "task_id": task_id,
         "arm": arm,
@@ -62,7 +71,14 @@ def _result_line(
 
 
 def _write_jsonl(results_dir: Path, name: str, lines: list[dict]) -> Path:
-    """Write result *lines* to ``results_dir/name`` as JSONL and return the path."""
+    """Create the result directory and write one JSON object per line, replacing an existing file.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     path = _write_jsonl(Path(directory) / "results", "run.jsonl", [{"id": 1}, {"id": 2}])
+    ...     [json.loads(line) for line in path.read_text().splitlines()]
+    [{'id': 1}, {'id': 2}]
+    """
     results_dir.mkdir(parents=True, exist_ok=True)
     path = results_dir / name
     with path.open("w") as f:
@@ -223,6 +239,7 @@ class TestRunnerResume:
         runner = self._runner(script_run_bench, tmp_path, {key: cached})
 
         def _fail_execute(*_a: Any, **_k: Any) -> Any:
+            """Reject execution when a resume-cache hit should have bypassed the runner."""
             raise AssertionError("_execute must not run on a resume hit")
 
         runner._execute = _fail_execute  # type: ignore[method-assign]
@@ -240,6 +257,7 @@ class TestRunnerResume:
         runner = self._runner(script_run_bench, tmp_path, {})  # empty cache → always miss
 
         def _fake_execute(*_a: Any, **_k: Any) -> Any:
+            """Return the sentinel run used to prove that execution was attempted."""
             return sentinel
 
         runner._execute = _fake_execute  # type: ignore[method-assign]
@@ -277,8 +295,9 @@ class TestRunnerResume:
 class TestProfileSelection:
     """Dev keeps the dev-tagged subset; release keeps everything; None is unchanged."""
 
-    @pytest.fixture()
-    def mixed_tasks(self) -> list[dict]:
+    @pytest.fixture(name="mixed_tasks")
+    def _mixed_tasks(self) -> list[dict]:
+        """Provide development-tagged, untagged, and real-issue tasks for profile selection."""
         return [
             _task("SE-01", profiles=["dev"]),
             _task("SE-02"),
@@ -310,9 +329,10 @@ class TestProfileSelection:
 class TestDevSubsetInSuite:
     """The shipped tasks-bench.json declares a valid stratified dev subset."""
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture(name="tasks", scope="class")
     @staticmethod
-    def tasks() -> list[dict]:
+    def _tasks() -> list[dict]:
+        """Provide the task collection used by this selection or coverage scenario."""
         return json.loads(SUITE.read_text())["tasks"]
 
     def test_dev_subset_size(self, tasks: list[dict]) -> None:
@@ -341,8 +361,9 @@ class TestDevSubsetInSuite:
 class TestRiGating:
     """real_issue tasks run only under release profile or explicit selection."""
 
-    @pytest.fixture()
-    def tasks(self) -> list[dict]:
+    @pytest.fixture(name="tasks")
+    def _tasks(self) -> list[dict]:
+        """Provide the task collection used by this selection or coverage scenario."""
         return [_task("RI-01", "real_issue"), _task("SE-01")]
 
     def test_ri_dropped_by_default(self, script_run_bench: Any, tasks: list[dict]) -> None:
@@ -370,6 +391,7 @@ class TestSelectTasksIntegration:
     """_select_tasks composes base selection + profile + RI gating + tiered."""
 
     def _selection(self, script_run_bench: Any, **overrides: Any) -> Any:
+        """Construct selection arguments with scenario overrides over a complete baseline."""
         base = {
             "all_tasks": [
                 _task("SE-01", profiles=["dev"]),
@@ -435,8 +457,9 @@ class TestSelectTasksIntegration:
 class TestTieredSelection:
     """Select model-specific task subsets and disagreement cases."""
 
-    @pytest.fixture()
-    def tasks(self) -> list[dict]:
+    @pytest.fixture(name="tasks")
+    def _tasks(self) -> list[dict]:
+        """Provide the task collection used by this selection or coverage scenario."""
         return [
             _task("SE-01", profiles=["dev"]),
             _task("SE-02", profiles=["dev"]),
@@ -537,7 +560,12 @@ class TestCorrectByTask:
 
 
 def _run(script_run_bench: Any, task_id: str, arm: str, *, correct: bool, self_consistency: bool) -> Any:
-    """Build a scored BenchRun for aggregation tests."""
+    """Build a scored run whose correctness and self-consistency eligibility vary independently.
+
+    >>> run = _run(getfixture("script_run_bench"), "example", "plain", correct=False, self_consistency=True)
+    >>> run.quality.scored, run.quality.correct, run.self_consistency
+    (True, False, True)
+    """
     run = script_run_bench.BenchRun(arm=arm, task_id=task_id, task_type="code_quality", model="haiku", success=True)
     run.quality = script_run_bench.BenchQuality(scored=True, correct=correct)
     run.self_consistency = self_consistency
@@ -604,9 +632,10 @@ class TestSelfConsistencyExclusion:
 class TestSelfConsistencyInSuite:
     """The shipped suite tags tool-derived CQ tasks as self-consistency."""
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture(name="tasks", scope="class")
     @staticmethod
-    def tasks() -> list[dict]:
+    def _tasks() -> list[dict]:
+        """Provide the task collection used by this selection or coverage scenario."""
         return json.loads(SUITE.read_text())["tasks"]
 
     def test_tagged_tasks_are_tool_derived_cq_diagnostics(self, tasks: list[dict]) -> None:

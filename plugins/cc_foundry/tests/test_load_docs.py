@@ -40,8 +40,8 @@ load_mode = _load("load_mode")
 load_shared_doc = _load("load_shared_doc")
 
 
-@pytest.fixture
-def fake_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+@pytest.fixture(name="fake_plugin")
+def _fake_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Build a minimal plugin tree and point ``CLAUDE_PLUGIN_ROOT`` at it.
 
     Args:

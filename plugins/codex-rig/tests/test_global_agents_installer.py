@@ -22,7 +22,7 @@ BEGIN_PREFIX = "<!-- codex-rig:global-agents begin sha256="
 END_MARKER = "<!-- codex-rig:global-agents end -->"
 
 
-def run_installer(
+def _run_installer(
     source: Path, codex_home: Path, *, output_encoding: str | None = None
 ) -> subprocess.CompletedProcess[str]:
     """Run the packaged installer against one isolated Codex home."""
@@ -38,7 +38,7 @@ def run_installer(
     )
 
 
-def run_remover(codex_home: Path) -> subprocess.CompletedProcess[str]:
+def _run_remover(codex_home: Path) -> subprocess.CompletedProcess[str]:
     """Run the packaged installer in ``--remove`` mode against one isolated Codex home."""
     return subprocess.run(
         [sys.executable, str(INSTALLER), "--remove", "--codex-home", str(codex_home)],
@@ -48,8 +48,17 @@ def run_remover(codex_home: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def managed_body(payload: bytes) -> tuple[str, bytes]:
-    """Return the recorded digest and exact body bytes from one managed block."""
+def _managed_body(payload: bytes) -> tuple[str, bytes]:
+    """Return the recorded digest and exact body bytes from one managed block.
+
+    Example:
+        >>> payload = (
+        ...     b"<!-- codex-rig:global-agents begin sha256=digest -->\\nbody\\n"
+        ...     b"<!-- codex-rig:global-agents end -->"
+        ... )
+        >>> _managed_body(payload)[1]
+        b'body\\n'
+    """
     begin_prefix = BEGIN_PREFIX.encode("ascii")
     end_marker = END_MARKER.encode("ascii")
     begin = payload.index(begin_prefix)
@@ -96,12 +105,12 @@ def test_global_agents_installer_creates_managed_file_when_absent(tmp_path: Path
     source.write_bytes(b"# Generic policy\r\n\r\nKeep this.\r\n")
     codex_home = tmp_path / "codex-home"
 
-    result = run_installer(source, codex_home, output_encoding="cp1252")
+    result = _run_installer(source, codex_home, output_encoding="cp1252")
 
     assert result.returncode == 0, result.stderr
     target = codex_home / "AGENTS.md"
     payload = target.read_bytes()
-    digest, body = managed_body(payload)
+    digest, body = _managed_body(payload)
     assert body == source.read_bytes()
     assert digest == hashlib.sha256(body).hexdigest()
     assert payload.count(BEGIN_PREFIX.encode("ascii")) == 1
@@ -120,10 +129,10 @@ def test_global_agents_installer_preserves_existing_content_and_is_idempotent(tm
     original = "# User policy\n\nKeep this exactly.\n"
     target.write_text(original, encoding="utf-8")
 
-    first = run_installer(source, codex_home)
+    first = _run_installer(source, codex_home)
     first_payload = target.read_bytes()
     backups = list((codex_home / "backups" / "codex-rig").glob("*-AGENTS.md"))
-    second = run_installer(source, codex_home)
+    second = _run_installer(source, codex_home)
 
     assert first.returncode == 0, first.stderr
     assert target.read_text(encoding="utf-8").startswith(original)
@@ -144,14 +153,14 @@ def test_global_agents_installer_updates_authenticated_block(tmp_path: Path) -> 
     target = codex_home / "AGENTS.md"
     target.write_bytes(b"user prefix\r\n")
     user_prefix = target.read_bytes()
-    assert run_installer(source, codex_home).returncode == 0
+    assert _run_installer(source, codex_home).returncode == 0
 
     source.write_bytes(b"second policy\r\n")
-    result = run_installer(source, codex_home)
+    result = _run_installer(source, codex_home)
 
     assert result.returncode == 0, result.stderr
     payload = target.read_bytes()
-    digest, body = managed_body(payload)
+    digest, body = _managed_body(payload)
     assert payload.startswith(user_prefix)
     assert body == source.read_bytes()
     assert digest == hashlib.sha256(body).hexdigest()
@@ -168,11 +177,11 @@ def test_global_agents_installer_adopts_exact_legacy_copy(tmp_path: Path) -> Non
     target = codex_home / "AGENTS.md"
     target.write_bytes(source.read_bytes())
 
-    result = run_installer(source, codex_home)
+    result = _run_installer(source, codex_home)
 
     assert result.returncode == 0, result.stderr
     payload = target.read_bytes()
-    _, body = managed_body(payload)
+    _, body = _managed_body(payload)
     assert body == source.read_bytes()
     assert payload.count(b"legacy generic policy") == 1
     assert "adopted" in result.stdout
@@ -195,7 +204,7 @@ def test_global_agents_installer_refuses_untrusted_managed_state(tmp_path: Path,
     source = tmp_path / "template.md"
     source.write_text("managed policy\n", encoding="utf-8")
     codex_home = tmp_path / "codex-home"
-    assert run_installer(source, codex_home).returncode == 0
+    assert _run_installer(source, codex_home).returncode == 0
     target = codex_home / "AGENTS.md"
     payload = target.read_text(encoding="utf-8")
     if damage == "modified-body":
@@ -209,7 +218,7 @@ def test_global_agents_installer_refuses_untrusted_managed_state(tmp_path: Path,
     target.write_text(payload, encoding="utf-8")
     before = target.read_bytes()
 
-    result = run_installer(source, codex_home)
+    result = _run_installer(source, codex_home)
 
     assert result.returncode == 4
     assert target.read_bytes() == before
@@ -227,7 +236,7 @@ def test_global_agents_installer_refuses_symlink_target(tmp_path: Path) -> None:
     outside.write_text("outside\n", encoding="utf-8")
     (codex_home / "AGENTS.md").symlink_to(outside)
 
-    result = run_installer(source, codex_home)
+    result = _run_installer(source, codex_home)
 
     assert result.returncode == 4
     assert outside.read_text(encoding="utf-8") == "outside\n"
@@ -252,11 +261,11 @@ def test_remove_deletes_file_that_held_only_managed_block(tmp_path: Path) -> Non
     source = tmp_path / "template.md"
     source.write_text("managed policy\n", encoding="utf-8")
     codex_home = tmp_path / "codex-home"
-    assert run_installer(source, codex_home).returncode == 0
+    assert _run_installer(source, codex_home).returncode == 0
     target = codex_home / "AGENTS.md"
     original = target.read_bytes()
 
-    result = run_remover(codex_home)
+    result = _run_remover(codex_home)
 
     assert result.returncode == 0, result.stderr
     assert not target.exists()
@@ -275,9 +284,9 @@ def test_remove_strips_block_and_preserves_user_content(tmp_path: Path) -> None:
     target = codex_home / "AGENTS.md"
     user_content = "# User policy\n\nKeep this exactly.\n"
     target.write_text(user_content, encoding="utf-8")
-    assert run_installer(source, codex_home).returncode == 0
+    assert _run_installer(source, codex_home).returncode == 0
 
-    result = run_remover(codex_home)
+    result = _run_remover(codex_home)
 
     assert result.returncode == 0, result.stderr
     assert target.read_text(encoding="utf-8") == user_content
@@ -293,7 +302,7 @@ def test_remove_is_noop_when_no_managed_block_present(tmp_path: Path) -> None:
     target.write_text("# only user content\n", encoding="utf-8")
     before = target.read_bytes()
 
-    result = run_remover(codex_home)
+    result = _run_remover(codex_home)
 
     assert result.returncode == 0, result.stderr
     assert target.read_bytes() == before
@@ -305,14 +314,14 @@ def test_remove_refuses_modified_managed_block(tmp_path: Path) -> None:
     source = tmp_path / "template.md"
     source.write_text("managed policy\n", encoding="utf-8")
     codex_home = tmp_path / "codex-home"
-    assert run_installer(source, codex_home).returncode == 0
+    assert _run_installer(source, codex_home).returncode == 0
     target = codex_home / "AGENTS.md"
     target.write_text(
         target.read_text(encoding="utf-8").replace("managed policy", "manually changed"), encoding="utf-8"
     )
     before = target.read_bytes()
 
-    result = run_remover(codex_home)
+    result = _run_remover(codex_home)
 
     assert result.returncode == 4
     assert target.read_bytes() == before

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""read_state_field.py — read a dotted-path field from a JSON state file.
+"""Read a nested field from a JSON state file and print its string representation.
 
 Loads ``state.json``-style files and navigates nested keys via a dotted path
 (e.g. ``config.metric.direction``). Prints the resolved value to stdout and
@@ -53,7 +53,7 @@ def read_field(data: dict[str, Any], dotted_path: str, default: str = "") -> str
         fully resolve.
 
     Raises:
-        ValueError: if ``dotted_path`` is empty.
+        ValueError: If ``dotted_path`` is empty or contains an empty segment.
 
     Examples:
         >>> read_field({"a": {"b": "c"}}, "a.b")
@@ -66,6 +66,12 @@ def read_field(data: dict[str, Any], dotted_path: str, default: str = "") -> str
         'd'
         >>> read_field({}, "any", default="")
         ''
+        >>> read_field({"value": None}, "value", default="missing")
+        'None'
+        >>> read_field({}, "a..b")
+        Traceback (most recent call last):
+        ...
+        ValueError: dotted_path must be a non-empty string
     """
     if not dotted_path or any(segment == "" for segment in dotted_path.split(".")):
         raise ValueError("dotted_path must be a non-empty string")

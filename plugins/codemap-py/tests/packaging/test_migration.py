@@ -141,10 +141,12 @@ class _CountingParse:
     """Wrap ``graph._parse_file`` to record which files each scan actually re-parses."""
 
     def __init__(self) -> None:
+        """Capture the real parser so calls can be counted without changing behavior."""
         self._real = graph._parse_file
         self.names: list[str] = []
 
     def __call__(self, filepath: Path, root: Path, src_root: Path) -> dict:
+        """Record a parsed path, then delegate to the real parser."""
         self.names.append(str(filepath))
         return self._real(filepath, root, src_root)
 

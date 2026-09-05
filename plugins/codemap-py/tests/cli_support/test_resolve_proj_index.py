@@ -61,14 +61,14 @@ class TestComputeProjIndex:
         sub = repo_root / "subdir"
         sub.mkdir()
 
-        def mock_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:  # type: ignore[type-arg]
+        def _mock_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:  # type: ignore[type-arg]
             """Return a fake git rev-parse result."""
             result: subprocess.CompletedProcess = subprocess.CompletedProcess(cmd, 0)
             result.stdout = str(repo_root) + "\n"
             result.stderr = ""
             return result
 
-        monkeypatch.setattr(_mod.subprocess, "run", mock_run)
+        monkeypatch.setattr(_mod.subprocess, "run", _mock_run)
         proj, index = compute_proj_index(cwd=sub)
         assert proj == "my-repo"
         assert index == repo_root / ".cache" / "codemap" / "my-repo.json"
@@ -78,11 +78,11 @@ class TestComputeProjIndex:
         work = tmp_path / "my-project"
         work.mkdir()
 
-        def mock_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:  # type: ignore[type-arg]
+        def _mock_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:  # type: ignore[type-arg]
             """Simulate git failure."""
             raise subprocess.CalledProcessError(128, cmd)
 
-        monkeypatch.setattr(_mod.subprocess, "run", mock_run)
+        monkeypatch.setattr(_mod.subprocess, "run", _mock_run)
         proj, _ = compute_proj_index(cwd=work)
         assert proj == "my-project"
 
@@ -107,10 +107,11 @@ class TestMain:
         work.mkdir()
         monkeypatch.chdir(work)
 
-        def mock_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:  # type: ignore[type-arg]
+        def _mock_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:  # type: ignore[type-arg]
+            """Simulate the unavailable git resolver for this check."""
             raise subprocess.CalledProcessError(128, cmd)
 
-        monkeypatch.setattr(_mod.subprocess, "run", mock_run)
+        monkeypatch.setattr(_mod.subprocess, "run", _mock_run)
         rc = main(["--check"])
         assert rc == 1
         out = capsys.readouterr().out
@@ -124,10 +125,11 @@ class TestMain:
         work.mkdir()
         monkeypatch.chdir(work)
 
-        def mock_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:  # type: ignore[type-arg]
+        def _mock_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:  # type: ignore[type-arg]
+            """Simulate the unavailable git resolver for this check."""
             raise subprocess.CalledProcessError(128, cmd)
 
-        monkeypatch.setattr(_mod.subprocess, "run", mock_run)
+        monkeypatch.setattr(_mod.subprocess, "run", _mock_run)
         index = work / ".cache" / "codemap" / "myproj.json"
         index.parent.mkdir(parents=True)
         index.write_text("{}", encoding="utf-8")

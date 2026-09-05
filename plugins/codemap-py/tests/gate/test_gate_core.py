@@ -41,6 +41,7 @@ NO_FORK = pytest.mark.skipif(WIN, reason="POSIX fork semantics — no fork() on 
 
 # ── worker functions (must be top-level for spawn pickling) ──────────────────
 def _load_current(target: str) -> dict:
+    """Read the current JSON index, treating absent or invalid data as empty."""
     try:
         with open(target, "rb") as fh:
             return json.loads(fh.read().decode("utf-8"))
@@ -49,17 +50,20 @@ def _load_current(target: str) -> dict:
 
 
 def _w_reader_once(index: str, out: str, timeout: float) -> None:
+    """Read one gated index snapshot and write its version to an output file."""
     with _rwgate.read_index(index, timeout=timeout) as data:
         Path(out).write_text(json.dumps({"v": (data or {}).get("v")}))
 
 
 def _w_reader_hold(index: str, ready: str, hold: float, timeout: float) -> None:
+    """Hold a read lease after signaling readiness to a coordinating test."""
     with _rwgate.read_index(index, timeout=timeout) as data:
         Path(ready).write_text(json.dumps({"v": (data or {}).get("v")}))
         time.sleep(hold)
 
 
 def _w_reader_loop(index: str, duration: float, timeout: float) -> None:
+    """Exercise repeated bounded reads for the requested duration."""
     end = time.time() + duration
     while time.time() < end:
         try:
@@ -70,6 +74,7 @@ def _w_reader_loop(index: str, duration: float, timeout: float) -> None:
 
 
 def _w_reader_expect_busy(index: str, out: str, timeout: float) -> None:
+    """Record whether a gated read succeeds or reports index contention."""
     try:
         with _rwgate.read_index(index, timeout=timeout) as data:
             Path(out).write_text(json.dumps({"stale": True, "v": (data or {}).get("v")}))
@@ -78,51 +83,67 @@ def _w_reader_expect_busy(index: str, out: str, timeout: float) -> None:
 
 
 def _w_writer_increment(index: str, timeout: float) -> None:
-    def build(target: Path) -> None:
+    """Increment the published version while holding the write lease."""
+
+    def _build(target: Path) -> None:
+        """Increment and publish the version in the child writer process."""
         cur = _load_current(str(target))
         cur["v"] = cur.get("v", 0) + 1
         _rwgate.atomic_publish(target, json.dumps(cur).encode("utf-8"))
 
-    _rwgate.write_index(index, build, timeout=timeout)
+    _rwgate.write_index(index, _build, timeout=timeout)
 
 
 def _w_writer_marker(index: str, marker: str, timeout: float) -> None:
-    def build(target: Path) -> None:
+    """Publish version 42 and mark completion from inside the write lease."""
+
+    def _build(target: Path) -> None:
+        """Publish the marker version and completion file."""
         _rwgate.atomic_publish(target, b'{"v": 42}')
         Path(marker).write_text("done")
 
-    _rwgate.write_index(index, build, timeout=timeout)
+    _rwgate.write_index(index, _build, timeout=timeout)
 
 
 def _w_writer_slow(index: str, exclusive: float, timeout: float) -> None:
-    def build(target: Path) -> None:
+    """Delay inside an exclusive write lease before publishing version 1."""
+
+    def _build(target: Path) -> None:
+        """Delay within the lease before publishing the test version."""
         time.sleep(exclusive)
         _rwgate.atomic_publish(target, b'{"v": 1}')
 
-    _rwgate.write_index(index, build, timeout=timeout)
+    _rwgate.write_index(index, _build, timeout=timeout)
 
 
 def _w_writer_hold_intent(index: str, ready: str, hold: float) -> None:
-    def build(target: Path) -> None:
+    """Advertise a pending writer, hold the lease, then publish version 99."""
+
+    def _build(target: Path) -> None:
+        """Signal writer intent, hold it, and then publish the version."""
         Path(ready).write_text("x")
         time.sleep(hold)
         _rwgate.atomic_publish(target, b'{"v": 99}')
 
-    _rwgate.write_index(index, build, timeout=30.0)
+    _rwgate.write_index(index, _build, timeout=30.0)
 
 
 def _w_writer_crash_midwrite(index: str, ready: str, hold: float) -> None:
-    def build(target: Path) -> None:
+    """Leave an orphan temporary payload while simulating a stalled writer."""
+
+    def _build(target: Path) -> None:
+        """Write an orphan temp payload while holding the lease."""
         tmp = Path(target).parent / f".{Path(target).name}.orphan.tmp"
         tmp.write_bytes(b'{"v": 777}')  # written but never os.replace'd
         Path(ready).write_text("x")
         time.sleep(hold)
 
-    _rwgate.write_index(index, build, timeout=30.0)
+    _rwgate.write_index(index, _build, timeout=30.0)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 def _wait_file(path: str, timeout: float = 5.0) -> bool:
+    """Wait briefly for a coordination file and report whether it appeared."""
     end = time.time() + timeout
     while time.time() < end:
         if Path(path).exists():
@@ -132,6 +153,7 @@ def _wait_file(path: str, timeout: float = 5.0) -> bool:
 
 
 def _join(procs: list, timeout: float = 9.0) -> None:
+    """Join workers within the test bound and fail if one remains alive."""
     for proc in procs:
         proc.join(timeout)
         assert not proc.is_alive(), "worker did not finish within bound"
@@ -150,20 +172,24 @@ def _events(log: str) -> list[dict]:
 
 
 def _pos(events: list[dict], name: str) -> int:
-    """Append-order index of the first event named *name*."""
+    """Return the append-order index of the first event named *name*.
+
+    >>> _pos([{"event": "read"}, {"event": "write"}], "write")
+    1
+    """
     return next(i for i, e in enumerate(events) if e["event"] == name)
 
 
-@pytest.fixture
-def index(tmp_path: Path) -> Path:
+@pytest.fixture(name="index")
+def _index(tmp_path: Path) -> Path:
     """Publish an initial index (``v=1``) through the gate; return its path."""
     path = tmp_path / "idx.json"
     _rwgate.write_index(path, lambda t: _rwgate.atomic_publish(t, b'{"v": 1}'), timeout=10.0)
     return path
 
 
-@pytest.fixture
-def eventlog(tmp_path: Path, monkeypatch) -> str:
+@pytest.fixture(name="eventlog")
+def _eventlog(tmp_path: Path, monkeypatch) -> str:
     """Point the gate's cross-process event log at a temp file."""
     log = tmp_path / "events.jsonl"
     monkeypatch.setenv("CODEMAP_RWGATE_EVENTLOG", str(log))
@@ -172,6 +198,7 @@ def eventlog(tmp_path: Path, monkeypatch) -> str:
 
 @pytest.fixture(autouse=True)
 def _clear_instrument():
+    """Clear gate instrumentation after each test."""
     yield
     _rwgate.set_instrument(None)
 
@@ -338,16 +365,18 @@ def test_same_process_reader_writer_no_false_stale(index: Path) -> None:
     _rwgate.set_instrument(lambda name, fields: order.append(name))
     hold_started = threading.Event()
 
-    def reader() -> None:
+    def _reader() -> None:
+        """Hold a read lease while the writer attempts to enter."""
         with _rwgate.read_index(index, timeout=5.0):
             hold_started.set()
             time.sleep(0.3)
 
-    def writer() -> None:
+    def _writer() -> None:
+        """Attempt the competing write after the reader signals readiness."""
         hold_started.wait(2.0)
         _rwgate.write_index(index, lambda t: _rwgate.atomic_publish(t, b'{"v": 2}'), timeout=5.0)
 
-    tr, tw = threading.Thread(target=reader), threading.Thread(target=writer)
+    tr, tw = threading.Thread(target=_reader), threading.Thread(target=_writer)
     tr.start()
     hold_started.wait(2.0)
     tw.start()
@@ -366,14 +395,15 @@ def test_single_registry_handle_serializes_in_process(index: Path) -> None:
     holding = threading.Event()
     release = threading.Event()
 
-    def holder() -> None:
+    def _holder() -> None:
+        """Hold the registry mutex until the outer test releases it."""
         with reg.mutex(time.monotonic() + 5.0):
             order.append("a_in")
             holding.set()
             release.wait(3.0)
             order.append("a_out")
 
-    ta = threading.Thread(target=holder)
+    ta = threading.Thread(target=_holder)
     ta.start()
     assert holding.wait(2.0)
     fd_before = reg._registry_fd()
@@ -392,6 +422,7 @@ def test_single_registry_handle_serializes_in_process(index: Path) -> None:
 
 # ── POSIX fork resets inherited coordination state ───────────────────────────
 def _run_in_fork(child) -> int:
+    """Run a callback in a forked child and return its normalized exit code."""
     pid = os.fork()
     if pid == 0:  # pragma: no cover - child branch
         code = 0
@@ -408,12 +439,13 @@ def _run_in_fork(child) -> int:
 def test_fork_idle_parent_child_operates(index: Path) -> None:
     """Child of an idle parent gets fresh handles and completes a full cycle."""
 
-    def child() -> None:
+    def _child() -> None:
+        """Exercise a complete write/read cycle in the forked child."""
         _rwgate.write_index(index, lambda t: _rwgate.atomic_publish(t, b'{"v": 3}'), timeout=5.0)
         with _rwgate.read_index(index, timeout=5.0) as data:
             assert data["v"] == 3
 
-    assert _run_in_fork(child) == 0
+    assert _run_in_fork(_child) == 0
 
 
 @NO_FORK
@@ -421,7 +453,8 @@ def test_fork_reader_parent_child_sees_foreign_token(index: Path) -> None:
     """Child cannot steal the parent's live reader token; it must wait/IndexBusy."""
     with _rwgate.read_index(index, timeout=5.0):
 
-        def child() -> None:
+        def _child() -> None:
+            """Attempt a write while the parent reader token remains live."""
             # parent's reader token is foreign & live → writer drain must time out
             try:
                 _rwgate.write_index(index, lambda t: None, timeout=0.4)
@@ -429,7 +462,7 @@ def test_fork_reader_parent_child_sees_foreign_token(index: Path) -> None:
                 return
             raise AssertionError("child drained a live parent reader")
 
-        assert _run_in_fork(child) == 0
+        assert _run_in_fork(_child) == 0
 
 
 @NO_FORK
@@ -437,18 +470,21 @@ def test_fork_writer_intent_parent_child_blocked(index: Path, tmp_path: Path) ->
     """Child cannot inherit or steal the parent's live writer intent."""
     forked: dict[str, int] = {}
 
-    def build(target: Path) -> None:
-        def child() -> None:
+    def _build(target: Path) -> None:
+        """Fork a reader during writer intent, then publish the test version."""
+
+        def _child() -> None:
+            """Attempt to read while the parent writer intent is live."""
             try:
                 with _rwgate.read_index(index, timeout=0.4):
                     raise AssertionError("child read under live writer intent")
             except _rwgate.IndexBusy:
                 return
 
-        forked["code"] = _run_in_fork(child)
+        forked["code"] = _run_in_fork(_child)
         _rwgate.atomic_publish(target, b'{"v": 4}')
 
-    _rwgate.write_index(index, build, timeout=5.0)
+    _rwgate.write_index(index, _build, timeout=5.0)
     assert forked["code"] == 0
 
 
@@ -459,14 +495,15 @@ def test_fork_mutex_holder_parent_child_no_deadlock(index: Path) -> None:
     reg = _rwgate._registry_for(coord)
     with reg.mutex(time.monotonic() + 5.0):
 
-        def child() -> None:
+        def _child() -> None:
+            """Attempt a write while the parent holds the registry mutex."""
             try:
                 _rwgate.write_index(index, lambda t: None, timeout=0.4)
             except _rwgate.IndexBusy:
                 return
             raise AssertionError("child acquired mutex held by parent")
 
-        assert _run_in_fork(child) == 0
+        assert _run_in_fork(_child) == 0
 
 
 # ── read-only coordination root ──────────────────────────────────────────────
@@ -504,21 +541,23 @@ def test_build_failure_with_contended_release_propagates_and_recovers(index: Pat
     seen: list[str] = []
     _rwgate.set_instrument(lambda name, fields: seen.append(name))
 
-    def hold_mutex() -> None:
+    def _hold_mutex() -> None:
+        """Hold the registry mutex through the writer's degraded release path."""
         build_started.wait(3.0)  # writer has intent + is inside build
         with reg.mutex(time.monotonic() + 5.0):
             holder_has_mutex.set()
             let_holder_release.wait(3.0)  # keep the registry mutex through the release window
 
-    def build(target: Path) -> None:
+    def _build(target: Path) -> None:
+        """Raise the original build failure after the holder takes the mutex."""
         build_started.set()
         assert holder_has_mutex.wait(3.0), "holder never took the registry mutex"
         raise RuntimeError("boom")
 
-    holder = threading.Thread(target=hold_mutex)
+    holder = threading.Thread(target=_hold_mutex)
     holder.start()
     with pytest.raises(RuntimeError, match="boom"):  # original error, NOT masked by IndexBusy
-        _rwgate.write_index(index, build, timeout=5.0)
+        _rwgate.write_index(index, _build, timeout=5.0)
     let_holder_release.set()
     holder.join(5.0)
 
@@ -557,13 +596,14 @@ def test_append_event_line_win32_branch_spins_until_lock(tmp_path: Path, monkeyp
     attempts = {"n": 0}
     real_try = _rwgate._os_try_lock
 
-    def flaky_try(fd: int) -> bool:
+    def _flaky_try(fd: int) -> bool:
+        """Refuse the first lock attempt, then delegate to the real lock."""
         attempts["n"] += 1
         if attempts["n"] == 1:
             return False
         return real_try(fd)
 
-    monkeypatch.setattr(_rwgate, "_os_try_lock", flaky_try)
+    monkeypatch.setattr(_rwgate, "_os_try_lock", _flaky_try)
     log = tmp_path / "ev.jsonl"
     _rwgate._append_event_line(str(log), "probe", {"pid": os.getpid(), "seq": 0})
     assert attempts["n"] >= 2, "spin loop never retried the refused lock"

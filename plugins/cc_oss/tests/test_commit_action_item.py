@@ -86,6 +86,7 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+        """Store the status and output returned by a fake Git command."""
         self.returncode = returncode
         self.stdout = stdout
 
@@ -141,6 +142,7 @@ def _make_git_mock(
     """Return a fake ``subprocess.run`` for git operations."""
 
     def _fake_run(cmd: list[str], **_: Any) -> _FakeCompleted:
+        """Return deterministic Git responses while recording optional calls."""
         if calls is not None:
             calls.append(list(cmd))
         binary = Path(cmd[0]).name
@@ -235,6 +237,7 @@ def test_sentinel_cleaned_up_after_commit_path(
     sentinel_seen: list[bool] = []
 
     def _fake_run(cmd: list[str], **_: Any) -> _FakeCompleted:
+        """Emulate Git while recording whether the sentinel existed at commit time."""
         binary = Path(cmd[0]).name
         subcmd = cmd[1] if len(cmd) > 1 else ""
         if binary == "git" and subcmd == "rev-parse":
@@ -284,6 +287,7 @@ def test_sentinel_created_before_commit(monkeypatch: pytest.MonkeyPatch, tmp_pat
     fake_tmpdir.mkdir()
 
     def _fake_run(cmd: list[str], **_: Any) -> _FakeCompleted:
+        """Emulate Git and observe the sentinel before the commit call."""
         binary = Path(cmd[0]).name
         subcmd = cmd[1] if len(cmd) > 1 else ""
         if binary == "git" and subcmd == "rev-parse":

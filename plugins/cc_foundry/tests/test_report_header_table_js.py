@@ -88,6 +88,14 @@ def test_empty_text_is_not_detected() -> None:
 
 
 def _write_transcript(tmp_path: Path, rows: list[dict]) -> Path:
+    """Write transcript fixture rows as JSONL and return their path.
+
+    Examples:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     _write_transcript(Path(directory), [{"type": "user"}]).read_text().endswith("\\n")
+        True
+    """
     transcript = tmp_path / "transcript.jsonl"
     transcript.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
     return transcript

@@ -25,12 +25,13 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+        """Store the subprocess status and output consumed by the checker."""
         self.returncode = returncode
         self.stdout = stdout
 
 
-@pytest.fixture
-def fake_subprocess(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+@pytest.fixture(name="fake_subprocess")
+def _fake_subprocess(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Patch ``which`` + ``subprocess.run``.
 
     Returns a dict with:
@@ -44,9 +45,11 @@ def fake_subprocess(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     state: dict[str, Any] = {"responses": {}, "calls": []}
 
     def _fake_which(cmd: str) -> str:
+        """Return a stable fake executable path for any requested command."""
         return f"/fake/{cmd}"
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Record a command and return the longest configured response prefix."""
         state["calls"].append(list(cmd))
         # Look up a response by progressively shorter prefix
         basename = Path(cmd[0]).name
@@ -251,6 +254,7 @@ class TestTimeoutResilience:
         """Return empty output after a subprocess timeout."""
 
         def _raise_timeout(*_args: Any, **_kwargs: Any) -> _FakeCompleted:
+            """Raise the timeout exercised by the fail-open subprocess path."""
             raise subprocess.TimeoutExpired(cmd=["fake"], timeout=1)
 
         monkeypatch.setattr(cops.subprocess, "run", _raise_timeout)

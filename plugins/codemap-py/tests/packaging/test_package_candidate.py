@@ -50,8 +50,8 @@ def _run_builder(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-@pytest.fixture(scope="module")
-def package(tmp_path_factory: pytest.TempPathFactory) -> Path:
+@pytest.fixture(name="package", scope="module")
+def _package(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Build the package once via the CLI for read-only inspection."""
     out = tmp_path_factory.mktemp("package")
     result = _run_builder("--out", str(out))

@@ -23,6 +23,7 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0) -> None:
+        """Store the status returned by a fake Git command."""
         self.returncode = returncode
 
 
@@ -97,6 +98,7 @@ def test_is_valid_commit_uses_merge_base_is_ancestor_not_cat_file(monkeypatch: p
     recorded: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Record reachability argv and return a successful ancestor check."""
         recorded.append(list(cmd))
         return _FakeCompleted(returncode=0)
 
@@ -138,6 +140,7 @@ def test_tag_advanced_past_records_git_command(monkeypatch: pytest.MonkeyPatch) 
     recorded: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Record marker-versus-tag argv and return a successful ancestor check."""
         recorded.append(list(cmd))
         return _FakeCompleted(returncode=0)
 
@@ -263,6 +266,7 @@ def test_resolve_records_git_commands(monkeypatch: pytest.MonkeyPatch, tmp_path:
     recorded: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Record both marker validation checks and report success for each."""
         recorded.append(list(cmd))
         return _FakeCompleted(returncode=0)
 

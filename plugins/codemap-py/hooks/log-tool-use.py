@@ -1,5 +1,29 @@
 #!/usr/bin/env python3
-"""Append low-cost runtime-scoped search/read telemetry and one repeated-read nudge."""
+"""Record search and read telemetry for codemap guidance.
+
+Purpose:
+    Track low-cost tool-use signals and print one advisory when a source file is read
+    repeatedly, helping callers choose structural codemap queries.
+
+Scope:
+    Parse one host tool event, append one compact JSONL record, and inspect a bounded
+    tail for the repeated-read threshold. It does not run searches or alter source files.
+    Matched events must supply mapping-shaped ``tool_input`` when that field is truthy.
+
+Usage:
+    Invoke as a Claude or Codex tool-use hook with the host event JSON on standard input.
+
+Outputs:
+    Append one runtime-scoped JSONL record and, at most once per qualifying read, print
+    a codemap query hint.
+
+Failure:
+    JSON decoding, type/value, and filesystem errors are ignored. Other errors propagate;
+    a truthy non-mapping ``tool_input`` raises ``AttributeError`` rather than failing open.
+
+Used by:
+    Codemap-py tool-use hook configuration and the runtime telemetry joiner.
+"""
 
 from __future__ import annotations
 

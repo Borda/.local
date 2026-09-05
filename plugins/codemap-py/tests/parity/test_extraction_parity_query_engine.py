@@ -162,8 +162,8 @@ def _materialize_old_bin(dest: Path) -> Path:
     return dest / "scan-query"
 
 
-@pytest.fixture(scope="module")
-def old_scan_query(tmp_path_factory: pytest.TempPathFactory) -> Path:
+@pytest.fixture(name="old_scan_query", scope="module")
+def _old_scan_query(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Session-stable path to the golden pre-extraction ``scan-query``."""
     return _materialize_old_bin(tmp_path_factory.mktemp("old_bin_query_engine"))
 
@@ -276,8 +276,8 @@ def _scan(root: Path) -> None:
     assert result.returncode == 0, result.stderr
 
 
-@pytest.fixture(scope="module", params=_PATH_CLASSES)
-def built_project(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest) -> Path:
+@pytest.fixture(name="built_project", scope="module", params=_PATH_CLASSES)
+def _built_project(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest) -> Path:
     """Build and scan the fixture project once per path class; return its root."""
     base = tmp_path_factory.mktemp("query_parity")
     root = base / request.param
@@ -343,8 +343,8 @@ def _run_cli_module(args: list[str], cwd: Path, stdin: str | None = None) -> sub
     )
 
 
-@pytest.fixture
-def coupled_ranking_project(tmp_path: Path) -> Path:
+@pytest.fixture(name="coupled_ranking_project")
+def _coupled_ranking_project(tmp_path: Path) -> Path:
     """Create a frozen index whose total and internal dependency rankings differ.
 
     ``dep_count`` is deliberately inverse to ``internal_dep_count``.  This
@@ -413,6 +413,10 @@ def _error_suffix(stderr: str) -> str:
     The substantive error text always follows the first
     ``": error: "`` marker and never itself contains a prog-derived token, so comparing that suffix (rather than the
     whole banner) verifies the actual error content is unchanged while not asserting on the known-divergent prog token.
+
+    Example:
+        >>> _error_suffix("usage: old: error: bad argument\\n")
+        'bad argument\\n'
     """
     marker = ": error: "
     idx = stderr.find(marker)
@@ -657,8 +661,8 @@ def test_coupled_help_explains_internal_import_ranking(coupled_ranking_project: 
         assert _error_suffix(new_bin.stderr) == _error_suffix(cli.stderr)
 
 
-@pytest.fixture(scope="module", params=_PATH_CLASSES)
-def diff_impact_project(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest) -> Path:
+@pytest.fixture(name="diff_impact_project", scope="module", params=_PATH_CLASSES)
+def _diff_impact_project(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest) -> Path:
     """Git repo with one committed baseline, then one uncommitted tracked edit.
 
     Isolated from ``built_project`` — module-scoped, not class-scoped-as-instance-method (pytest deprecates the latter),

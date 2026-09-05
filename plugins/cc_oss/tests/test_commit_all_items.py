@@ -19,12 +19,13 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+        """Store the status and output returned by a fake Git command."""
         self.returncode = returncode
         self.stdout = stdout
 
 
-@pytest.fixture
-def fake_git(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+@pytest.fixture(name="fake_git")
+def _fake_git(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     """Patch subprocess.run and which; record command lists.
 
     Default: exit 0.
@@ -32,6 +33,7 @@ def fake_git(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     recorded: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Record Git argv and return the response needed by the bulk-commit path."""
         recorded.append(list(cmd))
         subcmd = cmd[1] if len(cmd) > 1 else ""
         if subcmd == "rev-parse":
@@ -48,7 +50,12 @@ def fake_git(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
 
 
 def _commit_calls(recorded: list[list[str]]) -> list[list[str]]:
-    """Return recorded ``git commit`` calls."""
+    """Return recorded ``git commit`` calls.
+
+    Examples:
+        >>> _commit_calls([["git", "add", "x"], ["git", "commit", "-m", "done"]])
+        [['git', 'commit', '-m', 'done']]
+    """
     return [cmd for cmd in recorded if len(cmd) > 1 and cmd[1] == "commit"]
 
 

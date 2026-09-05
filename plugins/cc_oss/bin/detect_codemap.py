@@ -116,6 +116,12 @@ def _resolve_proj(proj_override: str | None, root: Path) -> str:
 
     Returns:
         Project name used as ``<name>.json`` under the index directory.
+
+    Examples:
+        >>> _resolve_proj(None, Path("work/my-project"))
+        'my-project'
+        >>> _resolve_proj("checkout", Path("work/my-project"))
+        'checkout'
     """
     return proj_override or root.name
 

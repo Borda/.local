@@ -36,8 +36,8 @@ def _query_raw(scan_query: Path, root: Path, index_path: Path, *args: str) -> su
     )
 
 
-@pytest.fixture
-def healthy_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
+@pytest.fixture(name="healthy_project")
+def _healthy_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
     """Create a minimal indexed project for corruption tests."""
     root = tmp_path / "proj"
     root.mkdir()

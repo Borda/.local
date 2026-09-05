@@ -42,13 +42,14 @@ def test_incremental_self_heal_propagates_refresh_provenance(tmp_path: Path, mon
     scan_bin.write_text("placeholder")
     captured: dict[str, object] = {}
 
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Capture the incremental-scan command and return success."""
         captured["command"] = command
         captured["kwargs"] = kwargs
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setenv("CODEMAP_RUNTIME", "codex")
-    monkeypatch.setattr(query.subprocess, "run", fake_run)
+    monkeypatch.setattr(query.subprocess, "run", _fake_run)
 
     assert query._run_incremental_scan(scan_bin, tmp_path, 3) is True
     env = captured["kwargs"]["env"]  # type: ignore[index]
@@ -64,6 +65,9 @@ def _literal_cap(source: str, name: str) -> int:
     Read by AST rather than by importing: two of the three helpers are standalone
     executables (one has no ``.py`` suffix at all) and importing them for a constant
     would drag in their side effects.
+
+    >>> _literal_cap("LIMIT = 7\\n", "LIMIT")
+    7
     """
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
@@ -114,8 +118,8 @@ def _query_from(scan_query: Path, cwd: Path, index_path: Path, *args: str, froze
     return json.loads(result.stdout)
 
 
-@pytest.fixture
-def committed_repo(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
+@pytest.fixture(name="committed_repo")
+def _committed_repo(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
     """Create a clean indexed repository with a nested package.
 
     Nesting matters: ``pkg/deep/`` is the subdirectory a query is issued from, and
@@ -168,8 +172,8 @@ def _commit_at(root: Path, when: str, message: str) -> None:
     assert result.returncode == 0, result.stderr
 
 
-@pytest.fixture
-def dated_repo(tmp_path: Path) -> Path:
+@pytest.fixture(name="dated_repo")
+def _dated_repo(tmp_path: Path) -> Path:
     """Create a repository whose second commit changes only a type stub.
 
     Isolating the stub in its own commit is what makes the file-set question decidable:
@@ -190,8 +194,8 @@ def dated_repo(tmp_path: Path) -> Path:
     return root
 
 
-@pytest.fixture
-def reset_query_caches(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.fixture(name="reset_query_caches")
+def _reset_query_caches(monkeypatch: pytest.MonkeyPatch) -> None:
     """Clear the module-level git/staleness memos so each in-process test starts cold.
 
     ``query`` caches git root, exclusions, blob SHAs, and the coverage block for the lifetime of one CLI invocation;
@@ -252,6 +256,7 @@ class TestFileShaMemoization:
         calls: list[list[str]] = []
 
         def _fake_check_output(cmd, **kwargs):
+            """Return empty tracked-blob output while recording the git command."""
             calls.append(list(cmd))
             return ""
 
@@ -267,6 +272,7 @@ class TestFileShaMemoization:
         seen: dict[str, object] = {}
 
         def _fake_check_output(cmd, **kwargs):
+            """Return empty tracked-blob output and retain subprocess arguments."""
             seen["cmd"] = list(cmd)
             seen["cwd"] = kwargs.get("cwd")
             return ""
@@ -286,6 +292,7 @@ class TestGitFailureIsUndetermined:
         """Make the tracked-blob git read fail while a repository root still resolves."""
 
         def _raise(cmd, **kwargs):
+            """Raise the injected failure from the tracked-blob lookup."""
             raise exc
 
         monkeypatch.setattr(query, "_get_git_root_cached", lambda: Path("/repo"))
@@ -361,6 +368,7 @@ class TestWriterReaderFileSetParity:
         seen: list[str] = []
 
         def _fake_check_output(cmd, **kwargs):
+            """Return empty tracked-blob output while recording command tokens."""
             seen.extend(cmd)
             return ""
 
@@ -374,6 +382,7 @@ class TestWriterReaderFileSetParity:
         seen: list[str] = []
 
         def _fake_run(cmd, **kwargs):
+            """Return a successful empty subprocess result while recording arguments."""
             seen.extend(cmd)
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 

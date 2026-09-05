@@ -11,12 +11,26 @@ from assemble_vitality_scores import assemble_scores, load_weights, main
 
 
 def _axis(score: float | None = 7.0, conf: float = 0.9, label: str = "🟢", signal: str = "ok") -> dict:
+    """Build one axis result with overridable score, confidence, and status fields.
+
+    Examples:
+        >>> _axis(score=None, label="⚪")
+        {'score': None, 'conf': 0.9, 'label': '⚪', 'signal': 'ok'}
+    """
     return {"score": score, "conf": conf, "label": label, "signal": signal}
 
 
 def _write_partial(
     tmp_path: Path, name: str, axes: dict, scored_at: str = "1700000000", extra: dict | None = None
 ) -> Path:
+    """Write a partial vitality result to the test's temporary directory.
+
+    Examples:
+        >>> tmp_path = getfixture("tmp_path")
+        >>> path = _write_partial(tmp_path, "part.json", {"1": {"score": 1.0}})
+        >>> json.loads(path.read_text())["scored_at"]
+        '1700000000'
+    """
     p = tmp_path / name
     data: dict = {"axes": axes, "scored_at": scored_at}
     if extra:
@@ -25,8 +39,15 @@ def _write_partial(
     return p
 
 
-@pytest.fixture()
-def partials(tmp_path: Path) -> tuple[Path, Path, Path]:
+@pytest.fixture(name="partials")
+def _partials(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """Create three partial score files covering complementary axes.
+
+    Examples:
+        >>> paths = getfixture("partials")
+        >>> [path.name for path in paths]
+        ['a.json', 'b.json', 'c.json']
+    """
     pa = _write_partial(tmp_path, "a.json", {str(k): _axis() for k in [1, 2, 5, 6]})
     pb = _write_partial(tmp_path, "b.json", {str(k): _axis() for k in [4, 7, 8]})
     pc = _write_partial(
@@ -38,8 +59,15 @@ def partials(tmp_path: Path) -> tuple[Path, Path, Path]:
     return pa, pb, pc
 
 
-@pytest.fixture()
-def scoring_file(tmp_path: Path) -> Path:
+@pytest.fixture(name="scoring_file")
+def _scoring_file(tmp_path: Path) -> Path:
+    """Create the scoring table consumed by vitality aggregation tests.
+
+    Examples:
+        >>> path = getfixture("scoring_file")
+        >>> "axis-9" in path.read_text()
+        True
+    """
     lines = "\n".join(
         f"| {n} axis-{n} | {w} |"
         for n, w in [(1, 0.10), (2, 0.08), (3, 0.10), (4, 0.07), (5, 0.07), (6, 0.05), (7, 0.06), (8, 0.11), (9, 0.07)]

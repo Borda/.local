@@ -30,6 +30,7 @@ class _FakeResult:
     """Stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, stdout: str = "", stderr: str = "", returncode: int = 0) -> None:
+        """Store the configured subprocess result fields."""
         self.stdout = stdout
         self.stderr = stderr
         self.returncode = returncode
@@ -161,37 +162,41 @@ class TestPassesIsolation:
     def test_summary_1_passed_returns_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """'-q' summary '1 passed' → isolation confirmed."""
 
-        def fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Return the concise passing isolation output."""
             return _FakeResult(stdout="1 passed in 0.01s\n")
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         assert find_polluter.passes_isolation("tests/test_x.py::test_y", ["pytest"]) is True
 
     def test_verbose_passed_marker_returns_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verbose 'PASSED' at line start also counts as isolation pass."""
 
-        def fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Return the verbose passing isolation output."""
             return _FakeResult(stdout="PASSED tests/test_x.py::test_y\n")
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         assert find_polluter.passes_isolation("tests/test_x.py::test_y", ["pytest"]) is True
 
     def test_failed_output_returns_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """FAILED marker in output → isolation not confirmed."""
 
-        def fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Return the failing isolation output."""
             return _FakeResult(stdout="FAILED tests/test_x.py::test_y\n", returncode=1)
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         assert find_polluter.passes_isolation("tests/test_x.py::test_y", ["pytest"]) is False
 
     def test_empty_output_returns_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """No recognizable markers → returns False."""
 
-        def fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Return output without an isolation-pass marker."""
             return _FakeResult(stdout="", returncode=1)
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         assert find_polluter.passes_isolation("tests/test_x.py::test_y", ["pytest"]) is False
 
 
@@ -207,20 +212,22 @@ class TestCollectCandidates:
         """Failing test itself, blank lines, and summary lines are excluded."""
         stdout = "tests/test_a.py::t1\ntests/test_a.py::t2\ntests/test_b.py::t3\n\n3 tests collected\n"
 
-        def fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Return this test's collected node IDs and summary."""
             return _FakeResult(stdout=stdout)
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         result = find_polluter.collect_candidates("tests", "tests/test_a.py::t2", ["pytest"])
         assert result == ["tests/test_a.py::t1", "tests/test_b.py::t3"]
 
     def test_returns_empty_when_only_failing_test(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Candidate list is empty when failing test is the sole collected item."""
 
-        def fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Return the sole collected failing test."""
             return _FakeResult(stdout="tests/test_only.py::solo\n")
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         result = find_polluter.collect_candidates("tests", "tests/test_only.py::solo", ["pytest"])
         assert result == []
 
@@ -232,10 +239,11 @@ class TestCollectCandidates:
         safe = "tests/test_safe.py::ok"
         stdout = f"{hostile}\n{safe}\n"
 
-        def fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Return the safe and hostile node IDs for filtering."""
             return _FakeResult(stdout=stdout)
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         result = find_polluter.collect_candidates("tests", "tests/other.py::other", ["pytest"])
         assert safe in result
         assert hostile not in result
@@ -245,10 +253,11 @@ class TestCollectCandidates:
     def test_empty_collection_output_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """All-blank pytest --collect-only output returns empty candidate list."""
 
-        def fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Return only blank collection output."""
             return _FakeResult(stdout="\n\n\n")
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         result = find_polluter.collect_candidates("tests", "tests/x.py::y", ["pytest"])
         assert result == []
 
@@ -268,13 +277,14 @@ class TestBinarySearch:
         candidates = [f"tests/test_x.py::t{i}" for i in range(8)]
         polluter_idx = 1
 
-        def fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Fail batches containing this test's first-half polluter."""
             batch = _batch_from_argsfile(argv)
             if candidates[polluter_idx] in batch:
                 return _FakeResult(stdout="FAILED\n", returncode=1)
             return _FakeResult(stdout="ok\n")
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         polluter, rounds = find_polluter.binary_search(candidates, "FAIL_TARGET", ["pytest"])
         assert polluter == candidates[polluter_idx]
         assert 1 <= rounds <= 4  # ceil(log2(9)) = 4
@@ -283,10 +293,11 @@ class TestBinarySearch:
     def test_single_candidate_no_subprocess_call(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Single candidate is returned immediately without any subprocess call."""
 
-        def boom(*_: Any, **__: Any) -> _FakeResult:  # pragma: no cover
+        def _boom(*_: Any, **__: Any) -> _FakeResult:  # pragma: no cover
+            """Fail if the single-candidate shortcut reaches subprocesses."""
             raise AssertionError("subprocess.run must not be called for 1 candidate")
 
-        _patch_run(monkeypatch, boom)
+        _patch_run(monkeypatch, _boom)
         polluter, rounds = find_polluter.binary_search(["tests/test_solo.py::only"], "FAIL", ["pytest"])
         assert polluter == "tests/test_solo.py::only"
         assert rounds == 0
@@ -300,11 +311,12 @@ class TestBinarySearch:
         """Round progress is written to the supplied log stream, not stdout."""
         candidates = [f"tests/t.py::t{i}" for i in range(4)]
 
-        def fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Return failure so binary search emits each round to the log."""
             # Always contaminate so binary search keeps narrowing.
             return _FakeResult(stdout="FAILED\n", returncode=1)
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         log = StringIO()
         find_polluter.binary_search(candidates, "FAIL", ["pytest"], log=log)
         assert "Round" in log.getvalue()
@@ -314,13 +326,14 @@ class TestBinarySearch:
         candidates = [f"tests/test_x.py::t{i}" for i in range(8)]
         polluter = candidates[6]
 
-        def fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Fail batches containing this test's second-half polluter."""
             batch = _batch_from_argsfile(argv)
             if polluter in batch:
                 return _FakeResult(stdout="FAILED\n", returncode=1)
             return _FakeResult(stdout="ok\n")
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         found, rounds = find_polluter.binary_search(candidates, "FAIL_TARGET", ["pytest"])
         assert found == polluter
         assert 1 <= rounds <= 4
@@ -367,10 +380,11 @@ class TestMain:
         """Test that always fails in isolation → exit 1 with guidance."""
         monkeypatch.setattr(find_polluter, "_resolve_pytest_cmd", lambda: ["pytest"])
 
-        def fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Return failure for the isolation-failure CLI path."""
             return _FakeResult(stdout="FAILED\n", returncode=1)
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         rc = find_polluter.main(["tests/test_a.py::test_bad"])
         assert rc == 1
         assert "fails in isolation" in capsys.readouterr().err
@@ -380,14 +394,15 @@ class TestMain:
         monkeypatch.setattr(find_polluter, "_resolve_pytest_cmd", lambda: ["pytest"])
         failing = "tests/test_z.py::only"
 
-        def fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Return passing isolation and a sole collected failing node."""
             if "--tb=short" in argv:
                 return _FakeResult(stdout="1 passed in 0.01s\n")
             if "--collect-only" in argv:
                 return _FakeResult(stdout=f"{failing}\n")
             raise AssertionError("should not reach binary search")
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         rc = find_polluter.main([failing])
         assert rc == 1
         assert "No candidate tests found" in capsys.readouterr().err
@@ -401,7 +416,8 @@ class TestMain:
         other = "tests/test_b.py::two"
         monkeypatch.setattr(find_polluter, "_resolve_pytest_cmd", lambda: ["pytest"])
 
-        def fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Model the successful CLI search for this fixture polluter."""
             if "--tb=short" in argv:
                 return _FakeResult(stdout="1 passed in 0.01s\n")
             if "--collect-only" in argv:
@@ -410,7 +426,7 @@ class TestMain:
                 return _FakeResult(stdout="FAILED\n", returncode=1)
             return _FakeResult(stdout="ok\n")
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         rc = find_polluter.main([failing, "tests"])
         assert rc == 0
         out = capsys.readouterr().out
@@ -425,7 +441,8 @@ class TestMain:
         polluter = "tests/test_a.py::one"
         monkeypatch.setattr(find_polluter, "_resolve_pytest_cmd", lambda: ["pytest"])
 
-        def fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Model the successful search that prints verification guidance."""
             if "--tb=short" in argv:
                 return _FakeResult(stdout="1 passed in 0.01s\n")
             if "--collect-only" in argv:
@@ -434,7 +451,7 @@ class TestMain:
                 return _FakeResult(stdout="FAILED\n", returncode=1)
             return _FakeResult(stdout="ok\n")
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         find_polluter.main([failing, "tests"])
         out = capsys.readouterr().out
         assert "Verify with:" in out
@@ -447,7 +464,8 @@ class TestMain:
         monkeypatch.setattr(find_polluter, "_resolve_pytest_cmd", lambda: ["pytest"])
         collected_dirs: list[str] = []
 
-        def fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Record the default collection directory used by the CLI."""
             if "--tb=short" in argv:
                 return _FakeResult(stdout="1 passed in 0.01s\n")
             if "--collect-only" in argv:
@@ -455,7 +473,7 @@ class TestMain:
                 return _FakeResult(stdout="")
             return _FakeResult(stdout="ok\n")
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         find_polluter.main(["tests/test_z.py::fail"])
         assert "tests" in collected_dirs
 
@@ -483,7 +501,8 @@ class TestArgparseCli:
         polluter = "tests/test_a.py::one"
         monkeypatch.setattr(find_polluter, "_resolve_pytest_cmd", lambda: ["pytest"])
 
-        def fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+        def _fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            """Model the golden invocation's collection and search responses."""
             if "--tb=short" in argv:
                 return _FakeResult(stdout="1 passed in 0.01s\n")
             if "--collect-only" in argv:
@@ -493,7 +512,7 @@ class TestArgparseCli:
                 return _FakeResult(stdout="FAILED\n", returncode=1)
             return _FakeResult(stdout="ok\n")
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         rc = find_polluter.main([failing])
         assert rc == 0
         assert polluter in capsys.readouterr().out

@@ -45,6 +45,14 @@ def _seed(path: Path, text: str) -> None:
 
 
 def _write_manifest(plugin_dir: Path, runtime: integration.Runtime, name: str, version: str) -> None:
+    """Write the minimal runtime manifest used to build an integration fixture.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     _write_manifest(Path(directory), integration.Runtime.CLAUDE, "demo", "1.0.0")
+    ...     json.loads((Path(directory) / ".claude-plugin" / "plugin.json").read_text())["name"]
+    'demo'
+    """
     manifest_dir = plugin_dir / (".claude-plugin" if runtime == integration.Runtime.CLAUDE else ".codex-plugin")
     manifest_dir.mkdir(parents=True, exist_ok=True)
     _seed(manifest_dir / "plugin.json", json.dumps({"name": name, "version": version}))
@@ -67,11 +75,13 @@ def _tree_snapshot(root: Path) -> dict[str, bytes]:
 
 
 def _git(root: Path, *args: str) -> None:
+    """Run a successful git command in an integration fixture repository."""
     result = subprocess.run(["git", *args], cwd=str(root), capture_output=True, text=True, timeout=15, check=False)
     assert result.returncode == 0, result.stderr
 
 
 def _git_commit_all(root: Path) -> None:
+    """Commit all current fixture files with a local test identity."""
     _git(root, "init", "-q")
     _git(root, "config", "user.email", "t@t.t")
     _git(root, "config", "user.name", "t")
@@ -80,14 +90,14 @@ def _git_commit_all(root: Path) -> None:
     _git(root, "commit", "-q", "-m", "fixture baseline")
 
 
-@pytest.fixture(params=["normal", "spaces_nonascii"])
-def path_class(request: pytest.FixtureRequest) -> str:
+@pytest.fixture(name="path_class", params=["normal", "spaces_nonascii"])
+def _path_class(request: pytest.FixtureRequest) -> str:
     """Return the requested normal or space-and-non-ASCII fixture path class."""
     return request.param
 
 
-@pytest.fixture
-def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_class: str) -> Path:
+@pytest.fixture(name="repo")
+def _repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_class: str) -> Path:
     """Provide a disposable repository as the current working directory."""
     root = _build_repo(tmp_path, path_class=path_class)
     monkeypatch.chdir(root)
@@ -799,6 +809,7 @@ def test_audit_never_calls_query_or_mutation_paths(repo: Path, monkeypatch: pyte
     before = _tree_snapshot(repo)
 
     def _forbidden(*args: object, **kwargs: object) -> None:
+        """Fail if the audit unexpectedly reaches a query or mutation path."""
         raise AssertionError("audit invoked a forbidden mutation/query path")
 
     monkeypatch.setattr(integration.query, "main", _forbidden)
@@ -1000,10 +1011,12 @@ def test_apply_cli_bad_approve_exits_usage(repo: Path, tmp_path: Path) -> None:
 
 
 def _single_op_plan(repo: Path, consumer: str = "oss") -> dict:
+    """Build the smallest valid apply plan for one consumer target."""
     return integration.build_plan("claude", [consumer], None, repo / integration.PROVIDER_DIR)
 
 
 def _assert_refused(repo: Path, plan: dict, code: str, original_bytes: bytes | None) -> None:
+    """Assert that an apply plan is refused without changing target bytes."""
     target_path = repo / plan["ops"][0]["path"]
     with pytest.raises(integration.RefusalError) as exc:
         integration.apply_plan(plan, plan["plan_sha256"], repo / integration.PROVIDER_DIR)
@@ -1181,6 +1194,7 @@ def test_journal_records_full_success_sequence(repo: Path, tmp_path: Path) -> No
 
 
 def _tamper_identity(root: Path, target: integration.ConsumerTarget) -> None:
+    """Replace a managed target marker with content that fails identity checks."""
     dirname = ".claude-plugin" if target.runtime == integration.Runtime.CLAUDE else ".codex-plugin"
     manifest_path = root / target.plugin_dir / dirname / "plugin.json"
     manifest = json.loads(manifest_path.read_text())
@@ -1189,6 +1203,7 @@ def _tamper_identity(root: Path, target: integration.ConsumerTarget) -> None:
 
 
 def _seed_prose(root: Path, consumer: str, text: str) -> Path:
+    """Create a consumer README containing caller-provided unmanaged prose."""
     target = next(t for t in integration.CLAUDE_TARGETS if t.consumer == consumer)
     rel_path = f"{target.plugin_dir}/{integration.CONSUMER_MANAGED_FILE[consumer]}"
     path = root / rel_path

@@ -34,18 +34,23 @@ def test_installed_package_selection_timeout_is_bounded_for_native_windows() -> 
     assert 60 < INSTALLED_PACKAGE_SELECTION_TIMEOUT_SECONDS <= 300
 
 
-def package_payload_paths() -> tuple[str, ...]:
-    """Return the exact shipped payload paths in manifest order."""
+def _package_payload_paths() -> tuple[str, ...]:
+    """Return the exact shipped payload paths in manifest order.
+
+    Example:
+        >>> _package_payload_paths()[0]
+        '.codex-plugin/plugin.json'
+    """
     manifest = json.loads((PLUGIN_ROOT / "package-manifest.json").read_text(encoding="utf-8"))
     return tuple(record["path"] for record in manifest["files"])
 
 
-def copied_package_root(tmp_path: Path) -> Path:
+def _copied_package_root(tmp_path: Path) -> Path:
     """Copy only the manifest-declared plugin payload into an isolated cache."""
     manifest = json.loads((PLUGIN_ROOT / "package-manifest.json").read_text(encoding="utf-8"))
     installed_root = tmp_path / "plugins" / "cache" / "borda-ai-rig" / "codex-rig" / manifest["version"]
     installed_root.mkdir(parents=True)
-    for relative in package_payload_paths():
+    for relative in _package_payload_paths():
         source = PLUGIN_ROOT / relative
         destination = installed_root / relative
         assert source.is_file(), f"manifested payload is absent: {relative}"
@@ -62,8 +67,8 @@ def test_installed_package_runs_the_explicit_package_safe_selection(tmp_path: Pa
     denial protocol/client, all seven network approval briefs, the complete PR collector boundary, and calibration
     scoring. A separate source-checkout suite retains the valid sync, CI-harness, and Git metadata contracts.
     """
-    installed_root = copied_package_root(tmp_path)
-    payload_paths = set(package_payload_paths())
+    installed_root = _copied_package_root(tmp_path)
+    payload_paths = set(_package_payload_paths())
     selected_files = {node_id.split("::", 1)[0] for node_id in PACKAGE_SAFE_TEST_SELECTION}
 
     assert selected_files <= payload_paths

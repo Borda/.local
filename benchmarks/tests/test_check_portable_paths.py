@@ -1,3 +1,5 @@
+"""Verify forbidden path detection and its pre-commit integration."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -14,9 +16,13 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "benchmarks" / "check-portable-paths.py"
 
 
-@pytest.fixture(scope="module")
-def checker() -> ModuleType:
-    """Load the hyphenated portability checker as a Python module."""
+@pytest.fixture(name="checker", scope="module")
+def _checker() -> ModuleType:
+    """Import the portability checker without running its command-line scan.
+
+    >>> getfixture("checker").__name__
+    'check_portable_paths'
+    """
     spec = importlib.util.spec_from_file_location("check_portable_paths", SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

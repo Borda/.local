@@ -19,10 +19,10 @@ INSTALL_ID = "123e4567-e89b-42d3-a456-426614174000"
 DIGEST = "a" * 64
 
 
-def load_module(path: Path, name: str) -> ModuleType:
+def _load_module(path: Path, name: str) -> ModuleType:
     """Load one installed script module without package assumptions."""
     if path == LIFECYCLE_PATH and "generate_roles" not in sys.modules:
-        load_module(GENERATOR_PATH, "generate_roles")
+        _load_module(GENERATOR_PATH, "generate_roles")
     specification = importlib.util.spec_from_file_location(name, path)
     assert specification is not None
     assert specification.loader is not None
@@ -32,13 +32,18 @@ def load_module(path: Path, name: str) -> ModuleType:
     return module
 
 
-def role_ids() -> tuple[str, ...]:
+def _role_ids() -> tuple[str, ...]:
     """Read the canonical roster from the generator implementation."""
-    return load_module(GENERATOR_PATH, "codex_rig_generator_roster").ROLE_IDS
+    return _load_module(GENERATOR_PATH, "codex_rig_generator_roster").ROLE_IDS
 
 
-def marker_line(role_id: str, *, file_digest: str = DIGEST) -> bytes:
-    """Build one exact marker fixture."""
+def _marker_line(role_id: str, *, file_digest: str = DIGEST) -> bytes:
+    """Build one exact marker fixture.
+
+    Example:
+        >>> _marker_line("challenger").startswith(b"# codex-rig")
+        True
+    """
     return (
         "# codex-rig-shim schema=1 plugin=codex-rig "
         f"install_id={INSTALL_ID} role_id={role_id} package_hash=sha256:{DIGEST} "
@@ -46,14 +51,19 @@ def marker_line(role_id: str, *, file_digest: str = DIGEST) -> bytes:
     ).encode()
 
 
-def root(path: str) -> dict[str, object]:
-    """Build one exact persisted root identity."""
+def _root(path: str) -> dict[str, object]:
+    """Build one exact persisted root identity.
+
+    Example:
+        >>> _root("/fixture")["canonical_path"]
+        '/fixture'
+    """
     return {"canonical_path": path, "device": 1, "inode": 2, "owner": 3, "group": 4, "mode": "0700"}
 
 
-def state_payload(*, status: str = "current") -> dict[str, object]:
+def _state_payload(*, status: str = "current") -> dict[str, object]:
     """Build one complete valid lifecycle state fixture."""
-    roles = role_ids()
+    roles = _role_ids()
     return {
         "schema": 1,
         "plugin": "codex-rig",
@@ -61,10 +71,10 @@ def state_payload(*, status: str = "current") -> dict[str, object]:
         "install_id": INSTALL_ID,
         "plugin_version": "0.2.0",
         "package_hash": DIGEST,
-        "codex_home_identity": root("/codex"),
-        "plugin_root_identity": root("/plugin"),
-        "state_root_identity": root("/codex/codex-rig/shims"),
-        "target_root_identity": root("/codex/agents"),
+        "codex_home_identity": _root("/codex"),
+        "plugin_root_identity": _root("/plugin"),
+        "state_root_identity": _root("/codex/codex-rig/shims"),
+        "target_root_identity": _root("/codex/agents"),
         "roster_hash": DIGEST,
         "bootstrap": {"protocol": 1, "helper_path": "scripts/verify_role_link.py", "helper_hash": DIGEST},
         "generator_version": 1,
@@ -82,8 +92,13 @@ def state_payload(*, status: str = "current") -> dict[str, object]:
     }
 
 
-def encode(value: object) -> bytes:
-    """Encode one compact JSON fixture."""
+def _encode(value: object) -> bytes:
+    """Encode one compact JSON fixture.
+
+    Example:
+        >>> _encode({"answer": 42})
+        b'{"answer":42}'
+    """
     return json.dumps(value, ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":")).encode()
 
 
@@ -101,7 +116,7 @@ def encode(value: object) -> bytes:
 )
 def test_strict_json_rejects_hostile_inputs(payload: bytes) -> None:
     """Prevent ambiguous or unbounded JSON from reaching lifecycle authority."""
-    module = load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_json")
+    module = _load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_json")
 
     with pytest.raises(module.LifecycleDataError):
         module.parse_json_object(payload, maximum=32)
@@ -109,7 +124,7 @@ def test_strict_json_rejects_hostile_inputs(payload: bytes) -> None:
 
 def test_strict_json_converts_bounded_huge_integer_failure() -> None:
     """Keep interpreter integer limits inside the lifecycle error contract."""
-    module = load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_huge_integer")
+    module = _load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_huge_integer")
     payload = b'{"value":' + b"9" * 5000 + b"}"
 
     with pytest.raises(module.LifecycleDataError):
@@ -118,13 +133,13 @@ def test_strict_json_converts_bounded_huge_integer_failure() -> None:
 
 def test_strict_json_converts_decoder_recursion_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep decoder recursion failures inside the lifecycle error contract."""
-    module = load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_deep_json")
+    module = _load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_deep_json")
 
-    def raise_recursion(*args: object, **kwargs: object) -> object:
+    def _raise_recursion(*args: object, **kwargs: object) -> object:
         """Model decoder recursion failure without interpreter-specific depth assumptions."""
         raise RecursionError("fixture recursion limit")
 
-    monkeypatch.setattr(module.json, "loads", raise_recursion)
+    monkeypatch.setattr(module.json, "loads", _raise_recursion)
 
     with pytest.raises(module.LifecycleDataError) as caught:
         module.parse_json_object(b"{}", maximum=2)
@@ -134,17 +149,17 @@ def test_strict_json_converts_decoder_recursion_failure(monkeypatch: pytest.Monk
 
 def test_marker_parser_accepts_current_and_historical_role_ids() -> None:
     """Accept strict role grammar without coupling old ownership to the active roster."""
-    module = load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_marker")
+    module = _load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_marker")
 
-    marker = module.parse_marker(marker_line("challenger"))
-    historical = module.parse_marker(marker_line("retired-specialist"))
+    marker = module.parse_marker(_marker_line("challenger"))
+    historical = module.parse_marker(_marker_line("retired-specialist"))
 
     assert marker == module.Marker(INSTALL_ID, "challenger", DIGEST, DIGEST)
     assert historical.role_id == "retired-specialist"
     for payload in (
-        marker_line("challenger") + b"\n",
-        marker_line("1unknown"),
-        b" " + marker_line("challenger"),
+        _marker_line("challenger") + b"\n",
+        _marker_line("1unknown"),
+        b" " + _marker_line("challenger"),
     ):
         with pytest.raises(module.LifecycleDataError):
             module.parse_marker(payload)
@@ -152,13 +167,13 @@ def test_marker_parser_accepts_current_and_historical_role_ids() -> None:
 
 def test_state_parser_accepts_complete_current_and_removed_state() -> None:
     """Require exact schema and canonical roster ordering for both statuses."""
-    module = load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_state")
+    module = _load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_state")
 
-    assert module.parse_state(encode(state_payload()))["transaction_status"] == "current"
-    assert module.parse_state(encode(state_payload(status="removed")))["transaction_status"] == "removed"
-    historical = state_payload()
+    assert module.parse_state(_encode(_state_payload()))["transaction_status"] == "current"
+    assert module.parse_state(_encode(_state_payload(status="removed")))["transaction_status"] == "removed"
+    historical = _state_payload()
     historical["roles"] = historical["roles"][:-1]
-    assert len(module.parse_state(encode(historical))["roles"]) == len(role_ids()) - 1
+    assert len(module.parse_state(_encode(historical))["roles"]) == len(_role_ids()) - 1
 
 
 @pytest.mark.parametrize(
@@ -178,8 +193,8 @@ def test_state_parser_accepts_complete_current_and_removed_state() -> None:
 )
 def test_state_parser_rejects_incompatible_or_partial_state(mutation: str) -> None:
     """Prevent malformed ownership state from authorizing target changes."""
-    module = load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_bad_state")
-    value = state_payload()
+    module = _load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_bad_state")
+    value = _state_payload()
     if mutation == "future":
         value["schema"] = 2
     elif mutation == "boolean-schema":
@@ -202,49 +217,49 @@ def test_state_parser_rejects_incompatible_or_partial_state(mutation: str) -> No
         value["target_root_identity"]["device"] = True
 
     with pytest.raises(module.LifecycleDataError):
-        module.parse_state(encode(value))
+        module.parse_state(_encode(value))
 
 
-def observations(module: ModuleType, state: dict[str, object] | None, kind: str) -> dict[str, object]:
+def _observations(module: ModuleType, state: dict[str, object] | None, kind: str) -> dict[str, object]:
     """Build one complete target observation roster."""
     result = {}
-    for role_id in role_ids():
+    for role_id in _role_ids():
         name = f"codex-rig-{role_id}.toml"
-        marker = module.parse_marker(marker_line(role_id)) if kind == "regular" else None
+        marker = module.parse_marker(_marker_line(role_id)) if kind == "regular" else None
         result[name] = module.TargetObservation(kind, DIGEST if kind == "regular" else None, marker)
     return result
 
 
 def test_target_classification_preserves_foreign_modified_and_unsafe() -> None:
     """Separate absent, current, modified, foreign, and unsafe rosters."""
-    module = load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_targets")
-    parsed = module.parse_state(encode(state_payload()))
+    module = _load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_targets")
+    parsed = module.parse_state(_encode(_state_payload()))
 
-    assert module.classify_targets(None, observations(module, None, "absent")) == "absent"
-    assert module.classify_targets(None, observations(module, None, "regular")) == "foreign"
-    assert module.classify_targets(parsed, observations(module, parsed, "regular")) == "current"
-    modified = observations(module, parsed, "regular")
+    assert module.classify_targets(None, _observations(module, None, "absent")) == "absent"
+    assert module.classify_targets(None, _observations(module, None, "regular")) == "foreign"
+    assert module.classify_targets(parsed, _observations(module, parsed, "regular")) == "current"
+    modified = _observations(module, parsed, "regular")
     modified["codex-rig-challenger.toml"] = module.TargetObservation("regular", "b" * 64, None)
     assert module.classify_targets(parsed, modified) == "modified"
-    assert module.classify_targets(parsed, observations(module, parsed, "unsafe")) == "unsafe"
+    assert module.classify_targets(parsed, _observations(module, parsed, "unsafe")) == "unsafe"
 
 
 def test_target_classification_handles_missing_and_removed_tombstones() -> None:
     """Distinguish repairable absence from removed-state conflicts."""
-    module = load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_removed")
-    current = module.parse_state(encode(state_payload()))
-    removed = module.parse_state(encode(state_payload(status="removed")))
-    missing = observations(module, current, "regular")
+    module = _load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_removed")
+    current = module.parse_state(_encode(_state_payload()))
+    removed = module.parse_state(_encode(_state_payload(status="removed")))
+    missing = _observations(module, current, "regular")
     missing["codex-rig-challenger.toml"] = module.TargetObservation("absent")
 
     assert module.classify_targets(current, missing) == "repairable-missing"
-    assert module.classify_targets(removed, observations(module, removed, "absent")) == "removed"
+    assert module.classify_targets(removed, _observations(module, removed, "absent")) == "removed"
     assert module.classify_targets(removed, missing) == "removed-conflict"
 
 
 def test_recovery_classification_is_single_exact_and_fail_closed() -> None:
     """Reject unknown or competing recovery authority."""
-    module = load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_recovery")
+    module = _load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_recovery")
 
     assert module.classify_recovery(()) == "none"
     assert module.classify_recovery((module.RecoveryObservation("journal", True),)) == "journal"

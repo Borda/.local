@@ -22,7 +22,7 @@ REVIEW_VALIDATOR = PLUGIN_ROOT / "skills" / "code-review" / "validate_artifacts.
 GATE_IDS = ("lint", "format", "types", "tests", "review")
 
 
-def load_module(path: Path, name: str) -> Any:
+def _load_module(path: Path, name: str) -> Any:
     """Load one standalone helper without requiring package imports."""
     assert path.is_file(), path
     spec = importlib.util.spec_from_file_location(name, path)
@@ -32,7 +32,7 @@ def load_module(path: Path, name: str) -> Any:
     return module
 
 
-def initialize_repository(root: Path) -> None:
+def _initialize_repository(root: Path) -> None:
     """Create one committed Git repository for diff collection tests."""
     subprocess.run(["git", "init", "-q", str(root)], check=True)
     (root / "tracked.txt").write_text("before\n", encoding="utf-8")
@@ -50,8 +50,13 @@ def initialize_repository(root: Path) -> None:
     )
 
 
-def skipped_gate_args() -> list[str]:
-    """Return explicit reasons for all five not-applicable gates."""
+def _skipped_gate_args() -> list[str]:
+    """Return explicit reasons for all five not-applicable gates.
+
+    Example:
+        >>> len(_skipped_gate_args())
+        10
+    """
     arguments: list[str] = []
     for gate_id in GATE_IDS:
         arguments.extend((f"--skip-{gate_id}", f"{gate_id} not applicable"))
@@ -62,7 +67,7 @@ def test_collect_diff_runs_natively_and_writes_complete_artifacts(tmp_path: Path
     """Collect tracked and untracked evidence without invoking Bash."""
     repository = tmp_path / "repository"
     repository.mkdir()
-    initialize_repository(repository)
+    _initialize_repository(repository)
     (repository / "tracked.txt").write_text("after\n", encoding="utf-8")
     (repository / "untracked.txt").write_text("new\n", encoding="utf-8")
     output = tmp_path / "artifacts"
@@ -93,14 +98,15 @@ def test_collect_diff_runs_natively_and_writes_complete_artifacts(tmp_path: Path
 
 def test_collect_diff_uses_only_git_argv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep collection shell-free and bind every subprocess to Git argv."""
-    module = load_module(COLLECT_DIFF, "codex_rig_portable_collect_diff")
+    module = _load_module(COLLECT_DIFF, "codex_rig_portable_collect_diff")
     calls: list[list[str]] = []
 
-    def record_run(arguments: list[str], **_: object) -> Any:
+    def _record_run(arguments: list[str], **_: object) -> Any:
+        """Record shell-free collection argv and return a successful process stub."""
         calls.append(arguments)
         return type("Completed", (), {"returncode": 0})()
 
-    monkeypatch.setattr(module.subprocess, "run", record_run)
+    monkeypatch.setattr(module.subprocess, "run", _record_run)
 
     assert module.collect_diff("working-tree", "", tmp_path / "artifacts") == 0
     assert calls == [
@@ -115,7 +121,7 @@ def test_collect_diff_uses_only_git_argv(tmp_path: Path, monkeypatch: pytest.Mon
 
 def test_run_gates_selects_powershell_for_simulated_windows_and_bash_on_posix() -> None:
     """Bind command execution to the host-native shell family."""
-    module = load_module(RUN_GATES, "codex_rig_portable_run_gates")
+    module = _load_module(RUN_GATES, "codex_rig_portable_run_gates")
 
     assert module.command_argv("Write-Output ok", platform="win32") == [
         "powershell.exe",
@@ -135,24 +141,27 @@ def test_run_gates_terminates_simulated_windows_process_trees_with_taskkill(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Use the native Windows process-tree terminator before the kill fallback."""
-    module = load_module(RUN_GATES, "codex_rig_portable_windows_termination")
+    module = _load_module(RUN_GATES, "codex_rig_portable_windows_termination")
     calls: list[list[str]] = []
 
     class Process:
         pid = 42
 
         def poll(self) -> None:
+            """Report a still-running fake process to exercise termination."""
             return None
 
         def wait(self, timeout: int | None = None) -> int:
+            """Return successful termination after checking the bounded wait timeout."""
             assert timeout == 2
             return 0
 
-    def record_run(arguments: list[str], **_: object) -> Any:
+    def _record_run(arguments: list[str], **_: object) -> Any:
+        """Record native Windows termination argv and return a successful process stub."""
         calls.append(arguments)
         return type("Completed", (), {"returncode": 0})()
 
-    monkeypatch.setattr(module.subprocess, "run", record_run)
+    monkeypatch.setattr(module.subprocess, "run", _record_run)
 
     module.terminate_process(Process(), "win32")
 
@@ -164,7 +173,7 @@ def test_run_gates_writes_exact_five_gate_artifacts(tmp_path: Path) -> None:
     output = tmp_path / "gates"
 
     completed = subprocess.run(
-        [sys.executable, str(RUN_GATES), "--out", str(output), *skipped_gate_args()],
+        [sys.executable, str(RUN_GATES), "--out", str(output), *_skipped_gate_args()],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

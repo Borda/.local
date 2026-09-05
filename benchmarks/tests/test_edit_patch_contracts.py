@@ -25,7 +25,14 @@ from _bench_common.subprocess_env import minimal_child_env
 
 
 def _patch_task() -> dict[str, object]:
-    """Return a minimal patch task with an executable primary oracle."""
+    """Build a scoreable patch task with separate primary and regression commands.
+
+    >>> task = _patch_task()
+    >>> task["scoreable"], task["gt_files_changed"]
+    (True, ['src/fixture.py'])
+    >>> task["test_command"] not in task["regression_test_commands"]
+    True
+    """
     return {
         "id": "PT-fixture",
         "type": "patch_task",
@@ -258,7 +265,18 @@ def test_patch_index_validation_rejects_post_build_byte_drift(tmp_path: Path) ->
 
 
 def _patch_index_locks(tmp_path: Path, contract: object, *, canonical_root: str) -> Path:
-    """Write a valid single-task lock bundle whose canonical root is supplied verbatim."""
+    """Write a scan and matching byte/semantic locks, retaining the caller's canonical-root spelling.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> from types import SimpleNamespace
+    >>> with TemporaryDirectory() as directory:
+    ...     contract = SimpleNamespace(baseline_commit="abc")
+    ...     path = _patch_index_locks(Path(directory), contract, canonical_root="example")
+    ...     locks = json.loads(path.read_text())
+    ...     task, = locks["tasks"].values()
+    ...     locks["canonical_scan_root"], task["baseline_commit"], task["module_count"]
+    ('example', 'abc', 1)
+    """
     index_path = tmp_path / ".cache/codemap/patch/PT-fixture.json"
     index_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -374,7 +392,15 @@ class EarlyStopping(Callback):
 
 
 def _fix_single_candidate(root: Path, body: str) -> object:
-    """Write one FS-01 candidate whose class body carries the requested side effect."""
+    """Write the canonical single-file candidate with the supplied class body and return its contract.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     root = Path(directory)
+    ...     contract = _fix_single_candidate(root, "pass")
+    ...     contract.task_id, (root / contract.expected_paths[0]).is_file()
+    ('FS-01', True)
+    """
     task = next(item for item in json.loads(SUITE_PATH.read_text(encoding="utf-8")) if item["id"] == "FS-01")
     contract = build_fix_single_contract(task)
     candidate = root / contract.expected_paths[0]

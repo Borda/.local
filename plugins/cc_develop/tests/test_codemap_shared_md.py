@@ -40,7 +40,12 @@ def _load(path: Path, name: str) -> ModuleType:
 
 
 def _tracked_text_files(root: Path) -> list[Path]:
-    """Return every markdown/python source file under *root*, excluding tests."""
+    """Return every markdown/python source file under *root*, excluding tests.
+
+    >>> paths = _tracked_text_files(_DEVELOP)
+    >>> any(path.name == "codemap-context.md" for path in paths)
+    True
+    """
     return [
         p
         for p in root.rglob("*")

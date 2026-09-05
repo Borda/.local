@@ -43,7 +43,12 @@ import pytest
 
 
 def _make_run(script_bench: Any, **overrides: Any) -> Any:
-    """Build a minimal BenchRun for testing helper functions."""
+    """Build a successful synthetic run, applying overrides before constructing the runner's record.
+
+    >>> run = _make_run(getfixture("script_run_bench"), success=False, task_id="example")
+    >>> run.task_id, run.success, run.arm
+    ('example', False, 'plain')
+    """
     defaults = dict(
         arm="plain",
         task_id="SE-01",
@@ -56,7 +61,12 @@ def _make_run(script_bench: Any, **overrides: Any) -> Any:
 
 
 def _se_task(start_line: int = 100, qname: str = "Trainer.fit") -> dict:
-    """Return a minimal symbol_extraction task dict."""
+    """Build symbol-extraction ground truth with a ten-line span from the supplied start.
+
+    >>> truth = _se_task(12, "Example.run")["ground_truth"]
+    >>> truth["start_line"], truth["end_line"], truth["qualified_name"]
+    (12, 22, 'Example.run')
+    """
     return {
         "id": "SE-01",
         "type": "symbol_extraction",
@@ -70,7 +80,13 @@ def _se_task(start_line: int = 100, qname: str = "Trainer.fit") -> dict:
 
 
 def _is_pytest_argv(command: list[str]) -> bool:
-    """Return whether one argv invokes pytest through the pinned interpreter."""
+    """Recognize a pytest module invocation using this process's interpreter, allowing trailing arguments.
+
+    >>> _is_pytest_argv([sys.executable, "-m", "pytest", "-q"])
+    True
+    >>> _is_pytest_argv(["pytest", "-q"])
+    False
+    """
     return command[:3] == [sys.executable, "-m", "pytest"]
 
 
@@ -81,13 +97,15 @@ def test_patch_sandbox_recreates_a_unique_worktree_for_each_retry(
     roots: list[Path] = []
     test_calls = 0
 
-    def mkdtemp(*_args: Any, **_kwargs: Any) -> str:
+    def _mkdtemp(*_args: Any, **_kwargs: Any) -> str:
+        """Create a fixture-owned attempt directory for worktree lifecycle assertions."""
         root = tmp_path / f"attempt-{len(roots)}"
         root.mkdir()
         roots.append(root)
         return str(root)
 
-    def run(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+    def _run(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        """Supply scenario-specific subprocess outcomes at the worktree and test-command boundary."""
         nonlocal test_calls
         if "worktree" in command and "add" in command:
             Path(command[-2]).mkdir()
@@ -101,8 +119,8 @@ def test_patch_sandbox_recreates_a_unique_worktree_for_each_retry(
             worktree.rmdir()
         return SimpleNamespace(returncode=0, stderr="")
 
-    monkeypatch.setattr(script_run_bench.tempfile, "mkdtemp", mkdtemp)
-    monkeypatch.setattr(script_run_bench.subprocess, "run", run)
+    monkeypatch.setattr(script_run_bench.tempfile, "mkdtemp", _mkdtemp)
+    monkeypatch.setattr(script_run_bench.subprocess, "run", _run)
     sandbox = script_run_bench.PatchSandbox(
         tmp_path,
         {
@@ -138,7 +156,7 @@ class TestProviderParityIntegration:
             "GR-01": ("B_auto", "C_strict", "A_plain"),
         }
 
-        def order(
+        def _order(
             revision: str,
             provider: str,
             model: str,
@@ -147,10 +165,11 @@ class TestProviderParityIntegration:
             *,
             reasoning_effort: str = "",
         ) -> tuple[str, ...]:
+            """Record treatment coordinates and return the expected task-specific order."""
             calls.append((revision, provider, model, task_id, repetition, reasoning_effort))
             return expected[task_id]
 
-        monkeypatch.setattr(script_run_bench, "deterministic_arm_order", order)
+        monkeypatch.setattr(script_run_bench, "deterministic_arm_order", _order)
 
         observed = script_run_bench._arm_orders_by_task(
             tasks,
@@ -175,6 +194,7 @@ class TestProviderParityIntegration:
             """Record each scheduled cell without starting Claude."""
 
             def run(self, task: dict[str, Any], arm: str, update_fn: Any = None) -> Any:
+                """Return the scenario-specific benchmark result without invoking a provider."""
                 calls.append((task["id"], arm))
                 return _make_run(script_run_bench, task_id=task["id"], arm=arm)
 
@@ -182,6 +202,7 @@ class TestProviderParityIntegration:
             """Accept result rows emitted by the run loop."""
 
             def print(self, _message: str) -> None:
+                """Handle console output through the test double instead of a live terminal."""
                 return None
 
         class Progress:
@@ -190,15 +211,19 @@ class TestProviderParityIntegration:
             console = Console()
 
             def add_task(self, *_args: Any, **_kwargs: Any) -> int:
+                """Return a stable progress-task identifier without creating terminal output."""
                 return 1
 
             def update(self, *_args: Any, **_kwargs: Any) -> None:
+                """Accept progress updates without rendering a terminal display."""
                 return None
 
             def remove_task(self, *_args: Any, **_kwargs: Any) -> None:
+                """Accept task removal without maintaining a live progress display."""
                 return None
 
             def advance(self, *_args: Any, **_kwargs: Any) -> None:
+                """Accept task advancement without rendering a terminal display."""
                 return None
 
         task = {"id": "FN-02", "type": "fixture", "scoreable": False}
@@ -228,6 +253,7 @@ class TestProviderParityIntegration:
             """Return a minimal successful run for each requested arm."""
 
             def run(self, task: dict[str, Any], arm: str, update_fn: Any = None) -> Any:
+                """Return the scenario-specific benchmark result without invoking a provider."""
                 elapsed_s = 8.0 if arm == "plain" else 95.0
                 return _make_run(script_run_bench, task_id=task["id"], arm=arm, elapsed_s=elapsed_s)
 
@@ -256,6 +282,7 @@ class TestProviderParityIntegration:
             """Return one unscored and one scored result for output comparison."""
 
             def run(self, task: dict[str, Any], arm: str, update_fn: Any = None) -> Any:
+                """Return the scenario-specific benchmark result without invoking a provider."""
                 run = _make_run(script_run_bench, task_id=task["id"], arm=arm)
                 if arm == "C_strict":
                     run.quality = script_run_bench.BenchQuality(scored=True, correct=True, recall=0.857)
@@ -283,6 +310,7 @@ class TestProviderParityIntegration:
             """Return the list-valued quality contract produced by the CQ-03 evaluator."""
 
             def run(self, task: dict[str, Any], arm: str, update_fn: Any = None) -> Any:
+                """Return the scenario-specific benchmark result without invoking a provider."""
                 run = _make_run(script_run_bench, task_id=task["id"], arm=arm)
                 run.quality = script_run_bench.BenchQuality(
                     scored=True,
@@ -443,12 +471,13 @@ class TestProviderParityIntegration:
         runner = script_run_bench.BenchRunner("haiku", "fixture-model", tmp_path, tmp_path / "index.json")
         task = {"id": "fixture", "prompt": "answer", "type": "fixture", "scoreable": False}
 
-        def stream(_cmd: list[str], result: Any, _arm: str, update_fn: Any = None) -> None:
+        def _stream(_cmd: list[str], result: Any, _arm: str, update_fn: Any = None) -> None:
+            """Populate a successful streamed result with the scenario's tool evidence."""
             result.success = True
             result.input_tokens = 1
             result.scan_query_calls = scan_query_calls
 
-        runner._stream = stream
+        runner._stream = _stream
 
         result = runner._execute(task, arm)
 
@@ -463,12 +492,13 @@ class TestProviderParityIntegration:
         runner = script_run_bench.BenchRunner("haiku", "fixture-model", tmp_path, tmp_path / "index.json")
         task = {**_se_task(), "prompt": "answer"}
 
-        def stream(_cmd: list[str], result: Any, _arm: str, update_fn: Any = None) -> None:
+        def _stream(_cmd: list[str], result: Any, _arm: str, update_fn: Any = None) -> None:
+            """Populate a successful streamed result with the scenario's tool evidence."""
             result.success = True
             result.input_tokens = 1
             result.tool_log.append("Read: benchmarks/results/answer.json")
 
-        runner._stream = stream
+        runner._stream = _stream
 
         result = runner._execute(task, "A_plain")
 
@@ -511,11 +541,12 @@ class TestProviderParityIntegration:
         runner = script_run_bench.BenchRunner("haiku", "fixture-model", tmp_path, tmp_path / "index.json")
         commands: dict[str, list[str]] = {}
 
-        def capture_command(cmd: list[str], result: Any, selected_arm: str, update_fn: Any = None) -> None:
+        def _capture_command(cmd: list[str], result: Any, selected_arm: str, update_fn: Any = None) -> None:
+            """Record argv by treatment and supply minimal input-token usage."""
             commands[selected_arm] = cmd
             result.input_tokens = 1
 
-        runner._stream = capture_command
+        runner._stream = _capture_command
         runner._execute(task, arm)
         runner._execute(task, "plain")
 
@@ -590,11 +621,12 @@ class TestProviderParityIntegration:
 
             pass
 
-        def capture_runner(*_args: Any, **kwargs: Any) -> None:
+        def _capture_runner(*_args: Any, **kwargs: Any) -> None:
+            """Record the timeout then stop execution at runner construction."""
             observed["timeout"] = kwargs["timeout"]
             raise RunnerReached
 
-        monkeypatch.setattr(script_run_bench, "BenchRunner", capture_runner)
+        monkeypatch.setattr(script_run_bench, "BenchRunner", _capture_runner)
 
         with pytest.raises(RunnerReached):
             script_run_bench.main(
@@ -630,7 +662,8 @@ class TestProviderParityIntegration:
         }
         calls: list[str] = []
 
-        def execute(_task: dict, arm: str, **_kwargs: Any) -> Any:
+        def _execute(_task: dict, arm: str, **_kwargs: Any) -> Any:
+            """Record the selected treatment and return a successful synthetic run."""
             calls.append(arm)
             return script_run_bench.BenchRun(
                 arm=arm,
@@ -640,7 +673,7 @@ class TestProviderParityIntegration:
                 success=True,
             )
 
-        runner._execute = execute
+        runner._execute = _execute
 
         runner.run(task, "B_auto")
 
@@ -657,11 +690,12 @@ class TestProviderParityIntegration:
             scoring_detail={"method": "fixture"},
         )
 
-        def evaluate_demo(task: dict[str, Any], output_text: str) -> Any:
+        def _evaluate_demo(task: dict[str, Any], output_text: str) -> Any:
+            """Record evaluator inputs and return the detailed fixture result."""
             calls.append((task, output_text))
             return detailed
 
-        registry = script_run_bench.EvaluatorRegistry({"demo": script_run_bench._wrap_bench_evaluator(evaluate_demo)})
+        registry = script_run_bench.EvaluatorRegistry({"demo": script_run_bench._wrap_bench_evaluator(_evaluate_demo)})
         task = {"id": "EV-01", "prompt": "score", "type": "demo", "scoreable": True}
 
         result = script_run_bench._evaluate_shared_task(task, "answer", registry=registry)
@@ -973,12 +1007,13 @@ class TestDiffImpactStagerResilience:
         stage = [{"file": "pkg/a.py", "append": "\n# staged change\n"}]
         real_run = real_subprocess.run
 
-        def run(command: list[str], **kwargs: Any) -> Any:
+        def _run(command: list[str], **kwargs: Any) -> Any:
+            """Supply scenario-specific subprocess outcomes at the worktree and test-command boundary."""
             if "checkout" in command:
                 return SimpleNamespace(returncode=1, stderr="checkout refused", stdout="")
             return real_run(command, **kwargs)
 
-        monkeypatch.setattr(script_run_bench.subprocess, "run", run)
+        monkeypatch.setattr(script_run_bench.subprocess, "run", _run)
 
         with pytest.raises(script_run_bench.DirtyTreeError, match="still mutated"):
             with script_run_bench.DiffImpactStager(repo, stage):
@@ -994,12 +1029,13 @@ class TestDiffImpactStagerResilience:
         stage = [{"file": "pkg/a.py", "append": "\n# staged change\n"}]
         real_run = real_subprocess.run
 
-        def run(command: list[str], **kwargs: Any) -> Any:
+        def _run(command: list[str], **kwargs: Any) -> Any:
+            """Supply scenario-specific subprocess outcomes at the worktree and test-command boundary."""
             if "checkout" in command:
                 return SimpleNamespace(returncode=1, stderr="checkout refused", stdout="")
             return real_run(command, **kwargs)
 
-        monkeypatch.setattr(script_run_bench.subprocess, "run", run)
+        monkeypatch.setattr(script_run_bench.subprocess, "run", _run)
 
         with pytest.raises(RuntimeError, match="original cause"):
             with script_run_bench.DiffImpactStager(repo, stage):
@@ -1019,12 +1055,14 @@ class TestPatchSandboxExitCodes:
         """Build a PatchSandbox whose pytest invocations return ``codes`` in order."""
         remaining = list(codes)
 
-        def mkdtemp(*_args: Any, **_kwargs: Any) -> str:
+        def _mkdtemp(*_args: Any, **_kwargs: Any) -> str:
+            """Create a fixture-owned attempt directory for worktree lifecycle assertions."""
             root = tmp_path / f"attempt-{len(list(tmp_path.iterdir()))}"
             root.mkdir()
             return str(root)
 
-        def run(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        def _run(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+            """Supply scenario-specific subprocess outcomes at the worktree and test-command boundary."""
             if "worktree" in command and "add" in command:
                 Path(command[-2]).mkdir()
             elif _is_pytest_argv(command):
@@ -1036,8 +1074,8 @@ class TestPatchSandboxExitCodes:
                 worktree.rmdir()
             return SimpleNamespace(returncode=0, stderr="", stdout="")
 
-        monkeypatch.setattr(script_run_bench.tempfile, "mkdtemp", mkdtemp)
-        monkeypatch.setattr(script_run_bench.subprocess, "run", run)
+        monkeypatch.setattr(script_run_bench.tempfile, "mkdtemp", _mkdtemp)
+        monkeypatch.setattr(script_run_bench.subprocess, "run", _run)
         return script_run_bench.PatchSandbox(
             tmp_path,
             {
@@ -1115,12 +1153,14 @@ class TestPatchSandboxApply:
         """
         commands: list[list[str]] = []
 
-        def mkdtemp(*_args: Any, **_kwargs: Any) -> str:
+        def _mkdtemp(*_args: Any, **_kwargs: Any) -> str:
+            """Create a fixture-owned attempt directory for worktree lifecycle assertions."""
             root = tmp_path / "attempt"
             root.mkdir()
             return str(root)
 
-        def run(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        def _run(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+            """Supply scenario-specific subprocess outcomes at the worktree and test-command boundary."""
             commands.append(command)
             if "worktree" in command and "add" in command:
                 Path(command[-2]).mkdir()
@@ -1133,8 +1173,8 @@ class TestPatchSandboxApply:
                 worktree.rmdir()
             return SimpleNamespace(returncode=0, stderr="", stdout="")
 
-        monkeypatch.setattr(script_run_bench.tempfile, "mkdtemp", mkdtemp)
-        monkeypatch.setattr(script_run_bench.subprocess, "run", run)
+        monkeypatch.setattr(script_run_bench.tempfile, "mkdtemp", _mkdtemp)
+        monkeypatch.setattr(script_run_bench.subprocess, "run", _run)
         sandbox = script_run_bench.PatchSandbox(
             tmp_path,
             {"id": "PT-fixture", "pre_fix_commit": "a" * 40, "failing_test": "tests/t.py::t"},
@@ -1152,12 +1192,14 @@ class TestPatchSandboxApply:
         """A failed ``git apply`` must not leave hunks behind for ``patch -p1``."""
         commands: list[list[str]] = []
 
-        def mkdtemp(*_args: Any, **_kwargs: Any) -> str:
+        def _mkdtemp(*_args: Any, **_kwargs: Any) -> str:
+            """Create a fixture-owned attempt directory for worktree lifecycle assertions."""
             root = tmp_path / "attempt"
             root.mkdir()
             return str(root)
 
-        def run(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        def _run(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+            """Supply scenario-specific subprocess outcomes at the worktree and test-command boundary."""
             commands.append(command)
             if "worktree" in command and "add" in command:
                 Path(command[-2]).mkdir()
@@ -1173,8 +1215,8 @@ class TestPatchSandboxApply:
                 worktree.rmdir()
             return SimpleNamespace(returncode=0, stderr="", stdout="")
 
-        monkeypatch.setattr(script_run_bench.tempfile, "mkdtemp", mkdtemp)
-        monkeypatch.setattr(script_run_bench.subprocess, "run", run)
+        monkeypatch.setattr(script_run_bench.tempfile, "mkdtemp", _mkdtemp)
+        monkeypatch.setattr(script_run_bench.subprocess, "run", _run)
         sandbox = script_run_bench.PatchSandbox(
             tmp_path,
             {"id": "PT-fixture", "pre_fix_commit": "a" * 40, "failing_test": "tests/t.py::t"},
@@ -1194,12 +1236,14 @@ class TestPatchSandboxApply:
         """The diff file and any ``.rej`` residue must not survive into the scored test."""
         seen_during_test: list[list[str]] = []
 
-        def mkdtemp(*_args: Any, **_kwargs: Any) -> str:
+        def _mkdtemp(*_args: Any, **_kwargs: Any) -> str:
+            """Create a fixture-owned attempt directory for worktree lifecycle assertions."""
             root = tmp_path / "attempt"
             root.mkdir()
             return str(root)
 
-        def run(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        def _run(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+            """Supply scenario-specific subprocess outcomes at the worktree and test-command boundary."""
             if "worktree" in command and "add" in command:
                 worktree = Path(command[-2])
                 worktree.mkdir()
@@ -1219,8 +1263,8 @@ class TestPatchSandboxApply:
                 worktree.rmdir()
             return SimpleNamespace(returncode=0, stderr="", stdout="")
 
-        monkeypatch.setattr(script_run_bench.tempfile, "mkdtemp", mkdtemp)
-        monkeypatch.setattr(script_run_bench.subprocess, "run", run)
+        monkeypatch.setattr(script_run_bench.tempfile, "mkdtemp", _mkdtemp)
+        monkeypatch.setattr(script_run_bench.subprocess, "run", _run)
         sandbox = script_run_bench.PatchSandbox(
             tmp_path,
             {"id": "PT-fixture", "pre_fix_commit": "a" * 40, "failing_test": "tests/t.py::t"},

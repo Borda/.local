@@ -38,15 +38,17 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0) -> None:
+        """Store the subprocess status exposed to the gate under test."""
         self.returncode = returncode
 
 
-@pytest.fixture
-def captured_argv(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+@pytest.fixture(name="captured_argv")
+def _captured_argv(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     """Patch ``subprocess.run`` and ``shutil.which`` inside the script."""
     recorded: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Record pytest argv and return success."""
         recorded.append(list(cmd))
         return _FakeCompleted(returncode=0)
 
@@ -144,6 +146,7 @@ def test_passes_through_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
     """Pytest exits 1 → ``main`` returns 1 unchanged."""
 
     def _fake_run(_cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Return pytest's ordinary test-failure exit status."""
         return _FakeCompleted(returncode=1)
 
     monkeypatch.setattr(pytest_gate.subprocess, "run", _fake_run)
@@ -155,6 +158,7 @@ def test_passes_through_collection_error_code(monkeypatch: pytest.MonkeyPatch) -
     """Pytest exits 5 (no tests collected) → ``main`` returns 5."""
 
     def _fake_run(_cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Return pytest's no-tests-collected exit status."""
         return _FakeCompleted(returncode=5)
 
     monkeypatch.setattr(pytest_gate.subprocess, "run", _fake_run)
@@ -228,6 +232,7 @@ def test_subprocess_called_without_capture(monkeypatch: pytest.MonkeyPatch) -> N
     recorded_kwargs: dict[str, Any] = {}
 
     def _fake_run(_cmd: list[str], **kwargs: Any) -> _FakeCompleted:
+        """Capture subprocess keyword arguments while returning success."""
         recorded_kwargs.update(kwargs)
         return _FakeCompleted(returncode=0)
 

@@ -211,6 +211,17 @@ def _ingest_usage(result: CodexParseResult, usage: Mapping[str, Any]) -> None:
 
 
 def _item_text(item: Mapping[str, Any]) -> str:
+    """Read the first text-bearing field, joining mapping chunks without separators.
+
+    Check ``text``, ``content``, then ``message``. Return an empty string when
+    none contains a string or a list with mapping chunks.
+
+    Examples:
+        >>> _item_text({"content": [{"text": "one"}, {"text": " two"}]})
+        'one two'
+        >>> _item_text({})
+        ''
+    """
     for key in ("text", "content", "message"):
         value = item.get(key)
         if isinstance(value, str):
@@ -223,6 +234,11 @@ def _item_text(item: Mapping[str, Any]) -> str:
 
 
 def _command_text(item: Mapping[str, Any]) -> str:
+    """Join command-related fields in fixed order, JSON-encoding non-string values.
+
+    Missing fields contribute empty strings, so spacing is retained. This is diagnostic text assembly; it neither parses
+    nor executes a command.
+    """
     values = [item.get(key, "") for key in ("command", "cmd", "name", "arguments", "input")]
     return " ".join(value if isinstance(value, str) else json.dumps(value, sort_keys=True) for value in values)
 
@@ -466,6 +482,17 @@ def _exact_skill_read_output(item: Mapping[str, Any], skill_path: Path | None, s
 
 
 def _iter_lines(stream: str | bytes | Iterable[str | bytes]) -> Iterable[str]:
+    """Decode UTF-8 with replacement and yield text lines from a stream representation.
+
+    Split a scalar string or byte buffer with ``splitlines``. Iterable entries
+    are already considered lines and retain any embedded newline characters.
+
+    Examples:
+        >>> list(_iter_lines("first\\nsecond\\n"))
+        ['first', 'second']
+        >>> list(_iter_lines([b"first\\n", "second"]))
+        ['first\\n', 'second']
+    """
     if isinstance(stream, bytes):
         stream = stream.decode("utf-8", errors="replace")
     if isinstance(stream, str):

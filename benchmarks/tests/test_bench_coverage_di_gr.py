@@ -29,11 +29,15 @@ SUITE = Path(__file__).resolve().parent.parent / "suites" / "tasks-bench.json"
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
-def mini_repo(tmp_path: Path) -> Path:
+@pytest.fixture(name="mini_repo")
+def _mini_repo(tmp_path: Path) -> Path:
     """Create a small repository for oracle unit tests.
 
     Graph: c imports b imports a; b.caller calls a.target; tests/test_a.py imports+calls a.
+
+    >>> root = getfixture("mini_repo")
+    >>> (root / "c.py").read_text().strip(), (root / "tests/test_a.py").is_file()
+    ('import b', True)
     """
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -46,8 +50,8 @@ def mini_repo(tmp_path: Path) -> Path:
     return repo
 
 
-@pytest.fixture()
-def git_repo(tmp_path: Path) -> Path:
+@pytest.fixture(name="git_repo")
+def _git_repo(tmp_path: Path) -> Path:
     """Create a committed repository for staging and restoration tests."""
     repo = tmp_path / "gitrepo"
     repo.mkdir()
@@ -71,9 +75,10 @@ def git_repo(tmp_path: Path) -> Path:
 class TestDiGrTaskSchema:
     """Schema invariants for the new DI/GR tasks in tasks-bench.json."""
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture(name="tasks", scope="class")
     @staticmethod
-    def tasks() -> list[dict]:
+    def _tasks() -> list[dict]:
+        """Provide the task collection used by this selection or coverage scenario."""
         return json.loads(SUITE.read_text())["tasks"]
 
     def test_suite_is_valid_json_object(self) -> None:
@@ -308,6 +313,7 @@ class TestDiffImpactStager:
     """Stage-then-revert safety, including dirty-tree refusal."""
 
     def _spec(self) -> list[dict]:
+        """Describe a signature edit that introduces a new optional parameter."""
         return [
             {"file": "src.py", "find": "def widely_used(", "replace": "def widely_used(new_arg=None,  # staged\n    "}
         ]
@@ -424,6 +430,7 @@ class TestDiffImpactEvaluator:
     """_evaluate_diff_impact: caller recall AND test-file recall both ≥ 0.70."""
 
     def _task(self) -> dict:
+        """Build the fixed task and ground truth consumed by this evaluator test group."""
         return {
             "type": "diff_impact",
             "id": "DI-x",
@@ -608,6 +615,7 @@ class TestModuleBlastRadiusEvaluator:
     """_evaluate_module_blast_radius: importer recall ≥ 0.70, ≥2-component match, extraction-fail."""
 
     def _task(self) -> dict:
+        """Build the fixed task and ground truth consumed by this evaluator test group."""
         return {
             "type": "module_blast_radius",
             "id": "MB-x",
@@ -664,6 +672,7 @@ class TestDevelopBrTailRecall:
     """_evaluate_develop_br records matched/missed caller lists without changing the recall scalar."""
 
     def _task(self) -> dict:
+        """Build the fixed task and ground truth consumed by this evaluator test group."""
         return {
             "type": "develop_blast_radius",
             "id": "BR-x",

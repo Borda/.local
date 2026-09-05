@@ -13,7 +13,12 @@ BEHAVIORAL_CASES = PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.j
 
 
 def _terminal_failure_gate() -> str:
-    """Return the PR collection-failure contract without later review guidance."""
+    """Return the PR collection-failure contract without later review guidance.
+
+    Example:
+        >>> "Terminal review-unavailable output gate:" in _terminal_failure_gate()
+        True
+    """
     skill = CODE_REVIEW_SKILL.read_text(encoding="utf-8")
     start = skill.index("**Terminal review-unavailable output gate:**")
     end = skill.index("\n\nFor retryable `github-network`", start)

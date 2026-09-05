@@ -48,16 +48,16 @@ def _write_registry(path: Path, entries: dict[str, str]) -> Path:
     return path
 
 
-@pytest.fixture
-def cache(tmp_path: Path) -> Path:
+@pytest.fixture(name="cache")
+def _cache(tmp_path: Path) -> Path:
     """Empty cache root."""
     root = tmp_path / "cache"
     (root / _MARKET).mkdir(parents=True)
     return root
 
 
-@pytest.fixture
-def registry(tmp_path: Path) -> Path:
+@pytest.fixture(name="registry")
+def _registry(tmp_path: Path) -> Path:
     """Registry path with no plugins recorded (callers overwrite as needed)."""
     return _write_registry(tmp_path / "installed_plugins.json", {})
 

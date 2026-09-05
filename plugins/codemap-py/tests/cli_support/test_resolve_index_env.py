@@ -59,6 +59,9 @@ def _resolve_file_path(tmp_path: Path, key: str, prefix: str = "codemap") -> Pat
 
     Returns:
         Path of the temp file for *key*.
+
+    >>> _resolve_file_path(Path("tmp"), "index").name
+    'codemap-resolve-index-shared'
     """
     # tests monkeypatch CSID/CLAUDE_CODE_SESSION_ID empty (see conftest below) so
     # _resolve_csid() always degrades to "shared" here.
@@ -100,9 +103,13 @@ def _make_resolver_mock(
 
     Returns:
         Callable suitable for ``monkeypatch.setattr`` of ``subprocess.run``.
+
+    >>> _make_resolver_mock("demo", "index.json")(["resolve"]).stdout
+    'demo\\nindex.json\\n'
     """
 
     def _run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Return the configured resolver subprocess result for this test."""
         stdout = "" if returncode != 0 else f"{proj}\n{index_path}\n"
         return subprocess.CompletedProcess(cmd, returncode, stdout=stdout, stderr="")
 
@@ -113,6 +120,7 @@ def _make_empty_resolver_mock() -> Any:
     """Return a callable that mimics a resolver producing no output."""
 
     def _run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Return an empty resolver subprocess result for this test."""
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     return _run

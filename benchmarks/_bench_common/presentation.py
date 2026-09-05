@@ -28,6 +28,16 @@ def format_artifact_block(**artifacts: str | Path) -> str:
 
     Raises:
         ValueError: If fewer than two artifacts are supplied.
+
+    Examples:
+        >>> print(format_artifact_block(report="report.json", log="run.log"))
+        ARTIFACTS:
+         - report=report.json
+         - log=run.log
+        >>> format_artifact_block(report="report.json")
+        Traceback (most recent call last):
+        ...
+        ValueError: an artifact block requires at least two labeled paths
     """
     if len(artifacts) < 2:
         raise ValueError("an artifact block requires at least two labeled paths")
@@ -35,12 +45,21 @@ def format_artifact_block(**artifacts: str | Path) -> str:
 
 
 def format_quality(quality: float | None) -> str:
-    """Format a score in a six-character column.
+    """Round a score to three decimals and pad to a minimum width of six.
+
+    Use ``?`` for missing scores. Values are formatted without clamping to the
+    expected score range; unusually wide values are not truncated.
 
     Args:
         quality: Score in the benchmark's continuous [0, 1] range, if available.
     Returns:
-        A six-character display value such as ``"1.000 "`` or ``"0.258 "``.
+        A padded display value such as ``"1.000 "`` or ``"0.258 "``.
+
+    Examples:
+        >>> format_quality(0.25)
+        '0.250 '
+        >>> format_quality(None)
+        '?     '
     """
     score = "?" if quality is None else f"{float(quality):.3f}"
     return score.ljust(6)
@@ -120,7 +139,7 @@ def print_arm_row(row: str, arm: str, *, console: Any) -> None:
 
 
 def make_progress(console: Any):
-    """Build the standard five-column rich ``Progress`` used by every runner's live bar.
+    """Build the standard four-column Rich progress display for runner live bars.
 
     ``rich`` is imported lazily so this module stays importable where rich is optional
     (the CLI runner guards its rich import).

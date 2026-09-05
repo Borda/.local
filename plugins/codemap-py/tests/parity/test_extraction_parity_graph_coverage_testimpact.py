@@ -110,14 +110,18 @@ def _materialize_old_bin(dest: Path) -> Path:
     return dest / "scan-index"
 
 
-@pytest.fixture(scope="module")
-def old_scan_index(tmp_path_factory: pytest.TempPathFactory) -> Path:
+@pytest.fixture(name="old_scan_index", scope="module")
+def _old_scan_index(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Session-stable path to the golden pre-extraction ``scan-index``."""
     return _materialize_old_bin(tmp_path_factory.mktemp("old_bin_graph_coverage_testimpact"))
 
 
 def _legacy_index(index: dict) -> dict:
-    """Normalize v12/v13 additions while restoring legacy import metrics."""
+    """Normalize v12/v13 additions while restoring legacy import metrics.
+
+    >>> _legacy_index({"modules": []})
+    {'modules': []}
+    """
     modules = []
     for module in index["modules"]:
         normalized = dict(module)
@@ -142,6 +146,11 @@ def _legacy_index(index: dict) -> dict:
 
 
 def _canonical(index: dict) -> str:
+    """Serialize an index with stable key ordering for parity assertions.
+
+    >>> _canonical({"b": 2, "a": 1})
+    '{"a": 1, "b": 2}'
+    """
     return json.dumps(index, sort_keys=True, ensure_ascii=False)
 
 
@@ -404,6 +413,7 @@ def test_fixture_graph_and_mock_patch_data_identical(tmp_path: Path, old_scan_in
     assert old_index["fixture_rdep_count"] == new_index["fixture_rdep_count"]
 
     def _mock_patches_by_module(index: dict) -> dict:
+        """Map indexed module names to their recorded mock-patch metadata."""
         return {m["name"]: m.get("mock_patches") for m in index["modules"]}
 
     old_mocks = _mock_patches_by_module(old_index)

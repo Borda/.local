@@ -18,15 +18,17 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0) -> None:
+        """Store the subprocess status exposed to the wrapper under test."""
         self.returncode = returncode
 
 
-@pytest.fixture
-def captured_argv(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+@pytest.fixture(name="captured_argv")
+def _captured_argv(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     """Patch ``subprocess.run`` and ``shutil.which`` inside the script; record argv lists."""
     recorded: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Record delegated GitHub CLI argv and return success."""
         recorded.append(list(cmd))
         return _FakeCompleted(returncode=0)
 
@@ -81,6 +83,7 @@ def test_passes_through_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
     """Preserve a delegated command's exit status."""
 
     def _fake_run(_cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Return the delegated command's failure status without running it."""
         return _FakeCompleted(returncode=3)
 
     monkeypatch.setattr(issue_fetch.subprocess, "run", _fake_run)
@@ -92,6 +95,7 @@ def test_resolve_raises_when_gh_missing(monkeypatch: pytest.MonkeyPatch) -> None
     """Propagate ``FileNotFoundError`` when ``gh`` not on PATH."""
 
     def _no_run(*_args: Any, **_kwargs: Any) -> _FakeCompleted:  # pragma: no cover
+        """Fail if command execution occurs after the executable lookup fails."""
         raise AssertionError("subprocess.run should not be called when gh is missing")
 
     monkeypatch.setattr(issue_fetch.subprocess, "run", _no_run)
@@ -134,6 +138,7 @@ def test_passthrough_no_capture(monkeypatch: pytest.MonkeyPatch) -> None:
     recorded_kwargs: dict[str, Any] = {}
 
     def _fake_run(_cmd: list[str], **kwargs: Any) -> _FakeCompleted:
+        """Capture subprocess keyword arguments while returning success."""
         recorded_kwargs.update(kwargs)
         return _FakeCompleted(returncode=0)
 

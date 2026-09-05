@@ -9,14 +9,26 @@ import cost_analyzer as ca
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> Path:
-    """Write rows as JSONL to *path* and return it."""
+    """Write rows as JSONL to *path* and return it.
+
+    Examples:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     _write_jsonl(Path(directory) / "rows.jsonl", [{"n": 1}]).read_text()
+        '{"n": 1}\\n'
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
     return path
 
 
 def _usage_row(message_id: str, *, ts: str = "2030-01-01T00:00:00Z", sidechain: bool = False, **usage) -> dict:
-    """Build one transcript row carrying a usage object."""
+    """Build one transcript row carrying a usage object.
+
+    Examples:
+        >>> _usage_row("m1", output_tokens=7)["message"]["usage"]
+        {'output_tokens': 7}
+    """
     return {
         "timestamp": ts,
         "isSidechain": sidechain,
@@ -150,6 +162,7 @@ class TestLoadSession:
     """Covers load_session() merging subagent transcripts into one Session."""
 
     def _build_session_tree(self, tmp_path: Path) -> Path:
+        """Create a main transcript with one subagent transcript and metadata."""
         project = tmp_path / "projects" / "-slug-a"
         main = _write_jsonl(project / "sid1.jsonl", [_usage_row("main1", output_tokens=100)])
         _write_jsonl(
@@ -189,6 +202,7 @@ class TestMainCli:
     """Covers the CLI entry point: session-id drill-down and window ranking."""
 
     def _projects_root(self, tmp_path: Path) -> Path:
+        """Return the isolated projects-root path for one CLI test."""
         return tmp_path / "projects"
 
     def test_session_mode_writes_detail_report(self, tmp_path: Path, capsys):

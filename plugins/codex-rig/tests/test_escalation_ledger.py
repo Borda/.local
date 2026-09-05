@@ -15,7 +15,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 LEDGER_PATH = PLUGIN_ROOT / "shared" / "escalation_ledger.py"
 
 
-def load_ledger_module() -> ModuleType:
+def _load_ledger_module() -> ModuleType:
     """Load the standalone ledger helper without package installation."""
     specification = importlib.util.spec_from_file_location("codex_rig_escalation_ledger", LEDGER_PATH)
     assert specification is not None and specification.loader is not None
@@ -24,8 +24,13 @@ def load_ledger_module() -> ModuleType:
     return module
 
 
-def cycle(index: int, material_progress: bool) -> dict[str, Any]:
-    """Build one valid cycle record with evidence when progress is claimed."""
+def _cycle(index: int, material_progress: bool) -> dict[str, Any]:
+    """Build one valid cycle record with evidence when progress is claimed.
+
+    Example:
+        >>> _cycle(1, True)["evidence"]
+        ['evidence-1']
+    """
     return {
         "index": index,
         "objective": "close failing acceptance check",
@@ -37,8 +42,13 @@ def cycle(index: int, material_progress: bool) -> dict[str, Any]:
     }
 
 
-def ledger(*cycles: dict[str, Any]) -> dict[str, Any]:
-    """Build a minimally valid in-progress ledger for one open condition."""
+def _ledger(*cycles: dict[str, Any]) -> dict[str, Any]:
+    """Build a minimally valid in-progress ledger for one open condition.
+
+    Example:
+        >>> _ledger()["closure_condition"]["status"]
+        'open'
+    """
     return {
         "schema_version": 1,
         "workstream_id": "fixture-workstream",
@@ -48,8 +58,13 @@ def ledger(*cycles: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def advisory() -> dict[str, Any]:
-    """Build an observed read-only advisory record."""
+def _advisory() -> dict[str, Any]:
+    """Build an observed read-only advisory record.
+
+    Example:
+        >>> _advisory()["observed_sandbox"]
+        'read-only'
+    """
     return {
         "requested_model": "gpt-5.6-terra",
         "requested_effort": "high",
@@ -63,8 +78,13 @@ def advisory() -> dict[str, Any]:
     }
 
 
-def handoff() -> dict[str, Any]:
-    """Build the required evidence-backed human handoff record."""
+def _handoff() -> dict[str, Any]:
+    """Build the required evidence-backed human handoff record.
+
+    Example:
+        >>> _handoff()["alternatives"]
+        ['defer the workstream']
+    """
     return {
         "summary": "The bounded recovery did not close the condition.",
         "recommended_next_step": "Choose the proposed recovery direction.",
@@ -74,21 +94,21 @@ def handoff() -> dict[str, Any]:
 
 def test_two_no_progress_cycles_require_escalation() -> None:
     """Prevent silent retries after the no-material-progress trigger."""
-    module = load_ledger_module()
-    stalled = ledger(cycle(1, False), cycle(2, False))
+    module = _load_ledger_module()
+    stalled = _ledger(_cycle(1, False), _cycle(2, False))
 
     with pytest.raises(ValueError, match="escalation-required-after-stall-trigger"):
         module.validate_ledger(stalled)
 
     stalled["outcome"] = "advisory"
-    stalled["advisory"] = advisory()
+    stalled["advisory"] = _advisory()
     module.validate_ledger(stalled)
 
 
 def test_user_directed_progress_does_not_count_as_evidence_free() -> None:
     """Keep a recorded user decision from falsely triggering advisory escalation."""
-    module = load_ledger_module()
-    active = ledger(cycle(1, False), cycle(2, True))
+    module = _load_ledger_module()
+    active = _ledger(_cycle(1, False), _cycle(2, True))
     active["cycles"][1]["evidence"] = ["user approved narrowed scope"]
 
     module.validate_ledger(active)
@@ -96,22 +116,22 @@ def test_user_directed_progress_does_not_count_as_evidence_free() -> None:
 
 def test_three_nonclosing_evidence_backed_cycles_require_advisory() -> None:
     """Escalate productive but non-closing attempts against one open condition."""
-    module = load_ledger_module()
-    stalled = ledger(cycle(1, True), cycle(2, True), cycle(3, True))
+    module = _load_ledger_module()
+    stalled = _ledger(_cycle(1, True), _cycle(2, True), _cycle(3, True))
 
     with pytest.raises(ValueError, match="escalation-required-after-stall-trigger"):
         module.validate_ledger(stalled)
 
     stalled["outcome"] = "advisory"
-    stalled["advisory"] = advisory()
+    stalled["advisory"] = _advisory()
     module.validate_ledger(stalled)
 
 
 def test_advisory_requires_observed_read_only_route() -> None:
     """Reject advisory claims that lack an observed read-only sandbox."""
-    module = load_ledger_module()
-    stalled = ledger(cycle(1, False), cycle(2, False))
-    stalled.update({"outcome": "advisory", "advisory": advisory()})
+    module = _load_ledger_module()
+    stalled = _ledger(_cycle(1, False), _cycle(2, False))
+    stalled.update({"outcome": "advisory", "advisory": _advisory()})
     unsafe = deepcopy(stalled)
     unsafe["advisory"]["observed_sandbox"] = "workspace-write"
 
@@ -121,12 +141,12 @@ def test_advisory_requires_observed_read_only_route() -> None:
 
 def test_unsuccessful_recovery_requires_complete_human_handoff() -> None:
     """Prevent second advisors or retries after the bounded recovery action."""
-    module = load_ledger_module()
-    stalled = ledger(cycle(1, False), cycle(2, False))
+    module = _load_ledger_module()
+    stalled = _ledger(_cycle(1, False), _cycle(2, False))
     stalled.update(
         {
             "outcome": "recovery",
-            "advisory": advisory(),
+            "advisory": _advisory(),
             "recovery": {"action": "run one diagnostic", "material_progress": False, "closure_met": False},
         }
     )
@@ -135,5 +155,5 @@ def test_unsuccessful_recovery_requires_complete_human_handoff() -> None:
         module.validate_ledger(stalled)
 
     stalled["outcome"] = "human_handoff"
-    stalled["human_handoff"] = handoff()
+    stalled["human_handoff"] = _handoff()
     module.validate_ledger(stalled)

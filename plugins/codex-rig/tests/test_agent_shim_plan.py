@@ -25,14 +25,14 @@ ROLE_HASH = "b" * 64
 BOOTSTRAP_HASH = "c" * 64
 
 
-def load_module(path: Path, name: str) -> ModuleType:
+def _load_module(path: Path, name: str) -> ModuleType:
     """Load sibling scripts without package installation assumptions."""
     if name in {"generate_roles", "_agent_shim_lifecycle"} and name in sys.modules:
         return sys.modules[name]
     if path != GENERATOR_PATH and "generate_roles" not in sys.modules:
-        load_module(GENERATOR_PATH, "generate_roles")
+        _load_module(GENERATOR_PATH, "generate_roles")
     if path == PLAN_PATH and "_agent_shim_lifecycle" not in sys.modules:
-        load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
+        _load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
     specification = importlib.util.spec_from_file_location(name, path)
     assert specification is not None
     assert specification.loader is not None
@@ -42,27 +42,32 @@ def load_module(path: Path, name: str) -> ModuleType:
     return module
 
 
-def canonical(value: object) -> bytes:
-    """Encode the public canonical JSON representation."""
+def _canonical(value: object) -> bytes:
+    """Encode the public canonical JSON representation.
+
+    Example:
+        >>> _canonical({"b": 2, "a": 1})
+        b'{"a":1,"b":2}'
+    """
     return json.dumps(value, ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":")).encode()
 
 
-def role_ids() -> tuple[str, ...]:
+def _role_ids() -> tuple[str, ...]:
     """Return the generator-owned exact role roster."""
-    return load_module(GENERATOR_PATH, "codex_rig_plan_roster").ROLE_IDS
+    return _load_module(GENERATOR_PATH, "codex_rig_plan_roster").ROLE_IDS
 
 
-def generated_roster(
+def _generated_roster(
     overrides: dict[str, bytes] | None = None,
     *,
     version: str = "0.2.0",
     package_hash: str = PACKAGE_HASH,
 ) -> object:
     """Build one immutable generated roster fixture."""
-    generator = load_module(GENERATOR_PATH, "generate_roles")
+    generator = _load_module(GENERATOR_PATH, "generate_roles")
     replacements = overrides or {}
     roles = []
-    for role_id in role_ids():
+    for role_id in _role_ids():
         payload = replacements.get(role_id, f"generated:{role_id}\n".encode())
         roles.append(
             generator.GeneratedRole(
@@ -77,14 +82,19 @@ def generated_roster(
     return generator.GeneratedRoster(version, package_hash, BOOTSTRAP_HASH, 1, tuple(roles))
 
 
-def root_identity(path: str) -> dict[str, object]:
-    """Build one exact persisted root identity."""
+def _root_identity(path: str) -> dict[str, object]:
+    """Build one exact persisted root identity.
+
+    Example:
+        >>> _root_identity("/fixture")["mode"]
+        '0700'
+    """
     return {"canonical_path": path, "device": 1, "inode": 2, "owner": 3, "group": 4, "mode": "0700"}
 
 
-def validated_state(roster: object, *, missing: set[str] | None = None) -> tuple[dict[str, object], dict[str, object]]:
+def _validated_state(roster: object, *, missing: set[str] | None = None) -> tuple[dict[str, object], dict[str, object]]:
     """Build parsed current state and its exact target observations."""
-    lifecycle = load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
+    lifecycle = _load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
     missing_roles = missing or set()
     state_roles = []
     targets = {}
@@ -119,11 +129,11 @@ def validated_state(roster: object, *, missing: set[str] | None = None) -> tuple
         "install_id": INSTALL_ID,
         "plugin_version": "0.2.0",
         "package_hash": PACKAGE_HASH,
-        "codex_home_identity": root_identity("/fixture/codex"),
-        "plugin_root_identity": root_identity("/fixture/plugin"),
-        "state_root_identity": root_identity("/fixture/codex/codex-rig/shims"),
-        "target_root_identity": root_identity("/fixture/codex/agents"),
-        "roster_hash": hashlib.sha256(canonical(roster_preimage)).hexdigest(),
+        "codex_home_identity": _root_identity("/fixture/codex"),
+        "plugin_root_identity": _root_identity("/fixture/plugin"),
+        "state_root_identity": _root_identity("/fixture/codex/codex-rig/shims"),
+        "target_root_identity": _root_identity("/fixture/codex/agents"),
+        "roster_hash": hashlib.sha256(_canonical(roster_preimage)).hexdigest(),
         "bootstrap": {
             "protocol": 1,
             "helper_path": "scripts/verify_role_link.py",
@@ -133,17 +143,17 @@ def validated_state(roster: object, *, missing: set[str] | None = None) -> tuple
         "roles": state_roles,
         "transaction_status": "current",
     }
-    return lifecycle.parse_state(canonical(value)), targets
+    return lifecycle.parse_state(_canonical(value)), targets
 
 
-def absent_targets(lifecycle: ModuleType) -> dict[str, object]:
+def _absent_targets(lifecycle: ModuleType) -> dict[str, object]:
     """Build one exact absent target roster."""
-    return {f"codex-rig-{role_id}.toml": lifecycle.TargetObservation("absent") for role_id in role_ids()}
+    return {f"codex-rig-{role_id}.toml": lifecycle.TargetObservation("absent") for role_id in _role_ids()}
 
 
-def historical_state_and_targets(roster: object) -> tuple[dict[str, object], dict[str, object]]:
+def _historical_state_and_targets(roster: object) -> tuple[dict[str, object], dict[str, object]]:
     """Build authenticated prior ownership with one added and one retired role."""
-    lifecycle = load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
+    lifecycle = _load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
     roles = []
     targets = {}
     for active in roster.roles:
@@ -189,11 +199,11 @@ def historical_state_and_targets(roster: object) -> tuple[dict[str, object], dic
         "install_id": INSTALL_ID,
         "plugin_version": "0.2.0",
         "package_hash": PACKAGE_HASH,
-        "codex_home_identity": root_identity("/fixture/codex"),
-        "plugin_root_identity": root_identity("/fixture/old-plugin"),
-        "state_root_identity": root_identity("/fixture/codex/codex-rig/shims"),
-        "target_root_identity": root_identity("/fixture/codex/agents"),
-        "roster_hash": hashlib.sha256(canonical(roster_preimage)).hexdigest(),
+        "codex_home_identity": _root_identity("/fixture/codex"),
+        "plugin_root_identity": _root_identity("/fixture/old-plugin"),
+        "state_root_identity": _root_identity("/fixture/codex/codex-rig/shims"),
+        "target_root_identity": _root_identity("/fixture/codex/agents"),
+        "roster_hash": hashlib.sha256(_canonical(roster_preimage)).hexdigest(),
         "bootstrap": {
             "protocol": 1,
             "helper_path": "scripts/verify_role_link.py",
@@ -206,7 +216,7 @@ def historical_state_and_targets(roster: object) -> tuple[dict[str, object], dic
     return state, dict(sorted(targets.items()))
 
 
-def build(
+def _build(
     module: ModuleType,
     *,
     action: str,
@@ -219,7 +229,7 @@ def build(
         action=action,
         mode="converge",
         roster=roster,
-        state_payload=canonical(state) if state is not None else None,
+        state_payload=_canonical(state) if state is not None else None,
         targets=targets,
         install_id=INSTALL_ID,
         transaction_nonce=TRANSACTION_NONCE,
@@ -228,16 +238,16 @@ def build(
 
 def test_fresh_install_derives_all_creates_and_rebuilds_deterministically() -> None:
     """Prove canonical bytes and digest are stable for identical input."""
-    module = load_module(PLAN_PATH, "codex_rig_plan_create")
-    lifecycle = load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
-    roster = generated_roster()
+    module = _load_module(PLAN_PATH, "codex_rig_plan_create")
+    lifecycle = _load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
+    roster = _generated_roster()
 
-    first = build(module, action="install", roster=roster, state=None, targets=absent_targets(lifecycle))
-    second = build(module, action="install", roster=roster, state=None, targets=absent_targets(lifecycle))
+    first = _build(module, action="install", roster=roster, state=None, targets=_absent_targets(lifecycle))
+    second = _build(module, action="install", roster=roster, state=None, targets=_absent_targets(lifecycle))
 
     assert {operation.intent for operation in first.operations} == {"create"}
     assert first == second
-    assert first.canonical_bytes == canonical(json.loads(first.canonical_bytes))
+    assert first.canonical_bytes == _canonical(json.loads(first.canonical_bytes))
     assert not first.canonical_bytes.endswith(b"\n")
     assert first.digest == hashlib.sha256(first.canonical_bytes).hexdigest()
     payload = json.loads(first.canonical_bytes)
@@ -246,16 +256,16 @@ def test_fresh_install_derives_all_creates_and_rebuilds_deterministically() -> N
     assert payload["package_hash"] == roster.package_hash
     assert payload["bootstrap_hash"] == roster.bootstrap_hash
     assert payload["prior_state_hash"] is None
-    assert [item["role_id"] for item in payload["operations"]] == list(role_ids())
+    assert [item["role_id"] for item in payload["operations"]] == list(_role_ids())
 
 
 def test_install_derives_noop_update_and_repair_missing() -> None:
     """Derive each owned install intent from state, target, and generated bytes."""
-    module = load_module(PLAN_PATH, "codex_rig_plan_install_intents")
-    roster = generated_roster()
-    state, targets = validated_state(roster, missing={"curator"})
+    module = _load_module(PLAN_PATH, "codex_rig_plan_install_intents")
+    roster = _generated_roster()
+    state, targets = _validated_state(roster, missing={"curator"})
 
-    result = build(module, action="install", roster=roster, state=state, targets=targets)
+    result = _build(module, action="install", roster=roster, state=state, targets=targets)
     intents = {operation.role_id: operation.intent for operation in result.operations}
 
     assert intents["challenger"] == "noop"
@@ -266,15 +276,15 @@ def test_install_derives_noop_update_and_repair_missing() -> None:
 
 def test_forward_upgrade_migrates_the_sorted_active_and_historical_union() -> None:
     """Create added roles, update retained roles, and retire authenticated old roles."""
-    module = load_module(PLAN_PATH, "codex_rig_plan_forward_upgrade")
-    roster = generated_roster(version="0.3.0", package_hash="d" * 64)
-    state, targets = historical_state_and_targets(roster)
+    module = _load_module(PLAN_PATH, "codex_rig_plan_forward_upgrade")
+    roster = _generated_roster(version="0.3.0", package_hash="d" * 64)
+    state, targets = _historical_state_and_targets(roster)
 
-    result = build(module, action="install", roster=roster, state=state, targets=targets)
+    result = _build(module, action="install", roster=roster, state=state, targets=targets)
     intents = {operation.role_id: operation.intent for operation in result.operations}
 
     assert result.transition == "forward-upgrade"
-    assert result.prior_state_hash == hashlib.sha256(canonical(state)).hexdigest()
+    assert result.prior_state_hash == hashlib.sha256(_canonical(state)).hexdigest()
     assert tuple(intents) == tuple(sorted(intents))
     assert intents["challenger"] == "noop"
     assert intents["cicd-steward"] == "update"
@@ -290,12 +300,12 @@ def test_forward_upgrade_migrates_the_sorted_active_and_historical_union() -> No
 
 def test_same_package_cache_relink_updates_only_changed_generated_bytes() -> None:
     """Allow an identical package at a new cache root to regenerate thin links."""
-    module = load_module(PLAN_PATH, "codex_rig_plan_cache_relink")
-    old_roster = generated_roster()
-    state, targets = validated_state(old_roster)
-    active = generated_roster({"challenger": b"new-cache:challenger\n"})
+    module = _load_module(PLAN_PATH, "codex_rig_plan_cache_relink")
+    old_roster = _generated_roster()
+    state, targets = _validated_state(old_roster)
+    active = _generated_roster({"challenger": b"new-cache:challenger\n"})
 
-    result = build(module, action="install", roster=active, state=state, targets=targets)
+    result = _build(module, action="install", roster=active, state=state, targets=targets)
     intents = {operation.role_id: operation.intent for operation in result.operations}
 
     assert result.transition == "same-package"
@@ -306,11 +316,11 @@ def test_same_package_cache_relink_updates_only_changed_generated_bytes() -> Non
 
 def test_remove_aligns_operations_with_the_active_and_historical_union() -> None:
     """Keep approval observations aligned while removing only state-owned roles."""
-    module = load_module(PLAN_PATH, "codex_rig_plan_changed_roster_remove")
-    roster = generated_roster(version="0.3.0", package_hash="d" * 64)
-    state, targets = historical_state_and_targets(roster)
+    module = _load_module(PLAN_PATH, "codex_rig_plan_changed_roster_remove")
+    roster = _generated_roster(version="0.3.0", package_hash="d" * 64)
+    state, targets = _historical_state_and_targets(roster)
 
-    result = build(module, action="remove", roster=roster, state=state, targets=targets)
+    result = _build(module, action="remove", roster=roster, state=state, targets=targets)
     intents = {operation.role_id: operation.intent for operation in result.operations}
 
     assert intents["retired-specialist"] == "remove"
@@ -321,11 +331,11 @@ def test_remove_aligns_operations_with_the_active_and_historical_union() -> None
 
 def test_remove_derives_owned_remove_and_absent_noop() -> None:
     """Remove only exact owned targets and preserve already absent roles."""
-    module = load_module(PLAN_PATH, "codex_rig_plan_remove")
-    roster = generated_roster()
-    state, targets = validated_state(roster, missing={"curator"})
+    module = _load_module(PLAN_PATH, "codex_rig_plan_remove")
+    roster = _generated_roster()
+    state, targets = _validated_state(roster, missing={"curator"})
 
-    result = build(module, action="remove", roster=roster, state=state, targets=targets)
+    result = _build(module, action="remove", roster=roster, state=state, targets=targets)
     intents = {operation.role_id: operation.intent for operation in result.operations}
 
     assert intents["challenger"] == "remove"
@@ -335,14 +345,14 @@ def test_remove_derives_owned_remove_and_absent_noop() -> None:
 
 def test_pristine_remove_is_all_noop() -> None:
     """Represent pristine removal as a zero-change complete roster."""
-    module = load_module(PLAN_PATH, "codex_rig_plan_pristine_remove")
-    lifecycle = load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
-    result = build(
+    module = _load_module(PLAN_PATH, "codex_rig_plan_pristine_remove")
+    lifecycle = _load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
+    result = _build(
         module,
         action="remove",
-        roster=generated_roster(),
+        roster=_generated_roster(),
         state=None,
-        targets=absent_targets(lifecycle),
+        targets=_absent_targets(lifecycle),
     )
 
     assert {operation.intent for operation in result.operations} == {"noop"}
@@ -352,10 +362,10 @@ def test_pristine_remove_is_all_noop() -> None:
 @pytest.mark.parametrize("kind", ["foreign", "modified", "unsafe"])
 def test_untrusted_targets_fail_closed(kind: str) -> None:
     """Refuse any target roster that lacks exact state-backed ownership."""
-    module = load_module(PLAN_PATH, f"codex_rig_plan_{kind}")
-    lifecycle = load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
-    roster = generated_roster()
-    state, targets = validated_state(roster)
+    module = _load_module(PLAN_PATH, f"codex_rig_plan_{kind}")
+    lifecycle = _load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
+    roster = _generated_roster()
+    state, targets = _validated_state(roster)
     if kind == "foreign":
         state = None
     elif kind == "modified":
@@ -364,15 +374,15 @@ def test_untrusted_targets_fail_closed(kind: str) -> None:
         targets["codex-rig-challenger.toml"] = lifecycle.TargetObservation("unsafe")
 
     with pytest.raises(module.CandidateError):
-        build(module, action="install", roster=roster, state=state, targets=targets)
+        _build(module, action="install", roster=roster, state=state, targets=targets)
 
 
 def test_partial_extra_and_reordered_rosters_fail_closed() -> None:
     """Reject any deviation from the exact generator-owned role order."""
-    module = load_module(PLAN_PATH, "codex_rig_plan_roster_refusal")
-    lifecycle = load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
-    roster = generated_roster()
-    exact = absent_targets(lifecycle)
+    module = _load_module(PLAN_PATH, "codex_rig_plan_roster_refusal")
+    lifecycle = _load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
+    roster = _generated_roster()
+    exact = _absent_targets(lifecycle)
     variants = [
         dict(list(exact.items())[:-1]),
         {**exact, "codex-rig-extra.toml": lifecycle.TargetObservation("absent")},
@@ -381,25 +391,25 @@ def test_partial_extra_and_reordered_rosters_fail_closed() -> None:
 
     for targets in variants:
         with pytest.raises(module.CandidateError):
-            build(module, action="install", roster=roster, state=None, targets=targets)
+            _build(module, action="install", roster=roster, state=None, targets=targets)
 
 
 def test_unhashable_candidate_inputs_fail_with_stable_error() -> None:
     """Keep forged dataclass fields inside the candidate error contract."""
-    module = load_module(PLAN_PATH, "codex_rig_plan_unhashable")
-    lifecycle = load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
-    targets = absent_targets(lifecycle)
+    module = _load_module(PLAN_PATH, "codex_rig_plan_unhashable")
+    lifecycle = _load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
+    targets = _absent_targets(lifecycle)
     targets["codex-rig-challenger.toml"] = lifecycle.TargetObservation([])
 
     with pytest.raises(module.CandidateError):
-        build(module, action="install", roster=generated_roster(), state=None, targets=targets)
+        _build(module, action="install", roster=_generated_roster(), state=None, targets=targets)
     with pytest.raises(module.CandidateError):
         module.build_candidate(
             action=[],
             mode="converge",
-            roster=generated_roster(),
+            roster=_generated_roster(),
             state_payload=None,
-            targets=absent_targets(lifecycle),
+            targets=_absent_targets(lifecycle),
             install_id=INSTALL_ID,
             transaction_nonce=TRANSACTION_NONCE,
         )
@@ -414,16 +424,16 @@ def test_unhashable_candidate_inputs_fail_with_stable_error() -> None:
 )
 def test_invalid_identifiers_fail_closed(install_id: str, transaction_nonce: str) -> None:
     """Reject candidate identities not supplied as canonical UUIDs."""
-    module = load_module(PLAN_PATH, "codex_rig_plan_invalid_identifiers")
-    lifecycle = load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
+    module = _load_module(PLAN_PATH, "codex_rig_plan_invalid_identifiers")
+    lifecycle = _load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
 
     with pytest.raises(module.CandidateError):
         module.build_candidate(
             action="install",
             mode="converge",
-            roster=generated_roster(),
+            roster=_generated_roster(),
             state_payload=None,
-            targets=absent_targets(lifecycle),
+            targets=_absent_targets(lifecycle),
             install_id=install_id,
             transaction_nonce=transaction_nonce,
         )
@@ -431,10 +441,10 @@ def test_invalid_identifiers_fail_closed(install_id: str, transaction_nonce: str
 
 def test_invalid_action_mode_and_nonfinite_input_fail_closed() -> None:
     """Reject unsupported transitions and non-canonical JSON values."""
-    module = load_module(PLAN_PATH, "codex_rig_plan_invalid_transition")
-    lifecycle = load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
-    roster = generated_roster()
-    targets = absent_targets(lifecycle)
+    module = _load_module(PLAN_PATH, "codex_rig_plan_invalid_transition")
+    lifecycle = _load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
+    roster = _generated_roster()
+    targets = _absent_targets(lifecycle)
     with pytest.raises(module.CandidateError):
         module.build_candidate(
             action="adopt",
@@ -459,10 +469,10 @@ def test_invalid_action_mode_and_nonfinite_input_fail_closed() -> None:
 
 def test_state_requires_strict_semver_and_exact_package_content_identity() -> None:
     """Reject permissive versions and same-version package substitutions."""
-    module = load_module(PLAN_PATH, "codex_rig_plan_package_identity")
-    generator = load_module(GENERATOR_PATH, "generate_roles")
-    lifecycle = load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
-    roster = generated_roster()
+    module = _load_module(PLAN_PATH, "codex_rig_plan_package_identity")
+    generator = _load_module(GENERATOR_PATH, "generate_roles")
+    lifecycle = _load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
+    roster = _generated_roster()
     invalid_version = generator.GeneratedRoster(
         "1.0.0-01",
         roster.package_hash,
@@ -471,15 +481,15 @@ def test_state_requires_strict_semver_and_exact_package_content_identity() -> No
         roster.roles,
     )
     with pytest.raises(module.CandidateError):
-        build(
+        _build(
             module,
             action="install",
             roster=invalid_version,
             state=None,
-            targets=absent_targets(lifecycle),
+            targets=_absent_targets(lifecycle),
         )
 
-    state, targets = validated_state(roster)
+    state, targets = _validated_state(roster)
     substituted = generator.GeneratedRoster(
         roster.plugin_version,
         "d" * 64,
@@ -488,7 +498,7 @@ def test_state_requires_strict_semver_and_exact_package_content_identity() -> No
         roster.roles,
     )
     with pytest.raises(module.CandidateError, match="same-version package content differs"):
-        build(module, action="install", roster=substituted, state=state, targets=targets)
+        _build(module, action="install", roster=substituted, state=state, targets=targets)
     with pytest.raises(module.CandidateError, match="exact state bytes"):
         module.build_candidate(
             action="install",
@@ -516,31 +526,31 @@ def test_state_requires_strict_semver_and_exact_package_content_identity() -> No
 )
 def test_semver_transition_policy(active_version: str, prior_version: str, accepted: bool) -> None:
     """Allow forward releases and ordered local rebuilds while refusing downgrade."""
-    module = load_module(PLAN_PATH, f"codex_rig_plan_semver_{active_version}_{prior_version}")
-    prior_roster = generated_roster()
-    state, targets = validated_state(prior_roster)
+    module = _load_module(PLAN_PATH, f"codex_rig_plan_semver_{active_version}_{prior_version}")
+    prior_roster = _generated_roster()
+    state, targets = _validated_state(prior_roster)
     state["plugin_version"] = prior_version
-    active = generated_roster(version=active_version, package_hash="d" * 64)
+    active = _generated_roster(version=active_version, package_hash="d" * 64)
 
     if accepted:
-        result = build(module, action="install", roster=active, state=state, targets=targets)
+        result = _build(module, action="install", roster=active, state=state, targets=targets)
         expected = "development-rebuild" if "+codex." in active_version else "forward-upgrade"
         assert result.transition == expected
     else:
         with pytest.raises(module.CandidateError):
-            build(module, action="install", roster=active, state=state, targets=targets)
+            _build(module, action="install", roster=active, state=state, targets=targets)
 
 
 def test_digest_revalidation_rejects_tamper() -> None:
     """Accept only the digest of the exact rebuilt canonical bytes."""
-    module = load_module(PLAN_PATH, "codex_rig_plan_digest")
-    lifecycle = load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
-    result = build(
+    module = _load_module(PLAN_PATH, "codex_rig_plan_digest")
+    lifecycle = _load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
+    result = _build(
         module,
         action="install",
-        roster=generated_roster(),
+        roster=_generated_roster(),
         state=None,
-        targets=absent_targets(lifecycle),
+        targets=_absent_targets(lifecycle),
     )
 
     module.revalidate_candidate_digest(result, result.digest)

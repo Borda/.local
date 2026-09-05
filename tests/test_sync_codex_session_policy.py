@@ -15,7 +15,12 @@ SOURCE_POLICY = ROOT / ".codex" / "global-session-policy.md"
 
 
 def _namespace() -> dict[str, object]:
-    """Load the root sync helper without modifying a real Codex home."""
+    """Load the sync script's definitions without entering its command-line synchronization path.
+
+    >>> namespace = _namespace()
+    >>> namespace["sync"].__name__, namespace["SyncError"].__name__
+    ('sync', 'SyncError')
+    """
     return runpy.run_path(str(SCRIPT))
 
 

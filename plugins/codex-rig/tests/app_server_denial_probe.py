@@ -329,19 +329,34 @@ class _SanitizedEventRecorder:
 
 
 def _normalized_path(value: str | Path) -> str:
-    """Normalize a same-host path without resolving links or touching the filesystem."""
+    """Normalize a same-host path without resolving links or touching the filesystem.
+
+    Example:
+        >>> _normalized_path("work/../output")
+        'output'
+    """
     return os.path.normcase(os.path.normpath(os.fspath(value)))
 
 
 def _mapping(value: object, label: str) -> Mapping[str, object]:
-    """Return a protocol object mapping or reject malformed JSON-RPC fields."""
+    """Return a protocol object mapping or reject malformed JSON-RPC fields.
+
+    Example:
+        >>> _mapping({"id": 1}, "request")["id"]
+        1
+    """
     if not isinstance(value, Mapping):
         raise ProtocolViolation(f"malformed-{label}")
     return value
 
 
 def _required_text(params: Mapping[str, object], key: str) -> str:
-    """Read one required non-empty protocol identifier."""
+    """Read one required non-empty protocol identifier.
+
+    Example:
+        >>> _required_text({"id": "turn-1"}, "id")
+        'turn-1'
+    """
     value = params.get(key)
     if not isinstance(value, str) or not value:
         raise ProtocolViolation(f"malformed-{key}")
@@ -349,7 +364,15 @@ def _required_text(params: Mapping[str, object], key: str) -> str:
 
 
 def _matches_expected_item(params: Mapping[str, object], expected: DenialExpectation) -> bool:
-    """Return whether notification correlation identifies the denied command item."""
+    """Return whether notification correlation identifies the denied command item.
+
+    Example:
+        >>> expected = DenialExpectation(
+        ...     "thread-1", "turn-1", "item-1", Path("/work"), Path("/out"), "python"
+        ... )
+        >>> _matches_expected_item({"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1"}, expected)
+        True
+    """
     return (
         params.get("threadId") == expected.thread_id
         and params.get("turnId") == expected.turn_id
@@ -633,7 +656,12 @@ def _under_temp_root(path: Path) -> bool:
 
 
 def _paths_overlap(left: Path, right: Path) -> bool:
-    """Return whether either resolved path contains the other."""
+    """Return whether either resolved path contains the other.
+
+    Example:
+        >>> _paths_overlap(Path("/work"), Path("/work/output"))
+        True
+    """
     left_resolved = left.resolve()
     right_resolved = right.resolve()
     try:
@@ -648,7 +676,14 @@ def _paths_overlap(left: Path, right: Path) -> bool:
 
 
 def _valid_sha256(value: object) -> bool:
-    """Return whether a string is one canonical lowercase SHA-256 digest."""
+    """Return whether a string is one canonical lowercase SHA-256 digest.
+
+    Example:
+        >>> _valid_sha256("a" * 64)
+        True
+        >>> _valid_sha256("A" * 64)
+        False
+    """
     return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
@@ -892,12 +927,22 @@ class _JsonRpcStdio:
 
 
 def _thread_id(result: Mapping[str, object]) -> str:
-    """Extract the schema-defined thread identifier from a thread/start result."""
+    """Extract the schema-defined thread identifier from a thread/start result.
+
+    Example:
+        >>> _thread_id({"thread": {"id": "thread-1"}})
+        'thread-1'
+    """
     return _required_text(_mapping(result.get("thread"), "thread-start-thread"), "id")
 
 
 def _turn_id(result: Mapping[str, object]) -> str:
-    """Extract the schema-defined turn identifier from a turn/start result."""
+    """Extract the schema-defined turn identifier from a turn/start result.
+
+    Example:
+        >>> _turn_id({"turn": {"id": "turn-1"}})
+        'turn-1'
+    """
     return _required_text(_mapping(result.get("turn"), "turn-start-turn"), "id")
 
 
@@ -908,7 +953,16 @@ def _turn_completed(
     *,
     require_success: bool,
 ) -> bool:
-    """Return whether a notification authoritatively reached an allowed terminal state."""
+    """Return whether a notification authoritatively reached an allowed terminal state.
+
+    Example:
+        >>> message = {
+        ...     "method": TURN_COMPLETED_METHOD,
+        ...     "params": {"threadId": "t", "turn": {"id": "u", "status": "completed"}},
+        ... }
+        >>> _turn_completed(message, "t", "u", require_success=True)
+        True
+    """
     if message.get("method") != TURN_COMPLETED_METHOD:
         return False
     params = _mapping(message.get("params"), "turn-completed-params")
@@ -924,7 +978,12 @@ def _turn_completed(
 
 
 def _safe_turn_error_category(turn: Mapping[str, object]) -> str:
-    """Return only a schema-owned App Server error category from one terminal turn."""
+    """Return only a schema-owned App Server error category from one terminal turn.
+
+    Example:
+        >>> _safe_turn_error_category({})
+        'none'
+    """
     error = turn.get("error")
     if error is None:
         return "none"
@@ -941,7 +1000,12 @@ def _safe_turn_error_category(turn: Mapping[str, object]) -> str:
 
 
 def _same_turn(params: Mapping[str, object], thread_id: str, turn_id: str) -> bool:
-    """Return whether an event belongs to the explicitly started primary turn."""
+    """Return whether an event belongs to the explicitly started primary turn.
+
+    Example:
+        >>> _same_turn({"threadId": "t", "turnId": "u"}, "t", "u")
+        True
+    """
     return params.get("threadId") == thread_id and params.get("turnId") == turn_id
 
 
@@ -1142,7 +1206,12 @@ def _write_evidence_payload(evidence_dir: Path, payload: Mapping[str, object]) -
 
 
 def _safe_failure_code(error: Exception) -> str:
-    """Map an exception to a fixed diagnostic code without retaining its message."""
+    """Map an exception to a fixed diagnostic code without retaining its message.
+
+    Example:
+        >>> _safe_failure_code(ValueError("private detail"))
+        'unexpected-probe-failure'
+    """
     if not isinstance(error, ProtocolViolation):
         return "unexpected-probe-failure"
     code = str(error)

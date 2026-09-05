@@ -109,7 +109,12 @@ None.
 
 
 def _parallel_metadata() -> dict[str, object]:
-    """Return a valid six-item, two-bucket parallel plan."""
+    """Return a valid six-item, two-bucket parallel plan.
+
+    Example:
+        >>> len(_parallel_metadata()["resolution_workplan"]["work_buckets"])
+        2
+    """
     return {
         "resolution_scope": {"selected_indexes": [1, 2, 3, 4, 5, 6]},
         "resolution_workplan": {

@@ -24,7 +24,13 @@ MANIFEST_VERSION = json.loads(
 
 
 def _status_call(workspace: Path, arguments: object = {}) -> dict[str, object]:
-    """Call bridge_status through its public JSON-RPC entrypoint."""
+    """Call bridge_status through its public JSON-RPC entrypoint.
+
+    Examples:
+        >>> response = _status_call(getfixture("tmp_path"))
+        >>> sorted(response["result"])
+        ['content', 'isError']
+    """
     response = bridge_mcp.handle_message(
         {
             "jsonrpc": "2.0",

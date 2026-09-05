@@ -14,8 +14,8 @@ import pytest
 from resolve_skill_subdir import main, resolve  # noqa: E402
 
 
-@pytest.fixture
-def fake_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+@pytest.fixture(name="fake_home")
+def _fake_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Provide a fake $HOME with an empty plugin cache subtree."""
     home = tmp_path / "home"
     (home / ".claude" / "plugins" / "cache").mkdir(parents=True)
@@ -23,8 +23,8 @@ def fake_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return home
 
 
-@pytest.fixture
-def cwd_with_local_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+@pytest.fixture(name="cwd_with_local_tree")
+def _cwd_with_local_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Chdir to a fake project root containing a ``plugins/cc_foundry/skills`` tree."""
     monkeypatch.chdir(tmp_path)
     return tmp_path

@@ -43,13 +43,25 @@ _loader.exec_module(cic)
 
 
 def _write_index(path: Path, data: dict[str, Any]) -> None:
-    """Write a minimal codemap index JSON to *path*."""
+    """Write a minimal codemap index JSON to *path*.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     path = Path(directory) / "nested" / "index.json"
+    ...     _write_index(path, {"modules": []})
+    ...     json.loads(path.read_text())["modules"]
+    []
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data), encoding="utf-8")
 
 
 def _minimal_index(**extra: Any) -> dict[str, Any]:
-    """Return a minimal valid index dict, optionally extended."""
+    """Return a minimal valid index dict, optionally extended.
+
+    >>> _minimal_index(project="demo")["project"]
+    'demo'
+    """
     base: dict[str, Any] = {"scan_version": 3, "modules": [], "scanned_at": "2026-01-01T00:00:00Z"}
     base.update(extra)
     return base
@@ -240,8 +252,8 @@ SHA_B = "b" * 40
 class TestCheckCurrencyTier1:
     """Git-based currency checks with mocked git calls."""
 
-    @pytest.fixture()
-    def index_file(self, tmp_path: Path) -> Path:
+    @pytest.fixture(name="index_file")
+    def _index_file(self, tmp_path: Path) -> Path:
         """Write minimal index with git_sha=SHA_A."""
         p = tmp_path / "idx.json"
         _write_index(p, _minimal_index(git_sha=SHA_A))
@@ -403,8 +415,8 @@ class TestCheckCurrencyTier2GitBlobs:
         """Force Tier 2 by making _git_head return None."""
         monkeypatch.setattr(cic, "_git_head", lambda root: None)
 
-    @pytest.fixture()
-    def index_file(self, tmp_path: Path) -> Path:
+    @pytest.fixture(name="index_file")
+    def _index_file(self, tmp_path: Path) -> Path:
         """Write two .py files and an index recording their blob SHAs."""
         (tmp_path / "one.py").write_text("x = 1")
         (tmp_path / "two.py").write_text("y = 2")
@@ -524,8 +536,8 @@ class TestCLI:
 _WRITER_HOLD_TIMEOUT = 5.0
 
 
-@pytest.fixture()
-def gate_events() -> Iterator[list[str]]:
+@pytest.fixture(name="gate_events")
+def _gate_events() -> Iterator[list[str]]:
     """Collect ``rwgate`` lifecycle event names emitted during one test."""
     events: list[str] = []
     rwgate.set_instrument(lambda name, fields: events.append(name))
@@ -533,8 +545,8 @@ def gate_events() -> Iterator[list[str]]:
     rwgate.set_instrument(None)
 
 
-@pytest.fixture()
-def live_writer() -> Iterator[Callable[[Path], None]]:
+@pytest.fixture(name="live_writer")
+def _live_writer() -> Iterator[Callable[[Path], None]]:
     """Return a callable holding a real exclusive writer lease until the test ends.
 
     The writer runs on a second thread and parks inside its exclusive phase, so the index it guards is genuinely
@@ -546,10 +558,12 @@ def live_writer() -> Iterator[Callable[[Path], None]]:
     threads: list[threading.Thread] = []
 
     def _build(target: Path) -> None:
+        """Block the writer until the test releases its coordination event."""
         started.set()
         release.wait(_WRITER_HOLD_TIMEOUT)
 
     def _hold(index_path: Path) -> None:
+        """Run the blocking writer in a daemon thread."""
         thread = threading.Thread(target=rwgate.write_index, args=(index_path, _build), daemon=True)
         thread.start()
         threads.append(thread)
@@ -616,6 +630,7 @@ class TestIndexReadIsLeased:
         _write_index(p, _minimal_index(git_sha=SHA_A))
 
         def _refuse(path: Path, *, timeout: float | None = None) -> None:
+            """Raise the expected coordination error for an unwritable root."""
             raise rwgate.CoordinationUnavailable(f"coordination root unwritable: {path}")
 
         monkeypatch.setattr(rwgate, "read_lease", _refuse)

@@ -18,6 +18,7 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
+        """Store the status and streams returned by a fake Git command."""
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
@@ -135,6 +136,7 @@ def test_repo_flag_inserts_git_c(monkeypatch: pytest.MonkeyPatch) -> None:
     recorded: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Record the contributor extraction command and return no contributors."""
         recorded.append(list(cmd))
         return _FakeCompleted(returncode=0, stdout="")
 

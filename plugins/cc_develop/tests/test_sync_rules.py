@@ -19,14 +19,26 @@ PLUGIN = "develop"
 
 
 def _make_home(tmp_path: Path) -> Path:
-    """Create a disposable home with an empty ``~/.claude/rules``."""
+    """Create a disposable home with an empty ``~/.claude/rules``.
+
+    Examples:
+        >>> home = _make_home(getfixture("tmp_path"))
+        >>> home.joinpath(".claude", "rules").is_dir()
+        True
+    """
     home = tmp_path / "home"
     (home / ".claude" / "rules").mkdir(parents=True)
     return home
 
 
 def _make_plugin(root: Path, name: str = PLUGIN, rules: dict[str, str] | None = None) -> Path:
-    """Create a minimal plugin tree with a manifest and rule files."""
+    """Create a minimal plugin tree with a manifest and rule files.
+
+    Examples:
+        >>> root = _make_plugin(getfixture("tmp_path") / "plugin")
+        >>> json.loads(root.joinpath(".claude-plugin", "plugin.json").read_text())["name"]
+        'develop'
+    """
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin" / "plugin.json").write_text(
         json.dumps({"name": name, "version": "0.1.0"}), encoding="utf-8"
@@ -38,13 +50,24 @@ def _make_plugin(root: Path, name: str = PLUGIN, rules: dict[str, str] | None = 
 
 
 def _installed_root(home: Path, version: str = "0.19.0", plugin: str = PLUGIN, marketplace: str = MARKETPLACE) -> Path:
-    """Create an installed-cache plugin root under ``home``."""
+    """Create an installed-cache plugin root under ``home``.
+
+    Examples:
+        >>> home = _make_home(getfixture("tmp_path"))
+        >>> _installed_root(home).relative_to(home).as_posix()
+        '.claude/plugins/cache/borda-ai-rig/develop/0.19.0'
+    """
     root = home / ".claude" / "plugins" / "cache" / marketplace / plugin / version
     return _make_plugin(root)
 
 
 def _dest(home: Path, source_name: str = "quality-gates.md", plugin: str = PLUGIN) -> Path:
-    """Namespaced destination path for a source rule."""
+    """Return the namespaced destination path for a source rule.
+
+    Examples:
+        >>> _dest(getfixture("tmp_path")).name
+        'develop-quality-gates.md'
+    """
     return home / ".claude" / "rules" / dest_name(plugin, source_name)
 
 
@@ -537,6 +560,7 @@ def test_main_reports_failure_exit_code(
     root = _installed_root(home)
 
     def _boom(link: sync_rules.RuleLink) -> None:
+        """Simulate a platform that refuses to create the destination symlink."""
         raise OSError("symlinks unsupported")
 
     monkeypatch.setattr(sync_rules, "_replace_link", _boom)

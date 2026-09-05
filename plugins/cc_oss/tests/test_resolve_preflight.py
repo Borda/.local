@@ -19,6 +19,7 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
+        """Store the status and streams consumed by the preflight runner."""
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
@@ -28,6 +29,7 @@ def _dispatch(responses: dict[str, tuple[int, str]]) -> Any:
     """Build a subprocess.run fake dispatching on the binary name + first subcommand."""
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Dispatch a fake response by executable and first subcommand."""
         binary = Path(cmd[0]).name
         subcmd = cmd[1] if len(cmd) > 1 else ""
         key = f"{binary} {subcmd}".strip()
@@ -99,7 +101,15 @@ def test_gh_ok_codex_absent_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 
 
 def _install_bridge(home: Path, *, enabled: bool = True) -> None:
-    """Write a plugin registry (and optional opt-out) describing an installed bridge."""
+    """Write a plugin registry (and optional opt-out) describing an installed bridge.
+
+    Examples:
+        >>> home = getfixture("tmp_path")
+        >>> _install_bridge(home, enabled=False)
+        >>> settings = json.loads((home / ".claude" / "settings.json").read_text())
+        >>> settings["enabledPlugins"][rp.check_bridge.TARGET_SELECTOR]
+        False
+    """
     registry = home / ".claude" / "plugins" / "installed_plugins.json"
     registry.parent.mkdir(parents=True)
     entry = {"scope": "user", "installPath": str(home / "cache" / "bridge" / "0.2.0"), "version": "0.2.0"}
@@ -157,6 +167,7 @@ def test_gh_cache_hit_skips_auth(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     calls: list[str] = []
 
     def _tracking_run(cmd: list[str], **_: Any) -> _FakeCompleted:
+        """Record executable/subcommand pairs while returning success."""
         calls.append(Path(cmd[0]).name + " " + (cmd[1] if len(cmd) > 1 else ""))
         return _FakeCompleted(returncode=0, stdout="")
 
@@ -176,6 +187,7 @@ def test_remote_ahead_pulls(
     call_n = [0]
 
     def _seq_run(cmd: list[str], **_: Any) -> _FakeCompleted:
+        """Advance the scripted preflight response sequence for each call."""
         call_n[0] += 1
         binary = Path(cmd[0]).name
         subcmd = cmd[1] if len(cmd) > 1 else ""
@@ -209,6 +221,7 @@ def test_pull_conflict_exits_1(
     monkeypatch.setattr(rp, "which", lambda cmd: "/fake/" + cmd)
 
     def _conflict_run(cmd: list[str], **_: Any) -> _FakeCompleted:
+        """Return a successful bridge check and a failed Git pull response."""
         binary = Path(cmd[0]).name
         subcmd = cmd[1] if len(cmd) > 1 else ""
         if binary == "claude":
@@ -258,6 +271,7 @@ def test_help_exits_0_no_subprocess(monkeypatch: pytest.MonkeyPatch, capsys: pyt
     """
 
     def _boom(*_a: Any, **_k: Any) -> None:
+        """Fail the test if help handling performs any external operation."""
         raise AssertionError("subprocess.run must not be called on --help")
 
     monkeypatch.setattr(rp.subprocess, "run", _boom)

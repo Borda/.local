@@ -28,6 +28,7 @@ def _no_session_id(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _load_bin_modules() -> None:
+    """Load every plugin ``bin`` script under its importable test alias."""
     for script in sorted(_BIN_DIR.glob("*.py")):
         module_name = script.stem.replace("-", "_")
         if module_name in sys.modules:

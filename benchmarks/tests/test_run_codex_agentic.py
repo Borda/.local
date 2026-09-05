@@ -19,7 +19,11 @@ POSIX_SECURITY = pytest.mark.skipif(sys.platform == "win32", reason="requires PO
 
 
 def _load_agentic() -> Any:
-    """Load the hyphenated Codex agentic runner as an importable test module."""
+    """Load the runner once under a stable module name without entering its CLI.
+
+    >>> _load_agentic() is _load_agentic()
+    True
+    """
     module_name = "run_codex_agentic"
     existing = sys.modules.get(module_name)
     if existing is not None:
@@ -33,15 +37,24 @@ def _load_agentic() -> Any:
     return module
 
 
-@pytest.fixture(scope="module")
-def agentic() -> Any:
-    """Expose the no-model Codex agentic runner."""
+@pytest.fixture(name="agentic", scope="module")
+def _agentic() -> Any:
+    """Provide the cached runner to pytest without executing a model.
+
+    >>> getfixture("agentic") is _load_agentic()
+    True
+    """
     return _load_agentic()
 
 
-@pytest.fixture()
-def task_and_truth(agentic: Any, tmp_path: Path) -> tuple[Any, Any]:
-    """Build a two-importer source tree and provider-neutral answer oracle."""
+@pytest.fixture(name="task_and_truth")
+def _task_and_truth(agentic: Any, tmp_path: Path) -> tuple[Any, Any]:
+    """Build an isolated two-importer source tree and an oracle requiring importer, count, and ranking fields.
+
+    >>> task, oracle = getfixture("task_and_truth")
+    >>> oracle.task_id == task["id"], len(oracle.expected["production_importers"])
+    (True, 2)
+    """
     task = {
         "id": "BA-01",
         "type": "blast_radius_analysis",
@@ -64,22 +77,41 @@ def task_and_truth(agentic: Any, tmp_path: Path) -> tuple[Any, Any]:
 
 
 def _stream(*events: dict[str, Any]) -> str:
-    """Serialize native Codex events as one JSONL stream."""
+    """Serialize events in order with separators but no trailing newline.
+
+    >>> _stream()
+    ''
+    >>> [json.loads(line) for line in _stream({"id": 1}, {"id": 2}).splitlines()]
+    [{'id': 1}, {'id': 2}]
+    """
     return "\n".join(json.dumps(event) for event in events)
 
 
 def _message(text: str) -> dict[str, Any]:
-    """Return one completed native assistant message event."""
+    """Wrap assistant text in a completed native message event without changing the text.
+
+    >>> _message("example")["item"]
+    {'id': 'm', 'type': 'agent_message', 'text': 'example'}
+    """
     return {"type": "item.completed", "item": {"id": "m", "type": "agent_message", "text": text}}
 
 
 def _labelled(text: str, oracle: Any) -> str:
-    """Attach one exact shared answer-contract envelope to test report prose."""
+    """Append sorted oracle expectations inside the shared answer-envelope markers.
+
+    >>> from types import SimpleNamespace
+    >>> _labelled("Summary", SimpleNamespace(expected={"z": 2, "a": 1})).splitlines()
+    ['Summary', 'BEGIN_ANSWER_JSON', '{"a": 1, "z": 2}', 'END_ANSWER_JSON']
+    """
     return f"{text}\nBEGIN_ANSWER_JSON\n{json.dumps(dict(oracle.expected), sort_keys=True)}\nEND_ANSWER_JSON"
 
 
 def _completed() -> dict[str, Any]:
-    """Return a successful terminal event with deterministic native usage."""
+    """Build a successful terminal event with fixed gross, cached, and output token counts.
+
+    >>> _completed()["usage"]
+    {'input_tokens': 123, 'cached_input_tokens': 23, 'output_tokens': 45}
+    """
     return {
         "type": "turn.completed",
         "status": "completed",
@@ -88,7 +120,12 @@ def _completed() -> dict[str, Any]:
 
 
 def _query(item_id: str = "q") -> dict[str, Any]:
-    """Return one successful compact direct Codemap query event."""
+    """Build successful compact-query evidence using the caller's item identifier.
+
+    >>> item = _query("example")["item"]
+    >>> item["id"], item["exit_code"], json.loads(item["aggregated_output"])
+    ('example', 0, {'index': {'query_complete': True, 'compact': True}})
+    """
     return {
         "type": "item.completed",
         "item": {
@@ -175,6 +212,7 @@ def test_dry_run_preflights_snapshot_bound_c_admission_without_auth_or_model(
         """Reject only after the dry run has entered later C snapshot admission."""
 
         def __init__(self, **kwargs: Any) -> None:
+            """Initialize the test double's fixture-controlled state."""
             assert kwargs["auth_source"] is None
             assert kwargs["repo_path"] == tmp_path.resolve()
             assert kwargs["index_path"] == index_path.resolve()
@@ -349,7 +387,17 @@ def test_plain_codemap_call_is_contamination(task_and_truth: tuple[Any, Any], ag
 
 
 def _admitted_manifest(agentic: Any, tmp_path: Path) -> tuple[Path, str]:
-    """Copy the checked-in agentic lock and admit it for mocked paid-path tests."""
+    """Write a disposable admitted manifest and return its exact digest for mocked execution tests.
+
+    The tracked manifest is only read; no provider or admission workflow is started.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     path, digest = _admitted_manifest(_load_agentic(), Path(directory))
+    ...     manifest = json.loads(path.read_text(encoding="utf-8"))
+    ...     manifest["admission"]["paid_execution"], digest == hashlib.sha256(path.read_bytes()).hexdigest()
+    ('admitted', True)
+    """
     manifest = json.loads(agentic._MANIFEST_PATH.read_text(encoding="utf-8"))
     manifest["admission"]["paid_execution"] = "admitted"
     manifest["artifact_sha256"]["codex_agentic_runner"] = hashlib.sha256(
@@ -380,6 +428,7 @@ class _FixtureRunner:
     """No-auth, no-model runner proving paid artifact persistence contracts."""
 
     def __init__(self, *, fail_after: int | None = None, **_kwargs: Any) -> None:
+        """Initialize the test double's fixture-controlled state."""
         self.calls = 0
         self.fail_after = fail_after
 
@@ -463,7 +512,16 @@ class _SnapshotFailureRunner(_FixtureRunner):
 def _prepare_paid_fixture(
     agentic: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> tuple[Path, str, Path, Path]:
-    """Set up a valid manifest and local index while bypassing target Git checks."""
+    """Create local fixture artifacts and temporarily bypass runtime validation through the supplied monkeypatch.
+
+    This prepares a mock boundary only; it never invokes paid execution.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory, pytest.MonkeyPatch.context() as patch:
+    ...     manifest, digest, index, launcher = _prepare_paid_fixture(_load_agentic(), patch, Path(directory))
+    ...     json.loads(index.read_text()), launcher.name, digest == hashlib.sha256(manifest.read_bytes()).hexdigest()
+    ({'modules': []}, 'run-all.sh', True)
+    """
     manifest_path, _approval = _admitted_manifest(agentic, tmp_path)
     launcher_path = tmp_path / "run-all.sh"
     launcher_path.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
@@ -478,7 +536,18 @@ def _prepare_paid_fixture(
 
 
 def _lock_run_launcher(manifest_path: Path, run_dir: Path) -> tuple[str, Path]:
-    """Create run-all's launcher plus immutable source-snapshot admission entries."""
+    """Create a disposable launcher snapshot and update the supplied manifest's launcher digest.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     root = Path(directory)
+    ...     manifest, _ = _admitted_manifest(_load_agentic(), root)
+    ...     digest, launcher = _lock_run_launcher(manifest, root / "run")
+    ...     launcher.name, (launcher.parent / "source.sha256").is_file()
+    ...     digest == hashlib.sha256(manifest.read_bytes()).hexdigest()
+    ('run-all.sh', True)
+    True
+    """
     launcher_path = run_dir / ".launcher" / "run-all.sh"
     launcher_path.parent.mkdir(parents=True)
     launcher_path.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
@@ -744,7 +813,7 @@ def test_agentic_first_strict_admission_failure_keeps_identity_evidence_after_cl
     runner.adapter = adapter
     runner.index_path = tmp_path / "index.json"
 
-    def fail_after_staging(home: Any, *_args: Any, **_kwargs: Any) -> bool:
+    def _fail_after_staging(home: Any, *_args: Any, **_kwargs: Any) -> bool:
         """Stage observable plugin identities, then fail their admission."""
         install_calls.append(home.arm)
         for name, version in (("codemap-py", "0.27.0"), ("codex-rig", "0.4.0")):
@@ -758,7 +827,7 @@ def test_agentic_first_strict_admission_failure_keeps_identity_evidence_after_cl
 
     monkeypatch.setattr(agentic, "AGENTIC_ARMS", ("C_strict",))
     monkeypatch.setattr(agentic._structural, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(agentic._structural, "_install_codemap_plugin", fail_after_staging)
+    monkeypatch.setattr(agentic._structural, "_install_codemap_plugin", _fail_after_staging)
 
     with pytest.raises(RuntimeError, match="fixture plugin identity mismatch"):
         runner.create_input_snapshot(
@@ -802,11 +871,13 @@ def test_agentic_snapshot_attempts_every_cleanup_after_auth_refresh_failure(
         codemap_context_path = None
 
         def __init__(self, arm: str) -> None:
+            """Initialize the test double's fixture-controlled state."""
             self.arm = arm
             self.path = tmp_path / arm
             self.coordination_path = tmp_path / f"coordination-{arm}"
 
         def cleanup(self) -> None:
+            """Implement the test home or workspace cleanup boundary."""
             events.append(f"home:{self.arm}")
 
     class Adapter:
@@ -818,6 +889,7 @@ def test_agentic_snapshot_attempts_every_cleanup_after_auth_refresh_failure(
             """Fail refresh so the cleanup sequence must continue."""
 
             def refresh_from_home(self, path: Path) -> None:
+                """Record authentication refresh through the scenario's controlled boundary."""
                 events.append(f"refresh:{path.name}")
                 raise RuntimeError("refresh failed")
 
@@ -830,6 +902,7 @@ def test_agentic_snapshot_attempts_every_cleanup_after_auth_refresh_failure(
             """Accept verified identity recording at the adapter seam."""
 
         def _prepare_verified_home(self, native_arm: str) -> Home:
+            """Return the fixture home through the runner's preparation interface."""
             return Home(native_arm)
 
     runner = object.__new__(agentic.AgenticCodexRunner)
@@ -883,11 +956,13 @@ def test_agentic_snapshot_cleans_a_shared_treatment_coordination_root_once(
         codemap_context_path = None
 
         def __init__(self, arm: str) -> None:
+            """Initialize the test double's fixture-controlled state."""
             self.arm = arm
             self.path = tmp_path / arm
             self.coordination_path = shared_root if arm != "A_plain" else None
 
         def cleanup(self) -> None:
+            """Implement the test home or workspace cleanup boundary."""
             events.append(f"home:{self.arm}")
 
     class Adapter:
@@ -905,9 +980,11 @@ def test_agentic_snapshot_cleans_a_shared_treatment_coordination_root_once(
             """Accept verified identity recording at the adapter seam."""
 
         def _prepare_verified_home(self, native_arm: str) -> Home:
+            """Return the fixture home through the runner's preparation interface."""
             return Home(native_arm)
 
-    def cleanup(path: Path) -> None:
+    def _cleanup(path: Path) -> None:
+        """Record coordination cleanup and reject repeated removal of an unavailable root."""
         events.append(f"coordination:{path.name}")
         if path not in live_roots:
             raise ValueError("Codemap coordination root is unavailable")
@@ -921,7 +998,7 @@ def test_agentic_snapshot_cleans_a_shared_treatment_coordination_root_once(
         "_write_agentic_input_snapshot",
         lambda *_args, **_kwargs: {"ok": True, "path": "fixture"},
     )
-    monkeypatch.setattr(agentic._structural, "_cleanup_coordination_root", cleanup)
+    monkeypatch.setattr(agentic._structural, "_cleanup_coordination_root", _cleanup)
 
     assert runner.create_input_snapshot(
         tmp_path / "run",
@@ -961,11 +1038,13 @@ def test_native_runner_refreshes_auth_and_fails_postflight_contamination(
         codemap_skill_path = None
 
         def __init__(self) -> None:
+            """Initialize the test double's fixture-controlled state."""
             self.cleaned = False
             self.env = {}
             self.path = tmp_path / "home"
 
         def cleanup(self) -> None:
+            """Implement the test home or workspace cleanup boundary."""
             self.cleaned = True
 
     home = Home()
@@ -979,21 +1058,26 @@ def test_native_runner_refreshes_auth_and_fails_postflight_contamination(
             """Record whether cleanup transfers refreshed auth out of the disposable home."""
 
             def refresh_from_home(self, path: Path) -> None:
+                """Record authentication refresh through the scenario's controlled boundary."""
                 refreshes.append(path)
 
         _auth_state = AuthState()
 
         def _prepare_verified_home(self, _arm: str) -> Home:
+            """Return the fixture home through the runner's preparation interface."""
             return home
 
         def build_command(self, _prompt: str) -> list[str]:
+            """Return fixed argv without launching the Codex executable."""
             return ["codex", "exec"]
 
         def _subprocess(self, _command: list[str], _env: dict[str, str], *, timeout: float) -> str:
+            """Return a successful answer stream built from the fixture oracle."""
             del timeout
             return _stream(_message(_labelled("lightning.pytorch.trainer.trainer.", truth)), _completed())
 
         def close(self) -> None:
+            """Implement the adapter cleanup boundary for the enclosing lifecycle test."""
             return None
 
     runner = object.__new__(agentic.AgenticCodexRunner)
@@ -1007,10 +1091,11 @@ def test_native_runner_refreshes_auth_and_fails_postflight_contamination(
     assert successful.success is True
     assert refreshes == [home.path]
 
-    def contaminated(*_args: Any) -> None:
+    def _contaminated(*_args: Any) -> None:
+        """Reject the runtime as though locked index bytes had changed."""
         raise ValueError("locked index bytes changed")
 
-    monkeypatch.setattr(agentic, "_validate_agentic_runtime", contaminated)
+    monkeypatch.setattr(agentic, "_validate_agentic_runtime", _contaminated)
     failed = runner.run(task, "A_plain", repetition=1, ground_truth=truth)
     assert failed.success is False
     assert failed.incomplete is True

@@ -29,12 +29,20 @@ _BASE = datetime(2026, 7, 10, 1, 0, 0, tzinfo=timezone.utc)
 
 
 def _ts(offset_min: float) -> str:
-    """Return an ISO-Z timestamp *offset_min* minutes after the fixture base time."""
+    """Return an ISO-Z timestamp *offset_min* minutes after the fixture base time.
+
+    >>> _ts(30)
+    '2026-07-10T01:30:00Z'
+    """
     return (_BASE + timedelta(minutes=offset_min)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _cli(module: str, offset_min: float, *, complete: bool = True, session: str = "s1") -> dict:
-    """Build a cli.jsonl record answering *module* at *offset_min*, complete or not."""
+    """Build a cli.jsonl record answering *module* at *offset_min*, complete or not.
+
+    >>> _cli("pkg.mod", 0)["argv"]
+    ['rdeps', 'pkg.mod']
+    """
     return {
         "ts": _ts(offset_min),
         "layer": "cli",
@@ -47,7 +55,11 @@ def _cli(module: str, offset_min: float, *, complete: bool = True, session: str 
 
 
 def _tool(target: str, offset_min: float, *, tool: str = "Grep", session: str = "s1") -> dict:
-    """Build a tools.jsonl record for a *tool* call on *target* at *offset_min*."""
+    """Build a tools.jsonl record for a *tool* call on *target* at *offset_min*.
+
+    >>> _tool("pkg.mod", 5)["tool"]
+    'Grep'
+    """
     return {"ts": _ts(offset_min), "layer": "tool", "tool": tool, "session": session, "target": target}
 
 

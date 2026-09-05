@@ -28,7 +28,7 @@ def _mode_is_retainable(mode: int) -> bool:
         return stat.S_IMODE(path.stat().st_mode) == mode
 
 
-def load_module() -> ModuleType:
+def _load_module() -> ModuleType:
     """Load the internal primitive module without package installation."""
     specification = importlib.util.spec_from_file_location("codex_rig_agent_shim_posix", MODULE_PATH)
     assert specification is not None
@@ -39,8 +39,8 @@ def load_module() -> ModuleType:
     return module
 
 
-@pytest.fixture
-def roots(tmp_path: Path) -> tuple[int, int, Path, Path]:
+@pytest.fixture(name="roots")
+def _roots(tmp_path: Path) -> tuple[int, int, Path, Path]:
     """Open isolated private source and target roots for descriptor operations."""
     source = tmp_path / "source"
     target = tmp_path / "target"
@@ -57,7 +57,7 @@ def roots(tmp_path: Path) -> tuple[int, int, Path, Path]:
 
 def test_private_path_creation_is_contained_and_idempotent(tmp_path: Path) -> None:
     """Create only explicit private components and reopen the same identity."""
-    module = load_module()
+    module = _load_module()
     root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         first_fd, created = module.create_private_path(root_fd, ("codex-rig", "shims"))
@@ -77,7 +77,7 @@ def test_private_path_creation_is_contained_and_idempotent(tmp_path: Path) -> No
 
 def test_private_directory_mode_is_independent_of_umask(tmp_path: Path) -> None:
     """Establish exact private permissions even under a restrictive umask."""
-    module = load_module()
+    module = _load_module()
     root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     previous_umask = os.umask(0o777)
     try:
@@ -93,7 +93,7 @@ def test_private_directory_mode_is_independent_of_umask(tmp_path: Path) -> None:
 
 def test_existing_protected_directory_is_opened_without_permission_change(tmp_path: Path) -> None:
     """Open an owned protected namespace while preserving its public read mode."""
-    module = load_module()
+    module = _load_module()
     child = tmp_path / "agents"
     child.mkdir(mode=0o700)
     child.chmod(0o755)
@@ -112,7 +112,7 @@ def test_existing_protected_directory_is_opened_without_permission_change(tmp_pa
 
 def test_protected_target_primitives_preserve_mode(roots: tuple[int, int, Path, Path]) -> None:
     """Publish, detach, and restore through an existing protected target."""
-    module = load_module()
+    module = _load_module()
     source_fd, target_fd, source, target = roots
     target.chmod(0o755)
     payload = b"generated-shim\n"
@@ -162,7 +162,7 @@ def test_protected_target_primitives_preserve_mode(roots: tuple[int, int, Path, 
 )
 def test_protected_directory_rejects_group_writable_or_special_modes(tmp_path: Path, mode: int) -> None:
     """Reject target namespaces that another principal could mutate or redirect."""
-    module = load_module()
+    module = _load_module()
     child = tmp_path / "agents"
     child.mkdir(mode=0o700)
     child.chmod(mode)
@@ -184,7 +184,7 @@ def test_protected_directory_rejects_group_writable_or_special_modes(tmp_path: P
 
 def test_private_path_rejects_symlink_component(tmp_path: Path) -> None:
     """Refuse a link where a held private child directory is required."""
-    module = load_module()
+    module = _load_module()
     outside = tmp_path / "outside"
     outside.mkdir(mode=0o700)
     (tmp_path / "codex-rig").symlink_to(outside, target_is_directory=True)
@@ -199,7 +199,7 @@ def test_private_path_rejects_symlink_component(tmp_path: Path) -> None:
 
 def test_private_path_rejects_group_writable_parent(tmp_path: Path) -> None:
     """Refuse path-following permission repair in a substitutable namespace."""
-    module = load_module()
+    module = _load_module()
     tmp_path.chmod(0o770)
     root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -216,24 +216,26 @@ def test_created_directory_descriptor_closes_when_fsync_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Do not leak a new directory capability after durability failure."""
-    module = load_module()
+    module = _load_module()
     root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     opened: list[int] = []
     original_open = module.open_directory_at
     original_fsync = module.os.fsync
 
-    def capture_open(*args: object, **kwargs: object) -> int:
+    def _capture_open(*args: object, **kwargs: object) -> int:
+        """Record descriptors opened while testing cleanup after durability failure."""
         fd = original_open(*args, **kwargs)
         opened.append(fd)
         return fd
 
-    def fail_child_fsync(fd: int) -> None:
+    def _fail_child_fsync(fd: int) -> None:
+        """Fail the first child-directory sync and delegate later syncs."""
         if opened and fd == opened[0]:
             raise OSError(errno.EIO, "injected directory fsync failure")
         original_fsync(fd)
 
-    monkeypatch.setattr(module, "open_directory_at", capture_open)
-    monkeypatch.setattr(module.os, "fsync", fail_child_fsync)
+    monkeypatch.setattr(module, "open_directory_at", _capture_open)
+    monkeypatch.setattr(module.os, "fsync", _fail_child_fsync)
     try:
         with pytest.raises(OSError, match="injected"):
             module.create_directory_at(root_fd, "child")
@@ -250,7 +252,7 @@ def test_regular_read_rejects_same_size_concurrent_rewrite(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Reject a torn read even when a concurrent writer preserves file size."""
-    module = load_module()
+    module = _load_module()
     original = b"a" * 131_072
     replacement = b"b" * len(original)
     path = tmp_path / "role.toml"
@@ -260,7 +262,8 @@ def test_regular_read_rejects_same_size_concurrent_rewrite(
     original_read = module.os.read
     calls = 0
 
-    def rewrite_after_first_chunk(fd: int, size: int) -> bytes:
+    def _rewrite_after_first_chunk(fd: int, size: int) -> bytes:
+        """Rewrite the file after the first read chunk to simulate a concurrent writer."""
         nonlocal calls
         chunk = original_read(fd, size)
         calls += 1
@@ -269,7 +272,7 @@ def test_regular_read_rejects_same_size_concurrent_rewrite(
             path.chmod(0o600)
         return chunk
 
-    monkeypatch.setattr(module.os, "read", rewrite_after_first_chunk)
+    monkeypatch.setattr(module.os, "read", _rewrite_after_first_chunk)
     try:
         with pytest.raises(module.PosixPrimitiveError, match="changed during read"):
             module.read_regular_at(root_fd, "role.toml", expected_mode=0o600)
@@ -279,7 +282,7 @@ def test_regular_read_rejects_same_size_concurrent_rewrite(
 
 def test_regular_read_rejects_fifo_without_blocking(tmp_path: Path) -> None:
     """Fail closed on a FIFO rather than waiting for a writer."""
-    module = load_module()
+    module = _load_module()
     os.mkfifo(tmp_path / "role.toml", mode=0o600)
     root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -293,7 +296,7 @@ def test_exclusive_write_and_hardlink_publication_never_clobber(
     roots: tuple[int, int, Path, Path],
 ) -> None:
     """Publish exact staged bytes once while preserving an occupied target."""
-    module = load_module()
+    module = _load_module()
     source_fd, target_fd, source, target = roots
     payload = b"generated-shim\n"
     digest = hashlib.sha256(payload).hexdigest()
@@ -311,7 +314,7 @@ def test_exclusive_write_and_hardlink_publication_never_clobber(
 
 def test_initial_journal_uses_recoverable_same_inode_publication(tmp_path: Path) -> None:
     """Publish journal authority and retire only its verified initial link."""
-    module = load_module()
+    module = _load_module()
     root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         payload = b'{"journal":"preparing"}'
@@ -330,19 +333,20 @@ def test_failed_exclusive_write_removes_only_its_partial_artifact(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Avoid unauthenticated transaction residue after a staged write failure."""
-    module = load_module()
+    module = _load_module()
     root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     original_write = module.os.write
     calls = 0
 
-    def partial_then_fail(fd: int, payload: object) -> int:
+    def _partial_then_fail(fd: int, payload: object) -> int:
+        """Write a short prefix once, then inject the staged-write failure."""
         nonlocal calls
         calls += 1
         if calls == 1:
             return original_write(fd, bytes(payload)[:2])
         raise OSError(errno.EIO, "injected staged write failure")
 
-    monkeypatch.setattr(module.os, "write", partial_then_fail)
+    monkeypatch.setattr(module.os, "write", _partial_then_fail)
     try:
         with pytest.raises(OSError, match="injected"):
             module.write_exclusive_at(root_fd, "after.toml", b"complete-payload")
@@ -357,28 +361,30 @@ def test_failed_write_never_unlinks_a_substituted_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Preserve both partial evidence and a concurrent replacement."""
-    module = load_module()
+    module = _load_module()
     root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     original_write = module.os.write
     original_cleanup = module._cleanup_created_file
     calls = 0
 
-    def partial_then_fail(fd: int, payload: object) -> int:
+    def _partial_then_fail(fd: int, payload: object) -> int:
+        """Write a short prefix once, then inject the staged-write failure."""
         nonlocal calls
         calls += 1
         if calls == 1:
             return original_write(fd, bytes(payload)[:2])
         raise OSError(errno.EIO, "injected staged write failure")
 
-    def substitute_before_cleanup(parent_fd: int, name: str, identity: object) -> None:
+    def _substitute_before_cleanup(parent_fd: int, name: str, identity: object) -> None:
+        """Replace the partial path before cleanup to exercise identity protection."""
         os.rename(name, "partial.evidence", src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
         replacement_fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=parent_fd)
         original_write(replacement_fd, b"replacement")
         os.close(replacement_fd)
         original_cleanup(parent_fd, name, identity)
 
-    monkeypatch.setattr(module.os, "write", partial_then_fail)
-    monkeypatch.setattr(module, "_cleanup_created_file", substitute_before_cleanup)
+    monkeypatch.setattr(module.os, "write", _partial_then_fail)
+    monkeypatch.setattr(module, "_cleanup_created_file", _substitute_before_cleanup)
     try:
         with pytest.raises(module.PosixPrimitiveError, match="cleanup is uncertain"):
             module.write_exclusive_at(root_fd, "after.toml", b"complete-payload")
@@ -393,7 +399,7 @@ def test_detach_preserves_exact_target_in_private_quarantine(
     roots: tuple[int, int, Path, Path],
 ) -> None:
     """Detach approved bytes atomically and retain their exact evidence."""
-    module = load_module()
+    module = _load_module()
     source_fd, target_fd, source, target = roots
     payload = b"owned-before\n"
     file_fd = os.open("role.toml", os.O_WRONLY | os.O_CREAT, 0o600, dir_fd=target_fd)
@@ -419,7 +425,7 @@ def test_detach_mismatch_restores_observed_bytes_without_journal_substitution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Restore the exact detached race observation when the target stays absent."""
-    module = load_module()
+    module = _load_module()
     source_fd, target_fd, source, target = roots
     approved = b"approved-content\n"
     raced = b"concurrent-content\n"
@@ -429,14 +435,14 @@ def test_detach_mismatch_restores_observed_bytes_without_journal_substitution(
 
     original_rename = module._rename_noreplace
 
-    def replace_before_detach(*args: object, **kwargs: object) -> None:
+    def _replace_before_detach(*args: object, **kwargs: object) -> None:
         """Simulate a target byte race immediately before atomic detach."""
         race_fd = os.open("role.toml", os.O_WRONLY | os.O_TRUNC, dir_fd=target_fd)
         os.write(race_fd, raced)
         os.close(race_fd)
         original_rename(*args, **kwargs)
 
-    monkeypatch.setattr(module, "_rename_noreplace", replace_before_detach)
+    monkeypatch.setattr(module, "_rename_noreplace", _replace_before_detach)
 
     with pytest.raises(module.DetachedMismatchError) as captured:
         module.detach_verified(
@@ -458,7 +464,7 @@ def test_detach_never_replaces_an_occupied_quarantine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Preserve both files when the private quarantine name is occupied."""
-    module = load_module()
+    module = _load_module()
     source_fd, target_fd, source, target = roots
     approved = b"approved-content\n"
     occupied = b"existing-quarantine\n"
@@ -467,13 +473,14 @@ def test_detach_never_replaces_an_occupied_quarantine(
     os.close(target_file)
     original_rename = module._rename_noreplace
 
-    def occupy_immediately_before_rename(*args: object, **kwargs: object) -> None:
+    def _occupy_immediately_before_rename(*args: object, **kwargs: object) -> None:
+        """Occupy the quarantine name immediately before the protected rename."""
         quarantine_file = os.open("quarantine.toml", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=source_fd)
         os.write(quarantine_file, occupied)
         os.close(quarantine_file)
         original_rename(*args, **kwargs)
 
-    monkeypatch.setattr(module, "_rename_noreplace", occupy_immediately_before_rename)
+    monkeypatch.setattr(module, "_rename_noreplace", _occupy_immediately_before_rename)
 
     with pytest.raises(module.PosixPrimitiveError):
         module.detach_verified(
@@ -490,7 +497,7 @@ def test_detach_never_replaces_an_occupied_quarantine(
 
 def test_owned_replace_requires_exact_previous_hash(tmp_path: Path) -> None:
     """Replace only the exact manager-owned preimage and retain private mode."""
-    module = load_module()
+    module = _load_module()
     root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         before = b"before"
@@ -519,7 +526,7 @@ def test_owned_replace_requires_exact_previous_hash(tmp_path: Path) -> None:
 
 def test_owned_replace_rejects_unrecognized_state_temporary(tmp_path: Path) -> None:
     """Keep state publication out of the fixed journal-successor primitive."""
-    module = load_module()
+    module = _load_module()
     root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         with pytest.raises(module.PosixPrimitiveError, match="unsupported"):
@@ -538,7 +545,7 @@ def test_state_publication_consumes_only_journal_bound_after_link(
     roots: tuple[int, int, Path, Path],
 ) -> None:
     """Replace exact manager state from the staged same-filesystem artifact."""
-    module = load_module()
+    module = _load_module()
     transaction_fd, state_fd, transaction, state_root = roots
     before = b"before-state"
     after = b"after-state"
@@ -563,17 +570,18 @@ def test_failed_state_replace_retains_exact_publish_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Leave the journal-bound publish link recoverable when replace fails."""
-    module = load_module()
+    module = _load_module()
     transaction_fd, state_fd, transaction, state_root = roots
     before = b"before-state"
     after = b"after-state"
     module.write_exclusive_at(state_fd, "state.json", before)
     module.write_exclusive_at(transaction_fd, "state.after.json", after)
 
-    def fail_replace(*args: object, **kwargs: object) -> None:
+    def _fail_replace(*args: object, **kwargs: object) -> None:
+        """Inject a state-replacement failure after staging completes."""
         raise OSError(errno.EIO, "injected state replace failure")
 
-    monkeypatch.setattr(module.os, "replace", fail_replace)
+    monkeypatch.setattr(module.os, "replace", _fail_replace)
     with pytest.raises(module.PosixPrimitiveError, match="state publication failed"):
         module.publish_state_from_transaction(
             transaction_fd,
@@ -591,7 +599,7 @@ def test_lock_path_swap_after_flock_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Close a held lock when the approved fixed pathname is replaced."""
-    module = load_module()
+    module = _load_module()
     lock = tmp_path / ".codex-rig-shims.lock"
     lock.write_bytes(b"")
     lock.chmod(0o600)
@@ -600,14 +608,15 @@ def test_lock_path_swap_after_flock_is_rejected(
     original_flock = module.fcntl.flock
     held: list[int] = []
 
-    def replace_after_lock(fd: int, operation: int) -> None:
+    def _replace_after_lock(fd: int, operation: int) -> None:
+        """Replace the lock path after acquisition to verify identity revalidation."""
         original_flock(fd, operation)
         held.append(fd)
         lock.rename(tmp_path / "old-lock")
         lock.write_bytes(b"")
         lock.chmod(0o600)
 
-    monkeypatch.setattr(module.fcntl, "flock", replace_after_lock)
+    monkeypatch.setattr(module.fcntl, "flock", _replace_after_lock)
     try:
         with pytest.raises(module.PosixPrimitiveError, match="path changed"):
             module.acquire_coordination_lock(
@@ -625,7 +634,7 @@ def test_lock_path_swap_after_flock_is_rejected(
 
 def test_coordination_lock_is_exclusive_and_shape_checked(tmp_path: Path) -> None:
     """Acquire the fixed lock once and reject contention or unsafe reuse."""
-    module = load_module()
+    module = _load_module()
     home_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     first = module.acquire_coordination_lock(home_fd, intent="create-if-absent", expected_identity=None)
     identity = os.fstat(first)
@@ -651,7 +660,7 @@ def test_coordination_lock_is_exclusive_and_shape_checked(tmp_path: Path) -> Non
 @pytest.mark.parametrize("intent", ["create-if-absent", "open-existing"])
 def test_coordination_lock_rejects_group_writable_home(tmp_path: Path, intent: str) -> None:
     """Reject lock creation or reuse after the approved home becomes substitutable."""
-    module = load_module()
+    module = _load_module()
     expected_identity = None
     if intent == "open-existing":
         lock = tmp_path / ".codex-rig-shims.lock"
@@ -683,7 +692,7 @@ def test_coordination_lock_rejects_group_writable_home(tmp_path: Path, intent: s
 
 def test_coordination_lock_never_follows_a_link(tmp_path: Path) -> None:
     """Preserve an external file when the fixed lock name is a symlink."""
-    module = load_module()
+    module = _load_module()
     outside = tmp_path / "outside"
     outside.write_bytes(b"")
     outside.chmod(0o600)
@@ -702,7 +711,7 @@ def test_verified_unlink_is_durable_and_absence_requires_permission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Remove exact bytes durably and permit replay absence only explicitly."""
-    module = load_module()
+    module = _load_module()
     payload = b"published-target\n"
     path = tmp_path / "role.toml"
     path.write_bytes(payload)
@@ -711,11 +720,12 @@ def test_verified_unlink_is_durable_and_absence_requires_permission(
     fsynced: list[int] = []
     original_fsync = module.os.fsync
 
-    def capture_fsync(fd: int) -> None:
+    def _capture_fsync(fd: int) -> None:
+        """Record fsync calls while delegating to the real implementation."""
         fsynced.append(fd)
         original_fsync(fd)
 
-    monkeypatch.setattr(module.os, "fsync", capture_fsync)
+    monkeypatch.setattr(module.os, "fsync", _capture_fsync)
     try:
         removed = module.unlink_verified_at(
             root_fd,
@@ -751,7 +761,7 @@ class TestVerifiedUnlink:
 
     def test_rejects_hash_mismatch(self, tmp_path: Path) -> None:
         """Preserve a regular file whose bytes do not match the approved digest."""
-        module = load_module()
+        module = _load_module()
         approved = b"approved\n"
         role = tmp_path / "role.toml"
         role.write_bytes(approved)
@@ -767,7 +777,7 @@ class TestVerifiedUnlink:
 
     def test_rejects_symlink(self, tmp_path: Path) -> None:
         """Preserve an external target when the selected name is a symlink."""
-        module = load_module()
+        module = _load_module()
         outside = tmp_path / "outside"
         outside.write_bytes(b"outside\n")
         outside.chmod(0o600)
@@ -788,7 +798,7 @@ class TestVerifiedUnlink:
 
     def test_requires_expected_hardlink_count(self, tmp_path: Path) -> None:
         """Reject an unexpected hardlink count and accept the explicitly approved count."""
-        module = load_module()
+        module = _load_module()
         approved = b"approved\n"
         hard = tmp_path / "hard.toml"
         hard.write_bytes(approved)
@@ -821,7 +831,7 @@ class TestVerifiedUnlink:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Preserve both files when the approved inode is replaced before unlink."""
-        module = load_module()
+        module = _load_module()
         approved = b"approved\n"
         replacement = b"replacement\n"
         role = tmp_path / "role.toml"
@@ -829,14 +839,15 @@ class TestVerifiedUnlink:
         role.chmod(0o600)
         original_unlink = module._unlink_same_inode
 
-        def substitute_before_unlink(parent_fd: int, name: str, identity: object) -> None:
+        def _substitute_before_unlink(parent_fd: int, name: str, identity: object) -> None:
+            """Swap the path before unlink so cleanup must refuse the replacement."""
             os.rename(name, "approved.evidence", src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
             fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=parent_fd)
             os.write(fd, replacement)
             os.close(fd)
             original_unlink(parent_fd, name, identity)
 
-        monkeypatch.setattr(module, "_unlink_same_inode", substitute_before_unlink)
+        monkeypatch.setattr(module, "_unlink_same_inode", _substitute_before_unlink)
         root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
         try:
             with pytest.raises(module.PosixPrimitiveError, match="identity changed"):
@@ -857,7 +868,7 @@ def test_quarantine_restore_is_exact_and_never_clobbers(
     roots: tuple[int, int, Path, Path],
 ) -> None:
     """Restore one exact quarantine file only into an absent target name."""
-    module = load_module()
+    module = _load_module()
     quarantine_fd, target_fd, quarantine, target = roots
     payload = b"before-image\n"
     digest = hashlib.sha256(payload).hexdigest()
@@ -901,7 +912,7 @@ def test_state_restore_uses_bound_before_image_without_clobber(
     roots: tuple[int, int, Path, Path],
 ) -> None:
     """Restore prior state while retaining the detached current state evidence."""
-    module = load_module()
+    module = _load_module()
     transaction_fd, state_fd, transaction, state_root = roots
     before = b"before-state"
     current = b"current-state"
@@ -939,7 +950,7 @@ def test_state_prior_absence_removal_is_explicitly_idempotent(
     roots: tuple[int, int, Path, Path],
 ) -> None:
     """Remove exact current state for prior absence and gate replay absence."""
-    module = load_module()
+    module = _load_module()
     transaction_fd, state_fd, _, state_root = roots
     current = b"current-state"
     digest = hashlib.sha256(current).hexdigest()
@@ -980,7 +991,7 @@ def test_transaction_cleanup_obeys_exact_nonrecursive_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Remove named artifacts then verified empty directories without recursion."""
-    module = load_module()
+    module = _load_module()
     artifact = tmp_path / "journal.json"
     artifact.write_bytes(b"journal")
     artifact.chmod(0o600)
@@ -994,11 +1005,12 @@ def test_transaction_cleanup_obeys_exact_nonrecursive_order(
     fsynced: list[int] = []
     original_fsync = module.os.fsync
 
-    def capture_fsync(fd: int) -> None:
+    def _capture_fsync(fd: int) -> None:
+        """Record fsync calls while delegating to the real implementation."""
         fsynced.append(fd)
         original_fsync(fd)
 
-    monkeypatch.setattr(module.os, "fsync", capture_fsync)
+    monkeypatch.setattr(module.os, "fsync", _capture_fsync)
     try:
         removed = module.remove_transaction_entries_at(
             root_fd,
@@ -1025,7 +1037,7 @@ def test_transaction_cleanup_obeys_exact_nonrecursive_order(
 
 def test_transaction_cleanup_rejects_linked_child(tmp_path: Path) -> None:
     """Never follow a transaction child link during bounded cleanup."""
-    module = load_module()
+    module = _load_module()
     outside = tmp_path / "outside"
     outside.mkdir(mode=0o700)
     (tmp_path / "linked").symlink_to(outside, target_is_directory=True)

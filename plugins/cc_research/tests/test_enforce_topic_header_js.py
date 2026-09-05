@@ -94,9 +94,9 @@ def _call_export(name: str, *args: object) -> object:
     return json.loads(proc.stdout)
 
 
-@pytest.fixture
-def topic_run(tmp_path: Path) -> tuple[Path, Path]:
-    """Stage a topic run that resolved its report path: output dir on disk plus its sentinel."""
+@pytest.fixture(name="topic_run")
+def _topic_run(tmp_path: Path) -> tuple[Path, Path]:
+    """Stage a topic run that resolved its report path: output file plus sentinel."""
     report_file = tmp_path / "repo" / ".reports" / "research" / "topic-main-2026-08-04.md"
     report_file.parent.mkdir(parents=True)
     sentinel = tmp_path / SENTINEL_NAME
@@ -135,7 +135,14 @@ def test_written_report_passes_through(tmp_path: Path, topic_run: tuple[Path, Pa
 
 
 def _write_transcript(tmp_path: Path, assistant_text: str) -> Path:
-    """Write a minimal two-row JSONL transcript: a human user turn then one assistant text block."""
+    """Write a minimal two-row JSONL transcript: a user turn then one assistant text block.
+
+    Examples:
+        >>> tmp_path = getfixture("tmp_path")
+        >>> path = _write_transcript(tmp_path, "done")
+        >>> len(path.read_text().splitlines())
+        2
+    """
     rows = [
         {"type": "user", "message": {"content": [{"type": "text", "text": "go"}]}},
         {"type": "assistant", "message": {"content": [{"type": "text", "text": assistant_text}]}},

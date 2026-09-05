@@ -41,6 +41,12 @@ def _make_pr(
 
     Returns:
         A PullRequestInfo instance.
+
+    Example:
+        >>> mod = getfixture("script_gen_real_issues")
+        >>> pr = _make_pr(mod, number=7, source_files=[], py_file_count=0)
+        >>> pr.number, pr.source_files, pr.py_file_count
+        (7, [], 0)
     """
     if source_files is None:
         source_files = ["src/lightning/pytorch/trainer/trainer.py"]
@@ -72,6 +78,12 @@ def _make_record(
 
     Returns:
         An IssueRecord instance.
+
+    Example:
+        >>> mod = getfixture("script_gen_real_issues")
+        >>> record = _make_record(mod, number=7, title="Example fix")
+        >>> record.number, record.title, record.pr.number
+        (7, 'Example fix', 99)
     """
     if pr is None:
         pr = _make_pr(mod)
@@ -735,6 +747,7 @@ class TestInspectPrSourceFiltering:
         """Only non-test Python files become source ground truth; change sizes are retained."""
 
         def _fake_gh_json(args: list[str], timeout: int = 60) -> dict:
+            """Return the scenario-specific merged-PR response without contacting GitHub."""
             return {
                 "state": "MERGED",
                 "mergedAt": "2026-01-01T00:00:00Z",
@@ -760,6 +773,7 @@ class TestInspectPrSourceFiltering:
         """A PR with Python changes only in tests is not a source-backed task."""
 
         def _fake_gh_json(args: list[str], timeout: int = 60) -> dict:
+            """Return the scenario-specific merged-PR response without contacting GitHub."""
             return {
                 "state": "MERGED",
                 "mergedAt": "2026-01-01T00:00:00Z",
@@ -778,6 +792,7 @@ class TestInspectPrSourceFiltering:
         """A PR without Python files cannot produce Python source ground truth."""
 
         def _fake_gh_json(args: list[str], timeout: int = 60) -> dict:
+            """Return the scenario-specific merged-PR response without contacting GitHub."""
             return {
                 "state": "MERGED",
                 "mergedAt": "2026-01-01T00:00:00Z",

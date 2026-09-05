@@ -20,7 +20,11 @@ sys.path.insert(0, str(BENCHMARKS))
 
 
 def _load() -> Any:
-    """Return the private ReadCrop stage scorer without a Fire entrypoint."""
+    """Import the private read-crop stage without entering a command-line or provider workflow.
+
+    >>> _load().__name__
+    '_bench_codex.stage_readcrop'
+    """
     from _bench_codex import stage_readcrop
 
     return stage_readcrop
@@ -451,12 +455,15 @@ def test_preflight_probes_every_native_arm(monkeypatch: Any, tmp_path: Path) -> 
         """Capture isolation probes without creating real homes."""
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize the test double's fixture-controlled state."""
             pass
 
         def probe_arm(self, arm: str) -> None:
+            """Record the treatment passed to the preflight probe."""
             calls.append(arm)
 
         def close(self) -> None:
+            """Implement the adapter cleanup boundary for the enclosing lifecycle test."""
             pass
 
     monkeypatch.setattr(runner._structural(), "CodexRunner", Adapter)
@@ -481,13 +488,16 @@ def test_paid_snapshot_binds_the_structural_launcher_and_readcrop_stage(monkeypa
         """Capture snapshot arguments before any model subprocess can start."""
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize the test double's fixture-controlled state."""
             pass
 
         def create_input_snapshot(self, _run_dir: Path, **kwargs: Any) -> None:
+            """Capture snapshot arguments and interrupt before provider execution."""
             captured.update(kwargs)
             raise KeyboardInterrupt
 
         def close(self) -> None:
+            """Implement the adapter cleanup boundary for the enclosing lifecycle test."""
             pass
 
     monkeypatch.setattr(runner._structural(), "CodexRunner", Adapter)

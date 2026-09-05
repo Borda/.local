@@ -54,7 +54,7 @@ class TestPrArtifactPathContract:
         assert template["metadata"]["specialist_manifest"] == "<run-directory>/specialist-manifest.json"
 
 
-def load_validator() -> ModuleType:
+def _load_validator() -> ModuleType:
     """Load the shipped standalone validator from its installed-package path."""
     specification = importlib.util.spec_from_file_location("code_review_routing_validator", REVIEW_VALIDATOR)
     assert specification is not None and specification.loader is not None
@@ -63,7 +63,7 @@ def load_validator() -> ModuleType:
     return module
 
 
-def load_parallel_execution_tests() -> ModuleType:
+def _load_parallel_execution_tests() -> ModuleType:
     """Load the shared rollout fixture without making production code depend on tests."""
     specification = importlib.util.spec_from_file_location(
         "codex_rig_parallel_execution_tests", PARALLEL_EXECUTION_TESTS
@@ -89,7 +89,7 @@ def test_action_table_parser_accepts_the_canonical_section_and_stops_at_the_next
 | This | is | not | a finding |
 """
 
-    rows = load_validator()._action_table_rows(notes)
+    rows = _load_validator()._action_table_rows(notes)
 
     assert rows == [
         ["Finding / area", "Required change", "Evidence", "Status"],
@@ -100,7 +100,7 @@ def test_action_table_parser_accepts_the_canonical_section_and_stops_at_the_next
 
 def test_parent_activity_reader_normalizes_the_current_item_completed_shape() -> None:
     """Keep review provenance compatible with the current parent rollout activity record."""
-    validator = load_validator()
+    validator = _load_validator()
     rows = [
         {
             "type": "event_msg",
@@ -133,7 +133,7 @@ def test_parent_activity_reader_normalizes_the_current_item_completed_shape() ->
 
 def test_routing_helper_replaces_manual_mechanical_evidence_idempotently(tmp_path: Path) -> None:
     """Keep file and line arithmetic derived from collected evidence instead of model-authored JSON."""
-    validator = load_validator()
+    validator = _load_validator()
     signals = {name: False for name in validator.ROUTING_SIGNALS}
     signals.update({"bug_fix": True, "test_or_error_path": True})
     (tmp_path / "files.txt").write_text("src/widget.py\ntests/test_widget.py\n", encoding="utf-8")
@@ -193,7 +193,7 @@ def test_routing_helper_replaces_manual_mechanical_evidence_idempotently(tmp_pat
 )
 def test_routing_rejects_trigger_reasons_that_are_not_nonempty_string_lists(tmp_path: Path, reasons: object) -> None:
     """Prevent malformed reason collections from passing the routing preflight."""
-    validator = load_validator()
+    validator = _load_validator()
     signals = {name: name == "behavior_change" for name in validator.ROUTING_SIGNALS}
     (tmp_path / "files.txt").write_text("src/widget.py\n", encoding="utf-8")
     (tmp_path / "untracked.txt").write_text("", encoding="utf-8")
@@ -220,7 +220,7 @@ def test_routing_rejects_trigger_reasons_that_are_not_nonempty_string_lists(tmp_
 
 def test_packaged_role_card_supplies_runtime_contract_without_source_agent_config() -> None:
     """Keep plugin-only provenance grounded in the shipped role card."""
-    validator = load_validator()
+    validator = _load_validator()
     role_card = PLUGIN_ROOT / "roles" / "qa-specialist" / "ROLE.md"
 
     contract = validator._load_role_card(PLUGIN_ROOT / "roles", "qa-specialist")
@@ -238,7 +238,7 @@ def test_packaged_role_card_supplies_runtime_contract_without_source_agent_confi
 
 def test_sol_axis_cannot_route_without_explicit_selection_evidence(tmp_path: Path) -> None:
     """Prevent an architecture/security label from automatically selecting a Sol role."""
-    validator = load_validator()
+    validator = _load_validator()
     signals = {name: name == "axis_solution_architect" for name in validator.ROUTING_SIGNALS}
     (tmp_path / "files.txt").write_text("src/widget.py\n", encoding="utf-8")
     (tmp_path / "untracked.txt").write_text("", encoding="utf-8")
@@ -295,7 +295,7 @@ def _substituted_manifest(tmp_path: Path, *roles: str) -> tuple[dict[str, object
 
 def test_manifest_rejects_reused_specialist_output_paths(tmp_path: Path) -> None:
     """Prevent two roles from claiming the same evidence file."""
-    validator = load_validator()
+    validator = _load_validator()
     manifest, passes = _substituted_manifest(tmp_path, "qa-specialist", "challenger")
     passes[1]["output_path"] = passes[0]["output_path"]
 
@@ -313,7 +313,7 @@ def test_manifest_rejects_reused_specialist_output_paths(tmp_path: Path) -> None
 
 def test_manifest_rejects_weak_substitute_output(tmp_path: Path) -> None:
     """Require a substitute to identify its role and contain substantive evidence."""
-    validator = load_validator()
+    validator = _load_validator()
     manifest, passes = _substituted_manifest(tmp_path, "qa-specialist")
     Path(str(passes[0]["output_path"])).write_text("generic note\n", encoding="utf-8")
 
@@ -332,7 +332,7 @@ def test_manifest_rejects_weak_substitute_output(tmp_path: Path) -> None:
 @pytest.mark.parametrize("role", ["solution-architect", "security-auditor"])
 def test_manifest_requires_explicit_selection_evidence_for_sol_roles(tmp_path: Path, role: str) -> None:
     """Block a Sol-pinned pass that lacks immutable explicit-selection evidence."""
-    validator = load_validator()
+    validator = _load_validator()
     manifest, passes = _substituted_manifest(tmp_path, role)
 
     with pytest.raises(SystemExit, match=f"manifest-sol-selection-missing:{role}"):
@@ -349,7 +349,7 @@ def test_manifest_requires_explicit_selection_evidence_for_sol_roles(tmp_path: P
 
 def test_manifest_rejects_unstructured_sol_selection_evidence(tmp_path: Path) -> None:
     """Require a source, event identity, and digest instead of a self-authored label."""
-    validator = load_validator()
+    validator = _load_validator()
     manifest, passes = _substituted_manifest(tmp_path, "solution-architect")
     manifest["sol_selection"] = {"solution-architect": "yes"}
 
@@ -367,7 +367,7 @@ def test_manifest_rejects_unstructured_sol_selection_evidence(tmp_path: Path) ->
 
 def test_schema_three_binds_pass_to_the_exact_packaged_role_card(tmp_path: Path) -> None:
     """Make the new manifest schema reject a substituted role card."""
-    validator = load_validator()
+    validator = _load_validator()
     manifest, passes = _substituted_manifest(tmp_path, "qa-specialist")
     manifest["schema_version"] = 3
     passes[0]["role_card_sha256"] = "0" * 64
@@ -437,7 +437,7 @@ def test_manifest_preflight_rejects_spawned_pass_without_attempts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Catch malformed specialist cardinality before a result candidate exists."""
-    validator = load_validator()
+    validator = _load_validator()
     review_input = b"diff --git a/widget.py b/widget.py\n"
     (tmp_path / "diff.patch").write_bytes(review_input)
     specialists = tmp_path / "specialists"
@@ -490,7 +490,7 @@ def test_review_runtime_consumer_binds_spawned_roles_to_the_shared_validator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Prevent code review from claiming a spawned mode without the shared runtime gate."""
-    validator = load_validator()
+    validator = _load_validator()
     plan_path = tmp_path / "execution-plan.json"
     plan_path.write_text('{"run_id":"review-run"}\n', encoding="utf-8")
     execution_path = tmp_path / "execution-manifest.json"
@@ -539,7 +539,8 @@ def test_review_runtime_consumer_binds_spawned_roles_to_the_shared_validator(
     }
     captured: dict[str, object] = {}
 
-    def validate_runtime(payload: dict[str, object], **kwargs: object) -> dict[str, object]:
+    def _validate_runtime(payload: dict[str, object], **kwargs: object) -> dict[str, object]:
+        """Capture runtime-validator inputs and return the accepted portable summary."""
         captured.update({"payload": payload, **kwargs})
         return {
             "actual_mode": "serial",
@@ -552,7 +553,7 @@ def test_review_runtime_consumer_binds_spawned_roles_to_the_shared_validator(
             "consumer_id": "code-review",
         }
 
-    monkeypatch.setattr(validator, "validate_read_only_runtime", validate_runtime)
+    monkeypatch.setattr(validator, "validate_read_only_runtime", _validate_runtime)
     monkeypatch.setattr(validator, "_find_rollout", lambda _home, _thread: parent_rollout)
 
     summary = validator._validate_review_runtime(
@@ -577,11 +578,11 @@ def test_review_runtime_consumer_binds_spawned_roles_to_the_shared_validator(
     assert captured["expected_consumer_id"] == "code-review"
 
 
-@pytest.fixture
-def real_schema_v2_review_runtime(tmp_path: Path) -> dict[str, Any]:
+@pytest.fixture(name="real_schema_v2_review_runtime")
+def _real_schema_v2_review_runtime(tmp_path: Path) -> dict[str, Any]:
     """Build consumer-bound rollout evidence for review runtime checks."""
-    validator = load_validator()
-    fixture_module = load_parallel_execution_tests()
+    validator = _load_validator()
+    fixture_module = _load_parallel_execution_tests()
     manifest, execution_path, plan_path, parent_rollout, sessions_dir, _roles_dir = (
         fixture_module._schema_v2_runtime_fixture(tmp_path)
     )
@@ -685,7 +686,7 @@ class TestReviewRuntimeConsumer:
 
     def test_rejects_spawn_without_manifest(self, tmp_path: Path) -> None:
         """Require authoritative runtime evidence whenever a pass records a child spawn."""
-        validator = load_validator()
+        validator = _load_validator()
 
         with pytest.raises(SystemExit, match="review-runtime-execution-missing"):
             validator._validate_review_runtime(

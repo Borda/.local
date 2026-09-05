@@ -87,14 +87,20 @@ def test_derive_modules_from_diff_empty() -> None:
 # ---------- main() ----------
 
 
-@pytest.fixture
-def in_tmp_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Chdir into an isolated tmp dir for each test."""
+@pytest.fixture(name="in_tmp_cwd")
+def _in_tmp_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Chdir into an isolated tmp dir for each test.
+
+    >>> isolated = getfixture("in_tmp_cwd")
+    >>> Path.cwd() == isolated
+    True
+    """
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
 
 def _stub_scan_query_present(monkeypatch: pytest.MonkeyPatch, present: bool = True) -> None:
+    """Control whether the codemap scanner executable appears on ``PATH``."""
     monkeypatch.setattr(cs.shutil, "which", lambda name: "/usr/bin/codemap-py" if present else None)
 
 
@@ -107,14 +113,15 @@ def _stub_git(monkeypatch: pytest.MonkeyPatch, diff_files: list[str] | None = No
     """
     top = str(Path.cwd())
 
-    def fake_check_output(cmd: list[str], **_kw: Any) -> str:
+    def _fake_check_output(cmd: list[str], **_kw: Any) -> str:
+        """Return repository-root and diff responses expected by the scanner."""
         if cmd[:2] == ["git", "rev-parse"]:
             return f"{top}\n"
         if cmd[:2] == ["git", "diff"]:
             return "\n".join(diff_files or []) + ("\n" if diff_files else "")
         raise AssertionError(f"Unexpected cmd: {cmd}")
 
-    monkeypatch.setattr(cs.subprocess, "check_output", fake_check_output)
+    monkeypatch.setattr(cs.subprocess, "check_output", _fake_check_output)
 
 
 def test_main_missing_source_returns_1(in_tmp_cwd: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -169,11 +176,12 @@ def test_main_find_mode_invokes_scan_query_per_module_and_coupled(
 
     calls: list[list[str]] = []
 
-    def fake_run(cmd: list[str], **_kw: Any) -> Any:
+    def _fake_run(cmd: list[str], **_kw: Any) -> Any:
+        """Record scanner execution and return a successful process result."""
         calls.append(cmd)
         return type("CP", (), {"returncode": 0})()
 
-    monkeypatch.setattr(cs.subprocess, "run", fake_run)
+    monkeypatch.setattr(cs.subprocess, "run", _fake_run)
 
     rc = cs.main(["--source=find", "--target", "src/pkg", "--limit", "7"])
     assert rc == 0

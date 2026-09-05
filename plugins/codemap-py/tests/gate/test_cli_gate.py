@@ -199,11 +199,12 @@ def test_reported_index_path_comes_from_the_load_not_the_resolver(
 def _hold_writer_intent(index_path: str, ready: Path, hold: float) -> None:
     """Acquire an exclusive writer lease and hold it past the reader's timeout."""
 
-    def build(_target: Path) -> None:
+    def _build(_target: Path) -> None:
+        """Hold the writer lease until the reader timeout is exercised."""
         ready.write_text("live")
         time.sleep(hold)
 
-    _rwgate.write_index(index_path, build, timeout=30.0)
+    _rwgate.write_index(index_path, _build, timeout=30.0)
 
 
 def test_query_under_live_writer_returns_index_busy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

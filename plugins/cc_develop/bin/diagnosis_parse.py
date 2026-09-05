@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-"""diagnosis_parse.py — parse ``--diagnosis <path>`` (or ``--diagnosis=<path>``) from an ``$ARGUMENTS`` string.
+"""Extract a diagnosis path from skill arguments and validate its project containment.
 
 Scans the single argument string for either form of the flag. Prints the resolved
-path to stdout (empty string when flag absent). When the flag is given but the path
-does not exist, exits 1 with a ``! BREAKING`` stderr block matching the bash original.
-No subprocess calls — pure string parsing.
+path spelling to stdout (empty string when flag absent). Reject malformed quoting,
+paths outside the current project, and paths that do not name a regular file with
+exit 1 and a ``! BREAKING`` diagnostic. Parsing is pure; the CLI checks the filesystem.
 
 The single positional is an opaque ``$ARGUMENTS`` blob whose internal ``--diagnosis``
 token is consumed by :func:`parse_diagnosis`, never by argparse's own matcher — argparse
@@ -15,8 +15,8 @@ Usage:
 
 Exit codes:
     0 — flag absent, OR flag present and file exists (path printed to stdout).
-    1 — flag present but file does not exist.
-    2 — bad/missing required argument (argparse default).
+    1 — malformed quoting, path outside project, or path not a regular file.
+    2 — invalid help-mode arguments (argparse default).
 """
 
 from __future__ import annotations
@@ -41,6 +41,9 @@ def parse_diagnosis(arguments: str) -> str:
         The diagnosis path (possibly empty string if no flag is present or the value
         was preempted by another flag).
 
+    Raises:
+        ValueError: If shell-style quoting is malformed.
+
     Examples:
         >>> parse_diagnosis("")
         ''
@@ -54,6 +57,10 @@ def parse_diagnosis(arguments: str) -> str:
         ''
         >>> parse_diagnosis("--mode fix --diagnosis=foo.md --team")
         'foo.md'
+        >>> parse_diagnosis('--diagnosis "notes/my diagnosis.md"')
+        'notes/my diagnosis.md'
+        >>> parse_diagnosis('--diagnosis=old.md --diagnosis=new.md')
+        'new.md'
     """
     tokens = shlex.split(arguments)
     diag_file = ""
@@ -70,13 +77,14 @@ def parse_diagnosis(arguments: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point — mirrors ``diagnosis-parse.sh`` behaviour.
+    """Print a validated diagnosis path or a diagnostic for invalid arguments.
 
     Args:
         argv: Optional argument list (defaults to ``sys.argv[1:]``).
 
     Returns:
-        0 when the flag is absent or the resolved file exists; 1 when the file is missing.
+        0 when the flag is absent or resolves to a regular file inside the current project;
+        1 for malformed quoting, an out-of-project path, or a missing/non-regular file.
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     raw = list(sys.argv[1:] if argv is None else argv)

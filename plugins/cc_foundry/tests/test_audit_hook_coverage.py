@@ -16,26 +16,49 @@ import pytest
 import audit_hook_coverage as ahc
 
 
-def write_transcript(path: Path, records: list[dict]) -> Path:
-    """Write records as JSONL and return the path."""
+def _write_transcript(path: Path, records: list[dict]) -> Path:
+    """Replace a transcript with UTF-8 JSONL records, preserving their order.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     path = _write_transcript(Path(directory) / "events.jsonl", [{"id": 1}, {"id": 2}])
+    ...     [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    [{'id': 1}, {'id': 2}]
+    """
     path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
     return path
 
 
-def bash_record(command: str) -> dict:
-    """Build a transcript record containing one Bash tool invocation."""
+def _bash_record(command: str) -> dict:
+    """Wrap command text in the transcript's assistant tool-use content shape.
+
+    >>> _bash_record("echo example")["message"]["content"]
+    [{'type': 'tool_use', 'name': 'Bash', 'input': {'command': 'echo example'}}]
+    """
     return {"message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": command}}]}}
 
 
-def make_args(**overrides) -> argparse.Namespace:
-    """CLI namespace with the defaults `collect` expects."""
+def _make_args(**overrides) -> argparse.Namespace:
+    """Build collection arguments with optional overrides over the unfiltered defaults.
+
+    >>> vars(_make_args(skills_only=True))
+    {'since': None, 'project': None, 'skills_only': True}
+    """
     values = {"since": None, "project": None, "skills_only": False}
     values.update(overrides)
     return argparse.Namespace(**values)
 
 
-def fake_cache(root: Path, plugins: dict[str, dict[str, list[str]]]) -> Path:
-    """Build a plugin cache tree: plugin -> version -> manifest digests."""
+def _fake_cache(root: Path, plugins: dict[str, dict[str, list[str]]]) -> Path:
+    """Create versioned plugin directories and schema-one manifests containing the supplied digests.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     root = _fake_cache(Path(directory), {"example": {"1.0.0": ["abc"]}})
+    ...     manifest = json.loads((root / "example/1.0.0/blueprint-manifest.json").read_text())
+    ...     manifest["schema"], manifest["entries"]
+    (1, {'abc': {'src': 'x.md:1', 'kind': 'command'}})
+    """
     for plugin, versions in plugins.items():
         for version, digests in versions.items():
             plugin_dir = root / plugin / version
@@ -103,7 +126,7 @@ class TestReadTranscript:
 
     def test_extracts_bash_commands_in_order(self, tmp_path):
         """Bash tool_use commands come back in execution order."""
-        path = write_transcript(tmp_path / "s.jsonl", [bash_record("ls"), bash_record("pwd")])
+        path = _write_transcript(tmp_path / "s.jsonl", [_bash_record("ls"), _bash_record("pwd")])
         commands, _ = ahc.read_transcript(path)
         assert commands == ["ls", "pwd"]
 
@@ -114,7 +137,7 @@ class TestReadTranscript:
         calls no hook could ever allow.
         """
         other = {"message": {"content": [{"type": "tool_use", "name": "Read", "input": {"file_path": "a"}}]}}
-        path = write_transcript(tmp_path / "s.jsonl", [other, bash_record("ls")])
+        path = _write_transcript(tmp_path / "s.jsonl", [other, _bash_record("ls")])
         commands, _ = ahc.read_transcript(path)
         assert commands == ["ls"]
 
@@ -124,13 +147,13 @@ class TestReadTranscript:
         Transcripts of live sessions are appended to while being read, so the final line is routinely a partial write.
         """
         path = tmp_path / "s.jsonl"
-        path.write_text(json.dumps(bash_record("ls")) + "\n{not json\n", encoding="utf-8")
+        path.write_text(json.dumps(_bash_record("ls")) + "\n{not json\n", encoding="utf-8")
         commands, _ = ahc.read_transcript(path)
         assert commands == ["ls"]
 
     def test_detects_invoked_skills(self, tmp_path):
         """Skill invocations are collected as `plugin:skill` names."""
-        path = write_transcript(tmp_path / "s.jsonl", [{"content": "<command-name>/oss:review</command-name>"}])
+        path = _write_transcript(tmp_path / "s.jsonl", [{"content": "<command-name>/oss:review</command-name>"}])
         _, skills = ahc.read_transcript(path)
         assert skills == {"oss:review"}
 
@@ -146,7 +169,7 @@ class TestLoadDigests:
         coverage.
         """
         monkeypatch.setattr(
-            ahc, "PLUGIN_CACHE", fake_cache(tmp_path, {"oss": {"1.0.0": ["aa"]}, "foundry": {"1.0.0": ["bb"]}})
+            ahc, "PLUGIN_CACHE", _fake_cache(tmp_path, {"oss": {"1.0.0": ["aa"]}, "foundry": {"1.0.0": ["bb"]}})
         )
         assert ahc.load_digests() == {"aa": "oss", "bb": "foundry"}
 
@@ -156,7 +179,7 @@ class TestLoadDigests:
         Stale versions linger in the cache; counting them would credit coverage to manifest text that is no longer what
         runs.
         """
-        monkeypatch.setattr(ahc, "PLUGIN_CACHE", fake_cache(tmp_path, {"oss": {"0.9.0": ["old"], "0.10.0": ["new"]}}))
+        monkeypatch.setattr(ahc, "PLUGIN_CACHE", _fake_cache(tmp_path, {"oss": {"0.9.0": ["old"], "0.10.0": ["new"]}}))
         assert ahc.load_digests() == {"new": "oss"}
 
     def test_version_selection_holds_for_nested_paths(self, tmp_path, monkeypatch):
@@ -213,12 +236,13 @@ class TestClassifier:
         """A shape miss invokes the installed hook once with the Bash command payload."""
         observed: dict[str, object] = {}
 
-        def fake_run(*args, **kwargs):
+        def _fake_run(*args, **kwargs):
+            """Capture the shape-hook subprocess invocation and allow it."""
             observed["args"] = args
             observed["kwargs"] = kwargs
             return type("Result", (), {"stdout": '{"permissionDecision":"allow"}'})()
 
-        monkeypatch.setattr(ahc.subprocess, "run", fake_run)
+        monkeypatch.setattr(ahc.subprocess, "run", _fake_run)
         classifier = ahc.Classifier({}, Path("shape-hook.js"))
 
         assert classifier.verdict("pwd") == "shape"
@@ -236,24 +260,24 @@ class TestClassifier:
 class TestCollect:
     """Transcript selection filters."""
 
-    @pytest.fixture
-    def transcripts(self, tmp_path, monkeypatch):
+    @pytest.fixture(name="transcripts")
+    def _transcripts(self, tmp_path, monkeypatch):
         """Two projects, one session each; one invokes a skill."""
         root = tmp_path / "projects"
         plain = root / "proj-alpha"
         skilled = root / "proj-beta"
         plain.mkdir(parents=True)
         skilled.mkdir(parents=True)
-        write_transcript(plain / "a.jsonl", [bash_record("ls")])
-        write_transcript(
-            skilled / "b.jsonl", [{"content": "<command-name>/oss:review</command-name>"}, bash_record("pwd")]
+        _write_transcript(plain / "a.jsonl", [_bash_record("ls")])
+        _write_transcript(
+            skilled / "b.jsonl", [{"content": "<command-name>/oss:review</command-name>"}, _bash_record("pwd")]
         )
         monkeypatch.setattr(ahc, "TRANSCRIPT_ROOT", root)
         return root
 
     def test_project_filter_selects_by_substring(self, transcripts):
         """Narrow to matching project directories."""
-        _, sessions = ahc.collect(make_args(project="beta"), ahc.Classifier({}, None))
+        _, sessions = ahc.collect(_make_args(project="beta"), ahc.Classifier({}, None))
         assert [row["project"] for row in sessions] == ["proj-beta"]
 
     def test_skills_only_drops_ad_hoc_sessions(self, transcripts):
@@ -262,12 +286,12 @@ class TestCollect:
         Ad-hoc engineering sessions run almost no blueprint text, so mixing them in dilutes the rate toward zero and
         hides what skill runs actually achieve.
         """
-        _, sessions = ahc.collect(make_args(skills_only=True), ahc.Classifier({}, None))
+        _, sessions = ahc.collect(_make_args(skills_only=True), ahc.Classifier({}, None))
         assert [row["session"] for row in sessions] == ["b"]
 
     def test_since_excludes_older_transcripts(self, transcripts):
         """Exclude transcripts last modified before the requested cutoff."""
-        _, sessions = ahc.collect(make_args(since="2099-01-01"), ahc.Classifier({}, None))
+        _, sessions = ahc.collect(_make_args(since="2099-01-01"), ahc.Classifier({}, None))
         assert sessions == []
 
     def test_vanished_transcript_is_skipped(self, transcripts, monkeypatch):
@@ -278,12 +302,13 @@ class TestCollect:
         """
         original = ahc.read_transcript
 
-        def exploding(path: Path):
+        def _exploding(path: Path):
+            """Raise only for the transcript that vanishes during this scan."""
             if path.name == "a.jsonl":
                 raise FileNotFoundError(path)
             return original(path)
 
-        monkeypatch.setattr(ahc, "read_transcript", exploding)
-        tally, sessions = ahc.collect(make_args(), ahc.Classifier({}, None))
+        monkeypatch.setattr(ahc, "read_transcript", _exploding)
+        tally, sessions = ahc.collect(_make_args(), ahc.Classifier({}, None))
         assert [row["session"] for row in sessions] == ["b"]
         assert tally["none"] == 1

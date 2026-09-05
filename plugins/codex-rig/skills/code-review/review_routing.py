@@ -49,7 +49,15 @@ from typing import Any
 
 
 def _path_tokens(path: str) -> set[str]:
-    """Split a repository path into exact lowercase risk tokens."""
+    """Split a repository path into exact lowercase risk tokens.
+
+    Separators are discarded rather than matched as substrings, so ``authentication.py`` yields ``authentication``
+    while a path containing ``auth`` does not accidentally match it.
+
+    Example:
+        >>> sorted(_path_tokens("src/Auth-Config.py"))
+        ['auth', 'config', 'py', 'src']
+    """
     return {token for token in re.split(r"[/._-]+", path.lower()) if token}
 
 

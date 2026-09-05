@@ -267,6 +267,7 @@ def _find_target(runtime: Runtime | str, consumer: str) -> ConsumerTarget:
 
 
 def _sha256_bytes(data: bytes) -> str:
+    """Return the lowercase SHA-256 digest of exact *data* bytes."""
     return hashlib.sha256(data).hexdigest()
 
 
@@ -278,6 +279,7 @@ def _sha256_file(path: Path) -> str | None:
 
 
 def _canonical_json(obj: object) -> bytes:
+    """Serialize *obj* deterministically for digest binding."""
     return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
@@ -294,10 +296,12 @@ def compute_plan_sha256(plan: dict) -> str:
 
 
 def _utc_now_iso() -> str:
+    """Return the current UTC time in the second-precision ISO form used in artifacts."""
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def _utc_stamp() -> str:
+    """Return the current UTC time in the filesystem-safe artifact-directory form."""
     return time.strftime("%Y-%m-%dT%H-%M-%SZ", time.gmtime())
 
 
@@ -1753,6 +1757,17 @@ def verify_approval(plan: dict, approve: str) -> None:
 
 
 def _is_contained(path: Path, base: Path) -> bool:
+    """Return whether *path* is *base* or a descendant using their path components.
+
+    This lexical test does not resolve symlinks or ``..`` components and does
+    not touch the filesystem; callers must establish any physical containment.
+
+    Examples:
+        >>> _is_contained(Path('repo/file.py'), Path('repo'))
+        True
+        >>> _is_contained(Path('other/file.py'), Path('repo'))
+        False
+    """
     try:
         path.relative_to(base)
         return True
@@ -2158,6 +2173,16 @@ def _add_runtime_flag(sub: argparse.ArgumentParser) -> None:
 
 
 def _split_csv(value: str) -> list[str]:
+    """Split a comma-separated option while preserving order and dropping empty items.
+
+    Examples:
+        >>> _split_csv('claude,codex')
+        ['claude', 'codex']
+        >>> _split_csv('claude,,codex,')
+        ['claude', 'codex']
+        >>> _split_csv('')
+        []
+    """
     return [item for item in value.split(",") if item]
 
 

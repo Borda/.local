@@ -13,6 +13,14 @@ from extract_vitality_vars import emit, extract_vars, main
 
 
 def _scores(overrides: dict | None = None) -> dict:
+    """Build complete vitality-score input with optional top-level overrides.
+
+    Examples:
+        >>> _scores({"health_score_pct": 99.0})["health_score_pct"]
+        99.0
+        >>> len(_scores()["axes"])
+        9
+    """
     base: dict = {
         "analysis_now": "1700000000",
         "overall_confidence": 0.85,

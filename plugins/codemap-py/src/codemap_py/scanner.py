@@ -1150,6 +1150,14 @@ def resolve_call_chain(func_node: ast.expr) -> str | None:
 
     Args:
         func_node: the ``func`` attribute of an ast.Call node.
+
+    Examples:
+        >>> resolve_call_chain(ast.parse('pkg.mod.run()').body[0].value.func)
+        'pkg.mod.run'
+        >>> resolve_call_chain(ast.parse('factory()()').body[0].value.func) is None
+        True
+        >>> resolve_call_chain(ast.parse('items[0]()').body[0].value.func) is None
+        True
     """
     if isinstance(func_node, ast.Name):
         return func_node.id
@@ -1456,10 +1464,16 @@ def _effective_src_root(filepath: Path, configured_roots: tuple[Path, ...], defa
 
 
 def count_loc(source: str) -> int:
-    """Count non-blank lines in source.
+    """Count non-blank lines in source, including comment-only lines.
 
     Args:
         source: raw source text of a Python file.
+
+    Examples:
+        >>> count_loc('x = 1\\n\\n# comment\\n')
+        2
+        >>> count_loc('\\n  \\t')
+        0
     """
     return sum(1 for line in source.splitlines() if line.strip())
 
@@ -1469,6 +1483,12 @@ def has_main_guard(source: str) -> bool:
 
     Args:
         source: raw source text of a Python file.
+
+    Examples:
+        >>> has_main_guard("if __name__ == '__main__': pass")
+        True
+        >>> has_main_guard('main()')
+        False
     """
     return bool(re.search(r'if\s+__name__\s*==\s*[\'"]__main__[\'"]', source))
 

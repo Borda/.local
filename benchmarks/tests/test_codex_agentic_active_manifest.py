@@ -23,14 +23,30 @@ AGENTIC_ARMS = ("A_plain", "B_auto", "C_strict")
 
 
 def _load(path: Path) -> dict[str, Any]:
-    """Load one generated machine manifest."""
+    """Read a UTF-8 JSON manifest and reject non-object roots.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     path = Path(directory) / "manifest.json"
+    ...     _ = path.write_text('{"schema": 1}', encoding="utf-8")
+    ...     _load(path)
+    {'schema': 1}
+    """
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert isinstance(payload, dict)
     return payload
 
 
 def _sha256(path: Path) -> str:
-    """Return one exact artifact digest."""
+    """Hash exact artifact bytes without newline or text normalization.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     path = Path(directory) / "artifact"
+    ...     _ = path.write_bytes(b"abc")
+    ...     _sha256(path)
+    'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+    """
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 

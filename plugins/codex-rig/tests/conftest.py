@@ -14,8 +14,8 @@ if str(_TESTS_DIR) not in sys.path:
 from _platform import POSIX_BASH  # noqa: E402
 
 
-@pytest.fixture(scope="session")
-def posix_bash() -> str:
+@pytest.fixture(name="posix_bash", scope="session")
+def _posix_bash() -> str:
     """Return the decorator-validated POSIX Bash executable."""
     assert POSIX_BASH is not None, "POSIX Bash test lacks requires_posix_bash"
     return POSIX_BASH

@@ -16,7 +16,11 @@ SCRIPT = Path(__file__).resolve().parent.parent / "prepare-codex-index.py"
 
 
 def _load_script() -> ModuleType:
-    """Load the hyphenated index utility as a test module."""
+    """Import the index utility's definitions without executing its command-line entry point.
+
+    >>> _load_script().__name__
+    'prepare_codex_index'
+    """
     spec = importlib.util.spec_from_file_location("prepare_codex_index", SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -25,7 +29,16 @@ def _load_script() -> ModuleType:
 
 
 def _fixture_files(tmp_path: Path, expected_sha256: str, *, scan_version: int = 12) -> tuple[Path, Path, Path, bytes]:
-    """Create one environment-dependent scan and its locked manifest oracle."""
+    """Write a native-root scan and a canonical-root oracle, returning both files and expected locked bytes.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     index, root, manifest, locked = _fixture_files(Path(directory), "digest", scan_version=13)
+    ...     json.loads(index.read_text())["scan_root"] == str(root)
+    ...     json.loads(manifest.read_text())["index"]["raw_sha256"], json.loads(locked)["scan_version"]
+    True
+    ('digest', 13)
+    """
     # Resolved once: prepare_index rewrites against source_root.resolve(), so an unresolved
     # fixture root (a Windows 8.3 short name, a macOS /tmp symlink) would spell the payload
     # prefix differently from the prefix under rewrite and defeat the relocation.
@@ -72,7 +85,13 @@ def _fixture_files(tmp_path: Path, expected_sha256: str, *, scan_version: int = 
 
 
 def _schema_file(tmp_path: Path, scan_version: int) -> Path:
-    """Write a minimal scanner schema source for version-compatibility tests."""
+    """Write a scanner-version assignment into a minimal UTF-8 Python schema module.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     _schema_file(Path(directory), 13).read_text(encoding="utf-8").splitlines()
+    ['SCAN_VERSION: int = 13']
+    """
     path = tmp_path / "schema.py"
     path.write_text(f"SCAN_VERSION: int = {scan_version}\n", encoding="utf-8")
     return path
@@ -97,6 +116,13 @@ def _rooted_payload(root: Path) -> dict[str, object]:
     Both roots' payloads are built from ``Path`` joins rather than by relocating one payload's JSON text:
     ``json.dumps(...).replace(str(root), ...)`` cannot match a Windows root, because the JSON text escapes each
     separator as ``\\\\``.
+
+    >>> root = Path("example")
+    >>> payload = _rooted_payload(root)
+    >>> payload["scan_root"] == str(root)
+    True
+    >>> payload["modules"][0]["imports"] == [str(root / "src" / "helper.py")]
+    True
     """
     return {
         "scan_version": 13,
@@ -166,7 +192,12 @@ def _patch_bundle_source(tmp_path: Path) -> tuple[Path, str, Path]:
 
 
 def _locked_semantic_sha256(module: ModuleType, source: Path) -> str:
-    """Return the semantic identity the stub scanner's graph carries once relocated to *source*."""
+    """Hash the stub scanner graph after normalizing its source-root-dependent paths.
+
+    >>> module = _load_script()
+    >>> _locked_semantic_sha256(module, Path("one")) == _locked_semantic_sha256(module, Path("two"))
+    True
+    """
     return module.semantic_index_sha256(
         {
             "scan_version": 13,
@@ -182,7 +213,16 @@ def _locked_semantic_sha256(module: ModuleType, source: Path) -> str:
 
 
 def _write_patch_locks(path: Path, *, commit: str, canonical_root: str, semantic_sha256: str) -> Path:
-    """Write a single-task patch lock document and return its path."""
+    """Replace a single-task lock document with explicit commit, root, and semantic identity.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     path = Path(directory) / "locks.json"
+    ...     _ = _write_patch_locks(path, commit="abc", canonical_root="example", semantic_sha256="digest")
+    ...     task, = json.loads(path.read_text())["tasks"].values()
+    ...     task["baseline_commit"], task["semantic_sha256"]
+    ('abc', 'digest')
+    """
     path.write_text(
         json.dumps(
             {
@@ -550,7 +590,15 @@ def test_verify_index_rejects_wrong_bytes_with_current_schema(tmp_path: Path) ->
 
 
 def _paired_manifests(tmp_path: Path, *, source_manifest: object) -> tuple[Path, Path, Path]:
-    """Create a Codex manifest and provider-neutral source with one shared index lock."""
+    """Write matching index locks into two manifests while preserving the supplied source-manifest reference.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     manifest, methodology, schema = _paired_manifests(Path(directory), source_manifest="source.json")
+    ...     left, right = json.loads(manifest.read_text()), json.loads(methodology.read_text())
+    ...     left["index"] == right["index"], left["source_manifest"], schema.name
+    (True, 'source.json', 'schema.py')
+    """
     methodology_path = tmp_path / "provider-parity-methodology.json"
     methodology_path.write_text(
         json.dumps(

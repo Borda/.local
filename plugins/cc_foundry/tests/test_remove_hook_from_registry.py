@@ -46,6 +46,16 @@ _SAMPLE_REGISTRY: dict = {
 
 
 def _write_registry(path: Path, registry: dict) -> None:
+    """Write one hook-registry fixture as indented JSON.
+
+    Examples:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     path = Path(directory) / "registry.json"
+        ...     _write_registry(path, {"hooks": []})
+        ...     json.loads(path.read_text())
+        {'hooks': []}
+    """
     path.write_text(json.dumps(registry, indent=2), encoding="utf-8")
 
 

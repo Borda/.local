@@ -25,7 +25,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from _hook_env import hook_tmp_base
+from _hook_env import _hook_tmp_base
 
 pytestmark = pytest.mark.skipif(
     subprocess.run(["git", "--version"], capture_output=True, timeout=5).returncode != 0,
@@ -40,8 +40,8 @@ _SENTINEL_NAME = "claude-push-auth-myrepo-main"
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
-@pytest.fixture
-def git_repo(tmp_path: Path) -> Path:
+@pytest.fixture(name="git_repo")
+def _git_repo(tmp_path: Path) -> Path:
     """Create a temporary git repo named ``myrepo`` on branch ``main`` with one commit."""
     repo = tmp_path / "myrepo"
     repo.mkdir()
@@ -62,15 +62,15 @@ def git_repo(tmp_path: Path) -> Path:
     return repo
 
 
-@pytest.fixture
-def push_sentinel() -> Iterator[Path]:
+@pytest.fixture(name="push_sentinel")
+def _push_sentinel() -> Iterator[Path]:
     """Yield the push sentinel path, removing any leftover before AND after each test.
 
-    Resolved through ``hook_tmp_base()`` rather than a module-level ``/tmp`` literal so the path follows the hook's own
+    Resolved through ``_hook_tmp_base()`` rather than a module-level ``/tmp`` literal so the path follows the hook's own
     ``getSentinelDir()`` on Windows too. Kept lazy — the base is computed inside the fixture, after the module-level git
     skipif has run.
     """
-    path = hook_tmp_base() / _SENTINEL_NAME
+    path = _hook_tmp_base() / _SENTINEL_NAME
     path.unlink(missing_ok=True)
     yield path
     path.unlink(missing_ok=True)
@@ -80,7 +80,12 @@ def push_sentinel() -> Iterator[Path]:
 
 
 def _bash_commit(cmd: str = "git commit -m 'test'") -> dict:
-    """Build a ``PreToolUse(Bash)`` payload for a commit-style command."""
+    """Build a ``PreToolUse(Bash)`` payload for a commit-style command.
+
+    Examples:
+        >>> _bash_commit("git commit -m x")["tool_input"]["command"]
+        'git commit -m x'
+    """
     return {
         "hook_event_name": "PreToolUse",
         "tool_name": "Bash",
@@ -89,7 +94,12 @@ def _bash_commit(cmd: str = "git commit -m 'test'") -> dict:
 
 
 def _bash_push(cmd: str = "git push") -> dict:
-    """Build a ``PreToolUse(Bash)`` payload for a push-style command."""
+    """Build a ``PreToolUse(Bash)`` payload for a push-style command.
+
+    Examples:
+        >>> _bash_push()["tool_input"]["command"]
+        'git push'
+    """
     return {
         "hook_event_name": "PreToolUse",
         "tool_name": "Bash",
@@ -98,12 +108,22 @@ def _bash_push(cmd: str = "git push") -> dict:
 
 
 def _session_start() -> dict:
-    """Build a ``SessionStart`` payload."""
+    """Build a ``SessionStart`` payload.
+
+    Examples:
+        >>> _session_start()
+        {'hook_event_name': 'SessionStart'}
+    """
     return {"hook_event_name": "SessionStart"}
 
 
 def _user_prompt(prompt_text: str) -> dict:
-    """Build a ``UserPromptSubmit`` payload."""
+    """Build a ``UserPromptSubmit`` payload.
+
+    Examples:
+        >>> _user_prompt("continue")["user_message"]
+        'continue'
+    """
     return {"hook_event_name": "UserPromptSubmit", "user_message": prompt_text}
 
 

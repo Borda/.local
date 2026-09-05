@@ -46,7 +46,7 @@ VECTORS = json.loads(
 )
 
 
-def vector_params(group: str) -> list:
+def _vector_params(group: str) -> list:
     """Return the shared fixture's vectors for ``group`` as one ``pytest.param`` each."""
     return [pytest.param(vector, id=vector["id"]) for vector in VECTORS[group]]
 
@@ -62,8 +62,8 @@ BLOCK = 'export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"\nmkdir -p .reports/revie
 OTHER = "git rev-parse --show-toplevel"
 
 
-@pytest.fixture()
-def plugin_root(tmp_path: Path) -> Path:
+@pytest.fixture(name="plugin_root")
+def _plugin_root(tmp_path: Path) -> Path:
     """Mirror of the plugin layout: a copy of the hook under ``hooks/``, root empty."""
     hooks = tmp_path / "hooks"
     hooks.mkdir()
@@ -72,16 +72,22 @@ def plugin_root(tmp_path: Path) -> Path:
 
 
 def _manifest_bytes(texts: dict[str, str]) -> bytes:
-    """Encode a manifest whose entries are the digests of ``texts`` (src label -> text)."""
+    """Encode a manifest whose entries are the digests of ``texts`` (src label -> text).
+
+    Examples:
+        >>> b'"plugin": "cc_foundry@0.0.0"' in _manifest_bytes({"skill.md:1": "echo hi"})
+        True
+    """
     entries = {bbm.sha256_text(text): {"kind": "block", "src": src} for src, text in texts.items()}
     return bbm.encode_manifest({"schema": 1, "plugin": "cc_foundry@0.0.0", "entries": entries})
 
 
-@pytest.fixture()
-def run_blueprint(plugin_root: Path) -> Callable[..., dict]:
+@pytest.fixture(name="run_blueprint")
+def _run_blueprint(plugin_root: Path) -> Callable[..., dict]:
     """Return a callable that writes a manifest, runs the hook, and parses its stdout."""
 
     def _run(command: str, *, manifest: bytes | None = None, tool_name: str = "Bash") -> dict:
+        """Run the copied hook with one optional fixture manifest."""
         if manifest is not None:
             (plugin_root / "blueprint-manifest.json").write_bytes(manifest)
         payload = json.dumps({"tool_name": tool_name, "tool_input": {"command": command}})
@@ -100,8 +106,8 @@ def run_blueprint(plugin_root: Path) -> Callable[..., dict]:
     return _run
 
 
-@pytest.fixture()
-def seeded() -> bytes:
+@pytest.fixture(name="seeded")
+def _seeded() -> bytes:
     """Manifest holding the single command, the multi-line block, and one unrelated entry."""
     return _manifest_bytes(
         {
@@ -113,7 +119,12 @@ def seeded() -> bytes:
 
 
 def _is_allowed(result: dict) -> bool:
-    """Check whether the hook allowed the requested operation."""
+    """Check whether the hook allowed the requested operation.
+
+    Examples:
+        >>> (_is_allowed({"hookSpecificOutput": {"permissionDecision": "allow"}}), _is_allowed({}))
+        (True, False)
+    """
     try:
         return result["hookSpecificOutput"]["permissionDecision"] == "allow"
     except (KeyError, TypeError):
@@ -321,7 +332,7 @@ def _node_eval(expression: str) -> object:
 class TestSharedVectors:
     """The JS port must reproduce the Python pipeline on every shared vector."""
 
-    @pytest.mark.parametrize("vector", vector_params("normalize"))
+    @pytest.mark.parametrize("vector", _vector_params("normalize"))
     def test_normalize(self, vector: dict) -> None:
         """Match JavaScript normalization with the shared fixture and Python implementation.
 
@@ -331,17 +342,17 @@ class TestSharedVectors:
         """
         assert _node_eval(f"h.normalize({json.dumps(vector['input'])})") == vector["expected"]
 
-    @pytest.mark.parametrize("vector", vector_params("needs_bailout"))
+    @pytest.mark.parametrize("vector", _vector_params("needs_bailout"))
     def test_needs_bailout(self, vector: dict) -> None:
         """Match JavaScript bailout decisions with the generator."""
         assert _node_eval(f"h.needsBailout({json.dumps(vector['input'])})") is vector["expected"]
 
-    @pytest.mark.parametrize("vector", vector_params("split_logical_commands"))
+    @pytest.mark.parametrize("vector", _vector_params("split_logical_commands"))
     def test_split_logical_commands(self, vector: dict) -> None:
         """Match JavaScript command splitting with the generator."""
         assert _node_eval(f"h.splitLogicalCommands({json.dumps(vector['input'])})") == vector["expected"]
 
-    @pytest.mark.parametrize("vector", vector_params("is_dangerous"))
+    @pytest.mark.parametrize("vector", _vector_params("is_dangerous"))
     def test_is_dangerous(self, vector: dict) -> None:
         """Match JavaScript risk classification with the generator.
 
@@ -404,6 +415,7 @@ class TestRealManifest:
         assert raw, "no committed bash block with comments/blank lines found to exercise"
 
         def _hook(cmd: str) -> dict:
+            """Run the committed hook against one Bash command."""
             proc = subprocess.run(
                 ["node", str(HOOK)],
                 input=json.dumps({"tool_name": "Bash", "tool_input": {"command": cmd}}),

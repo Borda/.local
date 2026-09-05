@@ -13,6 +13,14 @@ import classify_resolver_sites as crs
 
 
 def _write(path: Path, text: str) -> Path:
+    """Write fixture text and return its path.
+
+    Examples:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     _write(Path(directory) / "site.md", "body").read_text() == "body"
+        True
+    """
     path.write_text(text, encoding="utf-8")
     return path
 

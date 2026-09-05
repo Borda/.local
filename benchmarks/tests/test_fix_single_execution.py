@@ -17,7 +17,12 @@ sys.path.insert(0, str(BENCHMARKS))
 
 
 def _runner() -> object:
-    """Return the private Fix stage without invoking its CLI."""
+    """Return the private Fix stage without invoking its CLI.
+
+    Example:
+        >>> _runner().__name__
+        '_bench_codex.stage_fix'
+    """
     from _bench_codex import stage_fix
 
     return stage_fix
@@ -31,7 +36,12 @@ execute_fix_single_patch = _RUNNER.execute_fix_single_patch
 
 
 def _contract() -> object:
-    """Return the first deterministic pilot contract."""
+    """Return the first deterministic pilot contract.
+
+    Example:
+        >>> _contract().task_id
+        'FS-01'
+    """
     tasks = json.loads(SUITE_PATH.read_text(encoding="utf-8"))
     return build_fix_single_contract(next(task for task in tasks if task["id"] == "FS-01"))
 

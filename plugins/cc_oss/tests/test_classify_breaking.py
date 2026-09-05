@@ -18,12 +18,24 @@ import classify_breaking as cb
 
 
 def _caller(module: str, symbol: str = "f", path: str = "x.py") -> dict:
-    """Build a ``called_by`` entry for a caller in ``module``."""
+    """Build a ``called_by`` entry for a caller in ``module``.
+
+    Examples:
+        >>> _caller("app.jobs", "run", "jobs.py")
+        {'caller': 'app.jobs::run', 'module': 'app.jobs', 'path': 'jobs.py'}
+    """
     return {"caller": f"{module}::{symbol}", "module": module, "path": path}
 
 
 def _batch(entries: list[dict], *, query_complete: bool = True) -> dict:
-    """Wrap ``fn-rdeps`` batch entries in a ``codemap-py query batch`` envelope."""
+    """Wrap ``fn-rdeps`` batch entries in a ``codemap-py query batch`` envelope.
+
+    Examples:
+        >>> _batch([])
+        {'batch': [], 'index': {'query_complete': True}}
+        >>> _batch([], query_complete=False)["index"]["query_complete"]
+        False
+    """
     return {"batch": entries, "index": {"query_complete": query_complete}}
 
 

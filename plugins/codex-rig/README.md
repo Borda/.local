@@ -534,6 +534,8 @@ The installed cache is immutable input. Workflows never edit their own plugin ro
 
 ## 🧪 Development and verification
 
+Pure helper docstrings include deterministic doctests for calibration, telemetry normalization, and review routing. Pytest collects these examples alongside the workflow tests; regenerate the package manifest after docstring edits because shipped Python bytes are hashed.
+
 <details open>
 <summary><strong>Maintainer verification commands and acceptance gate</strong></summary>
 

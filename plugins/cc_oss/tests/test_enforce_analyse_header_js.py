@@ -103,17 +103,17 @@ def _call_export(name: str, *args: object) -> object:
     return json.loads(proc.stdout)
 
 
-@pytest.fixture
-def repo(tmp_path: Path) -> Path:
-    """Working directory an analyse run reports against."""
+@pytest.fixture(name="repo")
+def _repo(tmp_path: Path) -> Path:
+    """Create the working directory an analyse run reports against."""
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
     return repo_dir
 
 
-@pytest.fixture
-def analyse_run(tmp_path: Path, repo: Path) -> Path:
-    """Stage a thread-mode run that reached its sentinel write but not its report Write."""
+@pytest.fixture(name="analyse_run")
+def _analyse_run(tmp_path: Path, repo: Path) -> Path:
+    """Stage a thread-mode run that reached its sentinel write but not its report write."""
     sentinel = tmp_path / SENTINEL_NAME
     sentinel.write_text(f"{MODE_REPORTS['thread']}\n", encoding="utf-8")
     return sentinel
@@ -156,7 +156,14 @@ def test_written_report_passes_through(tmp_path: Path, repo: Path, analyse_run: 
 
 
 def _write_transcript(tmp_path: Path, assistant_text: str) -> Path:
-    """Write a minimal two-row JSONL transcript: a human user turn then one assistant text block."""
+    """Write a minimal two-row JSONL transcript: a user turn then one assistant text block.
+
+    Examples:
+        >>> tmp_path = getfixture("tmp_path")
+        >>> path = _write_transcript(tmp_path, "done")
+        >>> len(path.read_text().splitlines())
+        2
+    """
     rows = [
         {"type": "user", "message": {"content": [{"type": "text", "text": "go"}]}},
         {"type": "assistant", "message": {"content": [{"type": "text", "text": assistant_text}]}},

@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Callable
 
 import pytest
-from _hook_env import hook_tmp_base
+from _hook_env import _hook_tmp_base
 
 GAP_MS = 1500
 NUDGE_THRESHOLD = 4
@@ -40,11 +40,11 @@ def _state_dir(session_id: str) -> Path:
 
     Base tracks the hook's own ``getSentinelDir()`` instead of assuming ``/tmp``.
     """
-    return hook_tmp_base() / f"claude-state-{session_id}" / "batch"
+    return _hook_tmp_base() / f"claude-state-{session_id}" / "batch"
 
 
-@pytest.fixture
-def session_id(request: pytest.FixtureRequest) -> Iterator[str]:
+@pytest.fixture(name="session_id")
+def _session_id(request: pytest.FixtureRequest) -> Iterator[str]:
     """Provide an isolated session identifier and clean its state around each test."""
     sid = f"test-batch-nudge-{request.node.name}"
     _rm(sid)
@@ -53,9 +53,10 @@ def session_id(request: pytest.FixtureRequest) -> Iterator[str]:
 
 
 def _rm(sid: str) -> None:
+    """Remove the batch-nudge state directory for one isolated session."""
     import shutil
 
-    shutil.rmtree(hook_tmp_base() / f"claude-state-{sid}", ignore_errors=True)
+    shutil.rmtree(_hook_tmp_base() / f"claude-state-{sid}", ignore_errors=True)
 
 
 def _backdate_last(sid: str, ms: int) -> None:
@@ -74,7 +75,12 @@ def _backdate_last(sid: str, ms: int) -> None:
 
 
 def _pre(tool_name: str, sid: str, tool_use_id: str, tool_input: dict | None = None) -> dict:
-    """Build a ``PreToolUse`` payload."""
+    """Build a ``PreToolUse`` payload.
+
+    Examples:
+        >>> _pre("Read", "s", "u")["tool_input"]
+        {}
+    """
     return {
         "hook_event_name": "PreToolUse",
         "tool_name": tool_name,
@@ -85,7 +91,12 @@ def _pre(tool_name: str, sid: str, tool_use_id: str, tool_input: dict | None = N
 
 
 def _post(tool_name: str, sid: str, tool_use_id: str, tool_input: dict | None = None) -> dict:
-    """Build a ``PostToolUse`` payload."""
+    """Build a ``PostToolUse`` payload.
+
+    Examples:
+        >>> _post("Read", "s", "u", {"file_path": "x"})["tool_input"]
+        {'file_path': 'x'}
+    """
     return {
         "hook_event_name": "PostToolUse",
         "tool_name": tool_name,
@@ -96,7 +107,12 @@ def _post(tool_name: str, sid: str, tool_use_id: str, tool_input: dict | None = 
 
 
 def _user_prompt(sid: str) -> dict:
-    """Build a ``UserPromptSubmit`` payload."""
+    """Build a ``UserPromptSubmit`` payload.
+
+    Examples:
+        >>> _user_prompt("s")
+        {'hook_event_name': 'UserPromptSubmit', 'session_id': 's'}
+    """
     return {"hook_event_name": "UserPromptSubmit", "session_id": sid}
 
 

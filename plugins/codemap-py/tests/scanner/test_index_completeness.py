@@ -70,6 +70,9 @@ def _package_context(module_name: str, is_init: bool) -> str:
     For a package ``__init__`` the anchor is the package itself; for a regular
     module it is the parent package.
 
+    >>> _package_context("pkg.mod", False)
+    'pkg'
+
     Args:
         module_name: dotted name of the importing module.
         is_init: whether the module is a package ``__init__``.
@@ -85,6 +88,9 @@ def _resolve_from_base(node: ast.ImportFrom, package: str) -> str:
     Args:
         node: the ``ImportFrom`` node.
         package: package the module belongs to (relative-import anchor).
+
+    >>> _resolve_from_base(ast.ImportFrom(module="mod", level=1), "pkg")
+    'pkg.mod'
     """
     base = node.module or ""
     if not node.level:
@@ -134,6 +140,9 @@ def _call_chain(func: ast.expr) -> list[str] | None:
 
     Args:
         func: the ``func`` attribute of an :class:`ast.Call`.
+
+    >>> _call_chain(ast.parse("pkg.mod.run", mode="eval").body)
+    ['pkg', 'mod', 'run']
     """
     if isinstance(func, ast.Name):
         return [func.id]
@@ -149,6 +158,9 @@ def _resolve_call(chain: list[str], scope: dict[str, str]) -> str | None:
     Args:
         chain: dotted-name components of the call target.
         scope: local-name to qualified-path map from :func:`_name_scope`.
+
+    >>> _resolve_call(["alias", "run"], {"alias": "pkg.mod"})
+    'pkg.mod.run'
     """
     root = scope.get(chain[0])
     if root is None:
@@ -222,8 +234,8 @@ def _collect_callers(tree: ast.Module, module_name: str, scope: dict[str, str], 
 # --------------------------------------------------------------------------- #
 
 
-@pytest.fixture(scope="module")
-def completeness_project(tmp_path_factory, scan_index) -> tuple[Path, Path]:
+@pytest.fixture(name="completeness_project", scope="module")
+def _completeness_project(tmp_path_factory, scan_index) -> tuple[Path, Path]:
     """Write the fixture package, scan it once, return ``(root, index_path)``."""
     root = tmp_path_factory.mktemp("completeness")
     for rel_path, src in _FIXTURE_SOURCES.items():
@@ -242,12 +254,13 @@ def completeness_project(tmp_path_factory, scan_index) -> tuple[Path, Path]:
     return root, index_path
 
 
-@pytest.fixture(scope="module")
-def cquery(completeness_project, scan_query) -> Callable[..., dict]:
+@pytest.fixture(name="cquery", scope="module")
+def _cquery(completeness_project, scan_query) -> Callable[..., dict]:
     """Return a callable that runs ``scan-query`` against the fixture index."""
     root, index_path = completeness_project
 
     def _run(*args: str) -> dict:
+        """Run the fixture query subprocess and decode its JSON response."""
         result = subprocess.run(
             [sys.executable, str(scan_query), "--index", str(index_path), *args],
             capture_output=True,

@@ -18,13 +18,31 @@ from _bench_common.edit_patch_contracts import build_fix_multi_contract, run_fix
 
 
 def _contract(task_id: str) -> object:
-    """Return one immutable multi-file contract from the canonical task bytes."""
+    """Return one immutable multi-file contract from the canonical task bytes.
+
+    Example:
+        >>> _contract("not-a-real-task")
+        Traceback (most recent call last):
+            ...
+        StopIteration
+    """
     tasks = json.loads(SUITE_PATH.read_text(encoding="utf-8"))
     return build_fix_multi_contract(next(task for task in tasks if task["id"] == task_id))
 
 
 def _copy_contract_sources(repo_path: Path, destination: Path, contract: object) -> None:
-    """Copy every source file declared by a contract into an isolated candidate tree."""
+    """Copy every source file declared by a contract into an isolated candidate tree.
+
+    Example:
+        >>> from tempfile import TemporaryDirectory
+        >>> from types import SimpleNamespace
+        >>> with TemporaryDirectory() as directory:
+        ...     root = Path(directory)
+        ...     _ = (root / "example.py").write_text("VALUE = 1", encoding="utf-8")
+        ...     _copy_contract_sources(root, root / "candidate", SimpleNamespace(expected_paths=("example.py",)))
+        ...     (root / "candidate/example.py").read_text(encoding="utf-8")
+        'VALUE = 1'
+    """
     for relative_path in contract.expected_paths:
         target = destination / relative_path
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -32,7 +50,12 @@ def _copy_contract_sources(repo_path: Path, destination: Path, contract: object)
 
 
 def _complete_early_stopping_source(source: str) -> str:
-    """Return the FM-01 source with explicit callers and an observe-only dry run branch."""
+    """Return the FM-01 source with explicit callers and an observe-only dry run branch.
+
+    Example:
+        >>> _complete_early_stopping_source("self._run_early_stopping_check(trainer)")
+        'self._run_early_stopping_check(trainer, dry_run=False)'
+    """
     return (
         source.replace(
             'def _run_early_stopping_check(self, trainer: "pl.Trainer") -> None:',
@@ -50,7 +73,12 @@ def _complete_early_stopping_source(source: str) -> str:
 
 
 def _complete_early_stopping_else_source(source: str) -> str:
-    """Return the FM-01 source with an equivalent observe-only if/else branch."""
+    """Return the FM-01 source with an equivalent observe-only if/else branch.
+
+    Example:
+        >>> _complete_early_stopping_else_source("self._run_early_stopping_check(trainer)")
+        'self._run_early_stopping_check(trainer, dry_run=False)'
+    """
     source = source.replace(
         'def _run_early_stopping_check(self, trainer: "pl.Trainer") -> None:',
         'def _run_early_stopping_check(self, trainer: "pl.Trainer", dry_run: bool = False) -> None:',
@@ -78,7 +106,12 @@ def _complete_early_stopping_else_source(source: str) -> str:
 
 
 def _complete_early_stopping_negative_guard_source(source: str) -> str:
-    """Return FM-01 source using an equivalent negative guard around mutations."""
+    """Return FM-01 source using an equivalent negative guard around mutations.
+
+    Example:
+        >>> _complete_early_stopping_negative_guard_source("self._run_early_stopping_check(trainer)")
+        'self._run_early_stopping_check(trainer, dry_run=False)'
+    """
     source = source.replace(
         'def _run_early_stopping_check(self, trainer: "pl.Trainer") -> None:',
         'def _run_early_stopping_check(self, trainer: "pl.Trainer", dry_run: bool = False) -> None:',
@@ -106,7 +139,14 @@ def _complete_early_stopping_negative_guard_source(source: str) -> str:
 
 
 def _complete_strategy_environment_source(source: str, *, is_base: bool) -> str:
-    """Return one FM-03 source with cooperative verbose environment propagation."""
+    """Return one FM-03 source with cooperative verbose environment propagation.
+
+    Example:
+        >>> _complete_strategy_environment_source("super().setup_environment()", is_base=False)
+        'super().setup_environment(verbose=verbose)'
+        >>> _complete_strategy_environment_source("super().setup_environment()", is_base=True)
+        'super().setup_environment()'
+    """
     source = source.replace(
         "def setup_environment(self) -> None:",
         "def setup_environment(self, verbose: bool = False) -> None:",
@@ -128,7 +168,16 @@ def _complete_strategy_environment_source(source: str, *, is_base: bool) -> str:
 
 
 def _complete_model_checkpoint_source(source: str) -> str:
-    """Return the FM-02 source with exact persistence-boundary provenance labels."""
+    """Return the FM-02 source with exact persistence-boundary provenance labels.
+
+    Example:
+        >>> source = "; ".join(["self._save_checkpoint(trainer, filepath)"] * 2)
+        >>> first, second = _complete_model_checkpoint_source(source).split("; ")
+        >>> first
+        "self._save_checkpoint(trainer, filepath, reason='exception')"
+        >>> second
+        "self._save_checkpoint(trainer, filepath, reason='last')"
+    """
     source = source.replace(
         'def _save_checkpoint(self, trainer: "pl.Trainer", filepath: str) -> None:',
         'def _save_checkpoint(self, trainer: "pl.Trainer", filepath: str, reason: str = "") -> None:',

@@ -26,8 +26,8 @@ def _module(path: Path):
     return module
 
 
-@pytest.fixture
-def assessed_pr(tmp_path: Path) -> Path:
+@pytest.fixture(name="assessed_pr")
+def _assessed_pr(tmp_path: Path) -> Path:
     """Create a complete trivial PR review through real render and validation boundaries."""
     run = tmp_path / "reports" / "pr-123" / "run-001"
     run.mkdir(parents=True)

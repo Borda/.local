@@ -229,7 +229,8 @@ class TestPromotePrRun:
         real_rename = Path.rename
         attempts = 0
 
-        def collide_once(path: Path, target: Path) -> Path:
+        def _collide_once(path: Path, target: Path) -> Path:
+            """Create one colliding destination before allowing the retry to proceed."""
             nonlocal attempts
             attempts += 1
             if attempts == 1:
@@ -237,7 +238,7 @@ class TestPromotePrRun:
                 raise FileExistsError(target)
             return real_rename(path, target)
 
-        monkeypatch.setattr(Path, "rename", collide_once)
+        monkeypatch.setattr(Path, "rename", _collide_once)
 
         promoted = module.promote_pr_run(tmp_path, "code-review", source)
 

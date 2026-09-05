@@ -65,18 +65,45 @@ class Layout(str, Enum):
 
 
 def prompt_sha256(prompt: str) -> str:
-    """Return the canonical digest for an exact A/B prompt."""
+    """Return the lowercase SHA-256 digest for an exact A/B prompt.
+
+    The digest is calculated from the UTF-8 bytes without trimming or normalizing the prompt, so even a formatting
+    change produces different calibration evidence.
+
+    Example:
+        >>> prompt_sha256("calibration")
+        'e152337e4e85aa3e81482f0ce329aec7bfad531413fe53fef84f1f0d4165caee'
+    """
     return hashlib.sha256(prompt.encode()).hexdigest()
 
 
 def task_contract_sha256(task: dict[str, Any]) -> str:
-    """Hash the canonical task contract, including fixtures and executable gate."""
+    """Hash the canonical task contract, including fixtures and executable gate.
+
+    Object keys are sorted and JSON separators are compacted before hashing, so
+    dictionary insertion order does not change the digest. String contents remain significant.
+
+    Example:
+        >>> task_contract_sha256({"task_prompt": "check", "evidence_scope": "classification"})
+        'ecc04bee97c4a9f3f7229d4761527d59bb2ece11151d2a15b274dee584832cd2'
+    """
     payload = json.dumps(task, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def candidate_findings(case_id: str, cases: dict[str, dict[str, Any]]) -> list[str]:
-    """Build stable expected-plus-distractor choices without leaking labels."""
+    """Build sorted, deduplicated choices from expected findings and rotated distractors.
+
+    Rotate the other cases' findings using a digest of ``case_id`` and take four
+    entries cyclically. Deduplication can leave fewer than four distractors.
+    Fixtures must supply at least one finding outside the expected set; an
+    empty distractor pool raises ``ZeroDivisionError``.
+
+    Example:
+        >>> cases = {"one": {"expected_findings": ["F1"]}, "two": {"expected_findings": ["F2", "F3", "F4", "F5", "F6"]}}
+        >>> candidate_findings("one", cases)
+        ['F1', 'F2', 'F4', 'F5', 'F6']
+    """
     expected = list(cases[case_id]["expected_findings"])
     other = sorted(
         finding

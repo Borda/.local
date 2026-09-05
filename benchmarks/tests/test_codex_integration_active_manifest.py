@@ -24,12 +24,28 @@ SHORTHAND = re.compile(r"(?<![A-Za-z0-9_-])r[0-9]+(?![A-Za-z0-9_-])")
 
 
 def _sha256(path: Path) -> str:
-    """Return the exact byte identity for one relock input or output."""
+    """Hash exact relock artifact bytes without text or newline normalization.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     path = Path(directory) / "artifact"
+    ...     _ = path.write_bytes(b"abc")
+    ...     _sha256(path)
+    'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+    """
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _load(path: Path) -> dict[str, object]:
-    """Load one machine-readable benchmark manifest."""
+    """Read a UTF-8 benchmark manifest and assert that its root is a JSON object.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     path = Path(directory) / "manifest.json"
+    ...     _ = path.write_text('{"schema": 1}', encoding="utf-8")
+    ...     _load(path)
+    {'schema': 1}
+    """
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert isinstance(payload, dict)
     return payload

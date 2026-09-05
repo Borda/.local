@@ -49,7 +49,12 @@ def _run(command: str) -> dict:
 
 
 def _is_allowed(result: dict) -> bool:
-    """Check whether the hook allowed the requested operation."""
+    """Check whether the hook allowed the requested operation.
+
+    Examples:
+        >>> (_is_allowed({"hookSpecificOutput": {"permissionDecision": "allow"}}), _is_allowed(None))
+        (True, False)
+    """
     try:
         return result["hookSpecificOutput"]["permissionDecision"] == "allow"
     except (KeyError, TypeError):

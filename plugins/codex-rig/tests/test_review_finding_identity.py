@@ -27,7 +27,12 @@ def _load_validator() -> ModuleType:
 
 
 def _result() -> dict[str, object]:
-    """Return a schema-v2 result with two explicitly identified findings."""
+    """Return a schema-v2 result with two explicitly identified findings.
+
+    Example:
+        >>> _result()["findings"]["high"]
+        1
+    """
     return {
         "schema_version": 2,
         "findings": {"critical": 0, "high": 1, "medium": 1, "low": 0},
@@ -35,7 +40,12 @@ def _result() -> dict[str, object]:
 
 
 def _metadata(*, finding_severity: str = "high") -> dict[str, object]:
-    """Return the assessed-review metadata for the identity-binding contract."""
+    """Return the assessed-review metadata for the identity-binding contract.
+
+    Example:
+        >>> _metadata()["review_decision"]["recommendation"]
+        'needs-more-work'
+    """
     return {
         "review_decision": {
             "recommendation": "needs-more-work",

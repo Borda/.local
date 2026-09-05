@@ -46,7 +46,12 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     manifest_session.finish_session(session)
 
 
-@pytest.fixture(scope="session")
-def generated_manifest_artifacts(pytestconfig: pytest.Config) -> manifest_session.GeneratedManifestArtifacts:
-    """Expose the generated benchmark manifest paths, their provenance, and any build error."""
+@pytest.fixture(name="generated_manifest_artifacts", scope="session")
+def _generated_manifest_artifacts(pytestconfig: pytest.Config) -> manifest_session.GeneratedManifestArtifacts:
+    """Expose session-generated manifest paths and build evidence without rebuilding them.
+
+    >>> artifacts = getfixture("generated_manifest_artifacts")
+    >>> artifacts is getfixture("pytestconfig")._generated_manifest_artifacts
+    True
+    """
     return pytestconfig._generated_manifest_artifacts

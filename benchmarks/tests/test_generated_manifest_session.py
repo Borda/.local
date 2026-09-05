@@ -53,7 +53,7 @@ def test_session_hook_recreates_only_absent_outputs_and_cleans_them(
     builders = tuple(tmp_path / name for name in ("methodology.py", "integration.py", "agentic.py"))
     calls: list[tuple[str, ...]] = []
 
-    def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+    def _fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         """Record the dependency chain and materialize its final generated files."""
         calls.append(tuple(command))
         if len(calls) == len(builders):
@@ -63,7 +63,7 @@ def test_session_hook_recreates_only_absent_outputs_and_cleans_them(
 
     monkeypatch.setattr(manifest_session, "_GENERATED_MANIFEST_PATHS", outputs)
     monkeypatch.setattr(manifest_session, "_MANIFEST_BUILDERS", builders)
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", _fake_run)
     session = SimpleNamespace(config=SimpleNamespace())
 
     manifest_session.start_session(session)

@@ -29,7 +29,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from _launcher_capability import raw_codemap_launchers_are_runnable
+from _launcher_capability import _raw_codemap_launchers_are_runnable
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 PYTORCH_LIGHTNING_REPO = Path(os.environ.get("PL_REPO_PATH", str(REPO_ROOT / ".sandbox" / "pytorch-lightning")))
@@ -37,7 +37,7 @@ PYTORCH_LIGHTNING_INDEXES = (
     tuple(sorted(PYTORCH_LIGHTNING_REPO.rglob(".cache/codemap/*.json"))) if PYTORCH_LIGHTNING_REPO.exists() else ()
 )
 RAW_CODEMAP_LAUNCHERS = pytest.mark.skipif(
-    not raw_codemap_launchers_are_runnable(REPO_ROOT),
+    not _raw_codemap_launchers_are_runnable(REPO_ROOT),
     reason="raw scan-index/scan-query launchers cannot execute on this host",
 )
 NETWORK_INTEGRATION = pytest.mark.skipif(
@@ -59,22 +59,32 @@ PYTORCH_LIGHTNING_INDEX = pytest.mark.skipif(
 # ===========================================================================
 
 
-@pytest.fixture(scope="session")
-def real_tasks(script_run_cli: Any) -> list:
+@pytest.fixture(name="real_tasks", scope="session")
+def _real_tasks(script_run_cli: Any) -> list:
     """Load tasks-code.json once for the whole session.
 
     Returns:
         All benchmark tasks parsed from the real tasks-code.json file.
+
+    Example:
+        >>> tasks = getfixture("real_tasks")
+        >>> bool(tasks), len({task.id for task in tasks}) == len(tasks)
+        (True, True)
     """
     return script_run_cli.load_tasks()
 
 
-@pytest.fixture()
-def minimal_task_dict() -> dict:
+@pytest.fixture(name="minimal_task_dict")
+def _minimal_task_dict() -> dict:
     """Return a minimal valid raw task dict matching the tasks-code.json schema.
 
     Returns:
         Dict with all required keys populated with well-formed values.
+
+    Example:
+        >>> task = getfixture("minimal_task_dict")
+        >>> task["queries"], task["ground_truth_keys"]
+        ([{'cmd': 'rdeps', 'args': ['pkg.mod']}], ['imported_by'])
     """
     return {
         "id": "T-99",
@@ -97,6 +107,11 @@ def _make_scenario(script_cli: Any, passed: bool, suite: str = "calls") -> Any:
 
     Returns:
         ScenarioResult instance.
+
+    Example:
+        >>> scenario = _make_scenario(getfixture("script_run_cli"), False, suite="example")
+        >>> scenario.passed, scenario.suite, scenario.result
+        (False, 'example', {'coverage_gap': 0.5})
     """
     return script_cli.ScenarioResult(
         scenario="C1",
@@ -265,8 +280,8 @@ class TestLoadTasks:
 # ===========================================================================
 
 
-@pytest.fixture()
-def oss_tasks_file(tmp_path: Path) -> Path:
+@pytest.fixture(name="oss_tasks_file")
+def _oss_tasks_file(tmp_path: Path) -> Path:
     """Write a minimal flat-list tasks-bench.json for load_oss_tasks tests.
 
     The load_oss_tasks function documents that it returns ``list[dict]`` and
@@ -275,6 +290,11 @@ def oss_tasks_file(tmp_path: Path) -> Path:
 
     Returns:
         Path to a temporary tasks-bench.json containing a flat list of tasks.
+
+    Example:
+        >>> tasks = json.loads(getfixture("oss_tasks_file").read_text(encoding="utf-8"))
+        >>> [task["type"] for task in tasks]
+        ['symbol_extraction', 'code_quality', 'real_issue', 'debug_from_trace']
     """
     tasks = [
         {"id": "SE-01", "type": "symbol_extraction", "ground_truth": {"qualified_name": "Foo.bar"}},
@@ -832,6 +852,7 @@ class TestRunScanQuery:
         captured: list[list[str]] = []
 
         def _capture_run(cmd: list[str], **kwargs: Any) -> MagicMock:
+            """Record argv and return the configured subprocess result."""
             captured.append(cmd)
             return fake_result
 
@@ -857,6 +878,7 @@ class TestRunScanQuery:
         captured: list[list[str]] = []
 
         def _capture(cmd: list[str], **kwargs: Any) -> MagicMock:
+            """Record the subprocess invocation and return the fixture result."""
             captured.append(cmd)
             return fake_result
 
@@ -882,6 +904,7 @@ class TestRunScanQuery:
         captured: list[tuple[list[str], dict[str, Any]]] = []
 
         def _capture(cmd: list[str], **kwargs: Any) -> MagicMock:
+            """Record the subprocess invocation and return the fixture result."""
             captured.append((cmd, kwargs))
             return fake_result
 
@@ -1306,7 +1329,8 @@ def test_latency_index_build_restores_prebuilt_index_bytes(
     )
     timing = script_run_cli.TimingStats(min_ms=1.0, median_ms=1.0, max_ms=1.0, n=1)
 
-    def mutate_index(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+    def _mutate_index(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        """Replace fixture index bytes and optionally simulate an indexing timeout."""
         index_path.write_bytes(b"rebuilt-index")
         if times_out:
             raise subprocess.TimeoutExpired(["scan-index"], 120)
@@ -1316,7 +1340,7 @@ def test_latency_index_build_restores_prebuilt_index_bytes(
         patch.object(script_run_cli, "load_tasks", return_value=[task]),
         patch.object(script_run_cli, "time_command", return_value=timing),
         patch.object(script_run_cli, "time_commands", return_value=timing),
-        patch.object(script_run_cli.subprocess, "run", side_effect=mutate_index),
+        patch.object(script_run_cli.subprocess, "run", side_effect=_mutate_index),
     ):
         script_run_cli.run_measure_latency(
             tmp_path,
@@ -1367,8 +1391,8 @@ class TestIntegrationSuiteQ:
 # ===========================================================================
 
 
-@pytest.fixture()
-def sample_pkg(tmp_path: Path) -> Path:
+@pytest.fixture(name="sample_pkg")
+def _sample_pkg(tmp_path: Path) -> Path:
     """Build a package exercising literal, aliased, relative, and decoy imports of ``pkg.target``.
 
     Layout (all importers target ``pkg.target``):
@@ -1383,6 +1407,11 @@ def sample_pkg(tmp_path: Path) -> Path:
 
     Returns:
         Path to the repository root containing the ``pkg`` package.
+
+    Example:
+        >>> root = getfixture("sample_pkg")
+        >>> (root / "pkg/imp_decoy.py").read_text(encoding="utf-8").strip()
+        'import pkg.target_helper'
     """
     pkg = tmp_path / "pkg"
     (pkg / "rel").mkdir(parents=True)
@@ -1654,6 +1683,7 @@ class TestWriteReportFile:
         rendered: dict[str, Path] = {}
 
         def _fake_render(results: Any, repo: Path, index: Path, path: Path) -> None:
+            """Write a minimal report at the requested output path."""
             Path(path).write_text("report", encoding="utf-8")
             rendered["path"] = Path(path)
 
@@ -1670,6 +1700,7 @@ class TestWriteReportFile:
         monkeypatch.chdir(tmp_path)
 
         def _fake_render(results: Any, repo: Path, index: Path, path: Path) -> None:
+            """Write a minimal report at the requested output path."""
             Path(path).write_text("report", encoding="utf-8")
 
         monkeypatch.setattr(script_run_cli, "render_report", _fake_render)
@@ -2138,10 +2169,11 @@ class TestTimingCensoring:
         Appending 30_000 ms as if it were an observation dragged the median toward the timeout value.
         """
 
-        def timeout(*_args: Any, **_kwargs: Any) -> None:
+        def _timeout(*_args: Any, **_kwargs: Any) -> None:
+            """Raise a subprocess timeout without launching the requested command."""
             raise subprocess.TimeoutExpired(["sleep"], 30)
 
-        monkeypatch.setattr(script_run_cli, "_run", timeout)
+        monkeypatch.setattr(script_run_cli, "_run", _timeout)
 
         stats = script_run_cli.time_command(["sleep", "60"], n=3)
 

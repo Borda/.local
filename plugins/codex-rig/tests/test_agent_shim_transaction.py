@@ -9,6 +9,7 @@ import os
 import stat
 import subprocess
 import sys
+import tempfile  # noqa: F401 - used by executable doctest examples
 from pathlib import Path
 from types import ModuleType
 
@@ -27,12 +28,12 @@ INSTALL_ID = "123e4567-e89b-42d3-a456-426614174001"
 DIGEST = "a" * 64
 
 
-def load_module(path: Path, name: str) -> ModuleType:
+def _load_module(path: Path, name: str) -> ModuleType:
     """Load the transaction kernel with its sibling modules available."""
     if path == LIFECYCLE_PATH and "generate_roles" not in sys.modules:
-        load_module(GENERATOR_PATH, "generate_roles")
+        _load_module(GENERATOR_PATH, "generate_roles")
     if path == JOURNAL_PATH and "_agent_shim_lifecycle" not in sys.modules:
-        load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
+        _load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
     if path == TRANSACTION_PATH:
         dependencies = (
             (JOURNAL_PATH, "_agent_shim_journal"),
@@ -40,7 +41,7 @@ def load_module(path: Path, name: str) -> ModuleType:
         )
         for dependency, module_name in dependencies:
             if module_name not in sys.modules:
-                load_module(dependency, module_name)
+                _load_module(dependency, module_name)
     specification = importlib.util.spec_from_file_location(name, path)
     assert specification is not None
     assert specification.loader is not None
@@ -50,19 +51,38 @@ def load_module(path: Path, name: str) -> ModuleType:
     return module
 
 
-def canonical(value: object) -> bytes:
-    """Encode one canonical JSON fixture."""
+def _canonical(value: object) -> bytes:
+    """Encode one canonical JSON fixture.
+
+    Example:
+        >>> _canonical({"b": 2, "a": 1})
+        b'{"a":1,"b":2}'
+    """
     return json.dumps(value, ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":")).encode()
 
 
-def write_private(path: Path, payload: bytes) -> None:
-    """Write one exact private transaction fixture."""
+def _write_private(path: Path, payload: bytes) -> None:
+    """Write one exact private transaction fixture.
+
+    Example:
+        >>> with tempfile.TemporaryDirectory() as directory:
+        ...     path = Path(directory) / "transaction.json"
+        ...     _write_private(path, b"prepared")
+        ...     path.read_bytes()
+        b'prepared'
+    """
     path.write_bytes(payload)
     path.chmod(0o600)
 
 
-def root_identity(path: Path) -> dict[str, object]:
-    """Return journal identity fields for one fixture root."""
+def _root_identity(path: Path) -> dict[str, object]:
+    """Return journal identity fields for one fixture root.
+
+    Example:
+        >>> with tempfile.TemporaryDirectory() as directory:
+        ...     _root_identity(Path(directory))["canonical_path"] == directory
+        True
+    """
     metadata = path.stat()
     return {
         "canonical_path": str(path),
@@ -74,7 +94,7 @@ def root_identity(path: Path) -> dict[str, object]:
     }
 
 
-def create_journal(roots: dict[str, Path], after_payload: bytes, state_payload: bytes) -> dict[str, object]:
+def _create_journal(roots: dict[str, Path], after_payload: bytes, state_payload: bytes) -> dict[str, object]:
     """Build one valid PREPARED single-role create journal."""
     return {
         "schema": 1,
@@ -85,9 +105,9 @@ def create_journal(roots: dict[str, Path], after_payload: bytes, state_payload: 
         "approved_plan_digest": DIGEST,
         "package_hash": DIGEST,
         "roster_hash": DIGEST,
-        "codex_home_identity": root_identity(roots["home"]),
-        "target_root_identity": root_identity(roots["target"]),
-        "state_root_identity": root_identity(roots["state"]),
+        "codex_home_identity": _root_identity(roots["home"]),
+        "target_root_identity": _root_identity(roots["target"]),
+        "state_root_identity": _root_identity(roots["state"]),
         "before_state": {"exists": False, "relative_path": None, "sha256": None, "mode": None},
         "after_state": {
             "exists": True,
@@ -118,7 +138,7 @@ def create_journal(roots: dict[str, Path], after_payload: bytes, state_payload: 
     }
 
 
-def prepare_owned_transaction(
+def _prepare_owned_transaction(
     roots: dict[str, Path],
     *,
     intent: str,
@@ -128,7 +148,7 @@ def prepare_owned_transaction(
     before_payload = b"previous challenger shim\n"
     before_state = b'{"transaction_status":"previous"}'
     after_state = b'{"transaction_status":"current"}'
-    value = create_journal(roots, after_payload or b"unused", after_state)
+    value = _create_journal(roots, after_payload or b"unused", after_state)
     operation = value["operations"][0]
     operation.update(
         {
@@ -154,7 +174,7 @@ def prepare_owned_transaction(
     else:
         assert after_payload is not None
         operation["after_hash"] = hashlib.sha256(after_payload).hexdigest()
-        write_private(roots["after"] / "challenger.toml", after_payload)
+        _write_private(roots["after"] / "challenger.toml", after_payload)
     value["before_state"] = {
         "exists": True,
         "relative_path": "state.before.json",
@@ -162,19 +182,19 @@ def prepare_owned_transaction(
         "mode": "0600",
     }
     value["after_state"]["sha256"] = hashlib.sha256(after_state).hexdigest()
-    write_private(roots["target"] / "codex-rig-challenger.toml", before_payload)
-    write_private(roots["before"] / "challenger.toml", before_payload)
-    write_private(roots["state"] / "state.json", before_state)
-    write_private(roots["transaction"] / "state.before.json", before_state)
-    write_private(roots["transaction"] / "state.after.json", after_state)
-    write_private(roots["transaction"] / "journal.json", canonical(value))
+    _write_private(roots["target"] / "codex-rig-challenger.toml", before_payload)
+    _write_private(roots["before"] / "challenger.toml", before_payload)
+    _write_private(roots["state"] / "state.json", before_state)
+    _write_private(roots["transaction"] / "state.before.json", before_state)
+    _write_private(roots["transaction"] / "state.after.json", after_state)
+    _write_private(roots["transaction"] / "journal.json", _canonical(value))
     return value
 
 
-@pytest.fixture
-def transaction_fixture(tmp_path: Path) -> tuple[ModuleType, object, object, dict[str, Path]]:
+@pytest.fixture(name="transaction_fixture")
+def _transaction_fixture(tmp_path: Path) -> tuple[ModuleType, object, object, dict[str, Path]]:
     """Create one prepared transaction with held exact directory descriptors."""
-    module = load_module(TRANSACTION_PATH, "codex_rig_transaction_fixture")
+    module = _load_module(TRANSACTION_PATH, "codex_rig_transaction_fixture")
     roots = {
         "home": tmp_path / "home",
         "target": tmp_path / "home" / "agents",
@@ -192,10 +212,10 @@ def transaction_fixture(tmp_path: Path) -> tuple[ModuleType, object, object, dic
         roots[child] = path
     after_payload = b"generated challenger shim\n"
     state_payload = b'{"transaction_status":"current"}'
-    journal_value = create_journal(roots, after_payload, state_payload)
-    write_private(roots["after"] / "challenger.toml", after_payload)
-    write_private(roots["transaction"] / "state.after.json", state_payload)
-    write_private(roots["transaction"] / "journal.json", canonical(journal_value))
+    journal_value = _create_journal(roots, after_payload, state_payload)
+    _write_private(roots["after"] / "challenger.toml", after_payload)
+    _write_private(roots["transaction"] / "state.after.json", state_payload)
+    _write_private(roots["transaction"] / "journal.json", _canonical(journal_value))
     journal = sys.modules["_agent_shim_journal"].validate_journal(journal_value)
     fds = {
         name: os.open(path, os.O_RDONLY | os.O_DIRECTORY)
@@ -238,12 +258,13 @@ def test_create_failure_after_publication_rolls_back_exactly(transaction_fixture
     """Remove an unjournaled exact create and reach terminal rollback."""
     module, journal, handles, roots = transaction_fixture
 
-    def fail_after_publication(name: str) -> None:
+    def _fail_after_publication(name: str) -> None:
+        """Inject a failure after the named publication boundary completes."""
         if name == "challenger:published":
             raise RuntimeError("injected crash")
 
     with pytest.raises(module.TransactionError) as captured:
-        module.apply_transaction(journal, handles, checkpoint=fail_after_publication)
+        module.apply_transaction(journal, handles, checkpoint=_fail_after_publication)
 
     assert captured.value.journal.journal_state == "ROLLED_BACK"
     assert not (roots["target"] / "codex-rig-challenger.toml").exists()
@@ -258,7 +279,7 @@ def test_concurrent_foreign_create_never_gets_deleted(transaction_fixture: tuple
     """Preserve a target that appears after approval and require recovery."""
     module, journal, handles, roots = transaction_fixture
     foreign = roots["target"] / "codex-rig-challenger.toml"
-    write_private(foreign, b"foreign\n")
+    _write_private(foreign, b"foreign\n")
 
     with pytest.raises(module.TransactionError) as captured:
         module.apply_transaction(journal, handles)
@@ -273,7 +294,7 @@ def test_substituted_staged_artifact_is_preserved_as_blocking_evidence(
 ) -> None:
     """Reject changed staged bytes and never erase the untrusted artifact."""
     module, journal, handles, roots = transaction_fixture
-    write_private(roots["after"] / "challenger.toml", b"substituted\n")
+    _write_private(roots["after"] / "challenger.toml", b"substituted\n")
 
     with pytest.raises(module.TransactionError) as captured:
         module.apply_transaction(journal, handles)
@@ -292,7 +313,7 @@ def test_owned_mutation_commits_and_cleans_exact_artifacts(
     """Commit authenticated update/remove operations and bounded cleanup."""
     module, _, handles, roots = transaction_fixture
     after_payload = b"replacement challenger shim\n" if intent == "update" else None
-    value = prepare_owned_transaction(roots, intent=intent, after_payload=after_payload)
+    value = _prepare_owned_transaction(roots, intent=intent, after_payload=after_payload)
     journal = sys.modules["_agent_shim_journal"].validate_journal(value)
 
     committed = module.apply_transaction(journal, handles)
@@ -314,15 +335,16 @@ def test_owned_mutation_failure_after_detach_restores_before_image(
     """Restore the exact owned target when failure follows atomic detach."""
     module, _, handles, roots = transaction_fixture
     after_payload = b"replacement challenger shim\n" if intent == "update" else None
-    value = prepare_owned_transaction(roots, intent=intent, after_payload=after_payload)
+    value = _prepare_owned_transaction(roots, intent=intent, after_payload=after_payload)
     journal = sys.modules["_agent_shim_journal"].validate_journal(value)
 
-    def fail_after_detach(name: str) -> None:
+    def _fail_after_detach(name: str) -> None:
+        """Inject a failure after detaching the prior target artifact."""
         if name == "challenger:detached":
             raise RuntimeError("injected crash")
 
     with pytest.raises(module.TransactionError) as captured:
-        module.apply_transaction(journal, handles, checkpoint=fail_after_detach)
+        module.apply_transaction(journal, handles, checkpoint=_fail_after_detach)
 
     assert captured.value.journal.journal_state == "ROLLED_BACK"
     assert (roots["target"] / "codex-rig-challenger.toml").read_bytes() == b"previous challenger shim\n"
@@ -356,15 +378,16 @@ def test_each_forward_mutation_boundary_rolls_back_exactly(
         journal = create
     else:
         after_payload = b"replacement challenger shim\n" if intent == "update" else None
-        value = prepare_owned_transaction(roots, intent=intent, after_payload=after_payload)
+        value = _prepare_owned_transaction(roots, intent=intent, after_payload=after_payload)
         journal = sys.modules["_agent_shim_journal"].validate_journal(value)
 
-    def fail_at_boundary(name: str) -> None:
+    def _fail_at_boundary(name: str) -> None:
+        """Inject a failure at the parameterized transaction checkpoint."""
         if name == boundary:
             raise RuntimeError("injected boundary failure")
 
     with pytest.raises(module.TransactionError) as captured:
-        module.apply_transaction(journal, handles, checkpoint=fail_at_boundary)
+        module.apply_transaction(journal, handles, checkpoint=_fail_at_boundary)
 
     assert captured.value.journal.journal_state == "ROLLED_BACK"
     target = roots["target"] / "codex-rig-challenger.toml"
@@ -401,7 +424,7 @@ def test_process_death_at_each_forward_boundary_recovers_exactly(
     module, _, handles, roots = transaction_fixture
     if intent != "create":
         after_payload = b"replacement challenger shim\n" if intent == "update" else None
-        prepare_owned_transaction(roots, intent=intent, after_payload=after_payload)
+        _prepare_owned_transaction(roots, intent=intent, after_payload=after_payload)
     child = f"""
 import os
 import sys

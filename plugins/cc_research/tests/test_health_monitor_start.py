@@ -25,7 +25,12 @@ SCRIPT = Path(health_monitor_start.__file__)
 
 
 def _parse_kv(output: str) -> dict[str, str]:
-    """Parse ``KEY=VALUE`` lines from stdout into a dict."""
+    """Parse ``KEY=VALUE`` lines from stdout into a dict.
+
+    Examples:
+        >>> _parse_kv("LAUNCH_AT=123\\nSENTINEL=/tmp/check\\nnoise")
+        {'LAUNCH_AT': '123', 'SENTINEL': '/tmp/check'}
+    """
     pairs: dict[str, str] = {}
     for line in output.splitlines():
         if "=" in line:
@@ -34,8 +39,8 @@ def _parse_kv(output: str) -> dict[str, str]:
     return pairs
 
 
-@pytest.fixture
-def sentinel_cleanup() -> list[str]:
+@pytest.fixture(name="sentinel_cleanup")
+def _sentinel_cleanup() -> list[str]:
     """Collect skill-ids used by a test; remove their sentinel files on teardown.
 
     ``health_monitor_start.py`` writes to the fixed platform temp dir (not ``tmp_path`` — the script owns that path, not

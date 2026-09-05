@@ -116,10 +116,6 @@ def canonical_root(cwd: Path | str | None = None) -> Path:
 
     Returns:
         Absolute, symlink-collapsed canonical root path.
-
-    Examples:
-        >>> isinstance(canonical_root(), Path)  # doctest: +SKIP
-        True
     """
     work = Path(cwd) if cwd is not None else Path.cwd()
     git = shutil.which("git")
@@ -245,11 +241,6 @@ def resolve_index(
 
     Returns:
         An :class:`IndexIdentity` describing the resolved paths and diagnostics.
-
-    Examples:
-        >>> ident = resolve_index()  # doctest: +SKIP
-        >>> ident.index_path.name.endswith(".json")  # doctest: +SKIP
-        True
     """
     base_root = _real(Path(root)) if root is not None else canonical_root(cwd)
     project = base_root.name

@@ -44,8 +44,8 @@ def _git(root: Path, *args: str) -> None:
     assert result.returncode == 0, result.stderr
 
 
-@pytest.fixture
-def git_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
+@pytest.fixture(name="git_project")
+def _git_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
     """Create an indexed repository for diff-impact tests."""
     root = tmp_path / "proj"
     root.mkdir()

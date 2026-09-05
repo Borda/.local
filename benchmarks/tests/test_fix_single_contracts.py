@@ -29,7 +29,13 @@ from _bench_common.edit_patch_contracts import (  # noqa: E402
 
 
 def _tasks() -> dict[str, dict[str, object]]:
-    """Load the committed scaffold task bytes once per test."""
+    """Load the committed scaffold task bytes once per test.
+
+    Example:
+        >>> tasks = _tasks()
+        >>> all(key == task["id"] for key, task in tasks.items()) and bool(tasks)
+        True
+    """
     return {task["id"]: task for task in json.loads(SUITE_PATH.read_text(encoding="utf-8"))}
 
 

@@ -399,12 +399,26 @@ def find_avoidance_events(
 
 
 def _runtime_label(runtime: str | None) -> str:
-    """Return the report label for a scoped or legacy log source."""
+    """Return a stable report label, including a fallback for legacy unscoped rows.
+
+    Examples:
+        >>> _runtime_label('codex')
+        'codex'
+        >>> _runtime_label(None)
+        'unattributed'
+    """
     return runtime or _UNATTRIBUTED_RUNTIME
 
 
 def _session_label(runtime: str | None, session: str) -> str:
-    """Return an unambiguous report key for one scoped session."""
+    """Return an unambiguous report key for one scoped or legacy session.
+
+    Examples:
+        >>> _session_label('claude', 'abc')
+        'claude:abc'
+        >>> _session_label(None, 'abc')
+        'abc'
+    """
     return session if runtime is None else f"{runtime}:{session}"
 
 

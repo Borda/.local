@@ -14,6 +14,14 @@ import check_spawn_prompt_vars as cspv
 
 
 def _file(tmp_path: Path, content: str, name: str = "SKILL.md") -> Path:
+    """Write a skill or template fixture file and return its path.
+
+    Examples:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     _file(Path(directory), "body").read_text() == "body"
+        True
+    """
     if name == "SKILL.md":
         skill_dir = tmp_path / "myplugin" / "skills" / "myskill"
         skill_dir.mkdir(parents=True, exist_ok=True)

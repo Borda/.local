@@ -19,7 +19,7 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="requires bash")
 SCRIPT = Path(__file__).parent.parent / "bin" / "resolve-quality-gates.sh"
 
 
-def sh(*args: str, env: dict | None = None, cwd: str | None = None) -> subprocess.CompletedProcess:
+def _sh(*args: str, env: dict | None = None, cwd: str | None = None) -> subprocess.CompletedProcess:
     """Run the script under test and capture stdout/stderr."""
     e = {**os.environ, **(env or {})}
     return subprocess.run(
@@ -44,7 +44,7 @@ def test_local_claude_rules_preferred(tmp_path: Path) -> None:
     cache_dir.mkdir(parents=True)
     (cache_dir / "quality-gates.md").write_text("# cached rules\n")
 
-    result = sh(env={"HOME": str(tmp_path), "GIT_ROOT": str(project)}, cwd=str(project))
+    result = _sh(env={"HOME": str(tmp_path), "GIT_ROOT": str(project)}, cwd=str(project))
     assert result.returncode == 0
     assert result.stdout.strip() == str(local_file)
 
@@ -60,7 +60,7 @@ def test_cache_fallback_when_local_absent(tmp_path: Path) -> None:
     cache_file.parent.mkdir(parents=True)
     cache_file.write_text("# cached rules\n")
 
-    result = sh(env={"HOME": str(tmp_path), "GIT_ROOT": str(project)}, cwd=str(project))
+    result = _sh(env={"HOME": str(tmp_path), "GIT_ROOT": str(project)}, cwd=str(project))
     assert result.returncode == 0
     assert result.stdout.strip() == str(cache_file)
 
@@ -70,7 +70,7 @@ def test_neither_location_exits_nonzero(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
 
-    result = sh(env={"HOME": str(tmp_path), "GIT_ROOT": str(project)}, cwd=str(project))
+    result = _sh(env={"HOME": str(tmp_path), "GIT_ROOT": str(project)}, cwd=str(project))
     assert result.returncode == 1
     assert result.stdout.strip() == ""
     assert "quality-gates.md not found" in result.stderr
@@ -85,6 +85,6 @@ def test_git_root_env_override(tmp_path: Path) -> None:
     local_file.write_text("# explicit root rules\n")
 
     # cwd is unrelated; GIT_ROOT must win.
-    result = sh(env={"HOME": str(tmp_path), "GIT_ROOT": str(explicit_root)}, cwd=str(tmp_path))
+    result = _sh(env={"HOME": str(tmp_path), "GIT_ROOT": str(explicit_root)}, cwd=str(tmp_path))
     assert result.returncode == 0
     assert result.stdout.strip() == str(local_file)

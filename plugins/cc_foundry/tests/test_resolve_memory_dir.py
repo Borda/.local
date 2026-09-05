@@ -20,12 +20,14 @@ class _FakeCompleted:
     """Stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, stdout: str = "", stderr: str = "", returncode: int = 0):
+        """Store the configured completed-process fields."""
         self.stdout = stdout
         self.stderr = stderr
         self.returncode = returncode
 
 
 def _patch_run(monkeypatch: pytest.MonkeyPatch, responder: Any) -> None:
+    """Patch only the resolver module's subprocess runner with ``responder``."""
     monkeypatch.setattr(resolve_memory_dir.subprocess, "run", responder)
 
 
@@ -57,10 +59,11 @@ class TestResolveMemoryDir:
     def test_explicit_project_root(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Explicit arg bypasses git lookup entirely."""
 
-        def boom(*_: Any, **__: Any) -> _FakeCompleted:  # pragma: no cover
+        def _boom(*_: Any, **__: Any) -> _FakeCompleted:  # pragma: no cover
+            """Fail if the explicit-project path unexpectedly runs subprocesses."""
             raise AssertionError("subprocess.run must not be called when project given")
 
-        _patch_run(monkeypatch, boom)
+        _patch_run(monkeypatch, _boom)
         monkeypatch.setenv("HOME", "/home/test")
         result = resolve_memory_dir.resolve_memory_dir("/some/Project")
         assert Path(result).as_posix() == "/home/test/.claude/projects/-some-project/memory"
@@ -68,10 +71,11 @@ class TestResolveMemoryDir:
     def test_git_fallback_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Empty arg → git rev-parse provides the root."""
 
-        def fake_run(_argv: Sequence[str], **_: Any) -> _FakeCompleted:
+        def _fake_run(_argv: Sequence[str], **_: Any) -> _FakeCompleted:
+            """Return the git root for this fallback-success scenario."""
             return _FakeCompleted(stdout="/Users/x/Project\n", returncode=0)
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         monkeypatch.setenv("HOME", "/home/test")
         result = resolve_memory_dir.resolve_memory_dir(None)
         assert Path(result).as_posix() == "/home/test/.claude/projects/-users-x-project/memory"
@@ -79,30 +83,33 @@ class TestResolveMemoryDir:
     def test_git_fallback_no_repo(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Git fails (non-zero) → None."""
 
-        def fake_run(_argv: Sequence[str], **_: Any) -> _FakeCompleted:
+        def _fake_run(_argv: Sequence[str], **_: Any) -> _FakeCompleted:
+            """Return git's non-repository result for this fallback scenario."""
             return _FakeCompleted(stdout="", stderr="fatal: not a git repository\n", returncode=128)
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         assert resolve_memory_dir.resolve_memory_dir(None) is None
 
     def test_git_missing_binary(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Git not on PATH → FileNotFoundError swallowed, returns None."""
 
-        def fake_run(*_: Any, **__: Any) -> _FakeCompleted:
+        def _fake_run(*_: Any, **__: Any) -> _FakeCompleted:
+            """Raise the missing-git error expected by this fallback case."""
             raise FileNotFoundError("git")
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         assert resolve_memory_dir.resolve_memory_dir(None) is None
 
     def test_empty_string_arg_falls_back_to_git(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Empty-string arg treated the same as None — git fallback engaged."""
         calls = {"n": 0}
 
-        def fake_run(_argv: Sequence[str], **_: Any) -> _FakeCompleted:
+        def _fake_run(_argv: Sequence[str], **_: Any) -> _FakeCompleted:
+            """Count and satisfy the fallback lookup for an empty argument."""
             calls["n"] += 1
             return _FakeCompleted(stdout="/repo\n", returncode=0)
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         monkeypatch.setenv("HOME", "/h")
         result = resolve_memory_dir.resolve_memory_dir("")
         assert Path(result).as_posix() == "/h/.claude/projects/-repo/memory"
@@ -119,10 +126,11 @@ class TestMain:
     ) -> None:
         """No CLI arg + git repo → prints resolved path, exit 0."""
 
-        def fake_run(_argv: Sequence[str], **_: Any) -> _FakeCompleted:
+        def _fake_run(_argv: Sequence[str], **_: Any) -> _FakeCompleted:
+            """Return the git root consumed by the CLI success path."""
             return _FakeCompleted(stdout="/Users/x/Repo\n", returncode=0)
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         monkeypatch.setenv("HOME", "/h")
         rc = resolve_memory_dir.main([])
         assert rc == 0
@@ -148,10 +156,11 @@ class TestMain:
     ) -> None:
         """No arg + git failure → exit 1, no stdout."""
 
-        def fake_run(_argv: Sequence[str], **_: Any) -> _FakeCompleted:
+        def _fake_run(_argv: Sequence[str], **_: Any) -> _FakeCompleted:
+            """Return git failure for the CLI's no-root path."""
             return _FakeCompleted(stdout="", returncode=128)
 
-        _patch_run(monkeypatch, fake_run)
+        _patch_run(monkeypatch, _fake_run)
         rc = resolve_memory_dir.main([])
         assert rc == 1
         assert capsys.readouterr().out == ""

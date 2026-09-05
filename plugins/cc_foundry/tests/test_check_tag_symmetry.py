@@ -21,6 +21,10 @@ def _messages(findings: list[cts.Finding]) -> list[str]:
 
     Returns:
         One message string per finding, in the original order.
+
+    Examples:
+        >>> _messages([cts.Finding(cts.FindingKind.UNBALANCED, "bad")])
+        ['bad']
     """
     return [f.message for f in findings]
 
@@ -462,6 +466,7 @@ class TestMainSubcheckSelection:
         real_read_text = Path.read_text
 
         def _deny(self: Path, *args: object, **kwargs: object) -> str:
+            """Reject reads of the designated unreadable fixture path."""
             if self == unreadable:
                 raise PermissionError(13, "Permission denied")
             return real_read_text(self, *args, **kwargs)  # type: ignore[arg-type]

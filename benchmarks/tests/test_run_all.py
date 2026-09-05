@@ -64,6 +64,15 @@ def _assert_safe_paid_preflight(calls: list[str], *, agentic: bool) -> None:
     paid-input admission. Agentic admission then resolves its immutable scope.
     Neither route may prepare the repository, access auth, or start a model
     runner.
+
+    >>> calls = [
+    ...     "build-provider-parity-methodology-manifest.py",
+    ...     "build-codex-integration-manifest.py",
+    ...     "build-codex-agentic-manifest.py",
+    ... ]
+    >>> _assert_safe_paid_preflight(calls, agentic=False)
+    >>> with pytest.raises(AssertionError):
+    ...     _assert_safe_paid_preflight(calls + ["prepare-codex-index.py"], agentic=False)
     """
     expected_checkers = [
         "build-provider-parity-methodology-manifest.py",
@@ -85,27 +94,48 @@ def _assert_safe_paid_preflight(calls: list[str], *, agentic: bool) -> None:
 
 
 def _claude_task_values(call: str) -> list[str]:
-    """Return the JSON task list carried by one Claude structural call."""
+    """Decode the task-list argument between the recorded tasks and model options.
+
+    >>> _claude_task_values('runner --tasks ["one", "two"] --model fixture')
+    ['one', 'two']
+    """
     start = call.index("--tasks ") + len("--tasks ")
     end = call.index(" --model ", start)
     return json.loads(call[start:end])
 
 
 def _option_value(call: str, option: str) -> str:
-    """Return one space-separated command option value from a recorded call."""
+    """Return the token following an option in a recorded whitespace-delimited call.
+
+    This fixture parser does not interpret shell quoting or multi-token values.
+
+    >>> _option_value("runner --repeat 2 --model fixture", "--repeat")
+    '2'
+    """
     tokens = call.split()
     return tokens[tokens.index(option) + 1]
 
 
 def _write_executable(path: Path, body: str) -> None:
-    """Create one executable command stub for shell orchestration tests."""
+    """Write a Bash stub with a shebang and trailing newline, then mark it executable.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     path = Path(directory) / "example"
+    ...     _write_executable(path, "exit 0")
+    ...     path.read_text(encoding="utf-8").splitlines()
+    ['#!/usr/bin/env bash', 'exit 0']
+    """
     path.write_text(f"#!/usr/bin/env bash\n{body}\n", encoding="utf-8")
     path.chmod(0o755)
 
 
-@pytest.fixture
-def batch_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
-    """Return an isolated target and command-log environment with no model access."""
+@pytest.fixture(name="batch_env")
+def _batch_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
+    """Write an isolated target and command stubs, returning an environment that routes execution to them.
+
+    No commands run while this fixture is constructed.
+    """
     repo = tmp_path / "target"
     (repo / ".git").mkdir(parents=True)
     index_path = repo / ".cache" / "codemap" / "target.json"

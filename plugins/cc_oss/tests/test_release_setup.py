@@ -22,6 +22,7 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+        """Store the status and output returned by a fake Git command."""
         self.returncode = returncode
         self.stdout = stdout
 
@@ -32,6 +33,7 @@ def _patch_git_sequence(monkeypatch: pytest.MonkeyPatch, *outcomes: tuple[int, s
     recorded: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Return the configured Git command response while recording argv."""
         recorded.append(list(cmd))
         idx = call_n[0]
         call_n[0] += 1

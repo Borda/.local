@@ -44,7 +44,12 @@ pytestmark = pytest.mark.skipif(
 
 
 def _gate_payload(**overrides: object) -> dict:
-    """Build a PreToolUse payload for audit's follow-up gate, applying `overrides`."""
+    """Build a PreToolUse payload for audit's follow-up gate, applying `overrides`.
+
+    Examples:
+        >>> _gate_payload(cwd="/work")["cwd"]
+        '/work'
+    """
     payload: dict = {
         "hook_event_name": "PreToolUse",
         "tool_name": "AskUserQuestion",
@@ -66,7 +71,12 @@ def _gate_payload(**overrides: object) -> dict:
 
 
 def _other_question_payload(label: str, description: str) -> dict:
-    """Build a payload for a non-gate audit question (breaking ack, unknown flag)."""
+    """Build a payload for a non-gate audit question (breaking ack, unknown flag).
+
+    Examples:
+        >>> _other_question_payload("Skip", "report only")["tool_input"]["questions"][0]["options"][0]["label"]
+        'Skip'
+    """
     return _gate_payload(
         tool_input={
             "questions": [{"question": "Acknowledge?", "options": [{"label": label, "description": description}]}]
@@ -94,7 +104,12 @@ def _run(tmp_path: Path, payload: dict, *, session_id_env: str | None = CSID, tm
 
 
 def _denial_reason(result: dict) -> str | None:
-    """Denial reason emitted by the hook, or None when it did not deny."""
+    """Denial reason emitted by the hook, or None when it did not deny.
+
+    Examples:
+        >>> (_denial_reason({}), _denial_reason({"hookSpecificOutput": {"permissionDecision": "deny"}}))
+        (None, '')
+    """
     hook_output = result.get("hookSpecificOutput", {})
     if hook_output.get("permissionDecision") != "deny":
         return None
@@ -120,8 +135,8 @@ def _call_export(name: str, *args: object) -> object:
     return json.loads(proc.stdout)
 
 
-@pytest.fixture
-def audit_run(tmp_path: Path) -> tuple[Path, Path, str]:
+@pytest.fixture(name="audit_run")
+def _audit_run(tmp_path: Path) -> tuple[Path, Path, str]:
     """Stage an audit that reached Step 3: run dir on disk plus its state sentinel.
 
     Returns the run dir, the sentinel file, and the project cwd the relative sentinel value resolves against.

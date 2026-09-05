@@ -54,7 +54,14 @@ def _git_repo(tmp_path: Path, name: str) -> Path:
 
 
 def _write_index(root: Path, project: str) -> Path:
-    """Write a placeholder index for *project* under *root*'s default cache dir."""
+    """Write a placeholder index for *project* under *root*'s default cache directory.
+
+    Examples:
+        >>> root = getfixture("tmp_path")
+        >>> path = _write_index(root, "demo")
+        >>> path.relative_to(root).as_posix()
+        '.cache/codemap/demo.json'
+    """
     index = root / ".cache" / "codemap" / f"{project}.json"
     index.parent.mkdir(parents=True, exist_ok=True)
     index.write_text("{}")
@@ -147,11 +154,12 @@ def test_currency_probe_makes_one_bounded_call(monkeypatch, tmp_path):
     """A single timed subprocess yields both fields; ``--field`` spawned two, untimed."""
     calls: list[tuple[list[str], dict]] = []
 
-    def fake_run(cmd, **kwargs):
+    def _fake_run(cmd, **kwargs):
+        """Return a stale verdict while recording the bounded subprocess call."""
         calls.append((cmd, kwargs))
         return subprocess.CompletedProcess(cmd, 1, stdout=json.dumps({"status": "stale", "reason": "r"}))
 
-    monkeypatch.setattr(resolver.subprocess, "run", fake_run)
+    monkeypatch.setattr(resolver.subprocess, "run", _fake_run)
 
     assert resolver._currency("cic", tmp_path / "index.json") == ("stale", "r")
     assert len(calls) == 1
@@ -163,10 +171,11 @@ def test_currency_probe_makes_one_bounded_call(monkeypatch, tmp_path):
 def test_currency_probe_fails_open_when_the_check_hangs(monkeypatch, tmp_path):
     """A timed-out or unparsable verdict must not block the gate."""
 
-    def fake_run(cmd, **kwargs):
+    def _fake_run(cmd, **kwargs):
+        """Raise the timeout used to verify fail-open currency handling."""
         raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout", 0))
 
-    monkeypatch.setattr(resolver.subprocess, "run", fake_run)
+    monkeypatch.setattr(resolver.subprocess, "run", _fake_run)
 
     assert resolver._currency("cic", tmp_path / "index.json") == ("current", "")
 
@@ -231,11 +240,12 @@ def test_dev_wrapper_supplies_the_develop_prefix(monkeypatch, tmp_path):
     gate = _load(_DEV_BIN / "dev_codemap_gate.py", "dev_codemap_gate_under_test")
     captured: dict[str, list[str]] = {}
 
-    def fake_run(cmd, **kwargs):
+    def _fake_run(cmd, **kwargs):
+        """Return a successful resolver response for the wrapper assertion."""
         captured["cmd"] = cmd
         return subprocess.CompletedProcess(cmd, 0, stdout="true\n")
 
-    monkeypatch.setattr(gate.subprocess, "run", fake_run)
+    monkeypatch.setattr(gate.subprocess, "run", _fake_run)
     gate._run_codemap_resolve(tmp_path, "auto")
 
     argv = captured["cmd"]

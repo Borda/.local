@@ -54,7 +54,12 @@ def _split_call(args: str) -> tuple[str, list[str]]:
 
 
 def _iter_calls(text: str) -> list[tuple[str, list[str]]]:
-    """Return ``(subcommand, remaining_tokens)`` for every query call in *text*."""
+    """Return ``(subcommand, remaining_tokens)`` for every query call in *text*.
+
+    Examples:
+        >>> _iter_calls("codemap-py query rdeps pkg.mod")
+        [('rdeps', ['pkg.mod'])]
+    """
     return [_split_call(match.group(1)) for match in _QUERY_CALL_RE.finditer(text)]
 
 

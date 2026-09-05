@@ -19,33 +19,38 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from _hook_env import hook_tmp_base
+from _hook_env import _hook_tmp_base
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
 def _strip_ansi(s: str) -> str:
-    """Remove ANSI CSI sequences so substring assertions are color-agnostic."""
+    """Remove ANSI CSI sequences so substring assertions are color-agnostic.
+
+    Examples:
+        >>> _strip_ansi("\\x1b[31mred\\x1b[0m")
+        'red'
+    """
     return _ANSI.sub("", s)
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
-@pytest.fixture
-def sid(tmp_path: Path) -> Iterator[str]:
+@pytest.fixture(name="sid")
+def _sid(tmp_path: Path) -> Iterator[str]:
     """Yield a unique session id; clean its ``claude-state-<id>`` dir on teardown.
 
-    Base resolved via ``hook_tmp_base()`` so teardown targets the same directory the hook's ``getSentinelDir()`` writes
+    Base resolved via ``_hook_tmp_base()`` so teardown targets the same directory the hook's ``getSentinelDir()`` writes
     on this platform.
     """
     s = f"pytest-{tmp_path.name}"
     yield s
-    shutil.rmtree(hook_tmp_base() / f"claude-state-{s}", ignore_errors=True)
+    shutil.rmtree(_hook_tmp_base() / f"claude-state-{s}", ignore_errors=True)
 
 
-@pytest.fixture
-def tmp_home(tmp_path: Path) -> Path:
+@pytest.fixture(name="tmp_home")
+def _tmp_home(tmp_path: Path) -> Path:
     """Return an isolated HOME with an empty subscription.json so reads succeed."""
     h = tmp_path / "home"
     sub_dir = h / ".claude" / "state"
@@ -58,7 +63,12 @@ def tmp_home(tmp_path: Path) -> Path:
 
 
 def _payload(sid: str) -> dict:
-    """Return a minimal valid statusline stdin payload for the given session id."""
+    """Return a minimal valid statusline stdin payload for the given session id.
+
+    Examples:
+        >>> _payload("s")["session_id"]
+        's'
+    """
     return {
         "model": {"id": "claude-sonnet-4-6", "display_name": "Sonnet 4.6"},
         "workspace": {"current_dir": "/tmp/test"},
@@ -82,7 +92,7 @@ def _write_agent(
     ``last_active`` is included only when provided so tests can exercise both the legacy (since-only) records and the
     refreshed (last_active-bearing) ones.
     """
-    d = hook_tmp_base() / f"claude-state-{sid}" / "agents"
+    d = _hook_tmp_base() / f"claude-state-{sid}" / "agents"
     d.mkdir(parents=True, exist_ok=True)
     record: dict = {"id": agent_id, "type": agent_type, "model": "opus", "color": None, "since": since}
     if last_active is not None:
@@ -92,7 +102,7 @@ def _write_agent(
 
 def _write_codex(sid: str, tool_use_id: str, *, since: str) -> None:
     """Write a codex/<id>.json file under the per-session state dir."""
-    d = hook_tmp_base() / f"claude-state-{sid}" / "codex"
+    d = _hook_tmp_base() / f"claude-state-{sid}" / "codex"
     d.mkdir(parents=True, exist_ok=True)
     (d / f"{tool_use_id}.json").write_text(
         json.dumps({"id": tool_use_id, "since": since, "type": "rescue"}),

@@ -3257,12 +3257,6 @@ class DiffImpactStager:
     Args:
         repo_path: Root of the target repository (a git clone).
         stage_spec: List of edit dicts from the task's ``stage`` field.
-
-    Examples:
-        >>> stager = DiffImpactStager("/repo", [{"file": "a.py", "find": "x", "replace": "y"}])  # doctest: +SKIP
-        >>> with stager:  # doctest: +SKIP
-        ...     run_both_arms()  # change is live here
-        >>> # change is reverted on block exit, even if run_both_arms raised
     """
 
     def __init__(self, repo_path: str | Path, stage_spec: list[dict]) -> None:
@@ -3431,15 +3425,6 @@ class PatchSandbox:
         repo_path: Root of a local clone of the target repo with full git history.
         task: Patch-task dict; must carry ``id``, ``pre_fix_commit``, and either
             ``test_command`` or ``failing_test``.
-
-    Examples:
-        >>> sandbox = PatchSandbox("/path/to/clone", {  # doctest: +SKIP
-        ...     "id": "PT-01",
-        ...     "pre_fix_commit": "abc123",
-        ...     "failing_test": "tests/test_x.py::test_y",
-        ... })
-        >>> sandbox.run(diff_text)  # doctest: +SKIP
-        True
     """
 
     def __init__(self, repo_path: str | Path, task: dict) -> None:

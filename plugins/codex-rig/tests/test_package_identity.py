@@ -20,7 +20,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 IDENTITY_PATH = PLUGIN_ROOT / "scripts" / "_package_identity.py"
 
 
-def load_identity() -> ModuleType:
+def _load_identity() -> ModuleType:
     """Load the package verifier directly from its installed script path."""
     specification = importlib.util.spec_from_file_location("codex_rig_package_identity", IDENTITY_PATH)
     assert specification is not None and specification.loader is not None
@@ -30,7 +30,7 @@ def load_identity() -> ModuleType:
     return module
 
 
-def write_fixture(root: Path, *, recorded_mode: int | None = None) -> None:
+def _write_fixture(root: Path, *, recorded_mode: int | None = None) -> None:
     """Write one minimal complete schema-1 package fixture."""
     plugin = root / ".codex-plugin" / "plugin.json"
     plugin.parent.mkdir(parents=True)
@@ -69,13 +69,14 @@ def write_fixture(root: Path, *, recorded_mode: int | None = None) -> None:
 
 def test_verify_package_checks_hashes_without_path_read_bytes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Read verified inputs only through the bounded safe-open backend."""
-    identity = load_identity()
-    write_fixture(tmp_path)
+    identity = _load_identity()
+    _write_fixture(tmp_path)
 
-    def forbidden_read_bytes(path: Path) -> bytes:
+    def _forbidden_read_bytes(path: Path) -> bytes:
+        """Fail if package verification bypasses the bounded safe-read backend."""
         pytest.fail(f"unverified Path.read_bytes fallback: {path}")
 
-    monkeypatch.setattr(Path, "read_bytes", forbidden_read_bytes)
+    monkeypatch.setattr(Path, "read_bytes", _forbidden_read_bytes)
     result = identity.verify_package(tmp_path, enforce_modes=True)
 
     assert result.version == "1.2.3"
@@ -85,8 +86,8 @@ def test_verify_package_checks_hashes_without_path_read_bytes(tmp_path: Path, mo
 
 def test_verify_package_reports_simulated_windows_mode_check_not_applicable(tmp_path: Path) -> None:
     """Ignore only POSIX mode comparison when native Windows cannot retain it."""
-    identity = load_identity()
-    write_fixture(tmp_path, recorded_mode=0)
+    identity = _load_identity()
+    _write_fixture(tmp_path, recorded_mode=0)
     report = tmp_path / ".reports" / "codex" / "calibration" / "run" / "debris.txt"
     report.parent.mkdir(parents=True)
     report.write_text("machine-local runtime artifact\n", encoding="utf-8")
@@ -99,8 +100,8 @@ def test_verify_package_reports_simulated_windows_mode_check_not_applicable(tmp_
 
 def test_verify_package_bounds_every_recorded_payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Reject a recorded file before reading beyond the configured safety limit."""
-    identity = load_identity()
-    write_fixture(tmp_path)
+    identity = _load_identity()
+    _write_fixture(tmp_path)
     monkeypatch.setattr(identity, "MAX_PACKAGE_FILE_BYTES", 4)
 
     with pytest.raises(identity.PackageIdentityError, match="oversized package file"):
@@ -109,8 +110,8 @@ def test_verify_package_bounds_every_recorded_payload(tmp_path: Path, monkeypatc
 
 def test_verify_package_rejects_mode_drift_on_posix(tmp_path: Path) -> None:
     """Preserve exact mode enforcement on supported POSIX filesystems."""
-    identity = load_identity()
-    write_fixture(tmp_path, recorded_mode=0)
+    identity = _load_identity()
+    _write_fixture(tmp_path, recorded_mode=0)
 
     with pytest.raises(identity.PackageIdentityError, match="mode mismatch: payload.txt"):
         identity.verify_package(tmp_path, enforce_modes=True)
@@ -119,8 +120,8 @@ def test_verify_package_rejects_mode_drift_on_posix(tmp_path: Path) -> None:
 @pytest.mark.parametrize("mutation", ("tamper", "extra"))
 def test_verify_package_rejects_payload_drift(tmp_path: Path, mutation: str) -> None:
     """Reject changed bytes and unrecorded package payloads."""
-    identity = load_identity()
-    write_fixture(tmp_path)
+    identity = _load_identity()
+    _write_fixture(tmp_path)
     if mutation == "tamper":
         (tmp_path / "payload.txt").write_text("tampered\n", encoding="utf-8")
         expected = "hash mismatch: payload.txt"
@@ -135,8 +136,8 @@ def test_verify_package_rejects_payload_drift(tmp_path: Path, mutation: str) -> 
 @pytest.mark.parametrize("unsafe_path", [r"folder\payload.txt", "C:payload.txt"])
 def test_verify_package_rejects_nonportable_record_paths(tmp_path: Path, unsafe_path: str) -> None:
     """Prevent manifest paths from changing containment meaning on Windows."""
-    identity = load_identity()
-    write_fixture(tmp_path)
+    identity = _load_identity()
+    _write_fixture(tmp_path)
     manifest_path = tmp_path / "package-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["files"][-1]["path"] = unsafe_path
@@ -149,8 +150,8 @@ def test_verify_package_rejects_nonportable_record_paths(tmp_path: Path, unsafe_
 @pytest.mark.skipif(not SYMLINKS_AVAILABLE, reason="host cannot create symlinks")
 def test_verify_package_rejects_symlink_payload(tmp_path: Path) -> None:
     """Reject links before any verified payload bytes are consumed."""
-    identity = load_identity()
-    write_fixture(tmp_path)
+    identity = _load_identity()
+    _write_fixture(tmp_path)
     payload = tmp_path / "payload.txt"
     payload.unlink()
     payload.symlink_to(tmp_path / ".codex-plugin" / "plugin.json")

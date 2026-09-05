@@ -430,6 +430,14 @@ def aggregate_commands(sessions: list[Session]) -> dict[str, dict[str, float]]:
 
 
 def _fmt_usd(v: float) -> str:
+    """Format a dollar amount with thousands separators and two decimal places.
+
+    Examples:
+        >>> _fmt_usd(1234.5)
+        '$1,234.50'
+        >>> _fmt_usd(0)
+        '$0.00'
+    """
     return f"${v:,.2f}"
 
 

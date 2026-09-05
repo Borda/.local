@@ -5553,6 +5553,6 @@
       "src": "skills/investigate/SKILL.md:100"
     }
   },
-  "plugin": "cc_foundry@0.52.0",
+  "plugin": "cc_foundry@0.52.1",
   "schema": 1
 }

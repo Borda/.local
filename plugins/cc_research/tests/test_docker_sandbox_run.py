@@ -154,26 +154,35 @@ def test_find_destructive_tokens_flags_destructive_commands(arg: str, expected: 
 
 
 class _FakeCompleted:
+    """Minimal completed-process stand-in for Docker command tests."""
+
     def __init__(self, returncode: int = 0) -> None:
+        """Store the Docker command status exposed to the wrapper."""
         self.returncode = returncode
 
 
 def _split_cidfile(argv: list[str]) -> tuple[list[str], str]:
-    """Split a docker argv into (argv without its ``--cidfile <path>`` pair, the cidfile path)."""
+    """Split a docker argv into its command arguments and cidfile path.
+
+    Examples:
+        >>> _split_cidfile(["docker", "run", "--cidfile", "/tmp/job.cid", "image"])
+        (['docker', 'run', 'image'], '/tmp/job.cid')
+    """
     i = argv.index("--cidfile")
     return argv[:i] + argv[i + 2 :], argv[i + 1]
 
 
-@pytest.fixture
-def captured_run(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+@pytest.fixture(name="captured_run")
+def _captured_run(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     """Capture ``subprocess.run`` invocations; return a list filled on each call."""
     calls: list[list[str]] = []
 
-    def fake_run(cmd: list[str], **_kw: Any) -> _FakeCompleted:
+    def _fake_run(cmd: list[str], **_kw: Any) -> _FakeCompleted:
+        """Record Docker argv and return a successful process result."""
         calls.append(cmd)
         return _FakeCompleted(returncode=0)
 
-    monkeypatch.setattr(ds.subprocess, "run", fake_run)
+    monkeypatch.setattr(ds.subprocess, "run", _fake_run)
     return calls
 
 
@@ -365,10 +374,11 @@ def test_main_forwards_docker_return_code(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_main_docker_not_in_path(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    def raise_fnf(*_a: Any, **_kw: Any) -> Any:
+    def _raise_fnf(*_a: Any, **_kw: Any) -> Any:
+        """Model a host where Docker is unavailable on ``PATH``."""
         raise FileNotFoundError("docker")
 
-    monkeypatch.setattr(ds.subprocess, "run", raise_fnf)
+    monkeypatch.setattr(ds.subprocess, "run", _raise_fnf)
     rc = ds.main(["--mode", "explore", "x.py"], env={}, cwd="/proj")
     assert rc == 127
     assert "'docker' binary not found" in capsys.readouterr().err
@@ -391,11 +401,12 @@ def test_main_caps_docker_run_with_resolved_timeout(
     """Every docker run carries a wall-clock cap; ``SANDBOX_TIMEOUT_SEC`` overrides the 600s default."""
     seen: dict[str, Any] = {}
 
-    def fake_run(_cmd: list[str], **kw: Any) -> _FakeCompleted:
+    def _fake_run(_cmd: list[str], **kw: Any) -> _FakeCompleted:
+        """Record timeout kwargs while returning a completed Docker process."""
         seen.update(kw)
         return _FakeCompleted(returncode=0)
 
-    monkeypatch.setattr(ds.subprocess, "run", fake_run)
+    monkeypatch.setattr(ds.subprocess, "run", _fake_run)
     rc = ds.main(["--mode", "explore", "x.py"], env=env, cwd="/proj")
     assert rc == 0
     assert seen["timeout"] == expected
@@ -407,7 +418,8 @@ def test_main_timeout_kills_container_and_returns_124(
     """A hung container is killed via its cidfile, the cidfile removed, and exit 124 returned."""
     calls: list[list[str]] = []
 
-    def fake_run(cmd: list[str], **kw: Any) -> _FakeCompleted:
+    def _fake_run(cmd: list[str], **kw: Any) -> _FakeCompleted:
+        """Write a container id before raising the timeout used by cleanup."""
         calls.append(cmd)
         if cmd[1] == "run":
             # Mirror docker: the id lands in the cidfile before the client is killed off.
@@ -415,7 +427,7 @@ def test_main_timeout_kills_container_and_returns_124(
             raise subprocess.TimeoutExpired(cmd, kw["timeout"])
         return _FakeCompleted(returncode=0)
 
-    monkeypatch.setattr(ds.subprocess, "run", fake_run)
+    monkeypatch.setattr(ds.subprocess, "run", _fake_run)
     rc = ds.main(["--mode", "verify", "pytest -q"], env={"SANDBOX_TIMEOUT_SEC": "1"}, cwd="/proj")
     assert rc == 124
     assert calls[1] == ["docker", "kill", "c0ffee"]
@@ -429,11 +441,12 @@ def test_main_timeout_without_cidfile_content_still_returns_124(
     """Timing out before docker wrote any container id must not crash the kill path."""
     calls: list[list[str]] = []
 
-    def fake_run(cmd: list[str], **kw: Any) -> _FakeCompleted:
+    def _fake_run(cmd: list[str], **kw: Any) -> _FakeCompleted:
+        """Raise Docker's timeout exception for the cleanup failure path."""
         calls.append(cmd)
         raise subprocess.TimeoutExpired(cmd, kw["timeout"])
 
-    monkeypatch.setattr(ds.subprocess, "run", fake_run)
+    monkeypatch.setattr(ds.subprocess, "run", _fake_run)
     rc = ds.main(["--mode", "explore", "x.py"], env={"SANDBOX_TIMEOUT_SEC": "2"}, cwd="/proj")
     assert rc == 124
     assert len(calls) == 1

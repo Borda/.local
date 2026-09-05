@@ -19,7 +19,7 @@ BASE_OID = "a" * 40
 HEAD_OID = "b" * 40
 
 
-def load_collector() -> ModuleType:
+def _load_collector() -> ModuleType:
     """Load the standalone collector without requiring package installation."""
     assert COLLECTOR.is_file(), COLLECTOR
     specification = importlib.util.spec_from_file_location("codex_rig_collect_pr", COLLECTOR)
@@ -33,8 +33,13 @@ def load_collector() -> ModuleType:
     return module
 
 
-def pr_payload(*, state: str = "OPEN", cross_repository: bool = False) -> dict[str, Any]:
-    """Return one complete same-repository PR metadata fixture."""
+def _pr_payload(*, state: str = "OPEN", cross_repository: bool = False) -> dict[str, Any]:
+    """Return one complete same-repository PR metadata fixture.
+
+    Example:
+        >>> _pr_payload(state="MERGED")["state"]
+        'MERGED'
+    """
     return {
         "number": 17,
         "title": "Portable collector",
@@ -61,8 +66,13 @@ def pr_payload(*, state: str = "OPEN", cross_repository: bool = False) -> dict[s
     }
 
 
-def public_pr_payload() -> dict[str, Any]:
-    """Return the public REST representation available without GitHub CLI access."""
+def _public_pr_payload() -> dict[str, Any]:
+    """Return the public REST representation available without GitHub CLI access.
+
+    Example:
+        >>> _public_pr_payload()["number"]
+        17
+    """
     return {
         "number": 17,
         "title": "Portable collector",
@@ -80,8 +90,13 @@ def public_pr_payload() -> dict[str, Any]:
     }
 
 
-def threads_payload(*, paginated: bool = False) -> dict[str, Any]:
-    """Return one GraphQL review-thread response fixture."""
+def _threads_payload(*, paginated: bool = False) -> dict[str, Any]:
+    """Return one GraphQL review-thread response fixture.
+
+    Example:
+        >>> len(_threads_payload()["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"])
+        3
+    """
     return {
         "data": {
             "repository": {
@@ -127,6 +142,7 @@ class FakeRunner:
         cross_repository: bool = False,
         github_remotes: dict[str, list[str]] | None = None,
     ) -> None:
+        """Initialize configurable process and GitHub-response fixtures."""
         self.calls: list[tuple[list[str], dict[str, Any]]] = []
         self.paginated = paginated
         self.statistics_unavailable = statistics_unavailable
@@ -157,11 +173,11 @@ class FakeRunner:
                 return subprocess.CompletedProcess(argv, 2, stdout=b"", stderr=b"unknown remote")
             stdout = "".join(f"{url}\n" for url in self.github_remotes[remote]).encode()
         elif argv[:3] == ["gh", "pr", "view"]:
-            stdout = json.dumps(pr_payload(state=self.pr_state, cross_repository=self.cross_repository)).encode()
+            stdout = json.dumps(_pr_payload(state=self.pr_state, cross_repository=self.cross_repository)).encode()
         elif argv[:3] == ["gh", "api", "graphql"]:
             if self.review_threads_failure:
                 return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"connection reset by peer")
-            stdout = json.dumps(threads_payload(paginated=self.paginated)).encode()
+            stdout = json.dumps(_threads_payload(paginated=self.paginated)).encode()
         elif argv[:3] == ["gh", "pr", "diff"]:
             stdout = b"diff --git a/a.py b/a.py\n"
         elif argv[:2] == ["git", "diff"] and "--binary" in argv:
@@ -218,7 +234,7 @@ class FakeRunner:
         return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr=b"")
 
 
-def configure_collector(monkeypatch: pytest.MonkeyPatch, module: ModuleType, runner: FakeRunner) -> None:
+def _configure_collector(monkeypatch: pytest.MonkeyPatch, module: ModuleType, runner: FakeRunner) -> None:
     """Install deterministic command discovery and execution boundaries."""
     monkeypatch.setattr(module.shutil, "which", lambda command: f"/fixture/{command}")
     monkeypatch.setattr(module.subprocess, "run", runner)
@@ -228,9 +244,9 @@ def test_collect_pr_writes_complete_noncheckout_artifact_schema(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Collect online review evidence with argv-only subprocess execution."""
-    module = load_collector()
-    runner = FakeRunner()
-    configure_collector(monkeypatch, module, runner)
+    module = _load_collector()
+    _runner = FakeRunner()
+    _configure_collector(monkeypatch, module, _runner)
     output = tmp_path / "pr"
 
     result = module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5)
@@ -278,16 +294,16 @@ def test_collect_pr_writes_complete_noncheckout_artifact_schema(
         {"__typename": "CheckRun", "name": "tests", "status": "COMPLETED", "conclusion": "SUCCESS"}
     ]
     assert "statusCheckRollup" in module.PR_FIELDS
-    assert all(call[1]["timeout"] == 5 for call in runner.calls)
+    assert all(call[1]["timeout"] == 5 for call in _runner.calls)
 
 
 def test_collect_pr_degrades_incomplete_review_thread_pagination(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Keep source review available while recording incomplete supplemental thread evidence."""
-    module = load_collector()
-    runner = FakeRunner(paginated=True)
-    configure_collector(monkeypatch, module, runner)
+    module = _load_collector()
+    _runner = FakeRunner(paginated=True)
+    _configure_collector(monkeypatch, module, _runner)
     output = tmp_path / "pr"
 
     result = module.collect_pr(target="", output=output, checkout=False, timeout_seconds=5)
@@ -307,9 +323,9 @@ def test_collect_pr_does_not_require_fallback_identity_when_primary_gh_succeeds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Keep the authenticated primary path independent of fallback-only remote trust checks."""
-    module = load_collector()
-    runner = FakeRunner(github_remotes={"origin": ["https://github.com/another/project.git"]})
-    configure_collector(monkeypatch, module, runner)
+    module = _load_collector()
+    _runner = FakeRunner(github_remotes={"origin": ["https://github.com/another/project.git"]})
+    _configure_collector(monkeypatch, module, _runner)
     output = tmp_path / "pr"
 
     result = module.collect_pr(
@@ -325,8 +341,8 @@ def test_collect_pr_does_not_require_fallback_identity_when_primary_gh_succeeds(
 
 def test_public_pr_metadata_normalizes_an_absent_optional_body() -> None:
     """Keep public PRs without a description eligible for limited fallback review."""
-    module = load_collector()
-    payload = public_pr_payload()
+    module = _load_collector()
+    payload = _public_pr_payload()
     payload["body"] = None
 
     normalized = module._normalized_public_pr(payload, module.PRTarget("Borda", "AI-Rig", 17))
@@ -359,26 +375,28 @@ def test_collect_pr_uses_public_metadata_fallback_with_trusted_pr_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Keep public PR context available only after canonical or uniquely configured identity verification."""
-    module = load_collector()
+    module = _load_collector()
     reader = sys.modules["github_read"]
     output = tmp_path / "pr"
     public_requests: list[str] = []
-    runner = FakeRunner()
+    _runner = FakeRunner()
 
-    def unavailable_gh(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def _unavailable_gh(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        """Fail authenticated PR reads while preserving unrelated fake commands."""
         if argv[:3] in (["gh", "pr", "view"], ["gh", "api", "graphql"]):
             if failure_kind == "timeout":
                 raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
             assert stderr is not None
             return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=stderr)
-        return runner(argv, **kwargs)
+        return _runner(argv, **kwargs)
 
-    def public_get(url: str, **kwargs: Any) -> bytes:
+    def _public_get(url: str, **kwargs: Any) -> bytes:
+        """Record and satisfy the public PR metadata fallback request."""
         public_requests.append(url)
-        return json.dumps(public_pr_payload()).encode()
+        return json.dumps(_public_pr_payload()).encode()
 
-    configure_collector(monkeypatch, module, unavailable_gh)
-    monkeypatch.setattr(reader, "public_github_get", public_get)
+    _configure_collector(monkeypatch, module, _unavailable_gh)
+    monkeypatch.setattr(reader, "public_github_get", _public_get)
 
     result = module.collect_pr(
         target=target,
@@ -391,9 +409,9 @@ def test_collect_pr_uses_public_metadata_fallback_with_trusted_pr_identity(
     assert public_requests == ["https://api.github.com/repos/Borda/AI-Rig/pulls/17"]
     assert any(
         argv == ["git", "fetch", "--no-tags", "origin", "refs/pull/17/head:refs/remotes/origin/pull/17/head"]
-        for argv, _ in runner.calls
+        for argv, _ in _runner.calls
     )
-    assert any(argv == ["git", "checkout", "--detach", "refs/remotes/origin/pull/17/head"] for argv, _ in runner.calls)
+    assert any(argv == ["git", "checkout", "--detach", "refs/remotes/origin/pull/17/head"] for argv, _ in _runner.calls)
     assert json.loads((output / "pr.json").read_text(encoding="utf-8"))["number"] == 17
     summary = json.loads((output / "online-review-summary.json").read_text(encoding="utf-8"))
     assert summary["pr_metadata_transport"] == "public-https-fallback"
@@ -446,21 +464,23 @@ def test_collect_pr_keeps_ambiguous_or_permission_limited_metadata_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Do not infer public identity or bypass GitHub's authenticated permission decision."""
-    module = load_collector()
+    module = _load_collector()
     reader = sys.modules["github_read"]
     output = tmp_path / "pr"
-    runner = FakeRunner(github_remotes=github_remotes)
+    _runner = FakeRunner(github_remotes=github_remotes)
 
-    def unavailable_gh(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def _unavailable_gh(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        """Return the configured authenticated PR failure and delegate other commands."""
         if argv[:3] == ["gh", "pr", "view"]:
             return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=stderr)
-        return runner(argv, **kwargs)
+        return _runner(argv, **kwargs)
 
-    def public_get(*args: Any, **kwargs: Any) -> bytes:
+    def _public_get(*args: Any, **kwargs: Any) -> bytes:
+        """Fail if an ambiguous authenticated result activates public fallback."""
         raise AssertionError("ambiguous selectors and permission failures must not activate public HTTPS fallback")
 
-    configure_collector(monkeypatch, module, unavailable_gh)
-    monkeypatch.setattr(reader, "public_github_get", public_get)
+    _configure_collector(monkeypatch, module, _unavailable_gh)
+    monkeypatch.setattr(reader, "public_github_get", _public_get)
 
     assert module.collect_pr(target=target, output=output, checkout=False, timeout_seconds=5) == 2
     assert (output / "pr-error.txt").read_text(encoding="utf-8") == f"{expected_error}\n"
@@ -470,21 +490,23 @@ def test_collect_pr_fails_closed_when_public_fallback_cannot_read_pr(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Do not emit partial PR evidence when a canonical URL is private or unavailable publicly."""
-    module = load_collector()
+    module = _load_collector()
     reader = sys.modules["github_read"]
     output = tmp_path / "pr"
-    runner = FakeRunner()
+    _runner = FakeRunner()
 
-    def unavailable_gh(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def _unavailable_gh(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        """Return an unavailable authenticated PR response for fallback testing."""
         if argv[:3] == ["gh", "pr", "view"]:
             return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"connection reset by peer")
-        return runner(argv, **kwargs)
+        return _runner(argv, **kwargs)
 
-    def public_get(*args: Any, **kwargs: Any) -> bytes:
+    def _public_get(*args: Any, **kwargs: Any) -> bytes:
+        """Return the expected public-read failure without creating partial evidence."""
         raise reader.GitHubReadError("github-not-found:gh-pr-view")
 
-    configure_collector(monkeypatch, module, unavailable_gh)
-    monkeypatch.setattr(reader, "public_github_get", public_get)
+    _configure_collector(monkeypatch, module, _unavailable_gh)
+    monkeypatch.setattr(reader, "public_github_get", _public_get)
 
     assert (
         module.collect_pr(
@@ -503,12 +525,13 @@ def test_collect_pr_keeps_graphql_missing_pr_out_of_public_fallback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Report a missing PR directly instead of retrying it as a network failure."""
-    module = load_collector()
+    module = _load_collector()
     reader = sys.modules["github_read"]
     output = tmp_path / "pr"
-    runner = FakeRunner()
+    _runner = FakeRunner()
 
-    def missing_pr(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def _missing_pr(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        """Return GitHub's semantic missing-PR response and delegate other commands."""
         if argv[:3] == ["gh", "pr", "view"]:
             return subprocess.CompletedProcess(
                 argv,
@@ -516,13 +539,14 @@ def test_collect_pr_keeps_graphql_missing_pr_out_of_public_fallback(
                 stdout=b"",
                 stderr=b"GraphQL: Could not resolve to a PullRequest with the number of 17.",
             )
-        return runner(argv, **kwargs)
+        return _runner(argv, **kwargs)
 
-    def public_get(*args: Any, **kwargs: Any) -> bytes:
+    def _public_get(*args: Any, **kwargs: Any) -> bytes:
+        """Fail if a semantic not-found response activates public fallback."""
         raise AssertionError("a semantic not-found response must not activate public fallback")
 
-    configure_collector(monkeypatch, module, missing_pr)
-    monkeypatch.setattr(reader, "public_github_get", public_get)
+    _configure_collector(monkeypatch, module, _missing_pr)
+    monkeypatch.setattr(reader, "public_github_get", _public_get)
 
     assert module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5) == 2
     assert (output / "pr-error.txt").read_text(encoding="utf-8") == "github-not-found:gh-pr-view\n"
@@ -533,21 +557,23 @@ def test_collect_pr_rejects_canonical_url_without_matching_configured_github_rem
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Prevent a public URL from authorizing a different local repository's checkout evidence."""
-    module = load_collector()
+    module = _load_collector()
     reader = sys.modules["github_read"]
     output = tmp_path / "pr"
-    runner = FakeRunner(github_remotes={"origin": ["https://github.com/Borda/other-repository.git"]})
+    _runner = FakeRunner(github_remotes={"origin": ["https://github.com/Borda/other-repository.git"]})
 
-    def unavailable_gh(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def _unavailable_gh(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        """Return a network failure for authenticated metadata and delegate other commands."""
         if argv[:3] == ["gh", "pr", "view"]:
             return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"connection reset by peer")
-        return runner(argv, **kwargs)
+        return _runner(argv, **kwargs)
 
-    def public_get(*args: Any, **kwargs: Any) -> bytes:
+    def _public_get(*args: Any, **kwargs: Any) -> bytes:
+        """Fail if a remote URL without a matching local remote requests metadata."""
         raise AssertionError("a URL without matching configured remote must not request public metadata")
 
-    configure_collector(monkeypatch, module, unavailable_gh)
-    monkeypatch.setattr(reader, "public_github_get", public_get)
+    _configure_collector(monkeypatch, module, _unavailable_gh)
+    monkeypatch.setattr(reader, "public_github_get", _public_get)
 
     assert (
         module.collect_pr(
@@ -572,18 +598,20 @@ def test_collect_pr_rejects_unsafe_public_target_without_persisting_it(
     target: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Keep query credentials and userinfo out of PR evidence artifacts and fallback requests."""
-    module = load_collector()
+    module = _load_collector()
     reader = sys.modules["github_read"]
     output = tmp_path / "pr"
 
-    def fail_if_called(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def _fail_if_called(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        """Fail if unsafe target input reaches command execution."""
         raise AssertionError(f"unsafe public target must be rejected before command execution: {argv}")
 
-    def public_get(*args: Any, **kwargs: Any) -> bytes:
+    def _public_get(*args: Any, **kwargs: Any) -> bytes:
+        """Fail if unsafe target input reaches the public HTTPS fallback."""
         raise AssertionError("unsafe public target must not activate public HTTPS fallback")
 
-    configure_collector(monkeypatch, module, fail_if_called)
-    monkeypatch.setattr(reader, "public_github_get", public_get)
+    _configure_collector(monkeypatch, module, _fail_if_called)
+    monkeypatch.setattr(reader, "public_github_get", _public_get)
 
     assert module.collect_pr(target=target, output=output, checkout=True, timeout_seconds=5) == 2
     target_artifact = output / "pr-target.txt"
@@ -596,9 +624,9 @@ def test_collect_pr_records_unavailable_diff_statistics_without_failing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Keep binary or rename-only PR evidence when derived statistics are unsupported."""
-    module = load_collector()
-    runner = FakeRunner(statistics_unavailable=True)
-    configure_collector(monkeypatch, module, runner)
+    module = _load_collector()
+    _runner = FakeRunner(statistics_unavailable=True)
+    _configure_collector(monkeypatch, module, _runner)
     output = tmp_path / "pr"
 
     result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
@@ -615,9 +643,9 @@ def test_collect_pr_uses_verified_local_diff_when_review_thread_fetch_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Recover a fork-style PR from supplemental integration failure through exact local source."""
-    module = load_collector()
-    runner = FakeRunner(review_threads_failure=True, cross_repository=True)
-    configure_collector(monkeypatch, module, runner)
+    module = _load_collector()
+    _runner = FakeRunner(review_threads_failure=True, cross_repository=True)
+    _configure_collector(monkeypatch, module, _runner)
     output = tmp_path / "pr"
 
     result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
@@ -626,9 +654,9 @@ def test_collect_pr_uses_verified_local_diff_when_review_thread_fetch_fails(
     assert json.loads((output / "pr.json").read_text())["body"].startswith("Fix checkpoint")
     assert (output / "review-threads-error.txt").read_text() == "github-network:gh-review-threads\n"
     assert (output / "diff.patch").read_bytes() == b"diff --git a/a.py b/a.py\n"
-    assert any(argv == ["gh", "pr", "checkout", "17"] for argv, _ in runner.calls)
-    assert any(argv == ["git", "diff", "--binary", f"{BASE_OID}...{HEAD_OID}", "--"] for argv, _ in runner.calls)
-    assert not any(argv[:3] == ["gh", "pr", "diff"] for argv, _ in runner.calls)
+    assert any(argv == ["gh", "pr", "checkout", "17"] for argv, _ in _runner.calls)
+    assert any(argv == ["git", "diff", "--binary", f"{BASE_OID}...{HEAD_OID}", "--"] for argv, _ in _runner.calls)
+    assert not any(argv[:3] == ["gh", "pr", "diff"] for argv, _ in _runner.calls)
     checkout = json.loads((output / "local-checkout.json").read_text())
     assert checkout["diff_source"] == "verified-local-checkout"
     assert checkout["diff_base_oid"] == BASE_OID
@@ -639,15 +667,15 @@ def test_collect_pr_reuses_already_exact_pr_head_for_local_diff(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Avoid a fragile checkout call when the current fork branch already matches PR metadata."""
-    module = load_collector()
-    runner = FakeRunner(current_head_oid=HEAD_OID, cross_repository=True)
-    configure_collector(monkeypatch, module, runner)
+    module = _load_collector()
+    _runner = FakeRunner(current_head_oid=HEAD_OID, cross_repository=True)
+    _configure_collector(monkeypatch, module, _runner)
     output = tmp_path / "pr"
 
     result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
 
     assert result == 0
-    assert not any(argv[:3] == ["gh", "pr", "checkout"] for argv, _ in runner.calls)
+    assert not any(argv[:3] == ["gh", "pr", "checkout"] for argv, _ in _runner.calls)
     checkout = json.loads((output / "local-checkout.json").read_text())
     assert checkout["command"] == "not-run: already at expected PR head"
     assert checkout["head_matches_pr"] is True
@@ -658,9 +686,9 @@ def test_collect_pr_checkout_writes_verified_fetch_and_checkout_artifacts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Bind target refresh and local checkout to PR metadata OIDs without force."""
-    module = load_collector()
-    runner = FakeRunner()
-    configure_collector(monkeypatch, module, runner)
+    module = _load_collector()
+    _runner = FakeRunner()
+    _configure_collector(monkeypatch, module, _runner)
     output = tmp_path / "pr"
 
     result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
@@ -680,16 +708,16 @@ def test_collect_pr_checkout_writes_verified_fetch_and_checkout_artifacts(
     assert checkout["command"] == "gh pr checkout 17"
     assert checkout["diff_source"] == "verified-local-checkout"
     assert "no --force was used" in checkout["force_policy"]
-    assert all("--force" not in argument for argv, _ in runner.calls for argument in argv)
+    assert all("--force" not in argument for argv, _ in _runner.calls for argument in argv)
 
 
 def test_collect_pr_records_target_branch_divergence_without_rejecting_verified_pr_head(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Allow historical target divergence while still requiring the exact PR head."""
-    module = load_collector()
-    runner = FakeRunner(current_base_oid="c" * 40, recorded_base_is_ancestor=False, pr_state="MERGED")
-    configure_collector(monkeypatch, module, runner)
+    module = _load_collector()
+    _runner = FakeRunner(current_base_oid="c" * 40, recorded_base_is_ancestor=False, pr_state="MERGED")
+    _configure_collector(monkeypatch, module, _runner)
     output = tmp_path / "pr"
 
     result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
@@ -708,9 +736,9 @@ def test_collect_pr_accepts_open_pr_when_target_advanced_from_recorded_base(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Keep reviewing an exact PR head after its target branch advances."""
-    module = load_collector()
-    runner = FakeRunner(current_base_oid="c" * 40)
-    configure_collector(monkeypatch, module, runner)
+    module = _load_collector()
+    _runner = FakeRunner(current_base_oid="c" * 40)
+    _configure_collector(monkeypatch, module, _runner)
     output = tmp_path / "pr"
 
     result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
@@ -726,9 +754,9 @@ def test_collect_pr_rejects_open_pr_when_target_diverged_from_recorded_base(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Fail closed when the fetched target no longer descends from the recorded base."""
-    module = load_collector()
-    runner = FakeRunner(current_base_oid="c" * 40, recorded_base_is_ancestor=False)
-    configure_collector(monkeypatch, module, runner)
+    module = _load_collector()
+    _runner = FakeRunner(current_base_oid="c" * 40, recorded_base_is_ancestor=False)
+    _configure_collector(monkeypatch, module, _runner)
     output = tmp_path / "pr"
 
     result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
@@ -739,13 +767,14 @@ def test_collect_pr_rejects_open_pr_when_target_diverged_from_recorded_base(
 
 def test_git_ancestry_probe_rejects_unverifiable_commits() -> None:
     """Keep a Git ancestry error distinct from a proven target divergence."""
-    module = load_collector()
+    module = _load_collector()
 
-    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def _runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        """Return an ancestry command failure for the targeted probe."""
         return subprocess.CompletedProcess(argv, 128, stdout=b"", stderr=b"unknown revision")
 
     with pytest.raises(module.CollectionError, match="command-failed:target-branch-ancestry") as error:
-        module._git_is_ancestor(runner, 5, BASE_OID, "c" * 40)
+        module._git_is_ancestor(_runner, 5, BASE_OID, "c" * 40)
 
     assert error.value.diagnostics == {
         "exit_code": 128,
@@ -756,9 +785,9 @@ def test_git_ancestry_probe_rejects_unverifiable_commits() -> None:
 
 def test_collect_pr_rejects_unknown_pr_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Fail closed instead of treating an unrecognized GitHub state as historical evidence."""
-    module = load_collector()
-    runner = FakeRunner(pr_state="UNKNOWN")
-    configure_collector(monkeypatch, module, runner)
+    module = _load_collector()
+    _runner = FakeRunner(pr_state="UNKNOWN")
+    _configure_collector(monkeypatch, module, _runner)
     output = tmp_path / "pr"
 
     result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
@@ -771,18 +800,19 @@ def test_collect_pr_preserves_checkout_started_state_after_checkout_command_fail
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Retain conservative local-state evidence if checkout may already have changed files."""
-    module = load_collector()
+    module = _load_collector()
     success_runner = FakeRunner()
 
-    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def _runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        """Fail checkout while delegating all metadata commands to the successful runner."""
         if argv[:3] == ["gh", "pr", "checkout"]:
             return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"checkout failed")
         return success_runner(argv, **kwargs)
 
-    configure_collector(monkeypatch, module, success_runner)
+    _configure_collector(monkeypatch, module, success_runner)
     output = tmp_path / "pr"
 
-    result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5, run=runner)
+    result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5, run=_runner)
 
     assert result == 2
     assert json.loads((output / "checkout-state.json").read_text()) == {
@@ -798,9 +828,9 @@ def test_collect_pr_checks_out_merged_pr_when_its_named_head_branch_is_deleted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Use GitHub's pull ref and exact SHA check when a historical source branch is deleted."""
-    module = load_collector()
-    runner = FakeRunner(pr_state="MERGED", named_head_ref_missing=True)
-    configure_collector(monkeypatch, module, runner)
+    module = _load_collector()
+    _runner = FakeRunner(pr_state="MERGED", named_head_ref_missing=True)
+    _configure_collector(monkeypatch, module, _runner)
     output = tmp_path / "pr"
 
     result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
@@ -813,20 +843,21 @@ def test_collect_pr_checks_out_merged_pr_when_its_named_head_branch_is_deleted(
     checkout = json.loads((output / "local-checkout.json").read_text())
     assert checkout["head_matches_pr"] is True
     assert checkout["command"] == "git checkout --detach refs/remotes/origin/pull/17/head"
-    assert not any(argv[:3] == ["git", "fetch", "--no-tags"] and "portable-pr" in argv[-1] for argv, _ in runner.calls)
+    assert not any(argv[:3] == ["git", "fetch", "--no-tags"] and "portable-pr" in argv[-1] for argv, _ in _runner.calls)
 
 
 def test_collect_pr_timeout_is_bounded_and_records_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Convert a stalled external command into the stable collection failure contract."""
-    module = load_collector()
+    module = _load_collector()
     monkeypatch.setattr(module.shutil, "which", lambda command: f"/fixture/{command}")
 
-    def timeout(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def _timeout(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        """Timeout the authenticated PR read while returning success for other commands."""
         if argv[:3] == ["gh", "pr", "view"]:
             raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
         return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
 
-    monkeypatch.setattr(module.subprocess, "run", timeout)
+    monkeypatch.setattr(module.subprocess, "run", _timeout)
     output = tmp_path / "pr"
 
     result = module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=1)
@@ -839,11 +870,12 @@ def test_collect_pr_removes_terminal_failure_markers_after_successful_retry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Ensure a successful retry cannot be mistaken for the previous unavailable review."""
-    module = load_collector()
+    module = _load_collector()
     success_runner = FakeRunner()
     attempts = 0
 
-    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def _runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        """Fail the first authenticated attempt, then delegate to the successful runner."""
         nonlocal attempts
         if argv[:3] == ["gh", "pr", "view"] and attempts == 0:
             attempts += 1
@@ -853,11 +885,11 @@ def test_collect_pr_removes_terminal_failure_markers_after_successful_retry(
     monkeypatch.setattr(module.shutil, "which", lambda command: f"/fixture/{command}")
     output = tmp_path / "pr"
 
-    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=runner) == 2
+    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=_runner) == 2
     assert (output / "pr-error.txt").is_file()
     assert (output / "command-failure.json").is_file()
 
-    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=runner) == 0
+    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=_runner) == 0
     assert not (output / "pr-error.txt").exists()
     assert not (output / "command-failure.json").exists()
     assert (output / "pr.json").is_file()
@@ -867,10 +899,11 @@ def test_collect_pr_removes_stale_diagnostic_before_nondiagnostic_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Ensure a later parse failure cannot retain a stale GitHub failure classifier."""
-    module = load_collector()
+    module = _load_collector()
     attempts = 0
 
-    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def _runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        """Return the staged failure sequence used to test diagnostic cleanup."""
         nonlocal attempts
         if argv[:3] == ["git", "status", "--short"]:
             return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
@@ -884,10 +917,10 @@ def test_collect_pr_removes_stale_diagnostic_before_nondiagnostic_failure(
     monkeypatch.setattr(module.shutil, "which", lambda command: f"/fixture/{command}")
     output = tmp_path / "pr"
 
-    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=runner) == 2
+    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=_runner) == 2
     assert (output / "command-failure.json").is_file()
 
-    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=runner) == 2
+    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=_runner) == 2
     assert (output / "pr-error.txt").read_text(encoding="utf-8") == "invalid-json:pr-view\n"
     assert not (output / "command-failure.json").exists()
 
@@ -896,7 +929,7 @@ def test_collect_pr_failure_clears_prior_attempt_before_retaining_current_diagno
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Prevent stale source evidence while retaining diagnostics produced by the failed attempt."""
-    module = load_collector()
+    module = _load_collector()
     output = tmp_path / "pr"
     monkeypatch.setattr(module.shutil, "which", lambda command: f"/fixture/{command}")
 
@@ -904,14 +937,15 @@ def test_collect_pr_failure_clears_prior_attempt_before_retaining_current_diagno
     assert (output / "pr.json").is_file()
     assert (output / "diff.patch").is_file()
 
-    def failing_runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def _failing_runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        """Return status success and a classified GitHub network failure for the retry."""
         if argv[:3] == ["git", "status", "--short"]:
             return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
         if argv[:3] == ["gh", "pr", "view"]:
             return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"connection reset by peer")
         raise AssertionError(f"unexpected command: {argv}")
 
-    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=failing_runner) == 2
+    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=_failing_runner) == 2
     assert (output / "pr-error.txt").read_text(encoding="utf-8") == "github-network:gh-pr-view\n"
     retained = {filename for filename in module.COLLECTOR_EVIDENCE_ARTIFACTS if (output / filename).exists()}
     assert retained == {"status.txt"}
@@ -942,24 +976,26 @@ def test_collect_pr_failure_clears_prior_attempt_before_retaining_current_diagno
 )
 def test_run_rejects_non_read_only_gh_command(argv: list[str], label: str) -> None:
     """Reject a GitHub CLI command outside the shared read-only boundary."""
-    module = load_collector()
+    module = _load_collector()
     calls: list[list[str]] = []
 
-    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def _runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        """Record an unsafe command invocation if the read-only guard regresses."""
         calls.append(argv)
         return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
 
     with pytest.raises(module.CollectionError, match=f"unsafe-gh-command:{label}"):
-        module._run(runner, argv, 5, label)
+        module._run(_runner, argv, 5, label)
 
     assert calls == []
 
 
 def test_run_preserves_classified_gh_failure_details() -> None:
     """Record a transport failure without exposing credentials."""
-    module = load_collector()
+    module = _load_collector()
 
-    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def _runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        """Return a credential-bearing network error for failure sanitization checks."""
         return subprocess.CompletedProcess(
             argv,
             1,
@@ -968,7 +1004,7 @@ def test_run_preserves_classified_gh_failure_details() -> None:
         )
 
     with pytest.raises(module.CollectionError, match="github-network:gh-pr-view") as error:
-        module._run(runner, ["gh", "pr", "view", "17", "--json", module.PR_FIELDS], 5, "gh-pr-view")
+        module._run(_runner, ["gh", "pr", "view", "17", "--json", module.PR_FIELDS], 5, "gh-pr-view")
 
     assert error.value.diagnostics == {
         "exit_code": 1,
@@ -980,9 +1016,10 @@ def test_run_preserves_classified_gh_failure_details() -> None:
 
 def test_collect_pr_writes_classified_opaque_failure_artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Publish actionable, credential-safe evidence when GitHub collection fails."""
-    module = load_collector()
+    module = _load_collector()
 
-    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def _runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        """Return status success and a credential-bearing GitHub failure response."""
         if argv[:3] == ["git", "status", "--short"]:
             return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
         return subprocess.CompletedProcess(
@@ -995,7 +1032,7 @@ def test_collect_pr_writes_classified_opaque_failure_artifact(tmp_path: Path, mo
     monkeypatch.setattr(module.shutil, "which", lambda command: f"/fixture/{command}")
     output = tmp_path / "pr"
 
-    result = module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=runner)
+    result = module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=_runner)
 
     assert result == 2
     assert (output / "pr-error.txt").read_text(encoding="utf-8") == "github-network:gh-pr-view\n"

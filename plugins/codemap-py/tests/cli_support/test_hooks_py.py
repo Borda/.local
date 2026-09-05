@@ -160,19 +160,38 @@ def _run_inject(
 
 
 def _lock_file(tmpdir: Path, proj: str) -> Path:
+    """Return the refresh-lock path for a project in the test temp directory.
+
+    >>> _lock_file(Path("tmp"), "demo").name
+    'codemap-refresh-demo'
+    """
     return tmpdir / f"codemap-refresh-{proj}"
 
 
 def _session_flag(tmpdir: Path, proj: str, runtime: str = "claude") -> Path:
+    """Return the per-runtime preamble-deduplication flag path.
+
+    >>> _session_flag(Path("tmp"), "demo", "codex").name
+    'codemap-preamble-demo-codex'
+    """
     return tmpdir / f"codemap-preamble-{proj}-{runtime}"
 
 
 def _stale_flag(tmpdir: Path, proj: str, runtime: str = "claude") -> Path:
+    """Return the per-runtime stale-index sentinel path.
+
+    >>> _stale_flag(Path("tmp"), "demo").name
+    'codemap-stale-demo-claude'
+    """
     return tmpdir / f"codemap-stale-{proj}-{runtime}"
 
 
 def _session_marker(repo: Path, runtime: str = "claude") -> Path:
-    """Return one runtime's repository-local session marker path."""
+    """Return one runtime's repository-local session marker path.
+
+    >>> _session_marker(Path("repo"), "codex").as_posix()
+    'repo/.cache/codemap/current-session-codex.json'
+    """
     return repo / ".cache" / "codemap" / f"current-session-{runtime}.json"
 
 
@@ -576,11 +595,12 @@ class TestInjectPreambleRefreshLock:
         scan_bin.write_text("print('scan')\n")
         calls: list[tuple[list[str], dict]] = []
 
-        def fake_popen(command: list[str], **kwargs: object) -> object:
+        def _fake_popen(command: list[str], **kwargs: object) -> object:
+            """Record the Windows refresh spawn arguments."""
             calls.append((command, kwargs))
             return object()
 
-        monkeypatch.setattr(_INJECT_MODULE.subprocess, "Popen", fake_popen)
+        monkeypatch.setattr(_INJECT_MODULE.subprocess, "Popen", _fake_popen)
         monkeypatch.setattr(_INJECT_MODULE.os, "name", "nt")
         monkeypatch.setenv("SystemRoot", "C:\\Windows")
 
@@ -599,11 +619,12 @@ class TestInjectPreambleRefreshLock:
         """A Codex prompt refresh must not be attributed to the Claude hook path."""
         calls: list[dict] = []
 
-        def fake_popen(command: list[str], **kwargs: object) -> object:
+        def _fake_popen(command: list[str], **kwargs: object) -> object:
+            """Record the Codex refresh spawn arguments."""
             calls.append(kwargs)
             return object()
 
-        monkeypatch.setattr(_INJECT_MODULE.subprocess, "Popen", fake_popen)
+        monkeypatch.setattr(_INJECT_MODULE.subprocess, "Popen", _fake_popen)
         monkeypatch.setenv("CODEMAP_RUNTIME", "codex")
 
         assert _INJECT_MODULE.spawn_refresh(tmp_path / "scan-index", tmp_path, tmp_path)

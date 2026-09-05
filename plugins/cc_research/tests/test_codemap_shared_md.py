@@ -61,7 +61,14 @@ _POSIX_BASH = _find_posix_bash()
 
 
 def _bash_blocks(path: Path) -> list[str]:
-    """Return the bodies of every ```bash fenced block in *path*."""
+    """Return the bodies of every ```bash fenced block in *path*.
+
+    Examples:
+        >>> path = getfixture("tmp_path") / "guide.md"
+        >>> _ = path.write_text("```bash\\necho ready\\n```\\n")
+        >>> _bash_blocks(path)
+        ['echo ready\\n']
+    """
     return re.findall(r"```bash\n(.*?)```", path.read_text(encoding="utf-8"), re.DOTALL)
 
 

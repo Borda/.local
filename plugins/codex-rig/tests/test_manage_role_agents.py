@@ -9,6 +9,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile  # noqa: F401 - used by executable doctest examples
 from pathlib import Path
 from types import ModuleType
 
@@ -31,12 +32,12 @@ TRANSACTION_PATH = SCRIPTS / "_agent_shim_transaction.py"
 MANAGER_PATH = SCRIPTS / "manage_role_agents.py"
 
 
-def load_module(path: Path, name: str) -> ModuleType:
+def _load_module(path: Path, name: str) -> ModuleType:
     """Load the manager with its direct sibling dependencies available."""
     if path == LIFECYCLE_PATH and "generate_roles" not in sys.modules:
-        load_module(GENERATOR_PATH, "generate_roles")
+        _load_module(GENERATOR_PATH, "generate_roles")
     if path == JOURNAL_PATH and "_agent_shim_lifecycle" not in sys.modules:
-        load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
+        _load_module(LIFECYCLE_PATH, "_agent_shim_lifecycle")
     if path == OBSERVER_PATH:
         for dependency, module_name in (
             (GENERATOR_PATH, "generate_roles"),
@@ -44,7 +45,7 @@ def load_module(path: Path, name: str) -> ModuleType:
             (JOURNAL_PATH, "_agent_shim_journal"),
         ):
             if module_name not in sys.modules:
-                load_module(dependency, module_name)
+                _load_module(dependency, module_name)
     if path == MANAGER_PATH:
         for dependency, module_name in (
             (GENERATOR_PATH, "generate_roles"),
@@ -57,7 +58,7 @@ def load_module(path: Path, name: str) -> ModuleType:
             (TRANSACTION_PATH, "_agent_shim_transaction"),
         ):
             if module_name not in sys.modules:
-                load_module(dependency, module_name)
+                _load_module(dependency, module_name)
     specification = importlib.util.spec_from_file_location(name, path)
     assert specification is not None
     assert specification.loader is not None
@@ -67,7 +68,7 @@ def load_module(path: Path, name: str) -> ModuleType:
     return module
 
 
-def snapshot(root: Path) -> tuple[tuple[object, ...], ...]:
+def _snapshot(root: Path) -> tuple[tuple[object, ...], ...]:
     """Capture mutation-relevant bytes and metadata while excluding atime."""
     rows = []
     for path in [root, *sorted(root.rglob("*"))]:
@@ -88,8 +89,14 @@ def snapshot(root: Path) -> tuple[tuple[object, ...], ...]:
     return tuple(rows)
 
 
-def executable(tmp_path: Path) -> Path:
-    """Create one bounded executable used only as Codex identity evidence."""
+def _executable(tmp_path: Path) -> Path:
+    """Create one bounded executable used only as Codex identity evidence.
+
+    Example:
+        >>> with tempfile.TemporaryDirectory() as directory:
+        ...     _executable(Path(directory)).name
+        'codex'
+    """
     path = tmp_path / "codex"
     path.write_bytes(b"#!/bin/sh\nexit 0\n")
     path.chmod(0o700)
@@ -98,11 +105,11 @@ def executable(tmp_path: Path) -> Path:
 
 def test_doctor_validates_package_without_writing_user_state(tmp_path: Path) -> None:
     """Report verified local prerequisites while preserving every home byte."""
-    module = load_module(MANAGER_PATH, "codex_rig_manager_doctor")
+    module = _load_module(MANAGER_PATH, "codex_rig_manager_doctor")
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
-    codex = executable(tmp_path)
-    before = snapshot(tmp_path)
+    codex = _executable(tmp_path)
+    before = _snapshot(tmp_path)
 
     result = module.diagnose(
         action=module.ManagerAction.DOCTOR,
@@ -118,7 +125,7 @@ def test_doctor_validates_package_without_writing_user_state(tmp_path: Path) -> 
     assert result.checks["active_package"].status == "degraded"
     assert result.state == "absent"
     assert result.targets == "absent"
-    assert snapshot(tmp_path) == before
+    assert _snapshot(tmp_path) == before
 
 
 @pytest.mark.parametrize("action", ["doctor", "status"])
@@ -128,12 +135,12 @@ def test_direct_diagnostic_does_not_write_installed_plugin_bytecode(tmp_path: Pa
     shutil.copytree(PLUGIN_ROOT, plugin_root, ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"))
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
-    executable(tmp_path)
+    _executable(tmp_path)
     environment = os.environ.copy()
     environment.pop("PYTHONDONTWRITEBYTECODE", None)
     environment["CODEX_HOME"] = str(home)
     environment["PATH"] = f"{tmp_path}{os.pathsep}{environment.get('PATH', '')}"
-    before = snapshot(plugin_root)
+    before = _snapshot(plugin_root)
 
     completed = subprocess.run(
         [sys.executable, str(plugin_root / "scripts" / "manage_role_agents.py"), action],
@@ -149,12 +156,12 @@ def test_direct_diagnostic_does_not_write_installed_plugin_bytecode(tmp_path: Pa
     result = json.loads(completed.stdout)
     assert result["action"] == action
     assert result["classification"] == "degraded"
-    assert snapshot(plugin_root) == before
+    assert _snapshot(plugin_root) == before
 
 
 def test_status_reports_corrupt_state_as_blocked_without_mutation(tmp_path: Path) -> None:
     """Expose untrusted state without repair, adoption, or cleanup writes."""
-    module = load_module(MANAGER_PATH, "codex_rig_manager_status")
+    module = _load_module(MANAGER_PATH, "codex_rig_manager_status")
     home = tmp_path / "home"
     state = home / "codex-rig" / "shims"
     state.mkdir(parents=True, mode=0o700)
@@ -164,8 +171,8 @@ def test_status_reports_corrupt_state_as_blocked_without_mutation(tmp_path: Path
     payload = state / "state.json"
     payload.write_bytes(b"corrupt")
     payload.chmod(0o600)
-    codex = executable(tmp_path)
-    before = snapshot(tmp_path)
+    codex = _executable(tmp_path)
+    before = _snapshot(tmp_path)
 
     result = module.diagnose(
         action=module.ManagerAction.STATUS,
@@ -177,7 +184,7 @@ def test_status_reports_corrupt_state_as_blocked_without_mutation(tmp_path: Path
 
     assert result.classification == "blocked"
     assert result.state == "corrupt"
-    assert snapshot(tmp_path) == before
+    assert _snapshot(tmp_path) == before
 
 
 @pytest.mark.parametrize(
@@ -192,17 +199,17 @@ def test_public_grammar_rejects_invalid_or_unwired_mutation_actions(
     expected: int,
 ) -> None:
     """Keep the one-action grammar deterministic with no hidden bypass flags."""
-    module = load_module(MANAGER_PATH, f"codex_rig_manager_grammar_{expected}_{len(arguments)}")
+    module = _load_module(MANAGER_PATH, f"codex_rig_manager_grammar_{expected}_{len(arguments)}")
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
     monkeypatch.setenv("CODEX_HOME", str(home))
-    before = snapshot(tmp_path)
+    before = _snapshot(tmp_path)
 
     assert module.main(arguments) == expected
     output = capsys.readouterr().out
 
     assert "classification" in output
-    assert snapshot(tmp_path) == before
+    assert _snapshot(tmp_path) == before
 
 
 def test_install_is_platform_blocked_before_plan_or_approval(
@@ -211,19 +218,19 @@ def test_install_is_platform_blocked_before_plan_or_approval(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Refuse unsupported shim selection without planning, approval, or writes."""
-    module = load_module(MANAGER_PATH, "codex_rig_manager_platform_blocked")
+    module = _load_module(MANAGER_PATH, "codex_rig_manager_platform_blocked")
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
     monkeypatch.setenv("CODEX_HOME", str(home))
 
-    def unexpected_call(*_args: object, **_kwargs: object) -> None:
+    def _unexpected_call(*_args: object, **_kwargs: object) -> None:
         """Fail if install reaches mutation planning or interactive approval."""
         pytest.fail("platform-blocked install continued into mutation flow")
 
-    monkeypatch.setattr(module, "plan_mutation", unexpected_call)
-    monkeypatch.setattr(module, "plan_recovery", unexpected_call)
-    monkeypatch.setattr("builtins.input", unexpected_call)
-    before = snapshot(tmp_path)
+    monkeypatch.setattr(module, "plan_mutation", _unexpected_call)
+    monkeypatch.setattr(module, "plan_recovery", _unexpected_call)
+    monkeypatch.setattr("builtins.input", _unexpected_call)
+    before = _snapshot(tmp_path)
 
     assert module.main(["install"]) == 5
 
@@ -233,12 +240,12 @@ def test_install_is_platform_blocked_before_plan_or_approval(
         "detail": "active Codex collaboration has no explicit custom-agent selector",
         "writes": 0,
     }
-    assert snapshot(tmp_path) == before
+    assert _snapshot(tmp_path) == before
 
 
 def test_doctor_refuses_symlinked_home_alias(tmp_path: Path) -> None:
     """Block unresolved home aliases instead of silently changing authority."""
-    module = load_module(MANAGER_PATH, "codex_rig_manager_alias")
+    module = _load_module(MANAGER_PATH, "codex_rig_manager_alias")
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
     linked = tmp_path / "linked"
@@ -249,22 +256,22 @@ def test_doctor_refuses_symlinked_home_alias(tmp_path: Path) -> None:
             action="doctor",
             codex_home=linked,
             plugin_root=PLUGIN_ROOT,
-            codex_binary=executable(tmp_path),
+            codex_binary=_executable(tmp_path),
             check_active_package=False,
         )
 
 
 def test_internal_approved_install_reinstall_remove_converges(tmp_path: Path) -> None:
     """Apply and remove the whole roster while repeated actions produce no writes."""
-    module = load_module(MANAGER_PATH, "codex_rig_manager_mutation")
+    module = _load_module(MANAGER_PATH, "codex_rig_manager_mutation")
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
     agents = home / "agents"
     agents.mkdir(mode=0o700)
     agents.chmod(0o755)
-    codex = executable(tmp_path)
+    codex = _executable(tmp_path)
     install_id = "123e4567-e89b-42d3-a456-426614174001"
-    before_plan = snapshot(tmp_path)
+    before_plan = _snapshot(tmp_path)
     install = module.plan_mutation(
         action=module.ManagerAction.INSTALL,
         codex_home=home,
@@ -275,7 +282,7 @@ def test_internal_approved_install_reinstall_remove_converges(tmp_path: Path) ->
         transaction_nonce="123e4567-e89b-42d3-a456-426614174002",
     )
     assert install.approval is not None
-    assert snapshot(tmp_path) == before_plan
+    assert _snapshot(tmp_path) == before_plan
 
     committed = module.apply_mutation(install, install.approval.digest)
 
@@ -283,7 +290,7 @@ def test_internal_approved_install_reinstall_remove_converges(tmp_path: Path) ->
     targets = sorted(agents.glob("codex-rig-*.toml"))
     assert len(targets) == 15
     assert stat.S_IMODE(agents.stat().st_mode) == 0o755
-    installed = snapshot(home)
+    installed = _snapshot(home)
     repeated = module.plan_mutation(
         action=module.ManagerAction.INSTALL,
         codex_home=home,
@@ -294,7 +301,7 @@ def test_internal_approved_install_reinstall_remove_converges(tmp_path: Path) ->
     )
     assert repeated.approval is None
     assert module.apply_mutation(repeated, "") is None
-    assert snapshot(home) == installed
+    assert _snapshot(home) == installed
 
     removal = module.plan_mutation(
         action=module.ManagerAction.REMOVE,
@@ -316,7 +323,7 @@ def test_internal_approved_install_reinstall_remove_converges(tmp_path: Path) ->
 
 def test_large_symlinked_codex_executable_uses_package_binary_bound(tmp_path: Path) -> None:
     """Accept a stable Codex executable above the obsolete 256 MiB limit."""
-    module = load_module(MANAGER_PATH, "codex_rig_manager_large_codex")
+    module = _load_module(MANAGER_PATH, "codex_rig_manager_large_codex")
     target = tmp_path / "codex-target"
     with target.open("wb") as stream:
         stream.truncate(268_435_457)
@@ -333,7 +340,7 @@ def test_large_symlinked_codex_executable_uses_package_binary_bound(tmp_path: Pa
 
 def test_codex_executable_accepts_exact_package_binary_bound(tmp_path: Path) -> None:
     """Accept the inclusive 512 MiB package-wide executable boundary."""
-    module = load_module(MANAGER_PATH, "codex_rig_manager_exact_binary_bound")
+    module = _load_module(MANAGER_PATH, "codex_rig_manager_exact_binary_bound")
     target = tmp_path / "codex-target"
     with target.open("wb") as stream:
         stream.truncate(module.MAX_BINARY_BYTES)
@@ -361,7 +368,7 @@ def test_codex_executable_accepts_exact_package_binary_bound(tmp_path: Path) -> 
 
 def test_oversized_codex_executable_reports_observed_size_and_limit(tmp_path: Path) -> None:
     """Explain the exact bounded-file invariant when an executable is too large."""
-    module = load_module(MANAGER_PATH, "codex_rig_manager_oversized_codex")
+    module = _load_module(MANAGER_PATH, "codex_rig_manager_oversized_codex")
     target = tmp_path / "codex"
     with target.open("wb") as stream:
         stream.truncate(module.MAX_BINARY_BYTES + 1)
@@ -379,36 +386,36 @@ def test_oversized_codex_executable_reports_observed_size_and_limit(tmp_path: Pa
 
 def test_wrong_approval_digest_causes_zero_writes(tmp_path: Path) -> None:
     """Refuse mutation authority before creating the coordination lock or roots."""
-    module = load_module(MANAGER_PATH, "codex_rig_manager_wrong_approval")
+    module = _load_module(MANAGER_PATH, "codex_rig_manager_wrong_approval")
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
     plan = module.plan_mutation(
         action=module.ManagerAction.INSTALL,
         codex_home=home,
         plugin_root=PLUGIN_ROOT,
-        codex_binary=executable(tmp_path),
+        codex_binary=_executable(tmp_path),
         require_active_package=False,
         install_id="123e4567-e89b-42d3-a456-426614174001",
         transaction_nonce="123e4567-e89b-42d3-a456-426614174005",
     )
-    before = snapshot(tmp_path)
+    before = _snapshot(tmp_path)
 
     with pytest.raises(ValueError, match="approval digest mismatch"):
         module.apply_mutation(plan, "f" * 64)
 
-    assert snapshot(tmp_path) == before
+    assert _snapshot(tmp_path) == before
 
 
 def test_under_lock_drift_preserves_concurrent_foreign_target(tmp_path: Path) -> None:
     """Stop before transaction creation when target evidence changes after approval."""
-    module = load_module(MANAGER_PATH, "codex_rig_manager_drift")
+    module = _load_module(MANAGER_PATH, "codex_rig_manager_drift")
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
     plan = module.plan_mutation(
         action=module.ManagerAction.INSTALL,
         codex_home=home,
         plugin_root=PLUGIN_ROOT,
-        codex_binary=executable(tmp_path),
+        codex_binary=_executable(tmp_path),
         require_active_package=False,
         install_id="123e4567-e89b-42d3-a456-426614174001",
         transaction_nonce="123e4567-e89b-42d3-a456-426614174006",
@@ -428,7 +435,7 @@ def test_under_lock_drift_preserves_concurrent_foreign_target(tmp_path: Path) ->
 
 def test_active_package_probe_uses_disposable_home_copy(tmp_path: Path) -> None:
     """Prove the Codex CLI cannot create temp state in the real diagnostic home."""
-    module = load_module(MANAGER_PATH, "codex_rig_manager_active_sandbox")
+    module = _load_module(MANAGER_PATH, "codex_rig_manager_active_sandbox")
     manifest = json.loads((PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text())
     version = manifest["version"]
     home = tmp_path / "home"
@@ -458,7 +465,7 @@ def test_active_package_probe_uses_disposable_home_copy(tmp_path: Path) -> None:
     codex = tmp_path / "codex"
     codex.write_text(f"#!/bin/sh\nprintf '%s' '{payload}'\n")
     codex.chmod(0o700)
-    before = snapshot(home)
+    before = _snapshot(home)
 
     result = module.diagnose(
         action=module.ManagerAction.DOCTOR,
@@ -470,15 +477,15 @@ def test_active_package_probe_uses_disposable_home_copy(tmp_path: Path) -> None:
 
     assert result.classification == "healthy"
     assert result.checks["active_package"].status == "pass"
-    assert snapshot(home) == before
+    assert _snapshot(home) == before
 
 
 def test_killed_process_requires_approved_rollback_then_can_resume(tmp_path: Path) -> None:
     """Recover an unjournaled publication after process death and converge later."""
-    module = load_module(MANAGER_PATH, "codex_rig_manager_process_kill")
+    module = _load_module(MANAGER_PATH, "codex_rig_manager_process_kill")
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
-    codex = executable(tmp_path)
+    codex = _executable(tmp_path)
     child = f"""
 import os
 import sys
@@ -527,10 +534,10 @@ manager.apply_mutation(plan, plan.approval.digest, checkpoint=kill)
 
 def test_killed_state_commit_is_approved_and_finalized(tmp_path: Path) -> None:
     """Finalize exact installed state when process death follows its durable commit."""
-    module = load_module(MANAGER_PATH, "codex_rig_manager_finalize_kill")
+    module = _load_module(MANAGER_PATH, "codex_rig_manager_finalize_kill")
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
-    codex = executable(tmp_path)
+    codex = _executable(tmp_path)
     child = f"""
 import os
 import sys
@@ -565,7 +572,7 @@ manager.apply_mutation(plan, plan.approval.digest, checkpoint=kill)
 
 def test_partial_initial_journal_cleanup_requires_exact_approval(tmp_path: Path) -> None:
     """Clean the sole pre-authority artifact without parsing or target writes."""
-    module = load_module(MANAGER_PATH, "codex_rig_manager_preparing_cleanup")
+    module = _load_module(MANAGER_PATH, "codex_rig_manager_preparing_cleanup")
     home = tmp_path / "home"
     transaction = home / "codex-rig" / "shims" / "transactions" / "123e4567-e89b-42d3-a456-426614174010"
     transaction.mkdir(parents=True, mode=0o700)

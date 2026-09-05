@@ -225,10 +225,6 @@ def write_log(
 
     Returns:
         A :class:`Diagnostic` when *runtime* was invalid, else ``None``.
-
-    Examples:
-        >>> write_log("claude", {"event": "cache_hit"}, root=Path("/tmp")) is None  # doctest: +SKIP
-        True
     """
     resolved, diag = resolve_runtime(runtime)
     if os.environ.get("CODEMAP_LOGGING", "true").lower() == "false":

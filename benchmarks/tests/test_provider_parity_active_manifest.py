@@ -109,12 +109,28 @@ SHORTHAND_REVISION = re.compile(
 
 
 def _sha256(path: Path) -> str:
-    """Return the exact byte identity of one locked artifact."""
+    """Hash exact locked artifact bytes without decoding or normalizing their contents.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     path = Path(directory) / "artifact"
+    ...     _ = path.write_bytes(b"abc")
+    ...     _sha256(path)
+    'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+    """
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _load(path: Path) -> dict[str, Any]:
-    """Load one machine manifest as a JSON object."""
+    """Read a UTF-8 manifest and assert that its root is a JSON object.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     path = Path(directory) / "manifest.json"
+    ...     _ = path.write_text('{"schema": 1}', encoding="utf-8")
+    ...     _load(path)
+    {'schema': 1}
+    """
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert isinstance(payload, dict)
     return payload
@@ -320,14 +336,23 @@ def test_methodology_builder_stale_error_names_exact_rebuild_command(tmp_path: P
 
 
 def _suites_by_path(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Return manifest suites keyed by their unique source path."""
+    """Index suites by source path, asserting that duplicate paths cannot silently discard rows.
+
+    >>> _suites_by_path({"suites": [{"path": "example.json", "tasks": []}]})
+    {'example.json': {'path': 'example.json', 'tasks': []}}
+    >>> with pytest.raises(AssertionError):
+    ...     _suites_by_path({"suites": [{"path": "same"}, {"path": "same"}]})
+    """
     suites = {suite["path"]: suite for suite in manifest["suites"]}
     assert len(suites) == len(manifest["suites"])
     return suites
 
 
 def _assert_manifest_matches_materialized_suite_inputs(manifest: dict[str, Any]) -> None:
-    """Bind every active task hash to the exact current provider-visible input."""
+    """Assert that task order, task hashes, and suite identities match the current source artifacts.
+
+    >>> _assert_manifest_matches_materialized_suite_inputs(_load(METHODOLOGY_MANIFEST))
+    """
     semantic_hashes: dict[str, str] = {}
     for suite in manifest["suites"]:
         assert suite["raw_sha256"] == _sha256(ROOT / suite["path"])
@@ -351,7 +376,7 @@ def test_methodology_manifest_uses_policy_seed_and_current_suite_inputs() -> Non
     for field in ("target_source", "headline_structural_v1", "validation"):
         assert methodology[field] == policy[field]
     active_index = methodology["index"]
-    assert active_index == builder_index_lock()
+    assert active_index == _builder_index_lock()
     for field in (
         "confirmatory_repetitions",
         "pilot_repetitions",
@@ -460,6 +485,11 @@ def test_methodology_manifest_locks_shared_continuous_fitness_and_observed_capab
     )
 
 
-def builder_index_lock() -> dict[str, Any]:
-    """Load the explicit scanner-schema lock from the methodology generator."""
+def _builder_index_lock() -> dict[str, Any]:
+    """Import the methodology generator's explicit index lock without running its CLI.
+
+    >>> lock = _builder_index_lock()
+    >>> isinstance(lock["scan_version"], int), len(lock["raw_sha256"])
+    (True, 64)
+    """
     return runpy.run_path(str(METHODOLOGY_BUILDER))["INDEX_LOCK"]

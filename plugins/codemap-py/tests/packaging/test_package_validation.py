@@ -99,8 +99,8 @@ def _add_member(package: Path, relative: str, data: bytes) -> None:
     _mutate_manifest(package, lambda m: m["files"].append(record))
 
 
-@pytest.fixture()
-def valid_package(tmp_path: Path) -> Path:
+@pytest.fixture(name="valid_package")
+def _valid_package(tmp_path: Path) -> Path:
     """Create a well-formed package directory."""
     package = tmp_path / "pkg"
     package.mkdir()
@@ -108,7 +108,7 @@ def valid_package(tmp_path: Path) -> Path:
     return package
 
 
-def validate_findings(package: Path) -> list[str]:
+def _validate_findings(package: Path) -> list[str]:
     """Return the validator's findings for ``package``."""
     return validator.validate_package(package)
 
@@ -118,7 +118,7 @@ def validate_findings(package: Path) -> list[str]:
 
 def test_valid_package_has_no_findings(valid_package: Path) -> None:
     """A well-formed package yields zero findings."""
-    assert validate_findings(valid_package) == []
+    assert _validate_findings(valid_package) == []
 
 
 def test_cli_exits_zero_on_valid_package(valid_package: Path) -> None:
@@ -132,19 +132,19 @@ def test_cli_exits_zero_on_valid_package(valid_package: Path) -> None:
 def test_missing_payload_flagged(valid_package: Path) -> None:
     """A manifest entry with no on-disk file is flagged missing."""
     (valid_package / "bin" / "_schema.py").unlink()
-    assert any("missing payload file: bin/_schema.py" == item for item in validate_findings(valid_package))
+    assert any("missing payload file: bin/_schema.py" == item for item in _validate_findings(valid_package))
 
 
 def test_modified_payload_flagged(valid_package: Path) -> None:
     """A payload file whose bytes drift from its recorded hash is flagged."""
     (valid_package / "README.md").write_bytes(b"# tampered\n")
-    assert any("modified payload file: README.md" == item for item in validate_findings(valid_package))
+    assert any("modified payload file: README.md" == item for item in _validate_findings(valid_package))
 
 
 def test_extra_unmanifested_file_flagged(valid_package: Path) -> None:
     """A file absent from the manifest is flagged extra."""
     (valid_package / "bin" / "stowaway.py").write_bytes(b"x = 1\n")
-    assert any("extra un-manifested file: bin/stowaway.py" == item for item in validate_findings(valid_package))
+    assert any("extra un-manifested file: bin/stowaway.py" == item for item in _validate_findings(valid_package))
 
 
 # --- path violations -------------------------------------------------------
@@ -161,7 +161,7 @@ def test_extra_unmanifested_file_flagged(valid_package: Path) -> None:
 def test_non_relative_manifest_path_flagged(valid_package: Path, bad_path: str) -> None:
     """Absolute, parent-escaping, or drive-qualified manifest paths are flagged."""
     _mutate_manifest(valid_package, lambda m: m["files"].append({"path": bad_path, "sha256": "0" * 64, "exec": False}))
-    assert any(item.startswith(f"non-relative manifest path: {bad_path}") for item in validate_findings(valid_package))
+    assert any(item.startswith(f"non-relative manifest path: {bad_path}") for item in _validate_findings(valid_package))
 
 
 # --- hygiene violations ----------------------------------------------------
@@ -173,7 +173,7 @@ def test_personal_path_reference_flagged(valid_package: Path) -> None:
     (valid_package / "bin" / "_schema.py").write_bytes(leaked)
     _mutate_manifest(valid_package, lambda m: _sync_hash(m, "bin/_schema.py", leaked))
     assert any(
-        "personal-path reference in payload: bin/_schema.py" == item for item in validate_findings(valid_package)
+        "personal-path reference in payload: bin/_schema.py" == item for item in _validate_findings(valid_package)
     )
 
 
@@ -184,7 +184,7 @@ def test_secret_material_flagged(valid_package: Path) -> None:
     secret = marker + b"\nabc\n" + marker.replace(b"BEGIN", b"END") + b"\n"
     (valid_package / "NOTICE").write_bytes(secret)
     _mutate_manifest(valid_package, lambda m: _sync_hash(m, "NOTICE", secret))
-    assert any("secret-like material in payload: NOTICE" == item for item in validate_findings(valid_package))
+    assert any("secret-like material in payload: NOTICE" == item for item in _validate_findings(valid_package))
 
 
 # --- closure violations ----------------------------------------------------
@@ -193,20 +193,20 @@ def test_secret_material_flagged(valid_package: Path) -> None:
 def test_missing_required_document_flagged(valid_package: Path) -> None:
     """Dropping a required document (and its manifest entry) is flagged as missing."""
     _drop_member(valid_package, "CHANGELOG.md")
-    assert any("missing required member: CHANGELOG.md" == item for item in validate_findings(valid_package))
+    assert any("missing required member: CHANGELOG.md" == item for item in _validate_findings(valid_package))
 
 
 def test_forbidden_default_path_flagged(valid_package: Path) -> None:
     """A leaked default ``hooks/hooks.json`` is flagged forbidden."""
     _add_member(valid_package, "hooks/hooks.json", b"{}\n")
-    assert any("forbidden default path present: hooks/hooks.json" == item for item in validate_findings(valid_package))
+    assert any("forbidden default path present: hooks/hooks.json" == item for item in _validate_findings(valid_package))
 
 
 def test_symlink_flagged(valid_package: Path) -> None:
     """A symlink anywhere in the package is flagged."""
     link = valid_package / "bin" / "alias-link"
     link.symlink_to(valid_package / "bin" / "scan-index")
-    assert any(item.startswith("symlink in package:") for item in validate_findings(valid_package))
+    assert any(item.startswith("symlink in package:") for item in _validate_findings(valid_package))
 
 
 # --- declared-component closure ---------------------------------------
@@ -216,7 +216,7 @@ def test_missing_referenced_hook_helper_flagged(valid_package: Path) -> None:
     """A hook helper named by the wiring but absent from the package is flagged."""
     _drop_member(valid_package, "hooks/seed-session.py")
     assert any(
-        "referenced hook helper missing: hooks/seed-session.py" == item for item in validate_findings(valid_package)
+        "referenced hook helper missing: hooks/seed-session.py" == item for item in _validate_findings(valid_package)
     )
 
 
@@ -225,14 +225,14 @@ def test_missing_hooks_pointer_file_flagged(valid_package: Path) -> None:
     _drop_member(valid_package, "hooks/claude-hooks.json")
     assert any(
         "claude hooks pointer file missing: hooks/claude-hooks.json" == item
-        for item in validate_findings(valid_package)
+        for item in _validate_findings(valid_package)
     )
 
 
 def test_undeclared_extra_roster_dir_flagged(valid_package: Path) -> None:
     """An on-disk skill dir absent from the manifest roster is flagged as a mismatch."""
     _add_member(valid_package, "claude-skills/rogue/SKILL.md", b"---\nname: rogue\n---\n")
-    assert any(item.startswith("claude roster ") and "rogue" in item for item in validate_findings(valid_package))
+    assert any(item.startswith("claude roster ") and "rogue" in item for item in _validate_findings(valid_package))
 
 
 def test_rostered_skill_missing_skillmd_flagged(valid_package: Path) -> None:
@@ -240,7 +240,7 @@ def test_rostered_skill_missing_skillmd_flagged(valid_package: Path) -> None:
     _drop_member(valid_package, "claude-skills/scan-codebase/SKILL.md")
     assert any(
         "rostered skill missing SKILL.md: claude-skills/scan-codebase/SKILL.md" == item
-        for item in validate_findings(valid_package)
+        for item in _validate_findings(valid_package)
     )
 
 
@@ -251,7 +251,7 @@ def test_codex_manifest_missing_skills_key_flagged(valid_package: Path) -> None:
     codex.write_bytes(payload)
     _mutate_manifest(valid_package, lambda m: _sync_hash(m, ".codex-plugin/plugin.json", payload))
     assert any(
-        "codex manifest must declare skills: ./codex-skills/" in item for item in validate_findings(valid_package)
+        "codex manifest must declare skills: ./codex-skills/" in item for item in _validate_findings(valid_package)
     )
 
 
@@ -264,7 +264,7 @@ def test_codex_manifest_missing_hooks_key_flagged(valid_package: Path) -> None:
 
     assert any(
         "codex manifest must declare hooks: ./hooks/codex-hooks.json" in item
-        for item in validate_findings(valid_package)
+        for item in _validate_findings(valid_package)
     )
 
 
@@ -273,14 +273,14 @@ def test_rostered_codex_skill_missing_skillmd_flagged(valid_package: Path) -> No
     _drop_member(valid_package, "codex-skills/scan-codebase/SKILL.md")
     assert any(
         "rostered codex skill missing SKILL.md: codex-skills/scan-codebase/SKILL.md" == item
-        for item in validate_findings(valid_package)
+        for item in _validate_findings(valid_package)
     )
 
 
 def test_codex_roster_mismatch_flagged(valid_package: Path) -> None:
     """Flag a Codex roster that diverges from the corresponding Claude roster."""
     _mutate_manifest(valid_package, lambda m: m["skills"].__setitem__("codex", []))
-    assert any(item.startswith("codex roster [] != claude roster") for item in validate_findings(valid_package))
+    assert any(item.startswith("codex roster [] != claude roster") for item in _validate_findings(valid_package))
 
 
 # --- executable-mode drift --------------------------------------------
@@ -291,7 +291,7 @@ def test_exec_flag_mismatch_flagged(valid_package: Path) -> None:
     """A data file made executable on disk disagrees with its manifest exec flag."""
     (valid_package / "bin" / "_schema.py").chmod(0o755)
     assert any(
-        item.startswith("exec flag mismatch") and "bin/_schema.py" in item for item in validate_findings(valid_package)
+        item.startswith("exec flag mismatch") and "bin/_schema.py" in item for item in _validate_findings(valid_package)
     )
 
 

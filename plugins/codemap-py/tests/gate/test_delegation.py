@@ -80,6 +80,7 @@ sys.exit(result.returncode)
 
 
 def _git_init(root: Path) -> None:
+    """Initialize and commit the minimal repository used by delegation tests."""
     for args in (
         ["init", "-q"],
         ["config", "user.email", "t@t"],
@@ -96,18 +97,21 @@ def _count(counter: Path) -> int:
 
 
 def _sha(path: Path) -> str:
+    """Return the SHA-256 digest of a file's bytes."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-@pytest.fixture
-def shim(tmp_path: Path) -> Path:
+@pytest.fixture(name="shim")
+def _shim(tmp_path: Path) -> Path:
+    """Write the scan shim used to record isolated scanner invocations."""
     p = tmp_path / "scan_shim.py"
     p.write_text(_SHIM_SOURCE, encoding="utf-8")
     return p
 
 
-@pytest.fixture
-def project(tmp_path: Path) -> Path:
+@pytest.fixture(name="project")
+def _project(tmp_path: Path) -> Path:
+    """Create a committed one-module repository for delegation tests."""
     root = tmp_path / "proj"
     root.mkdir()
     (root / "mod.py").write_text("def f(x):\n    return x\n", encoding="utf-8")
@@ -116,6 +120,7 @@ def project(tmp_path: Path) -> Path:
 
 
 def _scan_env(counter: Path) -> dict:
+    """Build the environment for the isolated scanner subprocess."""
     return {
         **os.environ,
         "CODEMAP_TEST_SCAN_COUNTER": str(counter),

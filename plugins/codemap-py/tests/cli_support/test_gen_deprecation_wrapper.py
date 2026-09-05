@@ -18,6 +18,7 @@ _BIN = Path(__file__).parent.parent.parent / "bin" / "gen_deprecation_wrapper.py
 
 
 def _load() -> object:
+    """Load the extensionless generator module under test."""
     loader = importlib.machinery.SourceFileLoader("gen_deprecation_wrapper", str(_BIN))
     spec = importlib.util.spec_from_loader("gen_deprecation_wrapper", loader)
     mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]

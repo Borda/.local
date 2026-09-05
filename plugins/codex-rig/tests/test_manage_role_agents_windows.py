@@ -16,7 +16,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 MANAGER = PLUGIN_ROOT / "scripts" / "manage_role_agents.py"
 
 
-def load_windows_manager(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+def _load_windows_manager(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     """Load the manager through its Windows import boundary."""
     monkeypatch.setattr(sys, "platform", "win32")
     specification = importlib.util.spec_from_file_location("codex_rig_windows_diagnostics", MANAGER)
@@ -32,7 +32,7 @@ def test_simulated_windows_doctor_verifies_package_and_inventories_shims(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Provide useful zero-write Windows diagnostics without POSIX lifecycle imports."""
-    module = load_windows_manager(monkeypatch)
+    module = _load_windows_manager(monkeypatch)
     plugin_root = tmp_path / "plugin"
     shutil.copytree(PLUGIN_ROOT, plugin_root, ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"))
     codex_home = tmp_path / "codex-home"
@@ -75,7 +75,7 @@ def test_simulated_windows_mutation_remains_explicitly_blocked_without_writes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Keep unsupported persistent-shim mutation separate from native diagnostics."""
-    module = load_windows_manager(monkeypatch)
+    module = _load_windows_manager(monkeypatch)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "absent"))
     before = tuple(tmp_path.rglob("*"))
 

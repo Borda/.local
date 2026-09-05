@@ -28,7 +28,13 @@ main = _mod.main
 
 
 def _write_state(path: Path, payload: object) -> Path:
-    """Write ``payload`` as JSON to ``path`` and return ``path`` for chaining."""
+    """Write ``payload`` as JSON to ``path`` and return ``path`` for chaining.
+
+    Examples:
+        >>> path = _write_state(getfixture("tmp_path") / "state.json", {"status": "done"})
+        >>> json.loads(path.read_text())["status"]
+        'done'
+    """
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
 

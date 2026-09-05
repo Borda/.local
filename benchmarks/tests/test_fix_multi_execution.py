@@ -16,7 +16,12 @@ sys.path.insert(0, str(BENCHMARKS))
 
 
 def _runner() -> object:
-    """Return the private Fix stage without invoking its CLI."""
+    """Return the private Fix stage without invoking its CLI.
+
+    Example:
+        >>> _runner().__name__
+        '_bench_codex.stage_fix'
+    """
     from _bench_codex import stage_fix
 
     return stage_fix
@@ -30,19 +35,36 @@ execute_fix_multi_patch = _RUNNER.execute_fix_multi_patch
 
 
 def _contract() -> object:
-    """Return the deterministic FM-01 contract used for lifecycle admission."""
+    """Return the deterministic FM-01 contract used for lifecycle admission.
+
+    Example:
+        >>> _contract().task_id
+        'FM-01'
+    """
     tasks = json.loads(SUITE_PATH.read_text(encoding="utf-8"))
     return build_fix_multi_contract(next(task for task in tasks if task["id"] == "FM-01"))
 
 
 def _contract_for(task_id: str) -> object:
-    """Return the requested immutable multi-file contract from the canonical suite."""
+    """Return the requested immutable multi-file contract from the canonical suite.
+
+    Example:
+        >>> _contract_for("not-a-real-task")
+        Traceback (most recent call last):
+            ...
+        StopIteration
+    """
     tasks = json.loads(SUITE_PATH.read_text(encoding="utf-8"))
     return build_fix_multi_contract(next(task for task in tasks if task["id"] == task_id))
 
 
 def _complete_early_stopping_source(source: str) -> str:
-    """Return the FM-01 source with every caller and its observe-only branch updated."""
+    """Return the FM-01 source with every caller and its observe-only branch updated.
+
+    Example:
+        >>> _complete_early_stopping_source("self._run_early_stopping_check(trainer)")
+        'self._run_early_stopping_check(trainer, dry_run=False)'
+    """
     return (
         source.replace(
             'def _run_early_stopping_check(self, trainer: "pl.Trainer") -> None:',
@@ -60,7 +82,14 @@ def _complete_early_stopping_source(source: str) -> str:
 
 
 def _complete_strategy_environment_source(source: str, *, is_base: bool) -> str:
-    """Return one FM-03 source with cooperative verbose environment propagation."""
+    """Return one FM-03 source with cooperative verbose environment propagation.
+
+    Example:
+        >>> _complete_strategy_environment_source("super().setup_environment()", is_base=False)
+        'super().setup_environment(verbose=verbose)'
+        >>> _complete_strategy_environment_source("super().setup_environment()", is_base=True)
+        'super().setup_environment()'
+    """
     source = source.replace(
         "def setup_environment(self) -> None:",
         "def setup_environment(self, verbose: bool = False) -> None:",
@@ -82,7 +111,16 @@ def _complete_strategy_environment_source(source: str, *, is_base: bool) -> str:
 
 
 def _complete_model_checkpoint_source(source: str) -> str:
-    """Return the FM-02 source with exact persistence-boundary provenance labels."""
+    """Return the FM-02 source with exact persistence-boundary provenance labels.
+
+    Example:
+        >>> source = "; ".join(["self._save_checkpoint(trainer, filepath)"] * 2)
+        >>> first, second = _complete_model_checkpoint_source(source).split("; ")
+        >>> first
+        "self._save_checkpoint(trainer, filepath, reason='exception')"
+        >>> second
+        "self._save_checkpoint(trainer, filepath, reason='last')"
+    """
     source = source.replace(
         'def _save_checkpoint(self, trainer: "pl.Trainer", filepath: str) -> None:',
         'def _save_checkpoint(self, trainer: "pl.Trainer", filepath: str, reason: str = "") -> None:',
@@ -103,7 +141,13 @@ def _complete_model_checkpoint_source(source: str) -> str:
 
 
 def _patch_for_sources(before: dict[str, str], after: dict[str, str]) -> str:
-    """Build one ordinary multi-file unified diff from deterministic candidate sources."""
+    """Build one ordinary multi-file unified diff from deterministic candidate sources.
+
+    Example:
+        >>> patch = _patch_for_sources({"example.py": "old" + chr(10)}, {"example.py": "new" + chr(10)})
+        >>> patch.splitlines()[-2:]
+        ['-old', '+new']
+    """
     return "".join(
         f"diff --git a/{path} b/{path}\n"
         + "".join(

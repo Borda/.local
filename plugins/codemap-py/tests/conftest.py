@@ -24,14 +24,14 @@ if str(_SRC_DIR) not in sys.path:
 _DATA_DIR = Path(__file__).parent / "data"
 
 
-@pytest.fixture(scope="session")
-def corpus_dir() -> Path:
+@pytest.fixture(name="corpus_dir", scope="session")
+def _corpus_dir() -> Path:
     """Path to the frozen-grammar corpus fixture (``tests/data/corpus``)."""
     return _DATA_DIR / "corpus"
 
 
-@pytest.fixture(scope="session")
-def corpus_pyi_dir() -> Path:
+@pytest.fixture(name="corpus_pyi_dir", scope="session")
+def _corpus_pyi_dir() -> Path:
     """Path to the ``.pyi`` scope-extension fixture project root (``tests/data/corpus_pyi/proj``)."""
     return _DATA_DIR / "corpus_pyi" / "proj"
 
@@ -47,44 +47,44 @@ def _telemetry_off(monkeypatch):
     monkeypatch.setenv("CODEMAP_LOGGING", "false")
 
 
-@pytest.fixture(scope="session")
-def scan_index() -> Path:
+@pytest.fixture(name="scan_index", scope="session")
+def _scan_index() -> Path:
     """Path to the scan-index bin script."""
     return _BIN_DIR / "scan-index"
 
 
-@pytest.fixture(scope="session")
-def scan_query() -> Path:
+@pytest.fixture(name="scan_query", scope="session")
+def _scan_query() -> Path:
     """Path to the scan-query bin script."""
     return _BIN_DIR / "scan-query"
 
 
-@pytest.fixture(scope="session")
-def gamma_src() -> str:
+@pytest.fixture(name="gamma_src", scope="session")
+def _gamma_src() -> str:
     """Source for gamma module — leaf, no imports."""
     return "def func_gamma(x):\n    return x + 1\n"
 
 
-@pytest.fixture(scope="session")
-def beta_src() -> str:
+@pytest.fixture(name="beta_src", scope="session")
+def _beta_src() -> str:
     """Source for beta module — imports gamma."""
     return "import gamma\n\ndef func_beta(x):\n    return gamma.func_gamma(x) * 2\n"
 
 
-@pytest.fixture(scope="session")
-def alpha_src() -> str:
+@pytest.fixture(name="alpha_src", scope="session")
+def _alpha_src() -> str:
     """Source for alpha module — imports beta and gamma."""
     return "import beta\nimport gamma\n\ndef func_alpha(x):\n    return beta.func_beta(x) + gamma.func_gamma(x)\n"
 
 
-@pytest.fixture(scope="session")
-def delta_src() -> str:
+@pytest.fixture(name="delta_src", scope="session")
+def _delta_src() -> str:
     """Source for delta module — imports alpha."""
     return "import alpha\n\ndef func_delta(x):\n    return alpha.func_alpha(x)\n"
 
 
-@pytest.fixture(scope="module")
-def project(tmp_path_factory, gamma_src, beta_src, alpha_src, delta_src, scan_index):
+@pytest.fixture(name="project", scope="module")
+def _project(tmp_path_factory, gamma_src, beta_src, alpha_src, delta_src, scan_index):
     """Build fixture project, scan once, return (root, index_path)."""
     root = tmp_path_factory.mktemp("proj")
     (root / "gamma.py").write_text(gamma_src)
@@ -107,12 +107,13 @@ def project(tmp_path_factory, gamma_src, beta_src, alpha_src, delta_src, scan_in
     return root, index_path
 
 
-@pytest.fixture(scope="module")
-def query(project, scan_query) -> Callable[..., dict]:
+@pytest.fixture(name="query", scope="module")
+def _query(project, scan_query) -> Callable[..., dict]:
     """Return callable that runs scan-query against the module-scoped project."""
     root, index_path = project
 
     def _query(*args: str) -> dict:
+        """Run the fixed query subprocess and decode its JSON response."""
         result = subprocess.run(
             [sys.executable, str(scan_query), "--index", str(index_path), *args],
             capture_output=True,
@@ -217,8 +218,8 @@ def _materialize_polluted_tree(root: Path, *, with_collision: bool) -> None:
         (wt_pkg / "leaf.py").write_text(_LEAF_SRC)
 
 
-@pytest.fixture
-def polluted_repo(tmp_path: Path, scan_index: Path) -> Callable[..., tuple[Path, Path]]:
+@pytest.fixture(name="polluted_repo")
+def _polluted_repo(tmp_path: Path, scan_index: Path) -> Callable[..., tuple[Path, Path]]:
     """Provide a factory that builds and scans a polluted repository.
 
     Call the returned callable once per test. It initialises a git repo, materialises
@@ -236,6 +237,7 @@ def polluted_repo(tmp_path: Path, scan_index: Path) -> Callable[..., tuple[Path,
     """
 
     def _build(*, with_collision: bool = False) -> tuple[Path, Path]:
+        """Build and scan one isolated polluted-repository variant."""
         root = tmp_path / "polluted"
         root.mkdir()
         _git(root, "init", "-q")

@@ -2,6 +2,10 @@
 
 `codemap-py` is the renamed, direct successor to the `codemap` plugin. The maintained product and its SemVer history continue across the rename; only the plugin identity, repository directory, and skill namespace change. Pre-`0.25.0` history was recorded as `codemap` under `plugins/codemap/` — see the repository git history for that line; it is not reproduced here.
 
+## 0.33.1
+
+- Expand Python helper and hook contracts with executable examples, document actual hook failure boundaries, and remove skipped doctest blocks. Make ordinary test helpers and fixture implementations private while preserving fixture injection names.
+
 ## 0.32.0
 
 - Add opt-in `rdeps --limit N` static-importer previews with explicit truncation and total metadata; keep the default and `--limit 0` exhaustive, leave dynamic/config results uncapped, and prevent previews from arming the exhausted-query sentinel.

@@ -92,7 +92,10 @@ class TestMain:
         """OSError on stdin read → exit code 1 and error on stderr."""
 
         class _BrokenStdin:
+            """Raise an operating-system error when stdin is read."""
+
             def read(self, *_):
+                """Raise the injected stdin failure when the parser reads input."""
                 raise OSError("broken pipe")
 
         with patch("sys.stdin", _BrokenStdin()):

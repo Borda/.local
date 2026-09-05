@@ -27,7 +27,7 @@ NONCE = "123e4567-e89b-42d3-a456-426614174001"
 DIGEST = "a" * 64
 
 
-def load_script(path: Path, name: str) -> ModuleType:
+def _load_script(path: Path, name: str) -> ModuleType:
     """Load one installed script with exact sibling module names."""
     specification = importlib.util.spec_from_file_location(name, path)
     assert specification is not None
@@ -38,18 +38,18 @@ def load_script(path: Path, name: str) -> ModuleType:
     return module
 
 
-def modules() -> tuple[ModuleType, ModuleType, ModuleType, ModuleType]:
+def _modules() -> tuple[ModuleType, ModuleType, ModuleType, ModuleType]:
     """Load the approval kernel and its direct value authorities."""
-    load_script(GENERATOR_PATH, "generate_roles")
-    lifecycle = load_script(LIFECYCLE_PATH, "_agent_shim_lifecycle")
-    load_script(JOURNAL_PATH, "_agent_shim_journal")
-    observer = load_script(OBSERVER_PATH, "_agent_shim_observe")
-    planner = load_script(PLAN_PATH, "_agent_shim_plan")
-    approval = load_script(APPROVAL_PATH, "codex_rig_agent_shim_approval")
+    _load_script(GENERATOR_PATH, "generate_roles")
+    lifecycle = _load_script(LIFECYCLE_PATH, "_agent_shim_lifecycle")
+    _load_script(JOURNAL_PATH, "_agent_shim_journal")
+    observer = _load_script(OBSERVER_PATH, "_agent_shim_observe")
+    planner = _load_script(PLAN_PATH, "_agent_shim_plan")
+    approval = _load_script(APPROVAL_PATH, "codex_rig_agent_shim_approval")
     return lifecycle, observer, planner, approval
 
 
-def generated_roster(generator: ModuleType) -> object:
+def _generated_roster(generator: ModuleType) -> object:
     """Build one complete immutable generated roster fixture."""
     roles = []
     for role_id in generator.ROLE_IDS:
@@ -67,21 +67,21 @@ def generated_roster(generator: ModuleType) -> object:
     return generator.GeneratedRoster("0.2.0", DIGEST, "c" * 64, 1, tuple(roles))
 
 
-def root(observer: ModuleType, path: str, inode: int) -> object:
+def _root(observer: ModuleType, path: str, inode: int) -> object:
     """Build one exact directory identity."""
     return observer.RootIdentity(path, 1, inode, 501, 20, "0700")
 
 
-def root_observation(observer: ModuleType, path: str, inode: int, *, exists: bool) -> object:
+def _root_observation(observer: ModuleType, path: str, inode: int, *, exists: bool) -> object:
     """Build one exact existing or single-component absent root observation."""
     home_path = path.rsplit("/", maxsplit=1)[0]
-    ancestor = root(observer, path if exists else home_path, inode if exists else 1)
+    ancestor = _root(observer, path if exists else home_path, inode if exists else 1)
     identity = ancestor if exists else None
     suffix = () if exists else (path.rsplit("/", maxsplit=1)[1],)
     return observer.RootObservation(exists, path, ancestor, suffix, identity)
 
 
-def candidate_and_observation(
+def _candidate_and_observation(
     loaded: tuple[ModuleType, ModuleType, ModuleType, ModuleType],
     *,
     action: str = "install",
@@ -90,7 +90,7 @@ def candidate_and_observation(
     """Build matching candidate operations and immutable filesystem evidence."""
     lifecycle, observer, planner, _ = loaded
     generator = sys.modules["generate_roles"]
-    roster = generated_roster(generator)
+    roster = _generated_roster(generator)
     targets = {role.target_name: lifecycle.TargetObservation("absent") for role in roster.roles}
     candidate = planner.build_candidate(
         action=action,
@@ -101,11 +101,11 @@ def candidate_and_observation(
         install_id=INSTALL_ID,
         transaction_nonce=NONCE,
     )
-    home_identity = root(observer, "/codex", 1)
+    home_identity = _root(observer, "/codex", 1)
     home = observer.RootObservation(True, "/codex", home_identity, (), home_identity)
-    target = root_observation(observer, "/codex/agents", 2, exists=roots_exist)
-    state = root_observation(observer, "/codex/codex-rig/shims", 3, exists=roots_exist)
-    plugin = root(observer, "/plugin", 4)
+    target = _root_observation(observer, "/codex/agents", 2, exists=roots_exist)
+    state = _root_observation(observer, "/codex/codex-rig/shims", 3, exists=roots_exist)
+    plugin = _root(observer, "/plugin", 4)
     lock = observer.LockObservation("absent", "/codex/.codex-rig-shims.lock", None, None, None, None, None, None, None)
     observation = observer.FilesystemObservation(
         "degraded",
@@ -126,12 +126,12 @@ def candidate_and_observation(
     return roster, candidate, observation
 
 
-def runtime(approval: ModuleType, *, eligible: bool = True) -> object:
+def _runtime(approval: ModuleType, *, eligible: bool = True) -> object:
     """Build one doctor-supplied executable binding fixture."""
     return approval.RuntimeBinding("/usr/bin/python3", "d" * 64, "/usr/bin/codex", "e" * 64, eligible)
 
 
-def removed_candidate_and_observation(
+def _removed_candidate_and_observation(
     loaded: tuple[ModuleType, ModuleType, ModuleType, ModuleType],
     *,
     target_inode: int,
@@ -139,11 +139,11 @@ def removed_candidate_and_observation(
     """Build a removed tombstone and one current empty target-root identity."""
     lifecycle, observer, planner, _ = loaded
     generator = sys.modules["generate_roles"]
-    roster = generated_roster(generator)
-    home_identity = root(observer, "/codex", 1)
-    plugin_identity = root(observer, "/plugin", 4)
-    state_identity = root(observer, "/codex/codex-rig/shims", 3)
-    persisted_target = root(observer, "/codex/agents", 2)
+    roster = _generated_roster(generator)
+    home_identity = _root(observer, "/codex", 1)
+    plugin_identity = _root(observer, "/plugin", 4)
+    state_identity = _root(observer, "/codex/codex-rig/shims", 3)
+    persisted_target = _root(observer, "/codex/agents", 2)
     roles = [
         {
             "role_id": role.role_id,
@@ -188,7 +188,7 @@ def removed_candidate_and_observation(
         install_id=INSTALL_ID,
         transaction_nonce=NONCE,
     )
-    current_target = root(observer, "/codex/agents", target_inode)
+    current_target = _root(observer, "/codex/agents", target_inode)
     observation = observer.FilesystemObservation(
         "degraded",
         "runtime and mutation prerequisites remain unverified",
@@ -218,18 +218,18 @@ def removed_candidate_and_observation(
     return roster, candidate, observation
 
 
-def migration_candidate_and_observation(
+def _migration_candidate_and_observation(
     loaded: tuple[ModuleType, ModuleType, ModuleType, ModuleType],
 ) -> tuple[object, object, object, dict[str, object]]:
     """Build a forward migration from a different cached plugin root."""
     lifecycle, observer, planner, _ = loaded
     generator = sys.modules["generate_roles"]
-    roster = generated_roster(generator)
-    home_identity = root(observer, "/codex", 1)
-    target_identity = root(observer, "/codex/agents", 2)
-    state_identity = root(observer, "/codex/codex-rig/shims", 3)
-    prior_plugin_identity = root(observer, "/plugin-cache/prior", 4)
-    active_plugin_identity = root(observer, "/plugin-cache/active", 5)
+    roster = _generated_roster(generator)
+    home_identity = _root(observer, "/codex", 1)
+    target_identity = _root(observer, "/codex/agents", 2)
+    state_identity = _root(observer, "/codex/codex-rig/shims", 3)
+    prior_plugin_identity = _root(observer, "/plugin-cache/prior", 4)
+    active_plugin_identity = _root(observer, "/plugin-cache/active", 5)
     roles = [
         {
             "role_id": role.role_id,
@@ -327,12 +327,12 @@ def migration_candidate_and_observation(
 
 def test_approval_has_exact_contract_fields_and_deterministic_digest() -> None:
     """Freeze complete canonical convergence bytes from matching evidence."""
-    loaded = modules()
+    loaded = _modules()
     _, _, _, approval = loaded
-    roster, candidate, observation = candidate_and_observation(loaded)
+    roster, candidate, observation = _candidate_and_observation(loaded)
 
-    first = approval.build_convergence_approval(candidate, roster, observation, runtime(approval))
-    second = approval.build_convergence_approval(candidate, roster, observation, runtime(approval))
+    first = approval.build_convergence_approval(candidate, roster, observation, _runtime(approval))
+    second = approval.build_convergence_approval(candidate, roster, observation, _runtime(approval))
     value = json.loads(first.canonical_bytes)
 
     assert first == second
@@ -420,12 +420,12 @@ def test_approval_has_exact_contract_fields_and_deterministic_digest() -> None:
 
 def test_existing_roots_remain_unchanged_intent() -> None:
     """Do not request target-root creation when the exact root exists."""
-    loaded = modules()
+    loaded = _modules()
     _, _, _, approval = loaded
-    roster, candidate, observation = candidate_and_observation(loaded, roots_exist=True)
+    roster, candidate, observation = _candidate_and_observation(loaded, roots_exist=True)
 
     value = json.loads(
-        approval.build_convergence_approval(candidate, roster, observation, runtime(approval)).canonical_bytes
+        approval.build_convergence_approval(candidate, roster, observation, _runtime(approval)).canonical_bytes
     )
 
     assert value["target_root_intent"] == "unchanged"
@@ -439,22 +439,22 @@ def test_existing_roots_remain_unchanged_intent() -> None:
 )
 def test_removed_tombstone_binds_target_root_identity(target_inode: int, expected: str) -> None:
     """Require explicit rebind approval when an empty removed root was replaced."""
-    loaded = modules()
+    loaded = _modules()
     _, _, _, approval = loaded
-    roster, candidate, observation = removed_candidate_and_observation(loaded, target_inode=target_inode)
+    roster, candidate, observation = _removed_candidate_and_observation(loaded, target_inode=target_inode)
 
-    plan = approval.build_convergence_approval(candidate, roster, observation, runtime(approval))
+    plan = approval.build_convergence_approval(candidate, roster, observation, _runtime(approval))
 
     assert json.loads(plan.canonical_bytes)["target_root_intent"] == expected
 
 
 def test_forward_cache_migration_binds_exact_source_and_historical_union() -> None:
     """Bind prior package evidence while allowing the active cache root to differ."""
-    loaded = modules()
+    loaded = _modules()
     _, _, _, approval = loaded
-    roster, candidate, observation, state = migration_candidate_and_observation(loaded)
+    roster, candidate, observation, state = _migration_candidate_and_observation(loaded)
 
-    plan = approval.build_convergence_approval(candidate, roster, observation, runtime(approval))
+    plan = approval.build_convergence_approval(candidate, roster, observation, _runtime(approval))
     value = json.loads(plan.canonical_bytes)
 
     assert candidate.transition == "forward-upgrade"
@@ -517,10 +517,10 @@ def test_forward_cache_migration_binds_exact_source_and_historical_union() -> No
 )
 def test_each_source_state_field_changes_approval_digest(field: str, replacement: object) -> None:
     """Make every prior-state approval field independently digest-significant."""
-    loaded = modules()
+    loaded = _modules()
     _, _, _, approval = loaded
-    roster, candidate, observation, _ = migration_candidate_and_observation(loaded)
-    plan = approval.build_convergence_approval(candidate, roster, observation, runtime(approval))
+    roster, candidate, observation, _ = _migration_candidate_and_observation(loaded)
+    plan = approval.build_convergence_approval(candidate, roster, observation, _runtime(approval))
     value = json.loads(plan.canonical_bytes)
     value["source_state"][field] = replacement
     changed = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
@@ -530,9 +530,9 @@ def test_each_source_state_field_changes_approval_digest(field: str, replacement
 
 def test_historical_target_union_must_remain_complete() -> None:
     """Reject approval when a retired prior target disappears from observations."""
-    loaded = modules()
+    loaded = _modules()
     _, _, _, approval = loaded
-    roster, candidate, observation, _ = migration_candidate_and_observation(loaded)
+    roster, candidate, observation, _ = _migration_candidate_and_observation(loaded)
     incomplete = tuple(
         item for item in observation.target_observations if item[0] != "codex-rig-retired-specialist.toml"
     )
@@ -542,15 +542,15 @@ def test_historical_target_union_must_remain_complete() -> None:
             candidate,
             roster,
             replace(observation, target_observations=incomplete),
-            runtime(approval),
+            _runtime(approval),
         )
 
 
 def test_namespace_inventory_must_be_complete_and_empty() -> None:
     """Reject incomplete scans and any unmanaged namespace evidence."""
-    loaded = modules()
+    loaded = _modules()
     _, observer, _, approval = loaded
-    roster, candidate, observation = candidate_and_observation(loaded)
+    roster, candidate, observation = _candidate_and_observation(loaded)
 
     for status in ("unavailable", "overflow", "malformed", "unreadable"):
         with pytest.raises(approval.ApprovalBindingError, match="approval-eligible"):
@@ -558,7 +558,7 @@ def test_namespace_inventory_must_be_complete_and_empty() -> None:
                 candidate,
                 roster,
                 replace(observation, namespace_inventory_status=status),
-                runtime(approval),
+                _runtime(approval),
             )
 
     candidate_evidence = (observer.NamespaceCandidateObservation("codex-rig-retired.toml", "regular"),)
@@ -567,39 +567,39 @@ def test_namespace_inventory_must_be_complete_and_empty() -> None:
             candidate,
             roster,
             replace(observation, namespace_candidates=candidate_evidence),
-            runtime(approval),
+            _runtime(approval),
         )
 
 
 def test_blocked_stale_or_unhealthy_evidence_cannot_emit_approval() -> None:
     """Reject noneligible doctor, observer, target, and zero-write candidates."""
-    loaded = modules()
+    loaded = _modules()
     lifecycle, _, _, approval = loaded
-    roster, candidate, observation = candidate_and_observation(loaded)
+    roster, candidate, observation = _candidate_and_observation(loaded)
     with pytest.raises(approval.ApprovalBindingError):
-        approval.build_convergence_approval(candidate, roster, observation, runtime(approval, eligible=False))
+        approval.build_convergence_approval(candidate, roster, observation, _runtime(approval, eligible=False))
 
     blocked = replace(observation, classification="blocked")
     with pytest.raises(approval.ApprovalBindingError):
-        approval.build_convergence_approval(candidate, roster, blocked, runtime(approval))
+        approval.build_convergence_approval(candidate, roster, blocked, _runtime(approval))
 
     stale_targets = list(observation.target_observations)
     stale_targets[0] = (stale_targets[0][0], lifecycle.TargetObservation("regular", DIGEST))
     stale = replace(observation, target_observations=tuple(stale_targets))
     with pytest.raises(approval.ApprovalBindingError):
-        approval.build_convergence_approval(candidate, roster, stale, runtime(approval))
+        approval.build_convergence_approval(candidate, roster, stale, _runtime(approval))
 
-    remove_roster, noop, clean = candidate_and_observation(loaded, action="remove")
+    remove_roster, noop, clean = _candidate_and_observation(loaded, action="remove")
     assert all(operation.intent == "noop" for operation in noop.operations)
     with pytest.raises(approval.ApprovalBindingError, match="zero-write"):
-        approval.build_convergence_approval(noop, remove_roster, clean, runtime(approval))
+        approval.build_convergence_approval(noop, remove_roster, clean, _runtime(approval))
 
 
 def test_inconsistent_root_evidence_cannot_emit_approval() -> None:
     """Reject forged root metadata and ancestry before canonicalization."""
-    loaded = modules()
+    loaded = _modules()
     _, observer, _, approval = loaded
-    roster, candidate, observation = candidate_and_observation(loaded)
+    roster, candidate, observation = _candidate_and_observation(loaded)
 
     bad_identity = replace(observation.codex_home_observation.identity, owner=True)
     bad_home = replace(
@@ -612,7 +612,7 @@ def test_inconsistent_root_evidence_cannot_emit_approval() -> None:
             candidate,
             roster,
             replace(observation, codex_home_observation=bad_home),
-            runtime(approval),
+            _runtime(approval),
         )
 
     bad_target = observer.RootObservation(
@@ -627,22 +627,22 @@ def test_inconsistent_root_evidence_cannot_emit_approval() -> None:
             candidate,
             roster,
             replace(observation, target_root_observation=bad_target),
-            runtime(approval),
+            _runtime(approval),
         )
 
 
 def test_forged_state_classification_or_lock_cannot_emit_approval() -> None:
     """Reject classification claims and lock evidence not proven by observation."""
-    loaded = modules()
+    loaded = _modules()
     _, observer, _, approval = loaded
-    roster, candidate, observation = candidate_and_observation(loaded)
+    roster, candidate, observation = _candidate_and_observation(loaded)
 
     with pytest.raises(approval.ApprovalBindingError, match="classification"):
         approval.build_convergence_approval(
             candidate,
             roster,
             replace(observation, targets="current"),
-            runtime(approval),
+            _runtime(approval),
         )
 
     wrong_lock = observer.LockObservation(
@@ -661,7 +661,7 @@ def test_forged_state_classification_or_lock_cannot_emit_approval() -> None:
             candidate,
             roster,
             replace(observation, coordination_lock_observation=wrong_lock),
-            runtime(approval),
+            _runtime(approval),
         )
 
     existing_lock = observer.LockObservation(
@@ -679,7 +679,7 @@ def test_forged_state_classification_or_lock_cannot_emit_approval() -> None:
         candidate,
         roster,
         replace(observation, coordination_lock_observation=existing_lock),
-        runtime(approval),
+        _runtime(approval),
     )
     assert json.loads(bound.canonical_bytes)["coordination_lock_observation"] == {
         "kind": "regular",
@@ -696,9 +696,9 @@ def test_forged_state_classification_or_lock_cannot_emit_approval() -> None:
 
 def test_semantically_forged_candidate_cannot_emit_approval() -> None:
     """Reject self-consistent bytes whose action contradicts their operations."""
-    loaded = modules()
+    loaded = _modules()
     _, _, _, approval = loaded
-    roster, candidate, observation = candidate_and_observation(loaded)
+    roster, candidate, observation = _candidate_and_observation(loaded)
     value = json.loads(candidate.canonical_bytes)
     value["action"] = "remove"
     canonical = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
@@ -710,7 +710,7 @@ def test_semantically_forged_candidate_cannot_emit_approval() -> None:
     )
 
     with pytest.raises(approval.ApprovalBindingError, match="authoritative rebuild"):
-        approval.build_convergence_approval(forged, roster, observation, runtime(approval))
+        approval.build_convergence_approval(forged, roster, observation, _runtime(approval))
 
 
 def test_approval_kernel_has_no_filesystem_or_process_surface() -> None:

@@ -30,21 +30,32 @@ _STUB_ONLY_MODULES = {"nested.proto", "pkg.stub_only", "stubpkg", "stubpkg.leaf"
 _SHADOWED = ["nested/core.pyi", "pkg/__init__.pyi", "pkg/shadowed.pyi"]
 
 
-@pytest.fixture(scope="module")
-def index(corpus_pyi_dir: Path) -> dict:
+@pytest.fixture(name="index", scope="module")
+def _index(corpus_pyi_dir: Path) -> dict:
     """Full scan of the fixture project (``scan`` is pure — it writes no index file)."""
     return scan(corpus_pyi_dir)
 
 
 def _module(index: dict, name: str) -> dict | None:
+    """Find the indexed module with the requested dotted name.
+
+    >>> _module({"modules": [{"name": "pkg.mod"}]}, "pkg.mod")
+    {'name': 'pkg.mod'}
+    """
     return next((m for m in index["modules"] if m.get("name") == name), None)
 
 
 def _by_path(index: dict, path: str) -> dict | None:
+    """Find the indexed module with the requested source path."""
     return next((m for m in index["modules"] if m.get("path") == path), None)
 
 
 def _symbol_names(module: dict) -> set[str]:
+    """Return declared symbol names from one indexed module.
+
+    >>> _symbol_names({"symbols": [{"name": "one"}]})
+    {'one'}
+    """
     return {s.get("name") for s in module.get("symbols", [])}
 
 

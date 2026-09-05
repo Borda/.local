@@ -101,15 +101,25 @@ def _scan(src: Path, index_dir: Path) -> dict:
 
 
 def _module_status(index: dict) -> dict:
-    """Map module name -> status string from an index payload."""
+    """Map module names to status strings from an index payload.
+
+    >>> _module_status({"modules": [{"name": "pkg.mod", "status": "ok"}]})
+    {'pkg.mod': 'ok'}
+    """
     return {m["name"]: m.get("status") for m in index["modules"]}
 
 
 def _strip_volatile(index: dict) -> dict:
+    """Remove scan timestamps and git identity before comparing indexes.
+
+    >>> _strip_volatile({"git_sha": "abc", "scanned_at": "now", "modules": []})
+    {'modules': []}
+    """
     return {k: v for k, v in index.items() if k not in _VOLATILE_KEYS}
 
 
 def _canonical(index: dict) -> str:
+    """Serialize an index with stable key ordering for deterministic assertions."""
     return json.dumps(index, sort_keys=True, ensure_ascii=False)
 
 

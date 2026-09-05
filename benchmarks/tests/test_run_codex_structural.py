@@ -37,9 +37,14 @@ def test_public_runner_stays_below_the_250_kilobyte_maintenance_limit() -> None:
     assert SCRIPT_PATH.stat().st_size < 250_000
 
 
-@pytest.fixture(scope="module")
-def script_run_codex() -> Any:
-    """Load the Codex adapter without executing its command-line entry point."""
+@pytest.fixture(name="script_run_codex", scope="module")
+def _script_run_codex() -> Any:
+    """Load the Codex adapter without executing its command-line entry point.
+
+    Example:
+        >>> getfixture("script_run_codex").__name__
+        'run_codemap_codex'
+    """
     spec = importlib.util.spec_from_file_location("run_codemap_codex", SCRIPT_PATH)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load Codex adapter at {SCRIPT_PATH}")
@@ -50,7 +55,15 @@ def script_run_codex() -> Any:
 
 
 def _make_direct_runtime_bundle(root: Path) -> Path:
-    """Create the minimum source-shaped direct CLI runtime used by isolation tests."""
+    """Create the minimum source-shaped direct CLI runtime used by isolation tests.
+
+    Example:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     launcher = _make_direct_runtime_bundle(Path(directory))
+        ...     launcher.name, (launcher.parents[1] / "src/codemap_py/__init__.py").is_file()
+        ('codemap-py', True)
+    """
     runtime = root / "codemap-runtime"
     launcher = runtime / "bin" / "codemap-py"
     exclusions = runtime / "bin" / "_exclusions.py"
@@ -215,11 +228,9 @@ def test_exact_suite_counterbalances_arm_ordinals_at_one_repetition(script_run_c
 def test_permission_profiles_replace_legacy_sandbox_and_grant_only_coordination_write(
     script_run_codex: Any, tmp_path: Path
 ) -> None:
-    """A/B/C configs must expose only their documented permission surface.
+    """Reject legacy sandbox flags, missing profiles, and writes outside Codemap's lock root.
 
-    Prevents a legacy ``--sandbox`` transport flag, an implicitly writable profile, or a treatment profile that can
-    write outside Codemap's lock root. A plausible but incorrect implementation that writes a broad root, omits the
-    profile, or leaves the legacy flag would fail a specific assertion.
+    Exact config assertions prevent implicit or overly broad permissions.
     """
     repo_path = tmp_path / "target"
     index_path = repo_path / ".cache" / "codemap" / "locked-index.json"
@@ -334,16 +345,18 @@ def test_prepare_verified_home_passes_writable_workspace_to_permission_verifier(
     prepare_original = script_run_codex.prepare_arm_home
     observed: dict[str, Any] = {}
 
-    def prepare(arm: str, **kwargs: Any) -> Any:
+    def _prepare(arm: str, **kwargs: Any) -> Any:
+        """Prepare and record an isolated arm home."""
         return prepare_original(arm, root=tmp_path, **kwargs)
 
-    def verify_permission(*_args: Any, **kwargs: Any) -> None:
+    def _verify_permission(*_args: Any, **kwargs: Any) -> None:
+        """Record permission-verification arguments without running the real host probe."""
         observed.update(kwargs)
 
     monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(script_run_codex, "prepare_arm_home", prepare)
+    monkeypatch.setattr(script_run_codex, "prepare_arm_home", _prepare)
     monkeypatch.setattr(script_run_codex, "_write_permission_config", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(script_run_codex, "_verify_permission_profile", verify_permission)
+    monkeypatch.setattr(script_run_codex, "_verify_permission_profile", _verify_permission)
     monkeypatch.setattr(script_run_codex, "_verify_plain_plugin_absent", lambda *_args, **_kwargs: None)
 
     home = runner._prepare_verified_home("A_plain", writable_workspace=workspace, denied_workspace=source)
@@ -417,7 +430,8 @@ def test_skill_home_preserves_plugin_registration_when_permissions_are_applied(
     marketplace_root = tmp_path / "marketplace"
     marketplace_root.mkdir()
 
-    def install_plugins(home: Any, *_args: Any, **_kwargs: Any) -> bool:
+    def _install_plugins(home: Any, *_args: Any, **_kwargs: Any) -> bool:
+        """Supply fixture plugin installation state without contacting a marketplace."""
         config_path = home.path / "config.toml"
         config_text = config_path.read_text(encoding="utf-8")
         config_path.write_text(
@@ -439,7 +453,7 @@ def test_skill_home_preserves_plugin_registration_when_permissions_are_applied(
         "_verify_locked_codemap_python",
         lambda **_kwargs: "/opt/homebrew/bin/python3.11",
     )
-    monkeypatch.setattr(script_run_codex, "_install_codemap_plugin", install_plugins)
+    monkeypatch.setattr(script_run_codex, "_install_codemap_plugin", _install_plugins)
     monkeypatch.setattr(script_run_codex, "_verify_treatment_artifact_locks", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(script_run_codex, "_admit_installed_skill_pair", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(script_run_codex, "_verify_installed_plugin_pair", lambda *_args, **_kwargs: None)
@@ -500,23 +514,25 @@ def test_locked_treatment_python_is_executable_and_version_checked(
     )
     commands: list[list[str]] = []
 
-    def matching_runtime(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+    def _matching_runtime(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        """Return runtime identity matching the fixture's locked contract."""
         commands.append(command)
         return SimpleNamespace(returncode=0, stdout="3.11.15\n", stderr="")
 
     assert script_run_codex._verify_locked_codemap_python(
         manifest_path=manifest_path,
-        command_runner=matching_runtime,
+        command_runner=_matching_runtime,
     ) == str(python_path)
     assert commands == [[str(python_path), "--version"]]
 
-    def wrong_runtime(_command: list[str], **_kwargs: Any) -> SimpleNamespace:
+    def _wrong_runtime(_command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        """Return a mismatched runtime identity for admission rejection."""
         return SimpleNamespace(returncode=0, stdout="Python 3.13.5\n", stderr="")
 
     with pytest.raises(ValueError, match="3.11"):
         script_run_codex._verify_locked_codemap_python(
             manifest_path=manifest_path,
-            command_runner=wrong_runtime,
+            command_runner=_wrong_runtime,
         )
 
 
@@ -566,10 +582,9 @@ def test_verified_home_overrides_treatment_python_and_removes_it_from_plain(
 def test_coordination_root_is_exact_safe_and_cleanup_keeps_the_locked_index(
     script_run_codex: Any, tmp_path: Path
 ) -> None:
-    """The sole treatment write root is the initialized index-local lock directory.
+    """Require the exact initialized index-local lock root.
 
-    Prevents writing a parent/cache-wide root or deleting the locked index when the disposable coordination state is
-    cleaned up.  A broad or misplaced root cannot satisfy the exact-path assertion.
+    Reject broader write access and preserve the locked index when cleaning disposable coordination state.
     """
     index_path = tmp_path / "target" / ".cache" / "codemap" / "locked-index.json"
     index_path.parent.mkdir(parents=True)
@@ -671,14 +686,17 @@ def test_structural_snapshot_cleans_a_shared_treatment_coordination_root_once(
         codemap_context_path = None
 
         def __init__(self, arm: str) -> None:
+            """Initialize fixture state."""
             self.arm = arm
             self.path = tmp_path / arm
             self.coordination_path = shared_root if arm != "A_plain" else None
 
         def cleanup(self) -> None:
+            """Provide fixture cleanup."""
             events.append(f"home:{self.arm}")
 
-    def cleanup(path: Path) -> None:
+    def _cleanup(path: Path) -> None:
+        """Record cleanup at the scenario's isolated-home boundary."""
         events.append(f"coordination:{path.name}")
         if path not in live_roots:
             raise ValueError("Codemap coordination root is unavailable")
@@ -689,7 +707,7 @@ def test_structural_snapshot_cleans_a_shared_treatment_coordination_root_once(
     runner.auth_source = None
     monkeypatch.setattr(runner, "_prepare_verified_home", lambda arm: Home(arm))
     monkeypatch.setattr(script_run_codex, "_write_input_snapshot", lambda *_args, **_kwargs: {"ok": True})
-    monkeypatch.setattr(script_run_codex, "_cleanup_coordination_root", cleanup)
+    monkeypatch.setattr(script_run_codex, "_cleanup_coordination_root", _cleanup)
 
     assert runner.create_input_snapshot(
         tmp_path / "run",
@@ -710,10 +728,9 @@ def test_structural_snapshot_cleans_a_shared_treatment_coordination_root_once(
 def test_coordination_root_rejects_symlinks_and_cannot_escape_its_index_directory(
     script_run_codex: Any, tmp_path: Path, unsafe_entry: str
 ) -> None:
-    """Indirect coordination paths must fail before a treatment can write through them.
+    """Reject symlinked lock/readers directories before writes escape the index.
 
-    Prevents a symlinked lock root or readers directory from granting write access outside the index directory.
-    Remaining coverage excludes hostile concurrent filesystem replacement, which needs process-level fault tests.
+    Concurrent hostile replacement requires separate process-level fault tests.
     """
     index_path = tmp_path / "target" / ".cache" / "codemap" / "locked-index.json"
     index_path.parent.mkdir(parents=True)
@@ -749,13 +766,14 @@ def test_permission_profile_verification_fails_closed_when_codex_rejects_the_pro
     home_path.mkdir()
     home = script_run_codex.ArmHome("B_direct_required", home_path, {}, True, True)
 
-    def reject_profile(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+    def _reject_profile(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        """Reject the selected profile at the fixture validation boundary."""
         if "--version" in command:
             return SimpleNamespace(returncode=0, stdout="codex-cli 0.138.0", stderr="")
         return SimpleNamespace(returncode=2, stdout="", stderr="unknown permission profile provider-parity-codemap")
 
     with pytest.raises(ValueError, match="profile|permission|unsupported"):
-        script_run_codex._verify_permission_profile(home, repo_path, command_runner=reject_profile)
+        script_run_codex._verify_permission_profile(home, repo_path, command_runner=_reject_profile)
 
 
 def test_permission_profile_resolves_workspace_python_symlink_before_sandbox(
@@ -778,7 +796,8 @@ def test_permission_profile_resolves_workspace_python_symlink_before_sandbox(
     home = script_run_codex.ArmHome("A_plain", home_path, {}, False)
     commands: list[list[str]] = []
 
-    def reject_after_capture(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+    def _reject_after_capture(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        """Capture validation input before rejecting the fixture runtime."""
         commands.append(command)
         if command == ["codex", "--version"]:
             return SimpleNamespace(returncode=0, stdout="codex-cli 0.146.1", stderr="")
@@ -787,7 +806,7 @@ def test_permission_profile_resolves_workspace_python_symlink_before_sandbox(
     monkeypatch.setattr(script_run_codex.sys, "executable", str(workspace_python))
 
     with pytest.raises(ValueError, match="profile|permission|unsupported"):
-        script_run_codex._verify_permission_profile(home, repo_path, command_runner=reject_after_capture)
+        script_run_codex._verify_permission_profile(home, repo_path, command_runner=_reject_after_capture)
 
     sandbox_command = commands[1]
     interpreter = sandbox_command[sandbox_command.index("--") + 1]
@@ -854,7 +873,15 @@ def test_real_plain_profile_cannot_read_locked_index(script_run_codex: Any, tmp_
 
 
 def _successful_plain_profile_command(command: list[str], **_kwargs: Any) -> SimpleNamespace:
-    """Emulate a valid plain profile without executing Codex or exposing auth."""
+    """Emulate a valid plain profile without executing Codex or exposing auth.
+
+    Example:
+        >>> _successful_plain_profile_command(["codex", "sandbox", "-c", "pass"]).returncode
+        0
+        >>> result = _successful_plain_profile_command(["codex", "sandbox", "-c", "write()"])
+        >>> result.returncode, result.stderr
+        (1, 'Operation not permitted')
+    """
     if command == ["codex", "--version"]:
         return SimpleNamespace(returncode=0, stdout="codex-cli 0.145.0", stderr="")
     if command[:2] == ["codex", "sandbox"]:
@@ -977,7 +1004,15 @@ def _completed_stream(
     output_tokens: int = 2,
     commands: list[dict[str, Any]] | None = None,
 ) -> str:
-    """Build one official-shape completed Codex event stream."""
+    """Build one official-shape completed Codex event stream.
+
+    Example:
+        >>> events = [json.loads(line) for line in _completed_stream(output="example", input_tokens=0).splitlines()]
+        >>> [event["type"] for event in events]
+        ['thread.started', 'item.completed', 'turn.completed']
+        >>> events[1]["item"]["text"], events[-1]["usage"]["input_tokens"]
+        ('example', 0)
+    """
     events: list[dict[str, Any]] = [{"type": "thread.started", "thread_id": "fixture-thread"}]
     events.extend(
         {"type": "item.completed", "item": {"id": f"command-{index}", **command}}
@@ -1011,7 +1046,8 @@ def test_loaded_task_keeps_canonical_identity_and_shared_evaluator_input(script_
     )
     evaluated: list[tuple[dict[str, Any], str]] = []
 
-    def evaluator(task: dict[str, Any], output_text: str) -> core.EvaluationResult:
+    def _evaluator(task: dict[str, Any], output_text: str) -> core.EvaluationResult:
+        """Evaluate synthetic provider output using the scenario's controlled score."""
         evaluated.append((task, output_text))
         return core.EvaluationResult(scored=True, correct=True, quality_score=0.75)
 
@@ -1019,7 +1055,7 @@ def test_loaded_task_keeps_canonical_identity_and_shared_evaluator_input(script_
         "fixture-model",
         tmp_path,
         transport=lambda *_args, **_kwargs: _completed_stream(),
-        evaluator=evaluator,
+        evaluator=_evaluator,
     )
 
     result = runner.run(loaded_task, "B_direct_required")
@@ -1273,7 +1309,8 @@ def test_retry_policy_only_retries_zero_token_transport_failures(
     streams = iter([first_stream, _completed_stream()])
     calls = 0
 
-    def transport(*_args: Any, **_kwargs: Any) -> str:
+    def _transport(*_args: Any, **_kwargs: Any) -> str:
+        """Return fixture transport evidence; no provider call."""
         nonlocal calls
         calls += 1
         return next(streams)
@@ -1281,7 +1318,7 @@ def test_retry_policy_only_retries_zero_token_transport_failures(
     runner = script_run_codex.CodexRunner(
         "fixture-model",
         tmp_path,
-        transport=transport,
+        transport=_transport,
         evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
     )
 
@@ -1304,10 +1341,9 @@ def test_retry_policy_does_not_repeat_non_retryable_authentication_failures(
     tmp_path: Path,
     message: str,
 ) -> None:
-    """An expired or consumed refresh token must stop at one attempt.
+    """Stop expired or consumed refresh tokens after one attempt.
 
-    Prevents a permanent 401 from consuming two extra paid attempts before the outer study can identify the shared
-    infrastructure failure.  A classifier that treats every zero-token error as transient would make two calls.
+    Zero-token permanent 401 failures must not be retried as transient errors.
     """
     streams = iter(
         [
@@ -1317,7 +1353,8 @@ def test_retry_policy_does_not_repeat_non_retryable_authentication_failures(
     )
     calls = 0
 
-    def transport(*_args: Any, **_kwargs: Any) -> str:
+    def _transport(*_args: Any, **_kwargs: Any) -> str:
+        """Return fixture transport evidence; no provider call."""
         nonlocal calls
         calls += 1
         return next(streams)
@@ -1325,7 +1362,7 @@ def test_retry_policy_does_not_repeat_non_retryable_authentication_failures(
     runner = script_run_codex.CodexRunner(
         "fixture-model",
         tmp_path,
-        transport=transport,
+        transport=_transport,
         evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
     )
 
@@ -1338,11 +1375,9 @@ def test_retry_policy_does_not_repeat_non_retryable_authentication_failures(
 
 
 def test_parser_keeps_refresh_authentication_classification_after_later_generic_401(script_run_codex: Any) -> None:
-    """A later generic provider error cannot make a consumed refresh token retryable.
+    """Preserve permanent auth classification across refresh-token reuse, turn.failed, then generic 401.
 
-    Prevents the real event order—refresh-token reuse, ``turn.failed``, then a generic non-zero 401—from losing its
-    deterministic authentication class. A parser that overwrites its classification with the final generic event would
-    spend retry attempts on an already-invalid credential.
+    The later error must not enable retries of invalid credentials.
     """
     stream = "\n".join(
         json.dumps(event)
@@ -1395,10 +1430,9 @@ def test_retry_policy_preserves_partial_response_when_usage_is_absent(
     script_run_codex: Any,
     tmp_path: Path,
 ) -> None:
-    """Partial provider output must remain auditable instead of being retried away.
+    """Preserve partial output received before transport failure without usage metadata.
 
-    Prevents a response event received before a transport failure, but without a usage block, from being overwritten by
-    a later attempt.  A zero-token check alone would incorrectly replace ``partial answer`` here.
+    A zero-token retry must not overwrite that auditable response.
     """
     first_stream = "\n".join(
         [
@@ -1414,7 +1448,8 @@ def test_retry_policy_preserves_partial_response_when_usage_is_absent(
     streams = iter([first_stream, _completed_stream(output="replacement answer")])
     calls = 0
 
-    def transport(*_args: Any, **_kwargs: Any) -> str:
+    def _transport(*_args: Any, **_kwargs: Any) -> str:
+        """Return fixture transport evidence; no provider call."""
         nonlocal calls
         calls += 1
         return next(streams)
@@ -1422,7 +1457,7 @@ def test_retry_policy_preserves_partial_response_when_usage_is_absent(
     runner = script_run_codex.CodexRunner(
         "fixture-model",
         tmp_path,
-        transport=transport,
+        transport=_transport,
         evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
     )
 
@@ -1444,7 +1479,8 @@ def test_retry_attempts_share_one_coordinate_wall_clock_budget(
     """A transport timeout cannot unlock another full coordinate budget."""
     calls = 0
 
-    def transport(*_args: Any, **_kwargs: Any) -> str:
+    def _transport(*_args: Any, **_kwargs: Any) -> str:
+        """Return fixture transport evidence; no provider call."""
         nonlocal calls
         calls += 1
         return json.dumps({"type": "error", "error": "transport unavailable"})
@@ -1455,7 +1491,7 @@ def test_retry_attempts_share_one_coordinate_wall_clock_budget(
         "fixture-model",
         tmp_path,
         timeout=600.0,
-        transport=transport,
+        transport=_transport,
         evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
     )
 
@@ -1612,7 +1648,8 @@ def test_skill_arm_installs_and_locks_rig_and_codemap_plugins(script_run_codex: 
         query_skill.parent.mkdir(parents=True)
         query_skill.write_text("# query-code\n", encoding="utf-8")
 
-        def command_runner(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        def _command_runner(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+            """Record commands and return fixture responses."""
             calls.append(command)
             if len(command) > 2 and command[1:3] == ["plugin", "add"]:
                 install_path = rig_path if command[3] == "codex-rig@borda-ai-rig" else installed_path
@@ -1655,7 +1692,7 @@ def test_skill_arm_installs_and_locks_rig_and_codemap_plugins(script_run_codex: 
         installed = script_run_codex._install_codemap_plugin(
             home,
             marketplace_root,
-            command_runner=command_runner,
+            command_runner=_command_runner,
         )
 
         assert installed is True
@@ -1710,7 +1747,7 @@ def test_skill_arm_installs_and_locks_rig_and_codemap_plugins(script_run_codex: 
             tmp_path,
             index_path,
             manifest_path=lock_path,
-            command_runner=command_runner,
+            command_runner=_command_runner,
         )
         config = home.path / "config.toml"
         config.write_text("", encoding="utf-8")
@@ -1747,7 +1784,15 @@ def test_skill_arm_installs_and_locks_rig_and_codemap_plugins(script_run_codex: 
 
 
 def _write_snapshot_plugin_tree(root: Path, name: str, version: str) -> Path:
-    """Create one minimal byte-locked local plugin source for runtime tests."""
+    """Create one minimal byte-locked local plugin source for runtime tests.
+
+    Example:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     plugin = _write_snapshot_plugin_tree(Path(directory), "example", "1.2.3")
+        ...     json.loads((plugin / ".codex-plugin/plugin.json").read_text())
+        {'name': 'example', 'version': '1.2.3'}
+    """
     plugin = root / name
     manifest = plugin / ".codex-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
@@ -1768,7 +1813,15 @@ def _write_snapshot_plugin_tree(root: Path, name: str, version: str) -> Path:
 
 
 def _write_frozen_snapshot_marketplace(root: Path) -> Path:
-    """Write the fixed local marketplace beside the archived C plugin pair."""
+    """Write the fixed local marketplace beside the archived C plugin pair.
+
+    Example:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     path = _write_frozen_snapshot_marketplace(Path(directory))
+        ...     [entry["source"]["source"] for entry in json.loads(path.read_text())["plugins"]]
+        ['local', 'local']
+    """
     marketplace_manifest = root / ".agents" / "plugins" / "marketplace.json"
     marketplace_manifest.parent.mkdir(parents=True)
     marketplace_manifest.write_text(
@@ -1793,7 +1846,16 @@ def _write_runtime_snapshot_metadata(
     *,
     locked_files: dict[str, Path] | None = None,
 ) -> None:
-    """Write the minimal input identity ledger required by snapshot binding tests."""
+    """Write the minimal input identity ledger required by snapshot binding tests.
+
+    Example:
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as directory:
+        ...     root = Path(directory)
+        ...     _write_runtime_snapshot_metadata(root, {})
+        ...     json.loads((root / "input-snapshot.json").read_text())
+        {'files': []}
+    """
     files = []
     for role, source in sources.items():
         for path in sorted(source.rglob("*")):
@@ -1830,11 +1892,10 @@ def test_paid_skill_home_installs_only_from_bound_run_snapshot(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """C must install snapshot bytes through a run-owned marketplace selector.
+    """Install both archived plugins through a run-owned snapshot marketplace, insulating later cells from marketplace
+    drift.
 
-    This reproduces the stopped BA-05/C lifecycle: snapshot admission succeeds, then a later cell must be insulated from
-    marketplace drift. Codex CLI 0.146 rejects direct plugin paths, so the later home must add only a marketplace rooted
-    inside the run snapshot and select both archived plugins from it.
+    Codex CLI 0.146 rejects direct plugin paths.
     """
     snapshot_root = tmp_path / "run" / "inputs"
     snapshot_root.mkdir(parents=True)
@@ -1874,7 +1935,8 @@ def test_paid_skill_home_installs_only_from_bound_run_snapshot(
     created_homes: list[Any] = []
     prepare_arm_home = script_run_codex.prepare_arm_home
 
-    def prepare(arm: str, **_kwargs: Any) -> Any:
+    def _prepare(arm: str, **_kwargs: Any) -> Any:
+        """Prepare and record an isolated arm home."""
         home = prepare_arm_home(arm, root=tmp_path)
         created_homes.append(home)
         return home
@@ -1884,7 +1946,8 @@ def test_paid_skill_home_installs_only_from_bound_run_snapshot(
     sources_by_selector: dict[str, Path] = {}
     installed_paths: dict[str, Path] = {}
 
-    def command_runner(command: list[str], **kwargs: Any) -> SimpleNamespace:
+    def _command_runner(command: list[str], **kwargs: Any) -> SimpleNamespace:
+        """Record commands and return fixture responses."""
         nonlocal frozen_marketplace
         commands.append(command)
         if command[1:4] == ["plugin", "marketplace", "add"]:
@@ -1935,13 +1998,13 @@ def test_paid_skill_home_installs_only_from_bound_run_snapshot(
         tmp_path,
         index_path=index_path,
         marketplace_root=marketplace_root,
-        command_runner=command_runner,
+        command_runner=_command_runner,
     )
     runner._bind_runtime_snapshot(
         snapshot_root,
         {"C_skill_required": {"codemap-py": codemap_source, "codex-rig": rig_source}},
     )
-    monkeypatch.setattr(script_run_codex, "prepare_arm_home", prepare)
+    monkeypatch.setattr(script_run_codex, "prepare_arm_home", _prepare)
     monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(script_run_codex, "_verify_locked_codemap_python", lambda **_kwargs: "/usr/bin/python3")
     monkeypatch.setattr(script_run_codex, "_verify_treatment_artifact_locks", lambda *_args, **_kwargs: None)
@@ -2087,7 +2150,8 @@ def test_initial_skill_admission_failure_keeps_identity_evidence_after_cleanup(
         marketplace_root=marketplace_root,
     )
 
-    def fail_after_staging(home: Any, *_args: Any, **_kwargs: Any) -> bool:
+    def _fail_after_staging(home: Any, *_args: Any, **_kwargs: Any) -> bool:
+        """Create staged plugin identities before simulating an installation failure."""
         for name, version in (("codemap-py", "0.27.0"), ("codex-rig", "0.4.0")):
             plugin = home.path / "plugins" / name
             (plugin / ".codex-plugin").mkdir(parents=True)
@@ -2098,7 +2162,7 @@ def test_initial_skill_admission_failure_keeps_identity_evidence_after_cleanup(
         raise RuntimeError("fixture plugin identity mismatch")
 
     monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(script_run_codex, "_install_codemap_plugin", fail_after_staging)
+    monkeypatch.setattr(script_run_codex, "_install_codemap_plugin", _fail_after_staging)
 
     with pytest.raises(RuntimeError, match="fixture plugin identity mismatch"):
         runner.create_input_snapshot(
@@ -2150,7 +2214,8 @@ def test_final_skill_plugin_roster_rejects_missing_disabled_or_extra_entries(
     home_path.mkdir()
     home = script_run_codex.ArmHome("C_skill_required", home_path, {}, True, True)
 
-    def command_runner(_command: list[str], **_kwargs: Any) -> SimpleNamespace:
+    def _command_runner(_command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        """Record commands and return fixture responses."""
         return SimpleNamespace(
             returncode=0,
             stdout=json.dumps({"installed": installed, "available": []}),
@@ -2158,7 +2223,7 @@ def test_final_skill_plugin_roster_rejects_missing_disabled_or_extra_entries(
         )
 
     with pytest.raises(RuntimeError, match="plugin registration"):
-        script_run_codex._verify_installed_plugin_pair(home, command_runner=command_runner)
+        script_run_codex._verify_installed_plugin_pair(home, command_runner=_command_runner)
 
 
 @POSIX_SECURITY
@@ -2235,10 +2300,9 @@ def test_arm_home_cleanup_rejects_non_private_credential_directory(
     monkeypatch: pytest.MonkeyPatch,
     violation: str,
 ) -> None:
-    """Credential homes may be removed only when their owner and mode are private.
+    """Preserve credential homes whose ownership or private permissions changed after creation.
 
-    Prevents cleanup from recursively deleting a path whose ownership or permissions changed after creation.  A cleanup
-    path that merely calls ``rmtree`` would delete this fixture and fail the preservation assertion.
+    Blind recursive cleanup must fail the preservation assertion.
     """
     home_path = tmp_path / violation
     home_path.mkdir()
@@ -2272,20 +2336,22 @@ def test_prepare_verified_home_cleans_credential_home_after_keyboard_interrupt(
     created_homes: list[Any] = []
     prepare_original = script_run_codex.prepare_arm_home
 
-    def prepare(arm: str, **kwargs: Any) -> Any:
+    def _prepare(arm: str, **kwargs: Any) -> Any:
+        """Prepare and record an isolated arm home."""
         home = prepare_original(arm, root=tmp_path, **kwargs)
         created_homes.append(home)
         return home
 
-    def interrupt_authentication(*_args: Any, **_kwargs: Any) -> None:
+    def _interrupt_authentication(*_args: Any, **_kwargs: Any) -> None:
+        """Interrupt authentication setup before provider execution."""
         raise KeyboardInterrupt("fixture interrupt")
 
     runner = script_run_codex.CodexRunner("fixture-model", tmp_path, auth_source=auth_source)
     monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(script_run_codex, "prepare_arm_home", prepare)
+    monkeypatch.setattr(script_run_codex, "prepare_arm_home", _prepare)
     monkeypatch.setattr(script_run_codex, "_write_permission_config", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(script_run_codex, "_verify_permission_profile", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(script_run_codex, "_verify_authentication", interrupt_authentication)
+    monkeypatch.setattr(script_run_codex, "_verify_authentication", _interrupt_authentication)
 
     try:
         with pytest.raises(KeyboardInterrupt, match="fixture interrupt"):
@@ -2338,7 +2404,8 @@ def test_probe_verifies_authentication_without_disclosing_auth_source(
     auth_source.chmod(0o600)
     calls: list[list[str]] = []
 
-    def command_runner(command: list[str], **kwargs: Any) -> SimpleNamespace:
+    def _command_runner(command: list[str], **kwargs: Any) -> SimpleNamespace:
+        """Record commands and return fixture responses."""
         calls.append(command)
         return _successful_plain_profile_command(command, **kwargs)
 
@@ -2350,7 +2417,7 @@ def test_probe_verifies_authentication_without_disclosing_auth_source(
         tmp_path,
         index_path=fixture_index,
         auth_source=auth_source,
-        command_runner=command_runner,
+        command_runner=_command_runner,
     )
 
     evidence = runner.probe_arm("A_plain")
@@ -2375,14 +2442,15 @@ def test_runner_cleans_auth_home_when_transport_raises(
     homes: list[Path] = []
     original_prepare_arm_home = script_run_codex.prepare_arm_home
 
-    def prepare_home(arm: str, **kwargs: Any) -> Any:
+    def _prepare_home(arm: str, **kwargs: Any) -> Any:
+        """Prepare and record an isolated home using the original helper."""
         home = original_prepare_arm_home(arm, root=tmp_path, **kwargs)
         homes.append(home.path)
         return home
 
     monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(script_run_codex, "_verify_plain_plugin_absent", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(script_run_codex, "prepare_arm_home", prepare_home)
+    monkeypatch.setattr(script_run_codex, "prepare_arm_home", _prepare_home)
     fixture_index = tmp_path / "fixture-index.json"
     fixture_index.write_text("{}", encoding="utf-8")
     runner = script_run_codex.CodexRunner(
@@ -2412,10 +2480,9 @@ def test_runner_reuses_rotated_auth_state_without_mutating_immutable_source(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A refreshed cell credential seeds the next cell through one private chain.
+    """Seed each cell from the refreshed private credential chain.
 
-    Prevents each disposable home from recopying a now-consumed source refresh state.  A source write-back, broad state
-    directory, or retained second link would fail an exact filesystem assertion.
+    Reject source write-back, broad directory permissions, and a retained second link.
     """
     source = tmp_path / "immutable-auth.json"
     source_bytes = b'{"state":"seed"}'
@@ -2440,14 +2507,15 @@ def test_runner_reuses_rotated_auth_state_without_mutating_immutable_source(
         evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
     )
 
-    def rotating_subprocess(_command: list[str], env: dict[str, str], **_kwargs: Any) -> str:
+    def _rotating_subprocess(_command: list[str], env: dict[str, str], **_kwargs: Any) -> str:
+        """Record copied authentication bytes, rotate the fixture copy, and return success."""
         copied_auth = Path(env["CODEX_HOME"]) / "auth.json"
         seen.append(copied_auth.read_bytes())
         copied_auth.write_bytes(rotated_bytes)
         copied_auth.chmod(0o600)
         return _completed_stream()
 
-    monkeypatch.setattr(runner, "_subprocess", rotating_subprocess)
+    monkeypatch.setattr(runner, "_subprocess", _rotating_subprocess)
     try:
         runner.run({"id": "first", "prompt": "prompt", "type": "demo"}, "A_plain")
         runner.run({"id": "second", "prompt": "prompt", "type": "demo"}, "A_plain")
@@ -2504,12 +2572,13 @@ def test_runner_rejects_auth_source_drift_before_the_next_model_call(
         evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
     )
 
-    def subprocess_fixture(*_args: Any, **_kwargs: Any) -> str:
+    def _subprocess_fixture(*_args: Any, **_kwargs: Any) -> str:
+        """Count invocations and return a successful native stream."""
         nonlocal calls
         calls += 1
         return _completed_stream()
 
-    monkeypatch.setattr(runner, "_subprocess", subprocess_fixture)
+    monkeypatch.setattr(runner, "_subprocess", _subprocess_fixture)
     try:
         runner.run({"id": "first", "prompt": "prompt", "type": "demo"}, "A_plain")
         source.write_bytes(b'{"state":"changed"}')
@@ -2799,6 +2868,7 @@ class _FakePopen:
         timeout_after_streaming: str | None = None,
         **_kwargs: Any,
     ) -> None:
+        """Initialize fixture state."""
         self.pid = 4321
         self.returncode = returncode
         self._stdout = stdout
@@ -2837,10 +2907,11 @@ def test_failed_coordination_cleanup_is_recorded_not_silently_dropped(
     runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
     coordination = tmp_path / "coordination"
 
-    def refuse(_path: Path) -> None:
+    def _refuse(_path: Path) -> None:
+        """Reject cleanup as though its target directory were not empty."""
         raise ValueError("directory not empty")
 
-    monkeypatch.setattr(script_run_codex, "_cleanup_coordination_root", refuse)
+    monkeypatch.setattr(script_run_codex, "_cleanup_coordination_root", _refuse)
 
     message = runner._cleanup_coordination(coordination)
 
@@ -2866,10 +2937,11 @@ def test_coordination_cleanup_never_raises_from_a_finally_block(
     """Raising from cleanup would mask the exception carrying the real cause."""
     runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
 
-    def refuse(_path: Path) -> None:
+    def _refuse(_path: Path) -> None:
+        """Reject cleanup as though its target directory were not empty."""
         raise ValueError("directory not empty")
 
-    monkeypatch.setattr(script_run_codex, "_cleanup_coordination_root", refuse)
+    monkeypatch.setattr(script_run_codex, "_cleanup_coordination_root", _refuse)
 
     try:
         raise RuntimeError("original cause")
@@ -2881,10 +2953,9 @@ def test_coordination_cleanup_never_raises_from_a_finally_block(
 def test_timed_out_transport_preserves_streamed_usage_events(
     script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A wall-clock kill must not erase the usage the agent already billed.
+    """Retain streamed usage after a timeout kill.
 
-    The timeout branch previously returned an error envelope only, discarding the stdout captured before the kill. Every
-    usage event streamed up to that point was lost, so a timed-out cell persisted as 0 tokens despite genuine spend.
+    Returning only an error envelope previously discarded billed tokens and persisted zero usage.
     """
     runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
     streamed = _completed_stream(output="partial answer")
@@ -2925,11 +2996,12 @@ def test_transport_decodes_undecodable_bytes_instead_of_raising(
     runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
     captured: dict[str, Any] = {}
 
-    def popen(*args: Any, **kwargs: Any) -> Any:
+    def _popen(*args: Any, **kwargs: Any) -> Any:
+        """Capture process-launch options and return an empty-stream process double."""
         captured.update(kwargs)
         return _FakePopen(*args, **{**kwargs, "stdout": "", "stderr": ""})
 
-    monkeypatch.setattr(script_run_codex.subprocess, "Popen", popen)
+    monkeypatch.setattr(script_run_codex.subprocess, "Popen", _popen)
     runner._subprocess(["codex"], {})
 
     assert captured["errors"] == "replace"
@@ -2954,9 +3026,11 @@ def test_main_dry_run_never_requires_or_writes_output(
         timeout = 600.0
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             pass
 
         def probe_arm(self, _arm: str) -> dict[str, bool]:
+            """Report the arm's fixture availability."""
             return {"codemap_available": False}
 
     monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
@@ -2984,9 +3058,11 @@ def test_dry_run_prints_the_manifest_driven_per_cell_timeout_without_global_dead
         timeout = 600.0
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             pass
 
         def probe_arm(self, _arm: str) -> dict[str, bool]:
+            """Report the arm's fixture availability."""
             return {"codemap_available": False}
 
     monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
@@ -3125,6 +3201,7 @@ def test_main_persists_each_completed_cell_in_task_then_arm_order(
         timeout = 600.0
 
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             self.model = model
 
         def run(
@@ -3134,6 +3211,7 @@ def test_main_persists_each_completed_cell_in_task_then_arm_order(
             *,
             repetition: int = 1,
         ) -> Any:
+            """Return a fixture result without provider calls."""
             return script_run_codex.CodexRun(
                 arm=arm,
                 task_id=task["id"],
@@ -3199,9 +3277,11 @@ def test_main_records_cell_failures_and_continues_after_smoke(
         timeout = 600.0
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             pass
 
         def run(self, task: dict[str, Any], arm: str, **_kwargs: Any) -> Any:
+            """Return a fixture result without provider calls."""
             return script_run_codex.CodexRun(
                 arm=arm,
                 task_id=task["id"],
@@ -3299,10 +3379,9 @@ def test_main_stops_after_three_equivalent_unknown_infrastructure_failures(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Three identical unknown pre-response infrastructure failures stop the study.
+    """Stop after three matching unknown pre-response infrastructure failures.
 
-    Prevents a shared provider outage from generating a long sequence of zero-token cells after the third matching
-    signature.  Known deterministic authentication failures stop immediately; semantic failures continue.
+    Deterministic auth errors stop immediately; semantic failures continue.
     """
     tasks = [{"id": f"task-{index}", "prompt": "prompt", "type": "demo"} for index in range(1, 5)]
     calls: list[tuple[str, str]] = []
@@ -3313,9 +3392,11 @@ def test_main_stops_after_three_equivalent_unknown_infrastructure_failures(
         timeout = 600.0
 
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             self.model = model
 
         def run(self, task: dict[str, Any], arm: str, **_kwargs: Any) -> Any:
+            """Return a fixture result without provider calls."""
             calls.append((task["id"], arm))
             return script_run_codex.CodexRun(
                 arm=arm,
@@ -3377,9 +3458,11 @@ def test_main_stops_immediately_after_a_deterministic_authentication_failure(
         timeout = 600.0
 
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             self.model = model
 
         def run(self, task: dict[str, Any], arm: str, **_kwargs: Any) -> Any:
+            """Return a fixture result without provider calls."""
             calls.append((task["id"], arm))
             return script_run_codex.CodexRun(
                 arm=arm,
@@ -3422,11 +3505,9 @@ def test_main_continues_after_semantic_or_model_quality_failures(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Low-quality scored answers must not trip the infrastructure circuit breaker.
+    """Continue the study after low-quality or semantically wrong answers.
 
-    Prevents the recurrence guard from changing the established full-study
-    rule: answer quality and task semantics remain evidence, not admission
-    failures.  A guard based on any unsuccessful result would stop after three.
+    These are scored evidence, not infrastructure failures for the recurrence guard.
     """
     tasks = [{"id": f"task-{index}", "prompt": "prompt", "type": "demo"} for index in range(1, 5)]
     calls: list[tuple[str, str]] = []
@@ -3437,9 +3518,11 @@ def test_main_continues_after_semantic_or_model_quality_failures(
         timeout = 600.0
 
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             self.model = model
 
         def run(self, task: dict[str, Any], arm: str, **_kwargs: Any) -> Any:
+            """Return a fixture result without provider calls."""
             calls.append((task["id"], arm))
             return script_run_codex.CodexRun(
                 arm=arm,
@@ -3483,10 +3566,9 @@ def test_main_closes_runner_auth_state_on_all_study_exits(
     monkeypatch: pytest.MonkeyPatch,
     raise_from_run: bool,
 ) -> None:
-    """The study owns and closes the runner's private auth state lifecycle.
+    """Close private auth state on normal completion and exceptions.
 
-    Prevents normal completion or a mid-study exception from retaining a refreshed credential chain beyond the run.  The
-    concrete state-directory permissions and deletion are exercised in the runner-level auth test.
+    Runner-level auth tests separately verify concrete directory permissions and deletion.
     """
     task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
     closed = 0
@@ -3497,9 +3579,11 @@ def test_main_closes_runner_auth_state_on_all_study_exits(
         timeout = 600.0
 
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             self.model = model
 
         def run(self, selected_task: dict[str, Any], arm: str, **_kwargs: Any) -> Any:
+            """Return a fixture result without provider calls."""
             if raise_from_run:
                 raise RuntimeError("fixture run failure")
             return script_run_codex.CodexRun(
@@ -3515,6 +3599,7 @@ def test_main_closes_runner_auth_state_on_all_study_exits(
             )
 
         def close(self) -> None:
+            """Clean up the fixture adapter."""
             nonlocal closed
             closed += 1
 
@@ -3552,10 +3637,9 @@ def test_main_closes_runner_when_setup_raises_before_the_first_cell(
     monkeypatch: pytest.MonkeyPatch,
     failure_site: str,
 ) -> None:
-    """Every pre-cell setup boundary closes runner-owned credential state.
+    """Close credentials after interrupted snapshot generation, metadata construction, or first persistence.
 
-    Covers snapshot generation, metadata construction, and first metadata persistence.  A narrow snapshot-only exception
-    handler would leak a refreshed auth chain when either subsequent setup action is interrupted.
+    Snapshot-only cleanup would leak at later setup boundaries.
     """
     task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
     closed = 0
@@ -3566,23 +3650,28 @@ def test_main_closes_runner_when_setup_raises_before_the_first_cell(
         timeout = 600.0
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             pass
 
         def create_input_snapshot(self, *_args: Any, **_kwargs: Any) -> dict[str, str]:
+            """Supply snapshot evidence or interrupt at the configured snapshot boundary."""
             if failure_site == "snapshot":
                 raise KeyboardInterrupt("snapshot interrupted")
             return {"path": "fixture", "sha256": "fixture"}
 
         def close(self) -> None:
+            """Clean up the fixture adapter."""
             nonlocal closed
             closed += 1
 
-    def initial_metadata(**_kwargs: Any) -> dict[str, int]:
+    def _initial_metadata(**_kwargs: Any) -> dict[str, int]:
+        """Supply initial progress metadata or interrupt at the configured failure site."""
         if failure_site == "metadata":
             raise KeyboardInterrupt("metadata interrupted")
         return {"persisted_cells": 0}
 
-    def write_metadata(*_args: Any, **_kwargs: Any) -> None:
+    def _write_metadata(*_args: Any, **_kwargs: Any) -> None:
+        """Interrupt only when metadata writing is the configured failure site."""
         if failure_site == "metadata-write":
             raise KeyboardInterrupt("metadata write interrupted")
 
@@ -3590,8 +3679,8 @@ def test_main_closes_runner_when_setup_raises_before_the_first_cell(
     monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
     monkeypatch.setattr(script_run_codex, "_validate_execution_manifest", lambda _path: None)
     monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
-    monkeypatch.setattr(script_run_codex, "_initial_run_metadata", initial_metadata)
-    monkeypatch.setattr(script_run_codex, "_write_run_metadata", write_metadata)
+    monkeypatch.setattr(script_run_codex, "_initial_run_metadata", _initial_metadata)
+    monkeypatch.setattr(script_run_codex, "_write_run_metadata", _write_metadata)
 
     with pytest.raises(KeyboardInterrupt, match="interrupted"):
         script_run_codex.main(
@@ -3620,12 +3709,15 @@ def test_main_emits_plans_only_for_dry_runs_and_paths_only_in_artifact_announcem
         timeout = 600.0
 
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             self.model = model
 
         def probe_arm(self, _arm: str) -> dict[str, bool]:
+            """Report the arm's fixture availability."""
             return {"codemap_available": False}
 
         def run(self, task: dict[str, Any], arm: str, **_kwargs: Any) -> Any:
+            """Return a fixture result without provider calls."""
             return script_run_codex.CodexRun(
                 arm=arm,
                 task_id=task["id"],
@@ -3689,9 +3781,11 @@ def test_main_dry_run_prints_plan_without_arm_color_helper(
         timeout = 600.0
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             pass
 
         def probe_arm(self, _arm: str) -> dict[str, bool]:
+            """Report the arm's fixture availability."""
             return {"codemap_available": False}
 
     monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
@@ -3743,9 +3837,11 @@ def test_main_progress_denominator_matches_selected_cells(
         timeout = 600.0
 
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             self.model = model
 
         def run(self, task: dict[str, Any], selected_arm: str, **_kwargs: Any) -> Any:
+            """Return a fixture result without provider calls."""
             return script_run_codex.CodexRun(
                 arm=selected_arm,
                 task_id=task["id"],
@@ -3800,9 +3896,11 @@ def test_main_prints_interrupted_partial_block_with_planned_denominator(
         timeout = 600.0
 
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             self.model = model
 
         def run(self, selected_task: dict[str, Any], selected_arm: str, **_kwargs: Any) -> Any:
+            """Return a fixture result without provider calls."""
             if selected_arm == "A_plain":
                 raise RuntimeError("fixture interruption")
             return script_run_codex.CodexRun(
@@ -3969,12 +4067,12 @@ def test_render_results_recovers_bare_force_color_flag_at_cli_boundary(
     """The test-only bare flag survives a Windows Fire subprocess boundary."""
     received: list[bool] = []
 
-    def render(_rows: object, _output: object, *, force_color: bool, hide_plan: bool) -> None:
+    def _render(_rows: object, _output: object, *, force_color: bool, hide_plan: bool) -> None:
         """Record renderer flags without consuming pytest's standard streams."""
         assert hide_plan is False
         received.append(force_color)
 
-    monkeypatch.setattr(codex_runtime, "render_result_rows", render)
+    monkeypatch.setattr(codex_runtime, "render_result_rows", _render)
     monkeypatch.setattr(script_run_codex.sys, "argv", ["runner", "--render-results", "--force-color"])
 
     script_run_codex.cli(render_results=True)
@@ -4233,9 +4331,11 @@ def test_print_arm_row_colors_only_interactive_output(
         """Record Rich calls behind a configurable terminal boundary."""
 
         def __init__(self) -> None:
+            """Initialize fixture state."""
             self.is_terminal = is_terminal
 
         def print(self, row: str, **kwargs: Any) -> None:
+            """Handle console output through the test double instead of a live terminal."""
             rich_calls.append((row, kwargs))
 
     monkeypatch.setattr(codex_runtime, "_CONSOLE", FixtureConsole())
@@ -4320,9 +4420,11 @@ def test_main_filters_locked_tasks_in_suite_order_and_rejects_invalid_ids(
         timeout = 600.0
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             pass
 
         def probe_arm(self, _arm: str) -> dict[str, bool]:
+            """Report the arm's fixture availability."""
             return {"codemap_available": False}
 
     monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
@@ -4390,9 +4492,11 @@ def test_main_plans_every_preregistered_pilot_coordinate_once(
         timeout = 600.0
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             pass
 
         def probe_arm(self, arm: str) -> dict[str, bool]:
+            """Report the arm's fixture availability."""
             return {"codemap_available": arm != "A_plain"}
 
     monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
@@ -4872,10 +4976,9 @@ def test_query_mismatch_does_not_reclassify_successful_transport_or_pooling(
 
 
 def test_all_locked_execution_queries_accept_strict_option_permutations(script_run_codex: Any) -> None:
-    """Every current execution query must survive strict B/C conformance admission.
+    """Admit all 68 expected queries from the locked 55-task execution set under strict B/C conformance.
 
-    The table is derived from the locked 55-task execution set (68 expected queries), rather than from the normalizer's
-    option vocabulary.  This keeps a newly introduced task query from silently becoming unrecognized.
+    Derive cases from tasks, not the normalizer's option vocabulary.
     """
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     execution_ids = manifest["preregistered_cells"]["structural_execution_task_ids"]
@@ -4886,7 +4989,7 @@ def test_all_locked_execution_queries_accept_strict_option_permutations(script_r
 
     boolean_options = {"--broken", "--exclude-tests", "--with-imports"}
 
-    def permute_options(arguments: list[str]) -> list[str]:
+    def _permute_options(arguments: list[str]) -> list[str]:
         """Move valid option groups while retaining positional order."""
         groups: list[list[str]] = []
         positionals: list[str] = []
@@ -4917,7 +5020,7 @@ def test_all_locked_execution_queries_accept_strict_option_permutations(script_r
             arguments = query.get("args")
             assert isinstance(command, str) and isinstance(arguments, list), (task_id, query_index, query)
             assert all(isinstance(argument, str) for argument in arguments), (task_id, query_index, query)
-            actual.append([command, *permute_options(arguments)])
+            actual.append([command, *_permute_options(arguments)])
         for arm in ("B_direct_required", "C_skill_required"):
             run = script_run_codex.CodexRun(
                 arm=arm,
@@ -5144,7 +5247,8 @@ def test_snapshot_copy_rejects_source_replacement_between_validation_and_open(
     original_open = os.open
     replaced = False
 
-    def replace_before_open(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int, *args: Any) -> int:
+    def _replace_before_open(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int, *args: Any) -> int:
+        """Swap the authentication source for a symlink before its first matching open."""
         nonlocal replaced
         if Path(path) == source and not replaced:
             replaced = True
@@ -5152,7 +5256,7 @@ def test_snapshot_copy_rejects_source_replacement_between_validation_and_open(
             source.symlink_to(replacement)
         return original_open(path, flags, *args)
 
-    monkeypatch.setattr(script_run_codex.os, "open", replace_before_open)
+    monkeypatch.setattr(script_run_codex.os, "open", _replace_before_open)
 
     with pytest.raises(ValueError, match="changed|copied securely|symlink"):
         script_run_codex._archive_snapshot_file(
@@ -5251,7 +5355,8 @@ def test_staged_direct_cli_admission_rejects_malformed_output_and_index_mutation
             command_runner=lambda *_args, **_kwargs: (0, "not JSON", ""),
         )
 
-    def mutate_index(*_args: Any, **_kwargs: Any) -> tuple[int, str, str]:
+    def _mutate_index(*_args: Any, **_kwargs: Any) -> tuple[int, str, str]:
+        """Modify the locked index before returning otherwise successful query evidence."""
         index.write_text("mutated", encoding="utf-8")
         return 0, '{"index":{"query_complete":true,"compact":true}}', ""
 
@@ -5261,7 +5366,7 @@ def test_staged_direct_cli_admission_rejects_malformed_output_and_index_mutation
             repo,
             index,
             manifest_path=manifest,
-            command_runner=mutate_index,
+            command_runner=_mutate_index,
         )
 
 
@@ -5301,18 +5406,21 @@ def test_expected_query_preflight_runs_unique_b_queries_once_and_never_replays_c
         coordination_path = None
 
         def cleanup(self) -> None:
+            """Provide fixture cleanup."""
             return None
 
-    def prepare(arm: str) -> Home:
+    def _prepare(arm: str) -> Home:
+        """Prepare and record an isolated arm home."""
         prepared_arms.append(arm)
         return Home()
 
-    def command_runner(command: list[str], **_kwargs: Any) -> tuple[int, str, str]:
+    def _command_runner(command: list[str], **_kwargs: Any) -> tuple[int, str, str]:
+        """Record commands and return fixture responses."""
         commands.append(command)
         return 0, '{"index":{"query_complete":true,"compact":true}}', ""
 
-    runner.command_runner = command_runner
-    monkeypatch.setattr(runner, "_prepare_verified_home", prepare)
+    runner.command_runner = _command_runner
+    monkeypatch.setattr(runner, "_prepare_verified_home", _prepare)
     runner.preflight_expected_queries(
         [
             {"id": "first", "expected_queries": [{"cmd": "central", "args": ["package"]}]},
@@ -5360,6 +5468,7 @@ def test_expected_query_preflight_rejects_malformed_or_failed_b_queries(
         coordination_path = None
 
         def cleanup(self) -> None:
+            """Provide fixture cleanup."""
             return None
 
     monkeypatch.setattr(runner, "_prepare_verified_home", lambda _arm: Home())
@@ -5665,7 +5774,8 @@ def test_diff_impact_contamination_persists_stage_and_worktree_evidence(script_r
     stager = script_run_codex._diff_impact_stager(repo, task)
     assert stager is not None
 
-    def transport(_command: list[str], **_kwargs: Any) -> str:
+    def _transport(_command: list[str], **_kwargs: Any) -> str:
+        """Return fixture transport evidence; no provider call."""
         (repo / "module.py").write_text("BASE\nSTAGED\nTAMPERED\n", encoding="utf-8")
         return _completed_stream()
 
@@ -5676,7 +5786,7 @@ def test_diff_impact_contamination_persists_stage_and_worktree_evidence(script_r
             repo,
             index_path=index,
             manifest_path=manifest,
-            transport=transport,
+            transport=_transport,
         )
         result = runner.run(task, "A_plain", diff_impact_stage=admission)
 
@@ -5770,11 +5880,12 @@ def test_git_status_always_includes_untracked_files(
     """A user Git configuration cannot hide an untracked contaminant from admission."""
     commands: list[list[str]] = []
 
-    def run(command: list[str], **_kwargs: Any) -> Any:
+    def _run(command: list[str], **_kwargs: Any) -> Any:
+        """Record argv and return an empty successful subprocess result."""
         commands.append(command)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr(script_run_codex.subprocess, "run", run)
+    monkeypatch.setattr(script_run_codex.subprocess, "run", _run)
     assert script_run_codex._git_porcelain_status(tmp_path) == {}
     assert commands == [["git", "-C", str(tmp_path), "status", "--porcelain=v1", "-z", "--untracked-files=all"]]
 
@@ -5802,7 +5913,8 @@ def test_diff_impact_preflight_exercises_stage_admission_and_strict_revert(
     runner = script_run_codex.CodexRunner("fixture", repo, index_path=index, manifest_path=manifest)
     admitted: list[str] = []
 
-    def prepare(arm: str, *, diff_impact_stage: Any = None) -> Any:
+    def _prepare(arm: str, *, diff_impact_stage: Any = None) -> Any:
+        """Prepare and record an isolated arm home."""
         assert diff_impact_stage is not None
         script_run_codex._validate_locked_runtime(repo, index, arm, manifest, diff_impact_stage)
         admitted.append(arm)
@@ -5811,7 +5923,7 @@ def test_diff_impact_preflight_exercises_stage_admission_and_strict_revert(
         home_path.chmod(0o700)
         return script_run_codex.ArmHome(arm, home_path, {}, False)
 
-    monkeypatch.setattr(runner, "_prepare_verified_home", prepare)
+    monkeypatch.setattr(runner, "_prepare_verified_home", _prepare)
     runner.preflight_diff_impact_stages([task], script_run_codex.CODEX_STRUCTURAL_ARMS)
 
     assert admitted == list(script_run_codex.CODEX_STRUCTURAL_ARMS)
@@ -5834,12 +5946,15 @@ def test_main_dry_run_calls_diff_impact_preflight_and_can_suppress_legend(
         timeout = 600.0
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            """Initialize fixture state."""
             pass
 
         def probe_arm(self, _arm: str) -> dict[str, bool]:
+            """Report the arm's fixture availability."""
             return {"codemap_available": False}
 
         def preflight_diff_impact_stages(self, _tasks: list[dict[str, Any]], arms: tuple[str, ...]) -> None:
+            """Record the treatments supplied for diff-impact preflight."""
             calls.append(arms)
 
     monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
@@ -6197,16 +6312,16 @@ def test_unified_paid_execution_uses_one_counter_across_native_stage_rows(
     }
     scope = {**selection, "scope_sha256": "1234567890123456" + "a" * 48}
 
-    def emit_stage_rows(stage_id: str) -> None:
+    def _emit_stage_rows(stage_id: str) -> None:
         """Emit one native three-arm block through the production renderer."""
         for completed, arm in enumerate(("A_plain", "B_auto", "C_strict"), start=1):
             script_run_codex.runtime.print_arm_row(f"({completed}/3) ✓ {stage_id} {arm}", arm)
 
     monkeypatch.setattr(script_run_codex, "resolve_task_selection", lambda *_args: selection)
     monkeypatch.setattr(script_run_codex, "_resolve_execution_scope", lambda **_kwargs: scope)
-    monkeypatch.setattr(script_run_codex, "main", lambda **_kwargs: emit_stage_rows("structural"))
-    monkeypatch.setattr(readcrop_stage, "run_stage", lambda **_kwargs: emit_stage_rows("readcrop"))
-    monkeypatch.setattr(fix_stage, "run_fix_stage", lambda study, **_kwargs: emit_stage_rows(study))
+    monkeypatch.setattr(script_run_codex, "main", lambda **_kwargs: _emit_stage_rows("structural"))
+    monkeypatch.setattr(readcrop_stage, "run_stage", lambda **_kwargs: _emit_stage_rows("readcrop"))
+    monkeypatch.setattr(fix_stage, "run_fix_stage", lambda study, **_kwargs: _emit_stage_rows(study))
     monkeypatch.setattr(script_run_codex, "write_checksums", lambda _path: None)
 
     script_run_codex._run_unified_execution(

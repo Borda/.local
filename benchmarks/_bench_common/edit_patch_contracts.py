@@ -1086,7 +1086,13 @@ def build_edit_task_contract(task: Mapping[str, Any]) -> EditTaskContract:
 
 
 def assess_patch_answer(text: str) -> PatchAnswer:
-    """Extract exactly one non-empty fenced unified diff, else fail closed."""
+    """Extract one fenced diff while preserving unified-diff context whitespace.
+
+    Require one ``diff`` fence with a newline after its opening marker and exactly one closing fence in the remaining
+    text. Remove only the fence boundary newlines, then delegate the prefix check and digest construction to
+    :func:`build_patch_answer`. Raise ``TypeError`` for non-text input and ``ValueError`` for an invalid envelope. Patch
+    applicability is checked later.
+    """
     if not isinstance(text, str):
         raise TypeError("patch answer text must be a string")
     sections = text.split("```diff")
@@ -1106,7 +1112,18 @@ def assess_patch_answer(text: str) -> PatchAnswer:
 
 
 def build_patch_answer(diff: str) -> PatchAnswer:
-    """Validate a captured direct-worktree diff as the same answer contract."""
+    """Wrap non-empty Git diff text with the SHA-256 digest of its exact UTF-8 bytes.
+
+    Require the ``diff --git `` prefix; raise ``ValueError`` for any other
+    input. This checks the answer envelope, not hunk syntax or applicability.
+    Preserve trailing whitespace and newlines for the subsequent patch executor.
+
+    Examples:
+        >>> build_patch_answer("")
+        Traceback (most recent call last):
+        ...
+        ValueError: patch answer must contain a unified diff
+    """
     if not isinstance(diff, str) or not diff or not diff.startswith("diff --git "):
         raise ValueError("patch answer must contain a unified diff")
     return PatchAnswer(diff=diff, sha256=hashlib.sha256(diff.encode("utf-8")).hexdigest())
@@ -1433,7 +1450,17 @@ def _recall(expected: set[str], observed: set[str]) -> float:
 
 
 def _keyword_recall(keywords: Sequence[str], diff: str) -> float:
-    """Return diagnostic keyword recall without making it a correctness gate."""
+    """Return the fraction of listed keywords present as case-sensitive substrings.
+
+    An empty keyword list scores one. Count each list entry, including
+    duplicates; this diagnostic does not determine patch correctness.
+
+    Examples:
+        >>> _keyword_recall(["cache", "flush"], "clear cache")
+        0.5
+        >>> _keyword_recall([], "")
+        1.0
+    """
     if not keywords:
         return 1.0
     return sum(keyword in diff for keyword in keywords) / len(keywords)

@@ -19,6 +19,7 @@ def _no_git(monkeypatch) -> None:
     """Force session_id() to use cwd basename (no git lookup)."""
 
     def _boom(*_a, **_k):
+        """Raise the expected OS error to model an unavailable git command."""
         raise OSError("no git")
 
     monkeypatch.setattr(t.subprocess, "check_output", _boom)

@@ -19,6 +19,7 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+        """Store the status and output returned by a fake Git command."""
         self.returncode = returncode
         self.stdout = stdout
 
@@ -32,6 +33,7 @@ def _patch_git(
     """Patch subprocess.run dispatching on git subcommand."""
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Return the configured ref-validation result or diff payload."""
         if "rev-parse" in cmd:
             return _FakeCompleted(returncode=rev_parse_rc)
         return _FakeCompleted(returncode=0, stdout=diff_stdout)
@@ -154,6 +156,7 @@ def test_default_range_used_when_no_args(monkeypatch: pytest.MonkeyPatch, tmp_pa
     calls: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_: Any) -> _FakeCompleted:
+        """Record Git calls and return an empty successful diff response."""
         calls.append(list(cmd))
         return _FakeCompleted(returncode=0, stdout="")
 

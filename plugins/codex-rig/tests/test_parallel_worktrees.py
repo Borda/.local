@@ -68,7 +68,12 @@ def _git(repository: Path, *arguments: str, check: bool = True) -> subprocess.Co
 
 
 def _sha256(path: Path) -> str:
-    """Return the SHA-256 of exact file bytes."""
+    """Return the SHA-256 of exact file bytes.
+
+    Example:
+        >>> len(_sha256(PLUGIN_ROOT / "package-manifest.json"))
+        64
+    """
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
@@ -464,7 +469,8 @@ def test_code_remediate_rollback_rechecks_preimages_after_restore(
     lifecycle, state_path, state, repository = _prepare_integrated_code_remediate(tmp_path)
     real_git = lifecycle._git
 
-    def fail_apply_and_skip_restore(target: Path, *arguments: str) -> str:
+    def _fail_apply_and_skip_restore(target: Path, *arguments: str) -> str:
+        """Apply once, inject a source failure, and suppress rollback restore commands."""
         if target == repository and arguments[:1] == ("apply",) and "--check" not in arguments:
             real_git(target, *arguments)
             raise lifecycle.PilotError("simulated-source-apply-failure")
@@ -472,7 +478,7 @@ def test_code_remediate_rollback_rechecks_preimages_after_restore(
             return ""
         return real_git(target, *arguments)
 
-    monkeypatch.setattr(lifecycle, "_git", fail_apply_and_skip_restore)
+    monkeypatch.setattr(lifecycle, "_git", _fail_apply_and_skip_restore)
     with pytest.raises(lifecycle.PilotError, match="^rollback-ambiguous$"):
         lifecycle.apply_code_remediate_source(state_path=state_path)
 
@@ -655,7 +661,8 @@ def test_code_remediate_source_application_records_actual_crlf_postimage(
     _git(repository, "config", "core.autocrlf", "true")
     real_git = lifecycle._git
 
-    def apply_with_crlf_source(target: Path, *arguments: str) -> str:
+    def _apply_with_crlf_source(target: Path, *arguments: str) -> str:
+        """Convert applied source files to CRLF before lifecycle postimage checks."""
         result = real_git(target, *arguments)
         if target == repository and arguments[0] == "apply" and "--check" not in arguments:
             for relative in ("bucket-a.txt", "bucket-b.txt"):
@@ -663,7 +670,7 @@ def test_code_remediate_source_application_records_actual_crlf_postimage(
                 path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
         return result
 
-    monkeypatch.setattr(lifecycle, "_git", apply_with_crlf_source)
+    monkeypatch.setattr(lifecycle, "_git", _apply_with_crlf_source)
 
     application = lifecycle.apply_code_remediate_source(state_path=state_path)
 
@@ -768,12 +775,13 @@ def test_code_remediate_apply_rejects_tampered_integration_before_source_apply(
     (integration / "bucket-a.txt").write_text("tampered integration\n", encoding="utf-8", newline="\n")
     real_git = lifecycle._git
 
-    def reject_source_apply(target: Path, *arguments: str) -> str:
+    def _reject_source_apply(target: Path, *arguments: str) -> str:
+        """Fail if source application runs after integration-worktree tampering."""
         if target == repository and arguments[:1] == ("apply",):
             raise AssertionError("authoritative source apply ran after integration tamper")
         return real_git(target, *arguments)
 
-    monkeypatch.setattr(lifecycle, "_git", reject_source_apply)
+    monkeypatch.setattr(lifecycle, "_git", _reject_source_apply)
     with pytest.raises(lifecycle.PilotError, match="^integration-worktree-drift$"):
         lifecycle.apply_code_remediate_source(state_path=state_path)
 
@@ -871,13 +879,14 @@ def test_code_remediate_source_apply_failure_restores_only_known_states(
     lifecycle, state_path, _, repository = _prepare_integrated_code_remediate(tmp_path)
     real_git = lifecycle._git
 
-    def fail_after_source_apply(target: Path, *arguments: str) -> str:
+    def _fail_after_source_apply(target: Path, *arguments: str) -> str:
+        """Apply source changes once, then inject the lifecycle failure."""
         if target == repository and arguments[0] == "apply" and "--check" not in arguments:
             real_git(target, *arguments)
             raise lifecycle.PilotError("simulated-source-apply-failure")
         return real_git(target, *arguments)
 
-    monkeypatch.setattr(lifecycle, "_git", fail_after_source_apply)
+    monkeypatch.setattr(lifecycle, "_git", _fail_after_source_apply)
     with pytest.raises(lifecycle.PilotError, match="^simulated-source-apply-failure$"):
         lifecycle.apply_code_remediate_source(state_path=state_path)
 
@@ -907,7 +916,8 @@ def test_code_remediate_source_apply_rolls_back_filtered_newline_postimage(
     _git(repository, "config", "core.autocrlf", "true")
     real_git = lifecycle._git
 
-    def fail_after_crlf_source_apply(target: Path, *arguments: str) -> str:
+    def _fail_after_crlf_source_apply(target: Path, *arguments: str) -> str:
+        """Apply changes, rewrite them as CRLF, and inject the lifecycle failure."""
         if target == repository and arguments[0] == "apply" and "--check" not in arguments:
             real_git(target, *arguments)
             for relative in ("bucket-a.txt", "bucket-b.txt"):
@@ -916,7 +926,7 @@ def test_code_remediate_source_apply_rolls_back_filtered_newline_postimage(
             raise lifecycle.PilotError("simulated-source-apply-failure")
         return real_git(target, *arguments)
 
-    monkeypatch.setattr(lifecycle, "_git", fail_after_crlf_source_apply)
+    monkeypatch.setattr(lifecycle, "_git", _fail_after_crlf_source_apply)
     with pytest.raises(lifecycle.PilotError, match="^simulated-source-apply-failure$"):
         lifecycle.apply_code_remediate_source(state_path=state_path)
 
@@ -934,14 +944,15 @@ def test_code_remediate_ambiguous_source_failure_retains_evidence(
     lifecycle, state_path, state, repository = _prepare_integrated_code_remediate(tmp_path)
     real_git = lifecycle._git
 
-    def create_ambiguous_state(target: Path, *arguments: str) -> str:
+    def _create_ambiguous_state(target: Path, *arguments: str) -> str:
+        """Apply changes, simulate a concurrent writer, and report the resulting ambiguity."""
         if target == repository and arguments[0] == "apply" and "--check" not in arguments:
             real_git(target, *arguments)
             (repository / "bucket-a.txt").write_text("concurrent-writer\n", encoding="utf-8", newline="\n")
             raise lifecycle.PilotError("simulated-concurrent-write")
         return real_git(target, *arguments)
 
-    monkeypatch.setattr(lifecycle, "_git", create_ambiguous_state)
+    monkeypatch.setattr(lifecycle, "_git", _create_ambiguous_state)
     with pytest.raises(lifecycle.PilotError, match="^rollback-ambiguous$"):
         lifecycle.apply_code_remediate_source(state_path=state_path)
 
@@ -1238,10 +1249,11 @@ def test_state_authority_tamper_fails_before_git(tmp_path: Path, monkeypatch: py
     persisted["repository"] = ".reports/codex/develop/redirected"
     state_path.write_text(json.dumps(persisted, indent=2) + "\n", encoding="utf-8", newline="\n")
 
-    def unexpected_git(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _unexpected_git(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Fail if Git runs before lifecycle state authority validation."""
         raise AssertionError("Git ran before state authority validation")
 
-    monkeypatch.setattr(lifecycle.subprocess, "run", unexpected_git)
+    monkeypatch.setattr(lifecycle.subprocess, "run", _unexpected_git)
     with pytest.raises(lifecycle.PilotError, match="^lifecycle-state-root-drift$"):
         lifecycle.collect_write_patch(
             state_path=state_path,
@@ -1313,12 +1325,13 @@ def test_raw_content_updates_rejects_mode_only_metadata_without_filemode_capabil
     worktree = tmp_path / str(node["worktree_path"])
     real_git_bytes = lifecycle._git_bytes
 
-    def mode_only_raw(target: Path, *arguments: str) -> bytes:
+    def _mode_only_raw(target: Path, *arguments: str) -> bytes:
+        """Return mode-only raw diff evidence for patch-shape rejection."""
         if target == worktree and arguments[:3] == ("diff", "--raw", "--no-renames"):
             return b":100644 100755 deadbeef deadbeef M\0bucket-a.txt\0"
         return real_git_bytes(target, *arguments)
 
-    monkeypatch.setattr(lifecycle, "_git_bytes", mode_only_raw)
+    monkeypatch.setattr(lifecycle, "_git_bytes", _mode_only_raw)
 
     with pytest.raises(lifecycle.PilotError, match="^child-patch-shape-forbidden:FIXTURE-WRITE-A$"):
         lifecycle._raw_content_updates(worktree, node)
@@ -1553,12 +1566,13 @@ def test_cleanup_failure_is_retained_and_blocks_success(tmp_path: Path, monkeypa
     lifecycle.integrate_write_pilot(state_path=state_path)
     real_git = lifecycle._git
 
-    def fail_remove(repository: Path, *arguments: str) -> str:
+    def _fail_remove(repository: Path, *arguments: str) -> str:
+        """Inject cleanup failure at worktree removal and delegate other Git commands."""
         if arguments[:2] == ("worktree", "remove"):
             raise lifecycle.PilotError("simulated-cleanup-lock")
         return real_git(repository, *arguments)
 
-    monkeypatch.setattr(lifecycle, "_git", fail_remove)
+    monkeypatch.setattr(lifecycle, "_git", _fail_remove)
     with pytest.raises(lifecycle.PilotError, match="^cleanup-failed:FIXTURE-WRITE-A$"):
         lifecycle.cleanup_write_pilot(state_path=state_path)
 
@@ -1592,11 +1606,12 @@ def test_git_runner_sanitizes_git_environment_without_shell(monkeypatch: pytest.
     lifecycle = _load_lifecycle()
     observed: list[dict[str, object]] = []
 
-    def record_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _record_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Capture subprocess environment while returning a successful Git result."""
         observed.append(kwargs)
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="head\n", stderr="")
 
-    monkeypatch.setattr(lifecycle.subprocess, "run", record_run)
+    monkeypatch.setattr(lifecycle.subprocess, "run", _record_run)
 
     monkeypatch.setenv("GIT_DIR", "redirected")
     monkeypatch.setenv("git_work_tree", "redirected")

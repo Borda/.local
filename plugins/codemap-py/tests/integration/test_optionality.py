@@ -20,6 +20,7 @@ _CANONICAL_SKILLS = {"scan-codebase", "query-code", "test-impact", "rename-refs"
 
 
 def _write_manifest(plugin_dir: Path, runtime: integration.Runtime, name: str, version: str) -> None:
+    """Write the minimal runtime manifest used by the provider-only fixture."""
     manifest_dir = plugin_dir / (".claude-plugin" if runtime == integration.Runtime.CLAUDE else ".codex-plugin")
     manifest_dir.mkdir(parents=True, exist_ok=True)
     (manifest_dir / "plugin.json").write_text(json.dumps({"name": name, "version": version}))
@@ -35,11 +36,19 @@ def _provider_only_root(base: Path) -> Path:
 
 
 def _tree_snapshot(root: Path) -> dict[str, bytes]:
+    """Capture fixture-file bytes keyed by root-relative POSIX paths.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     root = Path(directory); _ = (root / "a.txt").write_bytes(b"x")
+    ...     sorted(_tree_snapshot(root))
+    ['a.txt']
+    """
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob("*") if p.is_file()}
 
 
-@pytest.fixture
-def provider_only_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+@pytest.fixture(name="provider_only_repo")
+def _provider_only_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Provide a provider-only repository with native CLI discovery disabled."""
     root = _provider_only_root(tmp_path)
     monkeypatch.chdir(root)

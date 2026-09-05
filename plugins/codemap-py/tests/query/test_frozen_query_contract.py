@@ -44,8 +44,8 @@ def _supported_codemap_env() -> dict[str, str]:
     return {**os.environ, "CODEMAP_PYTHON": _PYTHON_311}
 
 
-@pytest.fixture
-def stale_git_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
+@pytest.fixture(name="stale_git_project")
+def _stale_git_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
     """Create a stale index whose stored graph lacks one committed importer."""
     root = tmp_path / "frozen-query"
     root.mkdir()
@@ -116,8 +116,8 @@ def test_frozen_query_reports_a_missing_index_without_building(tmp_path: Path, s
     assert "scan-codebase" in result.stdout
 
 
-@pytest.fixture
-def wide_reverse_graph(tmp_path: Path, scan_index: Path) -> tuple[Path, Path, set[str], set[str]]:
+@pytest.fixture(name="wide_reverse_graph")
+def _wide_reverse_graph(tmp_path: Path, scan_index: Path) -> tuple[Path, Path, set[str], set[str]]:
     """Build a graph exceeding historical display limits in both reverse directions."""
     root = tmp_path / "wide-reverse-graph"
     root.mkdir()

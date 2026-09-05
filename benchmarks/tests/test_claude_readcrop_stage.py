@@ -8,7 +8,15 @@ from typing import Any
 
 
 def _write_readcrop_sources(repo_path: Path) -> None:
-    """Create the six locked task symbols in a disposable source tree."""
+    """Write minimal source modules containing the six symbols consumed by the read-crop suite.
+
+    >>> from tempfile import TemporaryDirectory
+    >>> with TemporaryDirectory() as directory:
+    ...     root = Path(directory)
+    ...     _write_readcrop_sources(root)
+    ...     sorted(path.name for path in root.rglob("*.py"))
+    ['early_stopping.py', 'fsdp.py', 'model_checkpoint.py', 'module.py', 'trainer.py']
+    """
     sources = {
         "lightning.pytorch.core.module": "class LightningModule:\n    def log(self, value, prog_bar=False, logger=True, on_step=None, on_epoch=None, reduce_fx='mean', sync_dist=False, batch_size=None, rank_zero_only=False, add_dataloader_idx=True, metric_attribute=None, enable_graph=False):\n        pass\n",
         "lightning.pytorch.trainer.trainer": "class Trainer:\n    def fit(self, model, train_dataloaders=None, val_dataloaders=None, datamodule=None, ckpt_path=None):\n        pass\n\n    def __init__(self, enable_checkpointing=True, val_check_interval=1.0, check_val_every_n_epoch=1, accumulate_grad_batches=1, fast_dev_run=False, detect_anomaly=False):\n        pass\n",
@@ -418,7 +426,8 @@ def test_readcrop_parser_accepts_only_the_installable_launcher_outside_the_workt
         '"behavior":"Records the supplied value."}\nEND_READ_CROP_JSON'
     )
 
-    def events(command: str) -> list[dict[str, Any]]:
+    def _events(command: str) -> list[dict[str, Any]]:
+        """Build paired skill and query events around the supplied command and fixture answer."""
         return [
             {
                 "type": "assistant",
@@ -451,19 +460,19 @@ def test_readcrop_parser_accepts_only_the_installable_launcher_outside_the_workt
     launcher = f"{launcher_path} query --compact symbol Example.method"
     literal = '"${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py" query --compact symbol Example.method'
     valid = script_run_agentic.parse_claude_readcrop_events(
-        events(launcher), arm="C_strict", contract=contract, workspace_root=Path("/disposable/repository")
+        _events(launcher), arm="C_strict", contract=contract, workspace_root=Path("/disposable/repository")
     )
     quoted = script_run_agentic.parse_claude_readcrop_events(
-        events(f'"{launcher_path}" query --compact symbol Example.method'),
+        _events(f'"{launcher_path}" query --compact symbol Example.method'),
         arm="C_strict",
         contract=contract,
         workspace_root=Path("/disposable/repository"),
     )
     variable = script_run_agentic.parse_claude_readcrop_events(
-        events(literal), arm="C_strict", contract=contract, workspace_root=Path("/disposable/repository")
+        _events(literal), arm="C_strict", contract=contract, workspace_root=Path("/disposable/repository")
     )
     escaped = script_run_agentic.parse_claude_readcrop_events(
-        events(f'cd /opt/codemap-py && "{launcher_path}" query --compact symbol Example.method'),
+        _events(f'cd /opt/codemap-py && "{launcher_path}" query --compact symbol Example.method'),
         arm="C_strict",
         contract=contract,
         workspace_root=Path("/disposable/repository"),

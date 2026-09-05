@@ -52,8 +52,8 @@ def _git(root: Path, *args: str) -> None:
     assert result.returncode == 0, result.stderr
 
 
-@pytest.fixture
-def degraded_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
+@pytest.fixture(name="degraded_project")
+def _degraded_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
     """Create a degraded non-Git project for completeness checks.
 
     ``consumer`` imports ``leaf``; ``broken.py`` has a syntax error → degraded.
@@ -107,8 +107,8 @@ class TestDirectionScopedCompleteness:
         assert data["index"]["query_complete"] is False
 
 
-@pytest.fixture
-def clean_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
+@pytest.fixture(name="clean_project")
+def _clean_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
     """Create a healthy non-Git project for complete directional queries."""
     root = tmp_path / "clean"
     root.mkdir()
@@ -136,8 +136,8 @@ class TestCleanGraphCompleteness:
         assert data["index"]["query_complete"] is True
 
 
-@pytest.fixture
-def git_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
+@pytest.fixture(name="git_project")
+def _git_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
     """Create a committed project for staleness detection and repair."""
     root = tmp_path / "gitrepo"
     root.mkdir()
@@ -304,8 +304,8 @@ class TestCollisionVeto:
         assert data["index"]["query_complete"] is False
 
 
-@pytest.fixture
-def excluded_git_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
+@pytest.fixture(name="excluded_git_project")
+def _excluded_git_project(tmp_path: Path, scan_index: Path) -> tuple[Path, Path]:
     """Create a committed project containing files excluded through both mechanisms.
 
     ``vendored/vendored.py`` is excluded via ``.codemapignore`` (dropped from file_shas); ``.claude/ghost.py`` sits in a
@@ -387,7 +387,7 @@ class TestUntrackedCompleteness:
         root, index_path = git_project
         scratch = root / "scratch.py"
         scratch.write_text("import leaf\n")
-        _scan(self_scan_index(scan_query), root)
+        _scan(_self_scan_index(scan_query), root)
         data = _query(scan_query, root, index_path, "--no-heal", "rdeps", "leaf")
         assert data["index"]["untracked_py"] == []
         assert data["index"]["query_complete"] is True
@@ -401,7 +401,7 @@ class TestUntrackedCompleteness:
         root, index_path = git_project
         scratch = root / "scratch.py"
         scratch.write_text("import leaf\n")
-        _scan(self_scan_index(scan_query), root)
+        _scan(_self_scan_index(scan_query), root)
         future = _time.time() + 30
         _os.utime(scratch, (future, future))
         data = _query(scan_query, root, index_path, "--no-heal", "rdeps", "leaf")
@@ -410,6 +410,6 @@ class TestUntrackedCompleteness:
         assert data["index"]["completeness_reason"] == "stale"
 
 
-def self_scan_index(scan_query: Path) -> Path:
+def _self_scan_index(scan_query: Path) -> Path:
     """Resolve the sibling scan-index binary from the scan-query path."""
     return scan_query.parent / "scan-index"

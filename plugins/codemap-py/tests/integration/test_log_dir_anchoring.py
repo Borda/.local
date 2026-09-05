@@ -40,8 +40,8 @@ def _load_hookutil():
     return module
 
 
-@pytest.fixture
-def repo_with_subdir(tmp_path: Path) -> tuple[Path, Path]:
+@pytest.fixture(name="repo_with_subdir")
+def _repo_with_subdir(tmp_path: Path) -> tuple[Path, Path]:
     """Return ``(repo_root, nested_subdir)`` for a real, initialised git repository.
 
     A real repo (not a bare ``.git`` directory) so the package layer's ``git rev-parse --show-toplevel`` and the hook

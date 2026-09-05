@@ -14,7 +14,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 CONFTEST_PATH = PLUGIN_ROOT / "conftest.py"
 
 
-def load_conftest() -> ModuleType:
+def _load_conftest() -> ModuleType:
     """Load the plugin conftest as an ordinary module for policy checks."""
     specification = importlib.util.spec_from_file_location("codex_rig_collection_policy", CONFTEST_PATH)
     assert specification is not None
@@ -29,7 +29,7 @@ def test_simulated_windows_ignores_only_unsupported_posix_lifecycle_files(
 ) -> None:
     """Keep native Windows away from exact POSIX files without hiding portable coverage."""
     monkeypatch.setattr(sys, "platform", "win32")
-    module = load_conftest()
+    module = _load_conftest()
 
     expected = (
         "scripts/_agent_shim_posix.py",

@@ -25,7 +25,12 @@ EXPERIMENT_REVISION = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))["exp
 
 
 def _record(**overrides: Any) -> Any:
-    """Build one eligible result record with deterministic pair coordinates."""
+    """Build an eligible synthetic record, overriding selected coordinates or measurements.
+
+    >>> record = _record(input_tokens=0, quality_score=1.0)
+    >>> record.input_tokens, record.quality_score, record.repetition
+    (0, 1.0, 1)
+    """
     values = {
         "revision": EXPERIMENT_REVISION,
         "provider": "claude",
@@ -42,7 +47,12 @@ def _record(**overrides: Any) -> Any:
 
 
 def _synthetic_policies() -> dict[str, Any]:
-    """Return the explicit independent-task policy required by synthetic pairing tests."""
+    """Return a fresh independent-task policy mapping for the synthetic pairing task.
+
+    >>> policy, = _synthetic_policies().values()
+    >>> policy.oracle_class, policy.headline_eligible_v1, policy.scoreable
+    ('independent', True, True)
+    """
     policy = core.TaskPolicy(
         experiment_revision=EXPERIMENT_REVISION,
         task_id="FN-02",
@@ -54,7 +64,13 @@ def _synthetic_policies() -> dict[str, Any]:
 
 
 def _manifest_task(task_id: str) -> dict[str, Any]:
-    """Return the locked manifest row for one task ID."""
+    """Read the locked task row, failing explicitly when no suite contains the requested identifier.
+
+    >>> _manifest_task("not-a-real-task")
+    Traceback (most recent call last):
+        ...
+    AssertionError: manifest task 'not-a-real-task' was not found
+    """
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     for suite in manifest["suites"]:
         for task in suite["tasks"]:
@@ -376,11 +392,12 @@ class TestEvaluatorRegistry:
         """Identical adapter-labelled calls receive an identical shared score."""
         calls: list[tuple[dict[str, Any], str]] = []
 
-        def evaluate_demo(task: dict[str, Any], output_text: str) -> Any:
+        def _evaluate_demo(task: dict[str, Any], output_text: str) -> Any:
+            """Record evaluator inputs and return a fixed partial-quality result."""
             calls.append((task, output_text))
             return core.EvaluationResult(scored=True, correct=True, quality_score=0.75)
 
-        registry = core.EvaluatorRegistry({"demo": evaluate_demo})
+        registry = core.EvaluatorRegistry({"demo": _evaluate_demo})
         task = {"id": "EV-01", "prompt": "Score me", "type": "demo", "scoreable": True}
         output_text = "shared answer"
 

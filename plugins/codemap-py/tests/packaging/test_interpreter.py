@@ -76,19 +76,21 @@ def test_override_is_sole_candidate() -> None:
 
 
 def test_resolve_prefers_python3_over_python() -> None:
-    def probe(candidate: list[str]) -> tuple[str, int, int] | None:
+    def _probe(candidate: list[str]) -> tuple[str, int, int] | None:
+        """Report a supported interpreter for every candidate."""
         return ("cpython", 3, 12)
 
-    resolved, diag = cli.resolve_interpreter({}, "linux", probe=probe)
+    resolved, diag = cli.resolve_interpreter({}, "linux", probe=_probe)
     assert resolved == ["python3"]
     assert diag is None
 
 
 def test_resolve_skips_unsupported_then_takes_next() -> None:
-    def probe(candidate: list[str]) -> tuple[str, int, int] | None:
+    def _probe(candidate: list[str]) -> tuple[str, int, int] | None:
+        """Reject Python 3.10 and accept the later fallback candidate."""
         return ("cpython", 3, 10) if candidate == ["python3"] else ("cpython", 3, 12)
 
-    resolved, _ = cli.resolve_interpreter({}, "linux", probe=probe)
+    resolved, _ = cli.resolve_interpreter({}, "linux", probe=_probe)
     assert resolved == ["python"]
 
 
@@ -96,20 +98,22 @@ def test_resolve_skips_unsupported_then_takes_next() -> None:
 
 
 def test_invalid_override_missing_binary_hard_fails() -> None:
-    def probe(candidate: list[str]) -> tuple[str, int, int] | None:
+    def _probe(candidate: list[str]) -> tuple[str, int, int] | None:
+        """Report the override candidate as unavailable and defaults as valid."""
         return None if candidate == ["/no/such/py"] else ("cpython", 3, 12)
 
-    resolved, diag = cli.resolve_interpreter({"CODEMAP_PYTHON": "/no/such/py"}, "linux", probe=probe)
+    resolved, diag = cli.resolve_interpreter({"CODEMAP_PYTHON": "/no/such/py"}, "linux", probe=_probe)
     assert resolved is None
     assert diag is not None and "CODEMAP_PYTHON" in diag
 
 
 def test_invalid_override_wrong_version_does_not_fall_through() -> None:
-    def probe(candidate: list[str]) -> tuple[str, int, int] | None:
+    def _probe(candidate: list[str]) -> tuple[str, int, int] | None:
+        """Report the override as unsupported despite a valid default."""
         # Override is a real but unsupported CPython; defaults would be valid.
         return ("cpython", 3, 10) if candidate == ["python3.10"] else ("cpython", 3, 12)
 
-    resolved, diag = cli.resolve_interpreter({"CODEMAP_PYTHON": "python3.10"}, "linux", probe=probe)
+    resolved, diag = cli.resolve_interpreter({"CODEMAP_PYTHON": "python3.10"}, "linux", probe=_probe)
     assert resolved is None
     assert diag is not None
 

@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import doctest
 import importlib.util
 import json
 import shutil
 import sys
+import tempfile  # noqa: F401 - used by executable doctest examples
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from types import ModuleType
+from unittest.mock import patch
 
 import pytest
 
@@ -43,7 +46,7 @@ ROLE_IDS = (
 INSTALL_ID = "123e4567-e89b-42d3-a456-426614174000"
 
 
-def load_generator(path: Path = GENERATOR_SCRIPT) -> ModuleType:
+def _load_generator(path: Path = GENERATOR_SCRIPT) -> ModuleType:
     """Load the generator directly from its installed-package path."""
     specification = importlib.util.spec_from_file_location("codex_rig_generate_roles", path)
     assert specification is not None
@@ -54,42 +57,71 @@ def load_generator(path: Path = GENERATOR_SCRIPT) -> ModuleType:
     return module
 
 
-def digest(path: Path) -> str:
-    """Return the lowercase SHA-256 digest for one fixture file."""
+def _digest(path: Path) -> str:
+    """Return the lowercase SHA-256 digest for one fixture file.
+
+    Example:
+        >>> len(_digest(PLUGIN_ROOT / "package-manifest.json"))
+        64
+    """
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def write_executable(path: Path, payload: bytes) -> Path:
-    """Create one executable fixture with exact bytes."""
+def _write_executable(path: Path, payload: bytes) -> Path:
+    """Write exact fixture bytes and request executable permissions.
+
+    Execute bits are effective on POSIX filesystems; Windows chmod only controls the read-only flag.
+
+    Example:
+        >>> with tempfile.TemporaryDirectory() as directory:
+        ...     path = _write_executable(Path(directory) / "codex", b"fixture")
+        ...     path.read_bytes()
+        b'fixture'
+    """
     path.write_bytes(payload)
     path.chmod(0o755)
     return path
 
 
-def installed_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
+def test_executable_fixture_doctest_without_execute_permissions() -> None:
+    """Keep the fixture example valid when chmod cannot grant POSIX execute permissions."""
+    example = doctest.DocTestParser().get_doctest(
+        _write_executable.__doc__, globals(), "_write_executable", __file__, 0
+    )
+    runner = doctest.DocTestRunner()
+    # Windows chmod ignores execute bits; leave the real temporary file creation and byte writes intact.
+    with patch.object(Path, "chmod", autospec=True) as chmod:
+        result = runner.run(example)
+    assert result.attempted == 1
+    assert result.failed == 0
+    chmod.assert_called_once()
+    assert chmod.call_args.args[1] == 0o755
+
+
+def _installed_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
     """Create source-independent package and executable inputs with difficult paths."""
     plugin_root = tmp_path / 'installed plugin žluťoučký "quoted" \\slash $;[]'
     shutil.copytree(PLUGIN_ROOT, plugin_root, ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"))
-    python_binary = write_executable(tmp_path / 'python λ "quoted" \\slash $;[]', b"python-runtime\n")
-    codex_binary = write_executable(tmp_path / 'codex 雪 "quoted" \\slash $;[]', b"codex-runtime\n")
+    python_binary = _write_executable(tmp_path / 'python λ "quoted" \\slash $;[]', b"python-runtime\n")
+    codex_binary = _write_executable(tmp_path / 'codex 雪 "quoted" \\slash $;[]', b"codex-runtime\n")
     return plugin_root, python_binary, codex_binary
 
 
-def generate(module: ModuleType, plugin_root: Path, python_binary: Path, codex_binary: Path) -> dict[str, bytes]:
+def _generate(module: ModuleType, plugin_root: Path, python_binary: Path, codex_binary: Path) -> dict[str, bytes]:
     """Call the public generator with hashes bound to the fixture bytes."""
     return module.generate_role_shims(
         plugin_root,
         install_id=INSTALL_ID,
         python_executable=python_binary,
-        python_executable_hash=digest(python_binary),
+        python_executable_hash=_digest(python_binary),
         codex_binary=codex_binary,
-        codex_binary_hash=digest(codex_binary),
+        codex_binary_hash=_digest(codex_binary),
     )
 
 
 def test_roster_identity_hash_is_canonical_and_rejects_drift() -> None:
     """Keep one generator-owned roster preimage for state and plan consumers."""
-    module = load_generator()
+    module = _load_generator()
     rows = tuple((role_id, f"codex-rig-{role_id}.toml", f"roles/{role_id}/ROLE.md", "a" * 64) for role_id in ROLE_IDS)
     value = [{"role_id": row[0], "target_name": row[1], "card_path": row[2], "role_hash": row[3]} for row in rows]
     expected = hashlib.sha256(
@@ -102,7 +134,7 @@ def test_roster_identity_hash_is_canonical_and_rejects_drift() -> None:
             module.roster_identity_hash(invalid)
 
 
-def expected_challenger_bytes(
+def _expected_challenger_bytes(
     plugin_root: Path,
     python_binary: Path,
     codex_binary: Path,
@@ -110,7 +142,7 @@ def expected_challenger_bytes(
 ) -> bytes:
     """Build one complete independent golden shim from literal contract text."""
     role = next(item for item in manifest["roles"] if item["id"] == "challenger")
-    manifest_hash = digest(plugin_root / "package-manifest.json")
+    manifest_hash = _digest(plugin_root / "package-manifest.json")
     argv = [
         str(python_binary),
         str(plugin_root / "scripts" / "verify_role_link.py"),
@@ -127,7 +159,7 @@ def expected_challenger_bytes(
         "--codex-binary",
         str(codex_binary),
         "--codex-sha256",
-        digest(codex_binary),
+        _digest(codex_binary),
     ]
     argv_json = json.dumps(argv, ensure_ascii=True, separators=(",", ":"))
     escaped_argv = argv_json.replace("\\", "\\\\").replace('"', '\\"')
@@ -154,18 +186,18 @@ Never search for another cache, helper, role card, or fallback role body."""
 @POSIX_ONLY
 def test_generation_is_exact_deterministic_and_round_trips_argv(tmp_path: Path) -> None:
     """Freeze all role bytes and preserve difficult paths through TOML and JSON."""
-    plugin_root, python_binary, codex_binary = installed_inputs(tmp_path)
-    module = load_generator(plugin_root / "scripts" / "generate_roles.py")
+    plugin_root, python_binary, codex_binary = _installed_inputs(tmp_path)
+    module = _load_generator(plugin_root / "scripts" / "generate_roles.py")
     manifest_path = plugin_root / "package-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     role_records = {item["id"]: item for item in manifest["roles"]}
 
-    first = generate(module, plugin_root, python_binary, codex_binary)
-    second = generate(module, plugin_root, python_binary, codex_binary)
+    first = _generate(module, plugin_root, python_binary, codex_binary)
+    second = _generate(module, plugin_root, python_binary, codex_binary)
 
     assert first == second
     assert Path(module.__file__).parent.parent == plugin_root
-    assert first["codex-rig-challenger.toml"] == expected_challenger_bytes(
+    assert first["codex-rig-challenger.toml"] == _expected_challenger_bytes(
         plugin_root,
         python_binary,
         codex_binary,
@@ -186,13 +218,13 @@ def test_generation_is_exact_deterministic_and_round_trips_argv(tmp_path: Path) 
             "--role-sha256",
             role_records[role_id]["sha256"],
             "--manifest-sha256",
-            digest(manifest_path),
+            _digest(manifest_path),
             "--helper-sha256",
             manifest["bootstrap"]["sha256"],
             "--codex-binary",
             str(codex_binary),
             "--codex-sha256",
-            digest(codex_binary),
+            _digest(codex_binary),
         ]
 
         assert json.loads(argv_line) == expected_argv
@@ -201,7 +233,7 @@ def test_generation_is_exact_deterministic_and_round_trips_argv(tmp_path: Path) 
         assert payload.startswith(
             (
                 "# codex-rig-shim schema=1 plugin=codex-rig "
-                f"install_id={INSTALL_ID} role_id={role_id} package_hash=sha256:{digest(manifest_path)} "
+                f"install_id={INSTALL_ID} role_id={role_id} package_hash=sha256:{_digest(manifest_path)} "
                 f"role_hash=sha256:{role_records[role_id]['sha256']} bootstrap=1 generator=1\n"
             ).encode()
         )
@@ -214,21 +246,21 @@ def test_generation_is_exact_deterministic_and_round_trips_argv(tmp_path: Path) 
 @POSIX_ONLY
 def test_generated_roster_exposes_immutable_manager_identities(tmp_path: Path) -> None:
     """Prevent the lifecycle manager from independently reconstructing package metadata."""
-    plugin_root, python_binary, codex_binary = installed_inputs(tmp_path)
-    module = load_generator(plugin_root / "scripts" / "generate_roles.py")
+    plugin_root, python_binary, codex_binary = _installed_inputs(tmp_path)
+    module = _load_generator(plugin_root / "scripts" / "generate_roles.py")
     manifest = json.loads((plugin_root / "package-manifest.json").read_text(encoding="utf-8"))
 
     roster = module.load_generated_roster(
         plugin_root,
         install_id=INSTALL_ID,
         python_executable=python_binary,
-        python_executable_hash=digest(python_binary),
+        python_executable_hash=_digest(python_binary),
         codex_binary=codex_binary,
-        codex_binary_hash=digest(codex_binary),
+        codex_binary_hash=_digest(codex_binary),
     )
 
     assert roster.plugin_version == manifest["version"]
-    assert roster.package_hash == digest(plugin_root / "package-manifest.json")
+    assert roster.package_hash == _digest(plugin_root / "package-manifest.json")
     assert roster.bootstrap_hash == manifest["bootstrap"]["sha256"]
     assert roster.generator_version == manifest["generator"]["version"] == 1
     assert tuple(role.role_id for role in roster.roles) == ROLE_IDS
@@ -257,8 +289,8 @@ def test_generated_roster_rejects_inconsistent_plugin_identity(
     expected: str,
 ) -> None:
     """Bind manager-ready metadata to both installed manifest authorities."""
-    plugin_root, python_binary, codex_binary = installed_inputs(tmp_path)
-    module = load_generator(plugin_root / "scripts" / "generate_roles.py")
+    plugin_root, python_binary, codex_binary = _installed_inputs(tmp_path)
+    module = _load_generator(plugin_root / "scripts" / "generate_roles.py")
     package_path = plugin_root / "package-manifest.json"
     plugin_path = plugin_root / ".codex-plugin" / "plugin.json"
     package = json.loads(package_path.read_text(encoding="utf-8"))
@@ -280,7 +312,7 @@ def test_generated_roster_rejects_inconsistent_plugin_identity(
     package_path.write_text(json.dumps(package), encoding="utf-8")
 
     with pytest.raises(ValueError, match=expected):
-        generate(module, plugin_root, python_binary, codex_binary)
+        _generate(module, plugin_root, python_binary, codex_binary)
 
 
 @pytest.mark.parametrize(
@@ -302,85 +334,86 @@ def test_generation_rejects_bad_identity_inputs(
     expected: str,
 ) -> None:
     """Reject identities that cannot safely bind exact verifier arguments."""
-    module = load_generator()
-    plugin_root, python_binary, codex_binary = installed_inputs(tmp_path)
+    module = _load_generator()
+    plugin_root, python_binary, codex_binary = _installed_inputs(tmp_path)
 
     with pytest.raises(ValueError, match=expected):
         module.generate_role_shims(
             plugin_root,
             install_id=install_id,
             python_executable=python_path or python_binary,
-            python_executable_hash=python_hash or digest(python_binary),
+            python_executable_hash=python_hash or _digest(python_binary),
             codex_binary=codex_binary,
-            codex_binary_hash=digest(codex_binary),
+            codex_binary_hash=_digest(codex_binary),
         )
 
 
 @POSIX_ONLY
 def test_generation_rejects_role_bytes_not_bound_by_manifest(tmp_path: Path) -> None:
     """Prevent modified or linked role cards from entering generated shims."""
-    module = load_generator()
-    plugin_root, python_binary, codex_binary = installed_inputs(tmp_path)
+    module = _load_generator()
+    plugin_root, python_binary, codex_binary = _installed_inputs(tmp_path)
     role_path = plugin_root / "roles" / "challenger" / "ROLE.md"
     role_path.write_bytes(role_path.read_bytes() + b"\nmodified\n")
 
     with pytest.raises(ValueError, match="package file mismatch: roles/challenger/ROLE.md"):
-        generate(module, plugin_root, python_binary, codex_binary)
+        _generate(module, plugin_root, python_binary, codex_binary)
 
 
 @POSIX_ONLY
 def test_generation_rejects_symlinked_package_input(tmp_path: Path) -> None:
     """Prevent aliased package files from being treated as installed bytes."""
-    module = load_generator()
-    plugin_root, python_binary, codex_binary = installed_inputs(tmp_path)
+    module = _load_generator()
+    plugin_root, python_binary, codex_binary = _installed_inputs(tmp_path)
     role_path = plugin_root / "roles" / "challenger" / "ROLE.md"
     role_path.unlink()
     role_path.symlink_to(plugin_root / "roles" / "curator" / "ROLE.md")
 
     with pytest.raises(ValueError, match="role card: challenger"):
-        generate(module, plugin_root, python_binary, codex_binary)
+        _generate(module, plugin_root, python_binary, codex_binary)
 
 
 @POSIX_ONLY
 def test_generation_rejects_unresolved_parent_alias(tmp_path: Path) -> None:
     """Prevent unresolved dot-dot aliases from entering verifier arguments."""
-    module = load_generator()
-    plugin_root, python_binary, codex_binary = installed_inputs(tmp_path)
+    module = _load_generator()
+    plugin_root, python_binary, codex_binary = _installed_inputs(tmp_path)
     aliased_root = plugin_root / "scripts" / ".."
 
     with pytest.raises(ValueError, match="non-canonical plugin root"):
-        generate(module, aliased_root, python_binary, codex_binary)
+        _generate(module, aliased_root, python_binary, codex_binary)
 
 
 @POSIX_ONLY
 def test_generation_is_read_only_for_installed_inputs(tmp_path: Path) -> None:
     """Prevent the pure generator from changing its package or executable inputs."""
-    plugin_root, python_binary, codex_binary = installed_inputs(tmp_path)
-    module = load_generator(plugin_root / "scripts" / "generate_roles.py")
+    plugin_root, python_binary, codex_binary = _installed_inputs(tmp_path)
+    module = _load_generator(plugin_root / "scripts" / "generate_roles.py")
 
-    def snapshot() -> dict[str, tuple[bytes, int, int]]:
+    def _snapshot() -> dict[str, tuple[bytes, int, int]]:
+        """Capture bytes, modes, and mtimes for the read-only generation assertion."""
         return {
             path.relative_to(tmp_path).as_posix(): (path.read_bytes(), path.stat().st_mode, path.stat().st_mtime_ns)
             for path in sorted(tmp_path.rglob("*"))
             if path.is_file()
         }
 
-    before = snapshot()
-    generate(module, plugin_root, python_binary, codex_binary)
+    before = _snapshot()
+    _generate(module, plugin_root, python_binary, codex_binary)
 
-    assert snapshot() == before
+    assert _snapshot() == before
 
 
 @pytest.mark.parametrize("hooks", [False, True], ids=["without-hook", "with-hook"])
 @POSIX_ONLY
 def test_generation_accepts_exact_manager_profile(tmp_path: Path, hooks: bool) -> None:
     """Keep the pure renderer usable by the declared manager release."""
-    module = load_generator()
-    plugin_root, python_binary, codex_binary = installed_inputs(tmp_path)
+    module = _load_generator()
+    plugin_root, python_binary, codex_binary = _installed_inputs(tmp_path)
     manifest_path = plugin_root / "package-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["release_profile"] = "shim-enabled"
     manifest["features"] = {"manager": True, "hooks": hooks, "mcp": False, "generated_shims": True}
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-    assert len(generate(module, plugin_root, python_binary, codex_binary)) == 15
+    assert len(_generate(module, plugin_root, python_binary, codex_binary)) == 15

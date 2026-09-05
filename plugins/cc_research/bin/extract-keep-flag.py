@@ -13,7 +13,7 @@ Side effects: clears a stale .temp/state/skill-contract.md left by a crashed pri
   ${TMPDIR:-/tmp}/<sentinel-slug>-keep-items-${CSID}. Also prints it (may be empty).
 Requires: CSID exported by the caller — a child's own parent process id is the calling shell,
   not the Claude Code process, so deriving it here would name a different sentinel.
-Exit codes: 0 = ok · 2 = missing <sentinel-slug> or CSID unset
+Exit codes: 0 = ok · 1 = state cleanup or sentinel write failed · 2 = missing slug or session ID
 """
 
 from __future__ import annotations
@@ -34,6 +34,12 @@ _CONTRACT = Path(".temp/state/skill-contract.md")
 
 
 def main(argv: list[str]) -> int:
+    """Persist the first quoted keep value after clearing stale compaction state.
+
+    ``argv`` includes the executable name, sentinel slug, and optional argument text. Resolve the session ID from
+    ``CSID`` or ``CLAUDE_CODE_SESSION_ID``. Return 2 for missing identity, 1 for filesystem errors, or 0 after printing
+    the retained value. A missing keep flag writes and prints an empty value.
+    """
     slug = argv[1] if len(argv) > 1 else ""
     args = argv[2] if len(argv) > 2 else ""
     if not slug:

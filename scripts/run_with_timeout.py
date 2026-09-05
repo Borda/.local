@@ -38,7 +38,19 @@ TERMINATION_GRACE_SECONDS = 2.0
 
 
 def positive_timeout(value: str) -> float:
-    """Parse one finite positive timeout value for argparse."""
+    """Parse a finite, strictly positive duration in seconds for argparse.
+
+    Raise ``argparse.ArgumentTypeError`` for non-numeric input, zero, negative
+    values, NaN, or infinity so the CLI reports invalid input before launch.
+
+    Examples:
+        >>> positive_timeout("0.5")
+        0.5
+        >>> positive_timeout("0")
+        Traceback (most recent call last):
+        ...
+        argparse.ArgumentTypeError: timeout must be a finite positive number
+    """
     try:
         timeout = float(value)
     except ValueError as error:
@@ -98,7 +110,11 @@ def terminate_process_tree(process: subprocess.Popen[bytes], platform: str) -> N
 
 
 def run(command: list[str], timeout_seconds: float, label: str, platform: str = sys.platform) -> int:
-    """Run one literal command and return its exit status or a stable timeout code."""
+    """Run literal argv with inherited streams and return a diagnostic exit code.
+
+    Preserve ordinary child exit statuses. Return ``127`` when launch fails, ``124`` after timeout cleanup, or ``130``
+    after interrupt cleanup. The caller supplies a positive timeout; this function does not parse it.
+    """
     creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if platform == "win32" else 0
     try:
         process = subprocess.Popen(  # noqa: S603 - caller intentionally supplies literal argv without a shell.

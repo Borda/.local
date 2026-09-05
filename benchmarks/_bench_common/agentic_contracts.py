@@ -885,7 +885,21 @@ def _shortest_chain(modules: Mapping[str, _SourceModule], source: str, target: s
 
 
 def _set_f1(expected: Any, actual: Any) -> float:
-    """Score an explicit list as set F1, including the empty-set contract."""
+    """Score a string list as set F1, ignoring duplicates and element order.
+
+    Non-list answers or lists containing non-strings score zero. An empty
+    expected set receives full credit only from an explicit empty list.
+
+    Examples:
+        >>> _set_f1(("alpha", "beta"), ["beta", "gamma"])
+        0.5
+        >>> _set_f1(("alpha",), ["alpha", "alpha"])
+        1.0
+        >>> _set_f1((), [])
+        1.0
+        >>> _set_f1((), None)
+        0.0
+    """
     if not isinstance(actual, list) or not all(isinstance(item, str) for item in actual):
         return 0.0
     expected_set = set(expected)
@@ -897,7 +911,17 @@ def _set_f1(expected: Any, actual: Any) -> float:
 
 
 def _mapping_fraction(expected: Any, actual: Any) -> float:
-    """Score exact key/value pairs with F1 and explicit empty-object handling."""
+    """Score matching key/value pairs with F1, penalizing missing and extra keys.
+
+    Compare values through :func:`_same_value`. A non-mapping answer scores
+    zero; an empty expected mapping receives credit only from an empty mapping.
+
+    Examples:
+        >>> _mapping_fraction({"a": 1, "b": 2}, {"a": 1, "b": 3})
+        0.5
+        >>> _mapping_fraction({"a": 1}, {"a": True})
+        0.0
+    """
     if not isinstance(actual, Mapping):
         return 0.0
     if not expected:
@@ -907,7 +931,18 @@ def _mapping_fraction(expected: Any, actual: Any) -> float:
 
 
 def _ranking_fraction(expected: Any, actual: Any) -> float:
-    """Score each ranking slot against the deterministic no-expansion ordering."""
+    """Return the fraction of expected ranking positions matched by a string list.
+
+    Missing or misplaced entries lose credit; trailing actual entries do not
+    change the denominator. Invalid answer types score zero. An empty expected
+    ranking requires an explicit empty list for credit.
+
+    Examples:
+        >>> _ranking_fraction(("a", "b"), ["a"])
+        0.5
+        >>> _ranking_fraction(("a",), ["a", "extra"])
+        1.0
+    """
     if not isinstance(actual, list) or not all(isinstance(item, str) for item in actual):
         return 0.0
     if not expected:
@@ -916,7 +951,17 @@ def _ranking_fraction(expected: Any, actual: Any) -> float:
 
 
 def _same_value(expected: Any, actual: Any) -> bool:
-    """Compare scalar or path values without accepting bool-as-int aliases."""
+    """Compare scalars by exact type and value, or tuple paths against JSON lists.
+
+    Scalar booleans do not alias integers. Tuple expectations require a list
+    answer and compare its converted tuple using ordinary sequence equality.
+
+    Examples:
+        >>> _same_value(1, True)
+        False
+        >>> _same_value(("a", "b"), ["a", "b"])
+        True
+    """
     if isinstance(expected, tuple):
         return isinstance(actual, list) and tuple(actual) == expected
     return type(actual) is type(expected) and actual == expected

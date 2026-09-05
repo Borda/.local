@@ -1,5 +1,30 @@
 #!/usr/bin/env python3
-"""Append Claude codemap-py skill starts to session-sharded telemetry."""
+"""Record codemap-py skill starts in session-sharded telemetry.
+
+Purpose:
+    Capture the selected codemap-py skill and a bounded intent snippet so later timing
+    analysis can attribute skill startup to the correct runtime session.
+
+Scope:
+    Parse one hook payload, resolve the shared project/session marker, and append one
+    compact JSONL record. It does not inspect source files or invoke external commands.
+    Matched events must supply mapping-shaped ``tool_input`` when that field is truthy.
+
+Usage:
+    Invoke as a Claude ``PreToolUse`` hook matching ``Skill``, with event JSON on
+    standard input.
+
+Outputs:
+    Append one record under the runtime-selected codemap log directory; emit no normal
+    stdout content.
+
+Failure:
+    JSON decoding, type/value, and filesystem errors are ignored. Other errors propagate;
+    a truthy non-mapping ``tool_input`` raises ``AttributeError`` rather than failing open.
+
+Used by:
+    The codemap-py Claude skill-start hook and the telemetry/profile reporting path.
+"""
 
 from __future__ import annotations
 

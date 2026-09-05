@@ -18,9 +18,11 @@ import pytest
 
 class _FakeStderr:
     def __init__(self, data: str) -> None:
+        """Initialize the test double's fixture-controlled state."""
         self._data = data
 
     def read(self) -> str:
+        """Return the stored stderr text without consuming a real stream."""
         return self._data
 
 
@@ -28,6 +30,7 @@ class _FakeProc:
     """Minimal stand-in for subprocess.Popen used by stream_claude."""
 
     def __init__(self, lines: list[str], *, stderr: str = "", returncode: int = 0, wait_raises: bool = False) -> None:
+        """Initialize the test double's fixture-controlled state."""
         self.stdout = iter(lines)
         self.stderr = _FakeStderr(stderr)
         self.returncode = returncode
@@ -35,6 +38,7 @@ class _FakeProc:
         self.killed = False
 
     def wait(self, timeout: float | None = None) -> int:
+        """Return the configured exit code or simulate the configured process timeout."""
         if self._wait_raises:
             import subprocess
 
@@ -42,10 +46,23 @@ class _FakeProc:
         return self.returncode
 
     def kill(self) -> None:
+        """Record that process termination was requested."""
         self.killed = True
 
 
 def _patch_popen(monkeypatch: pytest.MonkeyPatch, module: Any, proc: Any) -> None:
+    """Replace the transport's process factory with a supplied process double for the patch lifetime.
+
+    >>> from types import SimpleNamespace
+    >>> module = SimpleNamespace(subprocess=SimpleNamespace(Popen=None))
+    >>> process = object()
+    >>> with pytest.MonkeyPatch.context() as patch:
+    ...     _patch_popen(patch, module, process)
+    ...     module.subprocess.Popen(["unused"]) is process
+    True
+    >>> module.subprocess.Popen is None
+    True
+    """
     monkeypatch.setattr(module.subprocess, "Popen", lambda *a, **k: proc)
 
 
@@ -136,6 +153,7 @@ class TestStreamClaude:
         """An unexpected exception (e.g. Popen failure) is captured as outcome.error, not raised."""
 
         def _boom(*_a: Any, **_k: Any) -> None:
+            """Simulate a missing executable at the process-launch boundary."""
             raise OSError("no such binary")
 
         monkeypatch.setattr(script_claude_stream.subprocess, "Popen", _boom)

@@ -19,12 +19,13 @@ class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
     def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+        """Store the status and output returned by a fake GitHub CLI command."""
         self.returncode = returncode
         self.stdout = stdout
 
 
-@pytest.fixture
-def fake_gh(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+@pytest.fixture(name="fake_gh")
+def _fake_gh(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     """Patch subprocess.run and which; record command lists.
 
     Default: succeeds with empty output.
@@ -32,6 +33,7 @@ def fake_gh(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     recorded: list[list[str]] = []
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Record a successful empty code-search response."""
         recorded.append(list(cmd))
         return _FakeCompleted(returncode=0, stdout="")
 
@@ -68,6 +70,7 @@ def test_successful_search_prints_repos(monkeypatch: pytest.MonkeyPatch, capsys:
     call_count = 0
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Return duplicate repositories for every successful search call."""
         nonlocal call_count
         call_count += 1
         return _FakeCompleted(returncode=0, stdout="owner/repo-b\nowner/repo-a\n")
@@ -102,6 +105,7 @@ def test_partial_failure_still_exits_0(monkeypatch: pytest.MonkeyPatch, capsys: 
     calls = [0]
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        """Fail the first search and return one repository on the next call."""
         calls[0] += 1
         if calls[0] == 1:
             return _FakeCompleted(returncode=1, stdout="")
