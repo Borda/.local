@@ -30,6 +30,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from _bench_common.edit_patch_contracts import semantic_index_sha256
+from _bench_common.mutation_isolation import relocate_frozen_index_for_worktree
 
 
 def _root_boundary_separators(source_root: str) -> tuple[str, ...]:
@@ -512,6 +513,59 @@ def prepare_index(
     return digest
 
 
+def relocate_index_for_run(
+    frozen_index_path: Path,
+    worktree_root: Path,
+    manifest_path: Path,
+    *,
+    methodology_path: Path | None = None,
+    schema_path: Path | None = None,
+) -> dict[str, Any]:
+    """Install the locked index into one run's own worktree and return its relocation provenance.
+
+    A run outside the canonical clone still owes the graph the study was locked against. Scanning the
+    worktree would build a new graph with no provenance link to that lock, so the frozen bytes are
+    copied and only ``scan_root`` is moved — the same relocation the executable stages perform for
+    their disposable checkouts. The returned provenance is what an admission gate checks instead of
+    the byte hash, which reproduces only at the path the lock recorded.
+
+    Args:
+        frozen_index_path: Path to the locked index inside the canonical clone.
+        worktree_root: Root of the worktree receiving the relocated copy.
+        manifest_path: Path to the active manifest carrying the index lock.
+        methodology_path: Path to the provider-neutral methodology manifest, when cross-checked.
+        schema_path: Path to the checked-out scanner schema source, when version-checked.
+
+    Returns:
+        The relocation provenance, with the derived index's path added as ``derived_index_path``.
+
+    Raises:
+        ValueError: If the frozen index does not satisfy the active lock, or relocation would change
+            graph content.
+
+    Examples:
+        >>> relocate_index_for_run.__name__
+        'relocate_index_for_run'
+    """
+    expected = index_contract(manifest_path, methodology_path=methodology_path, schema_path=schema_path)
+    frozen_bytes = frozen_index_path.read_bytes()
+    frozen_sha256 = hashlib.sha256(frozen_bytes).hexdigest()
+    if frozen_sha256 != expected["raw_sha256"]:
+        raise ValueError(
+            f"relocation source is not the locked index: expected {expected['raw_sha256']}, got {frozen_sha256}"
+        )
+    source_root = Path(expected["scan_root"])
+    derived_bytes, provenance = relocate_frozen_index_for_worktree(
+        frozen_bytes, source_root=source_root, worktree_root=worktree_root
+    )
+    derived_path = worktree_root / ".cache" / "codemap" / f"{worktree_root.name}.json"
+    derived_path.parent.mkdir(parents=True, exist_ok=True)
+    derived_path.write_bytes(derived_bytes)
+    if hashlib.sha256(derived_path.read_bytes()).hexdigest() != provenance["derived_index_sha256"]:
+        raise ValueError("relocated index write is incomplete")
+    return {**provenance, "derived_index_path": str(derived_path)}
+
+
 def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag with a default (0 required)
     index_path: Path = None,
     source_root: Path = None,
@@ -524,6 +578,8 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     prepare_patch_bundle: bool = False,
     patch_locks_path: Path = None,
     scan_index_bin: Path = None,
+    relocate_into: Path = None,
+    provenance_path: Path = None,
 ) -> None:
     """Prepare, verify, or describe one manifest-locked Codemap index.
 
@@ -541,6 +597,9 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         prepare_patch_bundle: Build every manifest-locked historical patch index.
         patch_locks_path: Reviewed per-task patch index identity JSON.
         scan_index_bin: Checked-out scanner executable used for the patch bundle.
+        relocate_into: Worktree root receiving the locked index; installs the relocated copy and
+            prints its relocation provenance instead of scanning or normalizing.
+        provenance_path: File to also write that relocation provenance to, for a runner to load.
 
     Raises:
         SystemExit: With status 2 when a required argument for the selected mode is missing.
@@ -571,8 +630,28 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         print(json.dumps(prepare_patch_index_bundle(source_root, patch_locks_path, scan_index_bin), sort_keys=True))
         return
 
+    if relocate_into is not None:
+        relocate_into = Path(relocate_into)
+    if provenance_path is not None:
+        provenance_path = Path(provenance_path)
+
     if manifest_path is None:
         _cli_error("--manifest-path is required unless --prepare-patch-bundle is used")
+
+    if relocate_into is not None:
+        if index_path is None:
+            _cli_error("--index-path is required with --relocate-into")
+        provenance = relocate_index_for_run(
+            index_path,
+            relocate_into,
+            manifest_path,
+            methodology_path=methodology_path,
+            schema_path=schema_path,
+        )
+        if provenance_path is not None:
+            provenance_path.write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print(json.dumps(provenance, sort_keys=True))
+        return
 
     if print_contract:
         print(

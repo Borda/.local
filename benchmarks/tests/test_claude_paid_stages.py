@@ -66,14 +66,16 @@ def test_fix_single_dry_run_uses_the_shared_contract_and_selected_scope(
     """Fix-Single needs the same provider-neutral selected-scope admission as Fix-Multi.
 
     Regression: Claude had only a legacy mutable-task loop, leaving no immutable
-    Fix-Single preflight or scope approval before a paid invocation.
+    Fix-Single preflight or scope approval before a paid invocation. The captured
+    stream is redirected, so the stage banner takes its plain ``== title ==`` form
+    and the machine-parsed PLAN and SCOPE lines stay byte-identical beneath it.
     """
     script_run_agentic.main(study="fix-single", tasks=["FS-01"], dry_run=True)
 
     output = capsys.readouterr().out
     lines = output.splitlines()
     assert lines[:-1] == [
-        "FIX-SINGLE PREFLIGHT (no model)",
+        "== FIX-SINGLE PREFLIGHT (no model) ==",
         "PLAN    FS-01  rep=1  A_plain",
         "PLAN    FS-01  rep=1  B_auto",
         "PLAN    FS-01  rep=1  C_strict",
@@ -402,8 +404,11 @@ def test_claude_patch_commands_preserve_the_admitted_pytest_runtime(
     )
 
     paid_output = capsys.readouterr().out
-    assert paid_output.splitlines()[1].startswith(f"{expected_assignment} python3 ")
-    assert paid_output.splitlines()[-1] == "  --paid-approval aaaaaaaaaaaaaaaa"
+    # The label and its rule precede the copyable command, so the assignment opens the third line.
+    assert paid_output.splitlines()[2].startswith(f"{expected_assignment} python3 ")
+    # The command is framed, so its last flag sits above the closing rule rather than at the end.
+    assert paid_output.splitlines()[-2] == "  --paid-approval aaaaaaaaaaaaaaaa"
+    assert paid_output.splitlines()[-1] == "-" * 78
 
     script_run_agentic._require_claude_paid_request(
         study="patch",

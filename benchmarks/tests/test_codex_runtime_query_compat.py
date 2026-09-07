@@ -158,9 +158,9 @@ def test_required_compliance_needs_successful_compact_delivery_by_arm(script_run
         )
         return runner.run(task, arm)
 
-    direct = _run("B_direct_required", '"$CODEMAP_BIN" query --compact rdeps pkg.core')
-    noncompact = _run("B_direct_required", '"$CODEMAP_BIN" query rdeps pkg.core')
-    skill = _run("C_skill_required", '"$CODEMAP_BIN" query --compact rdeps pkg.core')
+    direct = _run("B_auto", '"$CODEMAP_BIN" query --compact rdeps pkg.core')
+    noncompact = _run("B_auto", '"$CODEMAP_BIN" query rdeps pkg.core')
+    skill = _run("C_strict", '"$CODEMAP_BIN" query --compact rdeps pkg.core')
 
     assert direct.compliance is True
     assert direct.codemap_direct_successful_calls == 1
@@ -179,7 +179,7 @@ def test_direct_cli_arm_never_installs_a_plugin(script_run_codex: Any, tmp_path:
     installer_calls: list[Path] = []
 
     with script_run_codex.prepare_arm_home(
-        "B_direct_required",
+        "B_auto",
         root=tmp_path,
         codemap_bin=launcher,
         plugin_installer=lambda home: installer_calls.append(home) or True,
@@ -227,7 +227,7 @@ def test_staged_direct_cli_admission_executes_a_task_shaped_query(script_run_cod
         encoding="utf-8",
     )
     home = script_run_codex.ArmHome(
-        "B_direct_required",
+        "B_auto",
         home_path,
         {
             "PATH": "/fixture/bin",
@@ -296,7 +296,7 @@ def test_no_model_probe_removes_its_coordination_root(
     index_path.write_text("{}", encoding="utf-8")
     coordination_root = script_run_codex._prepare_coordination_root(index_path)
     home = script_run_codex.ArmHome(
-        "B_direct_required",
+        "B_auto",
         home_path,
         {},
         codemap_available=True,
@@ -306,7 +306,7 @@ def test_no_model_probe_removes_its_coordination_root(
     runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
     monkeypatch.setattr(runner, "_prepare_verified_home", lambda _arm: home)
 
-    runner.probe_arm("B_direct_required")
+    runner.probe_arm("B_auto")
 
     assert not coordination_root.exists()
     assert not home_path.exists()
@@ -318,7 +318,7 @@ def test_direct_cli_launcher_must_match_its_manifest_hash(script_run_codex: Any,
     launcher = _make_direct_runtime_bundle(tmp_path)
     lock_path = tmp_path / "locks.json"
 
-    with script_run_codex.prepare_arm_home("B_direct_required", root=tmp_path, codemap_bin=launcher) as home:
+    with script_run_codex.prepare_arm_home("B_auto", root=tmp_path, codemap_bin=launcher) as home:
         lock_path.write_text(
             json.dumps(
                 {
@@ -449,7 +449,7 @@ def test_historical_wrapped_C_delivery_rejects_native_item_contract(script_run_c
 
     assert parsed.skill_delivery_observed is True
     assert parsed.codemap_calls == 0
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+    assert script_run_codex._arm_compliance("C_strict", parsed) is False
 
     direct_after_skill = [
         events[0],
@@ -475,7 +475,7 @@ def test_historical_wrapped_C_delivery_rejects_native_item_contract(script_run_c
 
     assert direct_parsed.skill_delivery_observed is True
     assert direct_parsed.codemap_calls == 1
-    assert script_run_codex._arm_compliance("C_skill_required", direct_parsed) is False
+    assert script_run_codex._arm_compliance("C_strict", direct_parsed) is False
 
 
 def test_compound_compact_query_is_observed_without_receiving_canonical_credit(
@@ -512,7 +512,7 @@ def test_compound_compact_query_is_observed_without_receiving_canonical_credit(
     assert parsed.codemap_observed_calls == 1
     assert parsed.codemap_calls == 0
     assert parsed.codemap_skill_compact_successful_calls == 0
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+    assert script_run_codex._arm_compliance("C_strict", parsed) is False
 
 
 def test_installed_skill_binding_credits_compact_query_without_manual_skill_read(
@@ -549,7 +549,7 @@ def test_installed_skill_binding_credits_compact_query_without_manual_skill_read
     assert parsed.skill_delivery_observed is False
     assert parsed.codemap_calls == 1
     assert parsed.codemap_skill_compact_successful_calls == 1
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is True
+    assert script_run_codex._arm_compliance("C_strict", parsed) is True
 
     incomplete = script_run_codex.runtime.parse_codex_jsonl(
         _completed_stream(
@@ -565,7 +565,7 @@ def test_installed_skill_binding_credits_compact_query_without_manual_skill_read
         )
     )
     assert incomplete.codemap_calls == 1
-    assert script_run_codex._arm_compliance("B_direct_required", incomplete) is False
+    assert script_run_codex._arm_compliance("B_auto", incomplete) is False
 
 
 def test_historical_bound_launcher_query_rejects_native_item_contract(script_run_codex: Any, tmp_path: Path) -> None:
@@ -618,7 +618,7 @@ def test_historical_bound_launcher_query_rejects_native_item_contract(script_run
     assert parsed.skill_delivery_observed is True
     assert parsed.codemap_calls == 0
     assert parsed.codemap_direct_successful_calls == 0
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+    assert script_run_codex._arm_compliance("C_strict", parsed) is False
 
     reversed_parsed = script_run_codex.runtime.parse_codex_jsonl(
         "\n".join(json.dumps(event) for event in [events[1], events[0], events[2]]),
@@ -630,7 +630,7 @@ def test_historical_bound_launcher_query_rejects_native_item_contract(script_run
     # non-canonical query compliant.
     assert reversed_parsed.skill_delivery_observed is True
     assert reversed_parsed.codemap_skill_compact_successful_calls == 0
-    assert script_run_codex._arm_compliance("C_skill_required", reversed_parsed) is False
+    assert script_run_codex._arm_compliance("C_strict", reversed_parsed) is False
 
 
 def test_historical_uppercase_launcher_assignment_rejects_native_item_contract(
@@ -685,7 +685,7 @@ def test_historical_uppercase_launcher_assignment_rejects_native_item_contract(
     assert parsed.skill_delivery_observed is True
     assert parsed.codemap_calls == 0
     assert parsed.codemap_direct_successful_calls == 0
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+    assert script_run_codex._arm_compliance("C_strict", parsed) is False
 
 
 @pytest.mark.parametrize(
@@ -766,7 +766,7 @@ def test_historical_compound_direct_query_rejects_native_item_contract(script_ru
     )
 
     assert parsed.codemap_direct_compact_successful_calls == 0
-    assert script_run_codex._arm_compliance("B_direct_required", parsed) is False
+    assert script_run_codex._arm_compliance("B_auto", parsed) is False
 
 
 def test_historical_multiline_direct_query_rejects_native_item_contract(script_run_codex: Any) -> None:
@@ -793,7 +793,7 @@ def test_historical_multiline_direct_query_rejects_native_item_contract(script_r
     )
 
     assert parsed.codemap_direct_compact_successful_calls == 0
-    assert script_run_codex._arm_compliance("B_direct_required", parsed) is False
+    assert script_run_codex._arm_compliance("B_auto", parsed) is False
 
 
 @pytest.mark.parametrize(
@@ -850,7 +850,7 @@ def test_historical_newline_shell_forms_reject_native_item_contract(script_run_c
     )
 
     assert parsed.codemap_direct_compact_successful_calls == 0
-    assert script_run_codex._arm_compliance("B_direct_required", parsed) is False
+    assert script_run_codex._arm_compliance("B_auto", parsed) is False
 
 
 def test_historical_diagnostic_conditional_query_rejects_native_item_contract(script_run_codex: Any) -> None:
@@ -877,7 +877,7 @@ def test_historical_diagnostic_conditional_query_rejects_native_item_contract(sc
     )
 
     assert parsed.codemap_direct_compact_successful_calls == 0
-    assert script_run_codex._arm_compliance("B_direct_required", parsed) is False
+    assert script_run_codex._arm_compliance("B_auto", parsed) is False
 
 
 def test_historical_bound_launcher_diagnostic_rejects_native_item_contract(
@@ -948,7 +948,7 @@ def test_historical_compound_skill_and_control_query_reject_native_item_contract
     assert parsed.skill_delivery_observed is False
     assert parsed.codemap_calls == 0
     assert parsed.codemap_direct_successful_calls == 0
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+    assert script_run_codex._arm_compliance("C_strict", parsed) is False
 
 
 def test_historical_conditional_launcher_alias_replay_is_not_canonical_C_compliance(
@@ -1009,7 +1009,7 @@ def test_historical_conditional_launcher_alias_replay_is_not_canonical_C_complia
     assert parsed.codemap_calls == 0
     assert parsed.codemap_skill_compact_successful_calls == 0
     assert parsed.codemap_direct_successful_calls == 0
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+    assert script_run_codex._arm_compliance("C_strict", parsed) is False
 
 
 @pytest.mark.parametrize(
@@ -1206,7 +1206,7 @@ def test_conditional_launcher_alias_rejects_unproven_forms(
     assert parsed.skill_delivery_observed is True
     assert parsed.codemap_calls == 0
     assert parsed.codemap_skill_compact_successful_calls == 0
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+    assert script_run_codex._arm_compliance("C_strict", parsed) is False
 
 
 def test_compound_skill_reader_is_diagnostic_but_does_not_block_a_later_c_query(
@@ -1251,7 +1251,7 @@ def test_compound_skill_reader_is_diagnostic_but_does_not_block_a_later_c_query(
 
     assert parsed.skill_delivery_observed is False
     assert parsed.codemap_skill_compact_successful_calls == 1
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is True
+    assert script_run_codex._arm_compliance("C_strict", parsed) is True
 
 
 def test_noncanonical_skill_reader_does_not_block_a_later_standalone_c_query(
@@ -1301,7 +1301,7 @@ def test_noncanonical_skill_reader_does_not_block_a_later_standalone_c_query(
     assert parsed.skill_delivery_observed is False
     assert parsed.codemap_skill_compact_successful_calls == 1
     assert parsed.codemap_direct_successful_calls == 0
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is True
+    assert script_run_codex._arm_compliance("C_strict", parsed) is True
 
 
 @pytest.mark.parametrize(
@@ -1425,7 +1425,7 @@ def test_historical_bound_skill_reader_forms_reject_native_item_contract(
     assert parsed.skill_delivery_observed is False
     assert parsed.codemap_skill_successful_calls == 0
     assert parsed.codemap_direct_compact_successful_calls == 0
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+    assert script_run_codex._arm_compliance("C_strict", parsed) is False
 
 
 def test_historical_query_then_skill_read_rejects_native_item_contract(script_run_codex: Any, tmp_path: Path) -> None:
@@ -1455,7 +1455,7 @@ def test_historical_query_then_skill_read_rejects_native_item_contract(script_ru
     assert parsed.skill_delivery_observed is False
     assert parsed.codemap_direct_compact_successful_calls == 0
     assert parsed.codemap_skill_compact_successful_calls == 0
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+    assert script_run_codex._arm_compliance("C_strict", parsed) is False
 
 
 @pytest.mark.parametrize(
@@ -1619,7 +1619,7 @@ def test_rescore_results_replays_frozen_events_without_mutating_run_artifacts(
     tasks_path = shared / "tasks-bench.json"
     tasks_bytes = (json.dumps({"tasks": [task]}, sort_keys=True) + "\n").encode()
     tasks_path.write_bytes(tasks_bytes)
-    skill_path = snapshot_dir / "C_skill_required" / "codemap-py" / "codex-skills" / "query-code" / "SKILL.md"
+    skill_path = snapshot_dir / "C_strict" / "codemap-py" / "codex-skills" / "query-code" / "SKILL.md"
     skill_path.parent.mkdir(parents=True)
     skill_bytes = b"# query-code\nUse the compact query.\n"
     skill_path.write_bytes(skill_bytes)
@@ -1634,8 +1634,8 @@ def test_rescore_results_replays_frozen_events_without_mutating_run_artifacts(
                 "bytes": len(tasks_bytes),
             },
             {
-                "role": "C_skill_required:codemap-py",
-                "archived_path": "C_skill_required/codemap-py/codex-skills/query-code/SKILL.md",
+                "role": "C_strict:codemap-py",
+                "archived_path": "C_strict/codemap-py/codex-skills/query-code/SKILL.md",
                 "sha256": skill_sha256,
                 "bytes": len(skill_bytes),
             },
@@ -1665,7 +1665,7 @@ def test_rescore_results_replays_frozen_events_without_mutating_run_artifacts(
     direct_row = {
         "task_id": "SE-01",
         "task_type": "symbol_extraction",
-        "arm": "B_direct_required",
+        "arm": "B_auto",
         "repetition": 1,
         "model": script_run_codex.PARITY_CODEX_MODEL,
         "scoreable": True,
@@ -1701,7 +1701,7 @@ def test_rescore_results_replays_frozen_events_without_mutating_run_artifacts(
         {"type": "item.completed", "item": {"id": "answer", "type": "agent_message", "text": "start_line: 10"}},
         {"type": "turn.completed", "status": "completed"},
     ]
-    skill_row = {**direct_row, "arm": "C_skill_required", "raw_events": skill_events}
+    skill_row = {**direct_row, "arm": "C_strict", "raw_events": skill_events}
     telemetry_path.write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in (direct_row, skill_row)),
         encoding="utf-8",
@@ -1713,8 +1713,8 @@ def test_rescore_results_replays_frozen_events_without_mutating_run_artifacts(
         "execution": {
             "selected_task_ids": ["SE-01"],
             "coordinates": [
-                {"task_id": "SE-01", "repetition": 1, "arm": "B_direct_required"},
-                {"task_id": "SE-01", "repetition": 1, "arm": "C_skill_required"},
+                {"task_id": "SE-01", "repetition": 1, "arm": "B_auto"},
+                {"task_id": "SE-01", "repetition": 1, "arm": "C_strict"},
             ],
         },
         "treatments": {"artifact_sha256": {"codemap_query_skill": skill_sha256}},
@@ -1741,18 +1741,18 @@ def test_rescore_results_replays_frozen_events_without_mutating_run_artifacts(
     assert artifact["source"]["telemetry_sha256"] == hashlib.sha256(source_bytes[telemetry_path]).hexdigest()
     assert artifact["source"]["frozen_suite_semantic_sha256"] == core.semantic_suite_hash([task])
     rows = {row["arm"]: row for row in artifact["rows"]}
-    assert rows["B_direct_required"]["quality_score"] == 1.0
-    assert rows["B_direct_required"]["output_text"] == "start_line: 10"
-    assert rows["B_direct_required"]["codemap_direct_compact_successful_calls"] == 1
-    assert rows["B_direct_required"]["treatment_adherence"] is True
-    assert rows["B_direct_required"]["locked_query_conformance"] is True
-    assert rows["B_direct_required"]["locked_query_fitness"] == 1.0
-    assert "codemap_semantic_compliance" not in rows["B_direct_required"]
-    assert "task_query_fitness" not in rows["B_direct_required"]
-    assert rows["C_skill_required"]["skill_delivery_observed"] is True
-    assert rows["C_skill_required"]["codemap_skill_compact_successful_calls"] == 1
-    assert rows["C_skill_required"]["compliance"] is True
-    assert rows["C_skill_required"]["treatment_adherence"] is True
+    assert rows["B_auto"]["quality_score"] == 1.0
+    assert rows["B_auto"]["output_text"] == "start_line: 10"
+    assert rows["B_auto"]["codemap_direct_compact_successful_calls"] == 1
+    assert rows["B_auto"]["treatment_adherence"] is True
+    assert rows["B_auto"]["locked_query_conformance"] is True
+    assert rows["B_auto"]["locked_query_fitness"] == 1.0
+    assert "codemap_semantic_compliance" not in rows["B_auto"]
+    assert "task_query_fitness" not in rows["B_auto"]
+    assert rows["C_strict"]["skill_delivery_observed"] is True
+    assert rows["C_strict"]["codemap_skill_compact_successful_calls"] == 1
+    assert rows["C_strict"]["compliance"] is True
+    assert rows["C_strict"]["treatment_adherence"] is True
 
     telemetry_path.write_text("{}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="telemetry hash mismatch"):
@@ -1792,7 +1792,7 @@ def test_main_threads_an_explicit_manifest_path_into_task_loading_and_ordering(
     def _order(revision: str, *_args: Any, **_kwargs: Any) -> tuple[str, ...]:
         """Record the revision and return the fixture treatment order."""
         seen["revision"] = Path(revision)
-        return ("A_plain", "B_direct_required", "C_skill_required")
+        return ("A_plain", "B_auto", "C_strict")
 
     class FixtureRunner:
         """Provide deterministic preflight evidence without invoking Codex."""

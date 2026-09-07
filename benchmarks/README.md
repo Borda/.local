@@ -6,12 +6,18 @@ Empirical validation for the `codemap` plugin. Provider ownership is explicit in
 
 ### Current cross-provider acceptance status
 
-| Workload   | Codex                 | Claude                | Current judgment                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ---------- | --------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ReadCrop   | Complete              | Complete              | Both full suites preserve source-answer quality; the strict installed integration lowers aggregate input and command use, with disclosed per-task variance.                                                                                                                                                                                                                                                                                                                        |
-| Fix-Single | Complete              | Complete              | Both full suites preserve executable quality. Efficiency is heterogeneous, so production guidance skips Codemap for a fully localized edit with no unresolved structural fact.                                                                                                                                                                                                                                                                                                     |
-| Fix-Multi  | Complete (bounded W3) | Complete (bounded W3) | Revised FM-01/FM-03 scopes are checksum-valid on Codex Luna and Claude Haiku/Sonnet. P1 closes as a harness and heterogeneous-evidence milestone: FM-02 and the semantically accepted FM-03 A/C pairs support bounded conclusions, while incomplete FM-01 A/C and model-specific failures remain reported and no universal multi-file efficiency claim is admitted.                                                                                                                |
-| Patch      | Complete (bounded W4) | Complete (bounded W4) | Current checksum-valid Claude `claude-patch-post-lifecycle-9e7bbb02bc3a` and Codex `codex-patch-post-lifecycle-4119d30180f3/patch` scopes both complete 15/15 cells with strict-query delivery, patch transport, containment, oracle, regression, and cleanup evidence. Valid A/C quality ties remain provider/model-stratified: Claude has two lower-context/time C pairs plus strict-only successes; Codex has three lower-context/time C pairs plus two strict oracle failures. |
+| Workload   | Codex evidence    | Claude evidence                         | Current judgment                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------- | ----------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ReadCrop   | 2026-09-06 · luna | 2026-08-11 · haiku                      | Both full suites preserve source-answer quality; the strict installed integration lowers aggregate input and command use, with disclosed per-task variance.                                                                                                                                                                                                                                                                                                                        |
+| Fix-Single | 2026-09-06 · luna | 2026-08-11 · haiku                      | Both full suites preserve executable quality. Efficiency is heterogeneous, so production guidance skips Codemap for a fully localized edit with no unresolved structural fact.                                                                                                                                                                                                                                                                                                     |
+| Fix-Multi  | 2026-09-06 · luna | 2026-08-12 · haiku, sonnet (bounded W3) | Revised FM-01/FM-03 scopes are checksum-valid on Codex Luna and Claude Haiku/Sonnet. P1 closes as a harness and heterogeneous-evidence milestone: FM-02 and the semantically accepted FM-03 A/C pairs support bounded conclusions, while incomplete FM-01 A/C and model-specific failures remain reported and no universal multi-file efficiency claim is admitted.                                                                                                                |
+| Patch      | 2026-09-06 · luna | 2026-08-12 · haiku (bounded W4)         | Current checksum-valid Claude `claude-patch-post-lifecycle-9e7bbb02bc3a` and Codex `codex-patch-post-lifecycle-4119d30180f3/patch` scopes both complete 15/15 cells with strict-query delivery, patch transport, containment, oracle, regression, and cleanup evidence. Valid A/C quality ties remain provider/model-stratified: Claude has two lower-context/time C pairs plus strict-only successes; Codex has three lower-context/time C pairs plus two strict oracle failures. |
+
+Each cell dates the evidence the judgment rests on and names the model stratum that produced it, rather than reporting a completed/pending state: a state word says a run happened, a date says which run, so a figure can be traced to an artifact instead of to a status. Every Codex cell cites the 2026-09-06 combined study `codex-combined-20260906T085207Z`. On the Claude side, Fix-Multi and Patch cite the canonical artifacts named later in this file, while the ReadCrop and Fix-Single cells date the newest completed full-suite artifact on disk for that stage (`claude-readcrop-8c605ce4f83e`, `claude-fix-single-5647f59aeeba`), because no canonical artifact is declared for those two stages. Run metadata records a creation timestamp and the model but no codemap-py version, so a plugin build cannot yet be recovered from a result artifact.
+
+Both providers have now completed a full suite against the current runner and the corrected task suite, so no cell rests on pre-correction evidence. The Codex figures in this table come from one 219-cell study covering the structural stage plus all four workloads; the Claude figures remain per-workload runs taken between 2026-08-11 and 2026-08-12, which is why the two columns carry different dates.
+
+Two further Codex strata — `gpt-5.6-sol` and `gpt-5.6-terra`, both 2026-09-07 — have since run the same four workloads and are reported in [Results](#results) rather than folded into the judgments above, because each stage carries only 3 to 6 tasks per stratum. Their stage figures do not all reproduce: the ReadCrop token direction reverses on terra, and the single Patch failure lands in a different arm on each stratum. The judgments above therefore stand on the cited luna evidence and must not be restated as multi-stratum Codex conclusions. Both strata have since run the 16-task agentic cohort as well, also on 2026-09-07 and also reported in [Results](#results); those rows agree with luna on the direction of both arms but not on their size, and the terra strict arm skipped its required query on six of sixteen cells, which is a compliance observation about that stratum rather than a measurement of the tool.
 
 These are separate, nonpoolable strata. `A_plain` versus `C_strict` is decision-grade; `B_auto` is an optional-use canary. The complete task suites and unfavorable cells remain in the reported artifacts rather than being filtered to favor Codemap. Exact artifacts, scorer replays, limitations, and the P1 closure decision are documented below and in the active provider-parity expansion plan.
 
@@ -65,6 +71,13 @@ Claude is the mature, repeatedly debugged reference adapter, but it is not an un
 - **`B_auto`** — Codemap is available; the model may use it, and no-call is valid.
 - **`C_strict`** — Codemap is available and must be used at least once; no-call is recorded as a separate compliance failure while task scoring remains independent.
 
+The contract text above is the shared use policy; how Codemap is *delivered* stays provider-native, and the two providers differ in a way that matters when reading a `B_auto` row:
+
+- **Codex** — `B_auto` receives only the locked direct CLI (`"$CODEMAP_BIN" query --compact …`), the plugin is not installed, and `CODEMAP_SKILL_FILE` is removed from the arm environment, so the arm has the tool and no Skill guidance. `C_strict` installs the packages and binds the query Skill immutably.
+- **Claude** — `B_auto` and `C_strict` receive the *same* tool section and the same allow-lists (`Bash(scan-query:*)`, `Skill` permitted in both); the only difference is the one required-use sentence appended for `C_strict`. A Claude `B_auto` cell therefore has the Skill route available and simply is not told to use it.
+
+So "optional use" means the same thing on both providers, but "no Skill guidance" is true only of Codex. A Codex `B` row measures CLI-without-Skill against no-Codemap; a Claude `B` row measures same-access-without-the-instruction.
+
 Canonical runs load the locked task/prompt/evaluator policy and fail closed unless the target commit/tree, clean worktree, and index bytes/metadata match the manifest; result records carry task, suite, evaluator, envelope, arm-contract, repository, and index provenance. Legacy labels (`plain`, `codemap`, `semble`, `combined`) retain their historical behavior and remain `legacy-unversioned`; they are not retroactively mapped to A/B/C. `--dry-run` prints the selected plan without invoking Claude or writing model results; the real-code runner's default `--arm all` plan is A/B/C and validates the locked inputs, while the agentic runner validates them when a canonical arm is selected.
 
 **Codex structural adapter and active controls.** `run-codex-structural.py` is one task-driven Codex CLI. With no `--tasks`, it plans or runs all 73 supported tasks (55 structural, 6 ReadCrop, 4 Fix-Single, 3 Fix-Multi, and 5 Patch), producing 219 A/B/C cells. `--tasks` accepts family tokens, exact IDs, or a mixed list; task IDs route to the appropriate stage-specific scorer. ReadCrop, Fix-Single, Fix-Multi, and Patch remain separate, nonpoolable result stages even though they share the transport and launcher. All stages normalize gross/cached/fresh input, output/reasoning output, command count, tool elapsed time, Codemap usage, error, and compliance fields. ReadCrop has a source-extraction oracle; executable stages give the agent one benchmark-owned writable checkout, capture its canonical Git diff outside the agent sandbox, then apply that diff in a second clean worktree for the ordinary apply, exact changed-path, independent behavior-oracle, and cleanup gates. Patch additionally stages each task's frozen historical target-test fixture and task-local index before the agent runs; paid admission still requires a fresh scope lock. Git metadata and project dependencies are intentionally unavailable inside the agent sandbox, and the equal-arm prompt directs the agent to use bounded syntax/static validation instead of wasting turns on inaccessible Git or project pytest. The checkout receives a derived frozen index whose only content change is `scan_root`; source and derived hashes plus a hash excluding that root are recorded, and index mutation makes the cell ineligible. `git apply --recount` and the behavior result after recovery are diagnostic-only fields for malformed hunk headers. A has no Codemap access. B receives only a locked direct CLI and may use it when useful; B is an optional-use canary, so a no-query B cell is compliant. C installs the locked Codemap and Codex Rig packages, binds the installed query Skill immutably, and must complete the task-specific canonical compact query. An explicit Skill-file read remains diagnostic-only. Prompts state Codemap's static-graph boundary: it is for compact symbol/dependency/importer/caller facts, not runtime validation, tests, or edits. Additional repository reads and shell commands are allowed in B/C but do not replace C's required treatment evidence. A_plain-versus-C_strict is the decision-grade contrast; a B regression means users should prefer the installed integration and does not undermine the strict-arm result. The Claude and Codex adapters share task loading, prompt materialization, hashes, validators, ground truth, scoring, and pairing; provider-specific code is limited to transport, isolation, and native event normalization. All canonical stage rows use the shared Rich renderer on terminals and plain redirected output, preserving compact `k`/`M` token and `m`/`s` time units without changing telemetry.
@@ -99,7 +112,85 @@ Archived manifests retain historical consumer labels from before this rename. Ac
 | Codex agentic parity                                           | Codex            | `run-codex-agentic.py`     | Yes | Canonical 3 (A/B/C)                    | 16 tasks × one repetition                                                                                  | Does Codemap change agentic exploration recall, efficiency, or adoption under the shared contract?    |
 | [Query](#query-benchmark-run-codemap-clipy)                    | Provider-neutral | `run-codemap-cli.py`       | No  | —                                      | Deterministic query/correctness suites                                                                     | Is scan-query correct, complete, and fast enough?                                                     |
 
-Run **Query** first — validates the index before spending LLM tokens on agentic runs.
+Run **Query** first — validates the index before spending LLM tokens on agentic runs. Every measurement any of these produce is collected under [Results](#results).
+
+### Files
+
+<details>
+<summary><strong>Per-file ownership and purpose</strong></summary>
+
+| File                                            | Ownership        | Purpose                                                                                                                                                           |
+| ----------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `policy/provider-parity-methodology.json`       | Provider-neutral | Tracked canonical methodology policy seed consumed by the deterministic builders                                                                                  |
+| `manifests/provider-parity-methodology.json`    | Provider-neutral | Ignored, on-demand generated shared task, evaluator, target, index, and analysis identities; frozen into each admitted run                                        |
+| `manifests/codex-integration.json`              | Codex            | Ignored, on-demand generated machine-enforced plain/direct-CLI/Skill execution contract                                                                           |
+| `manifests/codex-integration.md`                | Codex            | Ignored, on-demand generated human-readable manifest review and paid-run instructions                                                                             |
+| `manifests/codex-agentic.json`                  | Codex            | Ignored, on-demand generated machine-readable 16-task agentic A/B/C execution lock, exact-SHA admission, runtime limits, and artifact contract                    |
+| `manifests/codex-agentic.md`                    | Codex            | Ignored, on-demand generated human-readable 16-task agentic scope, treatment, scorer, approval, and launch review                                                 |
+| `build-provider-parity-methodology-manifest.py` | Provider-neutral | Deterministically regenerates or verifies the shared methodology manifest                                                                                         |
+| `build-codex-integration-manifest.py`           | Codex            | Deterministically regenerates or verifies the structural machine and human manifests                                                                              |
+| `build-codex-agentic-manifest.py`               | Codex            | Deterministically regenerates or verifies the shared 16-task agentic machine and human manifests                                                                  |
+| `_bench_common/agentic_contracts.py`            | Provider-neutral | Shared agentic arms, prompt materialization, answer contracts, oracle, parsing, scoring, and paired metrics                                                       |
+| `_bench_common/provider_parity_contracts.py`    | Provider-neutral | Canonical task identity, A/B/C semantics, evaluator dispatch, headline eligibility, and paired effects; not a runner or generator                                 |
+| `run-claude-agentic.py`                         | Claude           | Agentic benchmark measuring how Codemap/semble structural context changes Claude exploration                                                                      |
+| `run-claude-structural.py`                      | Claude           | Repo-agnostic structural benchmark driven by the `tasks-bench.json` repository header                                                                             |
+| `run-all.sh`                                    | Provider-neutral | Sole batch dispatcher: no-model cross-provider smoke, paid Claude batches, or approval-gated Codex structural and agentic studies                                 |
+| `run-codemap-cli.py`                            | Provider-neutral | Query-level correctness, coverage, and latency against a real repository                                                                                          |
+| `run-codex-structural.py`                       | Codex            | Codex structural provider-parity transport for canonical A/B/C cells with isolated plugin homes, native telemetry normalization, and shared structural evaluators |
+| `run-codex-agentic.py`                          | Codex            | 16-task Codex agentic runner with shared Claude-parity scoring, treatment isolation, paid admission, telemetry, and partial-artifact preservation                 |
+| `generate-tasks-bench.py`                       | Provider-neutral | Validates or refreshes shared structural oracle fields; it does not author prompts                                                                                |
+| `generate-tasks-real-issues.py`                 | Provider-neutral | Refreshes shared real-issue evidence                                                                                                                              |
+| `suites/tasks-agentic.json`                     | Provider-neutral | Shared 16 blast-radius navigation tasks (BA-01–BA-16), answer contracts, and difficulty tiers used by both agentic adapters                                       |
+| `suites/tasks-bench.json`                       | Provider-neutral | 60 tasks across 11 series plus the target repository header                                                                                                       |
+| `suites/tasks-code.json`                        | Provider-neutral | 15 code-level tasks used by the scan-query benchmark                                                                                                              |
+| `suites/tasks-patch.json`                       | Provider-neutral | 5 end-to-end patch tasks requiring patch application and tests                                                                                                    |
+| `suites/tasks-readcrop.json`                    | Provider-neutral | 6 symbol-contract extraction tasks scored by keyword recall                                                                                                       |
+| `suites/tasks-fix-single.json`                  | Provider-neutral | 4 single-file fix tasks scored by diff keyword recall                                                                                                             |
+| `suites/tasks-fix-multi.json`                   | Provider-neutral | 3 multicaller fix tasks scored by clean patch application, exact changed-path boundaries, and complete-caller AST behavior oracles                                |
+| `results/`                                      | Provider-neutral | JSON snapshots and Markdown reports from past runs                                                                                                                |
+
+</details>
+
+### Selecting model strata
+
+`provider-parity-methodology.json` declares the strata each provider runs: `haiku`, `sonnet`, `opus` for Claude and `gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.6-sol` for Codex. The Codex list is declared three times and every copy must agree: the methodology manifest is what `--models=` resolves a name against, and the integration and agentic manifests' `model.additional_strata` are what each runner admits at its own preflight. A test asserts the three lists are identical, because a stratum present in one and missing from another is a name the launcher accepts and the runner then refuses. `--models=` restricts and orders that declared list for one invocation — it never introduces a model, so an undeclared name, a Codex name passed to Claude, or a repeated name fails before any study starts.
+
+The selection reaches both lanes, and the lanes consume it differently. The structural lane runs one study per selected stratum. The Codex agentic lane runs one stratum per study: it takes exactly one name and refuses a longer selection rather than dropping it, and its scope hash binds the stratum, so each stratum's paid study carries its own approval token. Selecting the stratum the agentic manifest already names is not an override — it resolves to the same scope and the same token an unselected run mints, so one physical study never has two valid approvals. A combined invocation with one selected stratum runs that stratum in both lanes; with several, the structural lane sweeps them all and the combined authorization block names the single stratum the agentic half will run.
+
+A stratum answers to its full declared name or to its nickname — the segment after the last dash — whenever that nickname belongs to exactly one declared stratum, so `gpt-5.6-terra` is also `terra` and the Claude tiers already are their own nicknames. Nicknames are canonicalized to the declared full name before anything is run or hashed, so the two spellings name the same run and mint the same approval. An ambiguous nickname is refused rather than resolved for the operator.
+
+```bash
+bash benchmarks/run-all.sh claude --struct --models=opus,haiku       # two tiers, in that order
+bash benchmarks/run-all.sh codex --struct --models=luna,terra --dry-run
+bash benchmarks/run-all.sh codex --struct --models=terra --dry-run   # second stratum alone
+```
+
+Claude runs its selected tiers in one invocation, as it always has. Codex runs each selected stratum as its own child study in its own run directory under one approval. Because the runner prices a single stratum, a multi-stratum `--struct` dry run adds its own authorization block that states the summed design and mints a token binding the ordered model list:
+
+```text
+== CODEX MULTI-STRATUM AUTHORIZATION ==
+MODELS             gpt-5.6-luna gpt-5.6-terra
+DESIGN             438 cells = 219 per stratum × 2 strata (separate, nonpoolable studies)
+```
+
+The token commits to the list as given, so reordering or extending it mints a different token — one approval can never silently cover a different pair of strata at the same scope. The strata stay separate, nonpoolable studies; the aggregate exists only to price the approval.
+
+`--models` is perpendicular to the lane selectors: it pairs with `--struct`, with `--agentic`, and with a selector-free invocation, and the named strata are validated in every one of them, so a typo fails in seconds rather than after the sandbox reset and the no-model query benchmark. What the selection reaches differs by lane, and each lane says which case it is in:
+
+- `--struct` runs exactly the named strata, one study each.
+- `--agentic` alone runs the one named stratum, and refuses a longer selection instead of dropping the rest. The stratum is hashed into the agentic scope, so each stratum's study carries its own approval token; naming the manifest's own stratum resolves back to the default study and its digest-bound token.
+- A selector-free combined invocation forwards one named stratum to both children. A longer selection reaches the structural child alone, since one agentic study is one stratum, and the authorization block names the stratum the agentic half will run. Either way the block reprints the strata under their declared names, because they are hashed into the structural scope the combined token binds.
+
+A combined invocation takes as many strata as `--struct` does, so both providers run the same shape: one command, every selected stratum, one token. The structural half of that token is whatever the structural lane binds — one stratum binds its execution scope, several bind the ordered model list on top of it — and the combined half wraps that with the agentic scope. The combined block is then the only authorization printed, since a structural-only token beside it would offer a copyable command that silently drops the agentic study:
+
+```text
+== CODEX COMBINED AUTHORIZATION (structural + agentic) ==
+COMBINED SCOPE     2a5e73ea82c8e88a7862e3b6d5e89b5b7f57eb12e548517d36b3fa68519f116c
+ structural scope  28e64271f27195c2452a4dba443a766eeda1c030e9f50c82510c73484d584b6f
+ strata            gpt-5.6-sol gpt-5.6-terra
+ strata design     438 cells = 219 per stratum × 2 strata (separate, nonpoolable studies)
+ agentic scope     05a3a33b0385891bd7c434ca1f8c251b3b59aafe6a5178e24a1b61294475cea5
+```
 
 ### Codex agentic parity study
 
@@ -113,41 +204,11 @@ The deterministic review lock is `benchmarks/manifests/codex-agentic.json`; rege
 
 For approval UX, the matching no-model dry run prints a lowercase 16-character SHA-256 scope prefix for copyable `--paid-approval` (or its equivalent approval variable). The complete 64-character scope SHA-256 remains recorded in run metadata and provenance, and the CLI accepts that full value as well. Never mix a prefix or full scope from another dry run with the selected command; regenerate approval after any locked-source change.
 
-#### Completed combined-run Codex agentic study — 2026-08-07
-
-The frozen `results/codex-combined-20260807T130711Z/agentic` run completed all 16 tasks once across the three arms with `gpt-5.6-luna` at high effort, codemap-py 0.28.7, codex-rig 0.4.6, and observed Codex CLI 0.146.1. All 48 cells completed and followed their treatment contract; A used Codemap in 0/16 cells, optional B in 10/16, and strict C in 16/16. The manifest declares the study exploratory and nonpoolable, and seven answers were diagnostic bare-JSON recoveries, so the values below are paired descriptive evidence rather than causal or release-acceptance estimates.
-
-<!-- result-sync: duplicated/summarized in ../plugins/codemap-py/README.md#codex-agentic-2026-08-07; update both files or record an explicit divergence note. -->
-
-| Arm        | Mean semantic score | Perfect score | Mean EREC/RREC | Strict answers | Codemap used | Mean input | Mean output | Mean elapsed |
-| ---------- | ------------------: | ------------: | -------------: | -------------: | -----------: | ---------: | ----------: | -----------: |
-| `A_plain`  |              0.8931 |          7/16 |     **1.0000** |      **16/16** |         0/16 |     426.2k |        7.8k |       171.3s |
-| `B_auto`   |              0.9015 |          8/16 |     **1.0000** |          12/16 |        10/16 |     223.8k |        4.5k |       107.4s |
-| `C_strict` |          **0.9900** |     **13/16** |     **1.0000** |          13/16 |        16/16 | **103.5k** |    **2.4k** |    **60.4s** |
-
-Bold = best comparable arm value per column (higher is better for semantic score, perfect score, EREC/RREC, and strict answers; lower is better for input, output, and elapsed time). `Codemap used` is a treatment diagnostic, not a performance metric, so it is not bolded.
-
-Relative to `A_plain`, `C_strict` used paired geometric-mean `0.337×` input, `0.306×` output, and `0.359×` elapsed time, with lower input on 15/16 tasks. Its mean semantic-score delta was `+0.0969` with 8 wins, 7 ties, and one loss. Relative to `B_auto`, C used paired geometric-mean `0.466×` input, `0.513×` output, and `0.548×` elapsed time, with lower input on 15/16 tasks; its mean score was `+0.0885` higher with 7 wins, 8 ties, and one loss. The latest result strengthens the descriptive B6 quality-and-efficiency finding, but one repetition, one repository/model, optional B adoption in only 10/16 cells, and seven diagnostic answers prohibit a general causal or pooling claim. All 329 listed checksums verify; raw and canonical telemetry SHA-256 are both `efa48c3477d5ace8824cd0d9ae3fbee8c9603bbe8e79f64175be07ca96f00b3e`, metadata is `9fd0d512f4b666f14b840e14f27ba9e18ce6957d2213f40f90224b8f545fa436`, manifest is `739485475e38209613c94f3008ff394c31548325d322981fa6be9788285eff62`, and scope is `049670fbdbb6a02fba1e03ff3ad0c62a2d886f275afde2c3b7add6afb4bdd358`.
-
-##### Agentic measurement caveats
-
-These apply to every agentic result table in this file, on both providers, and to the frozen artifacts behind them. They do not apply to the structural lanes.
-
-- **Arm order and provider cache.** Every published agentic run executed the arms in fixed `A_plain` → `B_auto` → `C_strict` order per task, with no per-cell provider prompt-cache reset. The agentic lanes were never counterbalanced. Elapsed time is the metric most exposed to this: a later arm inherits a warmed provider cache, so elapsed headlines above overstate how much of the reduction is attributable to the treatment. Input-token ratios are much less exposed but not immune. Read the elapsed figures as order-confounded rather than as a clean treatment effect.
-- **EREC/RREC absolutes.** The scorer behind the frozen artifacts credited an expected module when its name appeared anywhere inside the exposure or report text, including as a substring of an unrelated dotted name. Every `1.0000` recall reading above therefore includes free credit. The rule now anchors whole dotted names. The bias is arm-symmetric, so A/B/C deltas survive; the absolute values in frozen artifacts do not.
-- **Quality-score floor.** The semantic score is an unweighted mean over components, several of which are enumerated fields a model can hit without doing the work. Absolute `aqs` and mean-semantic-score values therefore sit above true zero-work performance. This too is arm-symmetric.
-
-The stopped directory `results/codex-agentic-20260804T205639Z` is infrastructure-only evidence with zero model cells. The launcher previously opened its console capture inside the new result directory before the runner's strict launcher-only admission check, so the runner rejected the launcher's own file. Console capture now uses a private temporary file outside the result directory, while the strict admission invariant remains unchanged. Any supported-entrypoint failure preserves the reported artifact and prints the exact dry-run command plus a fresh timestamped paid command; reuse of an existing result directory remains forbidden.
-
-The stopped directory `results/codex-agentic-20260805T122121Z` contains 14 successful transport rows but is infrastructure/scoring diagnostic evidence only. Runtime identity drift stopped admission before the fifteenth cell, and the superseded response path conflated strict-envelope failure with absent semantic and raw-text evidence. The prospective runner freezes plugin source bytes before the first cell, preserves identity evidence even when initial C admission fails, and records semantic validity, diagnostic recovery, pooling eligibility, EREC, RREC, and DEFF as separate fields.
-
-The stopped directory `results/codex-agentic-20260805T144950Z` contains one successful A row and is infrastructure-only evidence. The snapshot archive preserved the B launcher bytes but stripped its executable mode from `0755` to `0600`, so B admission failed before a model call. The repaired archive writes executable inputs as private `0700`, writes other inputs as `0600`, records each mode in the snapshot ledger, and fails closed on later byte or mode drift.
-
-The completed frozen run `results/codex-agentic-20260804T172617Z` is historical immutable evidence: it persisted 9/9 BA-01 cells under archived machine manifest `f8490d39e2dbade395600423e4096cee94d7f87d1ada4cbe0a876fa74052fa8c`. Direct-importer exposure and final-report recall were `1.0` in every arm and repetition. Relative to `A_plain`, `B_auto` reduced mean input tokens by 39.6%, output tokens by 58.4%, and elapsed time by 52.5%; the then-named `C_required` arm reduced them by 66.3%, 71.9%, and 69.6%, respectively. These bounded exploratory means from one task and three repetitions are not the current default, are not pooled with the 16-task study, and do not define provider-wide performance.
+Measured output from this study is reported with every other agentic run under [Agentic results](#agentic-results).
 
 ## Unified batch entrypoint
 
-`run-all.sh` is the only batch orchestrator. It requires one provider mode; both providers accept the mutually exclusive `--struct` and `--agentic` workload selectors plus `--dry-run`. `--repetitions=N` is agentic-only. Omitting a workload selector runs structural then agentic for both providers. A combined paid Codex invocation validates both approvals before any model call, freezes one outer source, and preserves isolated `structural/` and `agentic/` child artifacts. Missing or unknown arguments do nothing:
+`run-all.sh` is the only batch orchestrator. It requires one provider mode; both providers accept the mutually exclusive `--struct` and `--agentic` workload selectors plus `--dry-run`. `--repetitions=N` is agentic-only. Omitting a workload selector runs structural then agentic for both providers. A combined paid Codex invocation takes one approval token that binds both child scopes together — the unified dry run prints it — freezes one outer source, and preserves isolated `structural/` and `agentic/` child artifacts. The structural child re-derives its scope from its own no-model plan and verifies the combined token there, before any model call; either scope drifting invalidates it. `CODEX_AGENTIC_PAID_APPROVAL` remains the single-study token for `--agentic` runs. Missing or unknown arguments do nothing:
 
 ```bash
 bash benchmarks/run-all.sh smoke
@@ -157,8 +218,7 @@ bash benchmarks/run-all.sh claude --agentic --dry-run
 bash benchmarks/run-all.sh codex --struct --dry-run
 bash benchmarks/run-all.sh codex --struct --tasks=DI,GR --dry-run
 bash benchmarks/run-all.sh codex --agentic --dry-run
-CODEX_PAID_APPROVAL="$(shasum -a 256 benchmarks/manifests/codex-integration.json | awk '{print $1}')" \
-    CODEX_AGENTIC_PAID_APPROVAL="$(shasum -a 256 benchmarks/manifests/codex-agentic.json | awk '{print $1}')" \
+CODEX_PAID_APPROVAL=<combined-approval-token-printed-by-the-unified-dry-run> \
     CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \
     bash benchmarks/run-all.sh codex
 CODEX_PAID_APPROVAL="$(shasum -a 256 benchmarks/manifests/codex-integration.json | awk '{print $1}')" \
@@ -181,6 +241,24 @@ Modes:
 - `codex --agentic --dry-run` — validate the shared 16-task agentic lock, target, index, and A/B/C capability probes, then print exactly 48 planned cells without credentials or a model.
 - `codex --agentic` — execute BA-01–BA-16 across A/B/C for one repetition with the exact active-manifest approval and private auth source documented in `manifests/codex-agentic.md`. Runtime/admission integrity failures stop and preserve partial artifacts; ordinary model/task/treatment outcomes remain measurable and do not fail fast. The launcher creates a fresh run directory, with an optional `CODEX_RUN_DIR` override for a new path. Each cell uses the retry-inclusive per-cell timeout in seconds; no total-run ceiling is configured. Add `--repetitions=N` only with the resolver's matching scope SHA-256.
 
+#### Running two studies at once
+
+Every study mutates its target checkout — staged diff-impact edits, patch checkouts, index rebuilds — and each cell verifies a clean tree before trusting its result, so one shared clone admits one study at a time. A machine-wide lock keyed on the target path enforces that, naming the live run rather than letting two studies corrupt each other's worktree.
+
+`--isolated` gives a run its own `git worktree` off the managed clone, so a second study can run beside the first:
+
+```bash
+bash benchmarks/run-all.sh codex --struct --isolated --dry-run
+```
+
+- The worktree is created before the lock is taken, so each isolated run locks its own path and no longer contends with the shared clone.
+- It is removed when the run succeeds and kept when it fails, with its path printed — a failed run's tree holds the staged edit, half-applied patch, or rebuilt index that explains the failure. The next isolated run prunes what a killed run left behind.
+- It never scans a second graph: the locked index is copied into the worktree with only its `scan_root` moved, and the relocation provenance travels to every lane the run launches — Claude and Codex, structural and agentic — because that provenance is what admission checks in place of the byte hash. Relocation needs the managed clone to hold the locked index already, so a first run without `--isolated` has to build it.
+- It costs one checkout and one index copy, which is why it is opt-in rather than the default.
+- It cannot be combined with `REPO=`; both name the tree to run in, and honouring one silently would put the study somewhere the operator did not ask for.
+
+Any Codex mode whose scope includes a `PT-*` task provisions the Patch stage's test runtime itself, so no separate preparation step is required. The Patch behavior oracle runs Lightning's own tests against the disposable checkout's `src`, which needs an interpreter carrying Lightning's runtime and test dependencies; `run-all.sh` builds one from the target clone's `requirements/{pytorch,fabric}/{base,test}.txt` beside the managed clone at `<temp-root>/codemap-bench-patch-venv` and exports `CODEMAP_BENCH_PATCH_PYTEST` for the run. The first build downloads torch and takes several minutes; later runs reuse it after verifying `import torch`. Setting `CODEMAP_BENCH_PATCH_PYTEST` before the launcher overrides that build with your own executable pytest, and the same value must be exported for both the token-minting dry run and its paid execution because scope admission fingerprints the interpreter and its pytest module. The environment lives outside `$ROOT` so a paid launcher's frozen source snapshot and checksum ledger are unaffected.
+
 Claude preparation validates the shared methodology lock without requiring the Codex integration manifest; Codex and `smoke` retain the full methodology-plus-Codex-manifest cross-check. The Codex smoke preflight now uses the unified `--tasks FN-02` selector and no longer passes removed legacy flags. Paid/model validation remains pending human authorization, a fresh aggregate scope, credentials, and a new output directory.
 
 #### Codex structural runner
@@ -202,13 +280,13 @@ Run the no-model `--dry-run` first; omit it only for the approved execution comm
 
 Credential handling is explicit, not discover-and-search. The security-approved paid-run contract opens only `CODEX_AUTH_SOURCE`, requires a user-owned nonsymlink regular file with mode `0600`, snapshots it into private run-scoped sequential auth state, and atomically propagates the current state into each disposable mode-`0700` Codex home. The source is immutable and drift-checked before each cell; a valid refresh from one cell seeds the next. Cleanup is verified for the run state and every home. Known authentication failures stop immediately; an unknown equivalent zero-token infrastructure failure stops after three matching occurrences, while semantic/model failures remain recorded and continue. Credential bytes, the source path, and standard auth/token/cookie fields are redacted from telemetry and run metadata. Do not run another Codex session concurrently: server-side refresh rotation can invalidate the benchmark state, and the source may require reauthentication after the run. Approval, auth-source, and run-directory controls are removed from measured Codex arm environments.
 
-At paid launch, the runner freezes a run-scoped source bundle containing the benchmark runner, manifests, suites, and plugin sources; later workspace edits cannot affect that run. Only the sample repository and its frozen index remain external inputs. The target is pinned to PyTorch Lightning tag `2.6.5`; the hardcoded ground truth and active manifest reject every other tree. The managed temporary clone is reset to that tag before each mode. `REPO=/path/to/clone` may select an external clone, but the script never resets an override and canonical preflight still requires the locked clean commit and exact frozen-index SHA-256. A missing index is rebuilt and admitted only when normalization of declared environment-specific metadata reproduces the complete locked SHA-256. Every Codex result row records provider, model, effort, task, repetition, arm, telemetry, adherence, Codemap-use, provenance, timing, gross input tokens, cached input tokens, fresh input tokens, output tokens, and limits; `run-metadata.json` is updated after each durable cell. Native Codex input usage is cumulative within a turn, so cached input is a subset of gross input. Gross input is retained for reporting; when `cached_input_tokens <= gross_input_tokens`, fresh input is `gross - cached`; only an inconsistent `cached_input_tokens > gross_input_tokens` row is reported as `?` and token-ineligible.
+At paid launch, the runner freezes a run-scoped source bundle containing the benchmark runner, manifests, suites, and plugin sources; later workspace edits cannot affect that run. Only the sample repository and its frozen index remain external inputs. The target is pinned to PyTorch Lightning tag `2.6.5`; the hardcoded ground truth and active manifest reject every other tree. The managed temporary clone is reset to that tag before each mode. `REPO=/path/to/clone` may select an external clone, but the script never resets an override. Preflight still requires the locked clean commit, and index identity is checked in two tiers: at the managed clone the index must reproduce the locked SHA-256 byte for byte, while off that path — an overridden `REPO`, or the private worktree `--isolated` creates — the graph is verified by its path-independent semantic digest and the skipped byte check is announced rather than dropped. The byte hash covers bytes that embed the managed clone's own absolute path, so it can only reproduce there; the Patch stage has verified its own indexes this way since it was written. A missing index is rebuilt and admitted only when normalization of declared environment-specific metadata reproduces the complete locked SHA-256. Every Codex result row records provider, model, effort, task, repetition, arm, telemetry, adherence, Codemap-use, provenance, timing, gross input tokens, cached input tokens, fresh input tokens, output tokens, and limits; `run-metadata.json` is updated after each durable cell. Native Codex input usage is cumulative within a turn, so cached input is a subset of gross input. Gross input is retained for reporting; when `cached_input_tokens <= gross_input_tokens`, fresh input is `gross - cached`; only an inconsistent `cached_input_tokens > gross_input_tokens` row is reported as `?` and token-ineligible.
 
 ### Codex result artifacts and ordering
 
-The append-only `telemetry.jsonl` is the execution record. Rows retain `execution_index` and the actual randomized arm order so interrupted runs can be audited without rewriting history. The runner rejects existing raw/metadata artifacts for a new run; partial runs are audit-only and are never resumed, pooled, or re-scored as confirmatory evidence. Before setup, paid `run-all.sh` execution copies itself to a mode-`0500` private launcher under the new run directory and re-executes that snapshot. The runner archives the exact launcher bytes, validates the manifest-bound SHA-256 before and after every cell and at completion, and fails the run if those bytes drift. A successful run also emits `telemetry-canonical.jsonl`, an atomically written derived view sorted by locked task position, repetition, and fixed treatment order. Human labels are `A_plain`, `B_direct`, and `C_skill`; machine telemetry and manifest IDs remain `A_plain`, `B_direct_required`, and `C_skill_required`. Terminal summaries and later paired analysis use the canonical view; raw and canonical files are never pooled or silently substituted. `run-metadata.json` records the canonical artifact status and SHA-256 alongside the raw telemetry hash.
+The append-only `telemetry.jsonl` is the execution record. Rows retain `execution_index` and the actual randomized arm order so interrupted runs can be audited without rewriting history. The runner rejects existing raw/metadata artifacts for a new run; partial runs are audit-only and are never resumed, pooled, or re-scored as confirmatory evidence. Before setup, paid `run-all.sh` execution copies itself to a mode-`0500` private launcher under the new run directory and re-executes that snapshot. The runner archives the exact launcher bytes, validates the manifest-bound SHA-256 before and after every cell and at completion, and fails the run if those bytes drift. A successful run also emits `telemetry-canonical.jsonl`, an atomically written derived view sorted by locked task position, repetition, and fixed treatment order. Human labels, machine telemetry, and manifest IDs all use the same canonical arm names: `A_plain`, `B_auto`, and `C_strict`. Terminal summaries and later paired analysis use the canonical view; raw and canonical files are never pooled or silently substituted. `run-metadata.json` records the canonical artifact status and SHA-256 alongside the raw telemetry hash.
 
-The human result line uses fixed columns and compact units (`k` = 1,000; `M` = 1,000,000). Each top-level smoke, Codex paid, or diagnostic paid section emits exactly one shared terminal legend; nested preflight/study sections do not repeat it. Legends use `A_plain`, `B_direct`, and `C_skill` for plain, direct CLI, and installed Skill. The console reports gross input only; cached and fresh remain raw telemetry fields (`fresh = gross - cached` when consistent). `quality` is continuous fitness in `[0, 1]`; `treatment:✓|✗` answers treatment adherence; `codemap-used:✓|✗` answers observed Codemap use. The observed Codex CLI exposes no supported per-cell provider prompt-cache reset/disable, so this runner's six-permutation counterbalancing mitigates order exposure without claiming cache elimination. That balance is specific to `run-codex-structural.py`; the shared policy other lanes use randomizes order deterministically without balancing the permutations, and the agentic lanes are not covered by this paragraph. Machine telemetry and manifest IDs remain `A_plain`, `B_direct_required`, and `C_skill_required`.
+The human result line uses fixed columns and compact units (`k` = 1,000; `M` = 1,000,000). Each top-level smoke, Codex paid, or diagnostic paid section emits exactly one shared terminal legend; nested preflight/study sections do not repeat it. Legends use `A_plain`, `B_auto`, and `C_strict` for plain, optional-use, and required-Skill. The console reports gross input only; cached and fresh remain raw telemetry fields (`fresh = gross - cached` when consistent). `quality` is continuous fitness in `[0, 1]`; `treatment:✓|✗` answers treatment adherence; `codemap-used:✓|✗` answers observed Codemap use. The observed Codex CLI exposes no supported per-cell provider prompt-cache reset/disable, so this runner's six-permutation counterbalancing mitigates order exposure without claiming cache elimination. That balance is specific to `run-codex-structural.py`; the shared policy other lanes use randomizes order deterministically without balancing the permutations, and the agentic lanes are not covered by this paragraph. Machine telemetry and manifest IDs use these same canonical names.
 
 The installed-Skill treatment binds a compact Skill and requires one successful canonical query; an explicit full-Skill file read is optional audit telemetry, not productive-use ceremony. The direct CLI remains intentionally bare, but top-level CLI help and query help expose valid subcommands and explicit count semantics. `undocumented` distinguishes declaration totals from unique symbols; `uncovered` identifies its static-query coverage semantics. These usability fixes are part of the shared product surface and are tested independently from the paid provider study.
 
@@ -252,48 +330,6 @@ python benchmarks/run-claude-agentic.py "$REPO" --run-all --report
 - **Cheaper option**: swap the three bench lines for the tiered strategy (`--tiered`, see [Cost profiles](#cost-profiles)) — full suite on haiku, dev subset on sonnet, only cross-tier disagreements on opus.
 
 - **Results** land in `benchmarks/results/` — `code-<date>.md`, `bench-<model>-<ts>.jsonl`, and agentic JSON (`.md` with `--report`).
-
-## Contents
-
-- [Agentic benchmark](#agentic-benchmark-shared-claudecodex-contract) — shared 16-task A/B/C import-graph navigation for Claude and Codex
-- [Real-codebase benchmark](#real-codebase-benchmark-run-claude-structuralpy) — Claude-only structural navigation on pytorch-lightning
-- [Query benchmark](#query-benchmark-run-codemap-clipy) — provider-neutral scan-query correctness and latency, no LLM
-- [Results](#results)
-
-<details>
-<summary><strong>Files</strong></summary>
-
-| File                                            | Ownership        | Purpose                                                                                                                                                           |
-| ----------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `policy/provider-parity-methodology.json`       | Provider-neutral | Tracked canonical methodology policy seed consumed by the deterministic builders                                                                                  |
-| `manifests/provider-parity-methodology.json`    | Provider-neutral | Ignored, on-demand generated shared task, evaluator, target, index, and analysis identities; frozen into each admitted run                                        |
-| `manifests/codex-integration.json`              | Codex            | Ignored, on-demand generated machine-enforced plain/direct-CLI/Skill execution contract                                                                           |
-| `manifests/codex-integration.md`                | Codex            | Ignored, on-demand generated human-readable manifest review and paid-run instructions                                                                             |
-| `manifests/codex-agentic.json`                  | Codex            | Ignored, on-demand generated machine-readable 16-task agentic A/B/C execution lock, exact-SHA admission, runtime limits, and artifact contract                    |
-| `manifests/codex-agentic.md`                    | Codex            | Ignored, on-demand generated human-readable 16-task agentic scope, treatment, scorer, approval, and launch review                                                 |
-| `build-provider-parity-methodology-manifest.py` | Provider-neutral | Deterministically regenerates or verifies the shared methodology manifest                                                                                         |
-| `build-codex-integration-manifest.py`           | Codex            | Deterministically regenerates or verifies the structural machine and human manifests                                                                              |
-| `build-codex-agentic-manifest.py`               | Codex            | Deterministically regenerates or verifies the shared 16-task agentic machine and human manifests                                                                  |
-| `_bench_common/agentic_contracts.py`            | Provider-neutral | Shared agentic arms, prompt materialization, answer contracts, oracle, parsing, scoring, and paired metrics                                                       |
-| `_bench_common/provider_parity_contracts.py`    | Provider-neutral | Canonical task identity, A/B/C semantics, evaluator dispatch, headline eligibility, and paired effects; not a runner or generator                                 |
-| `run-claude-agentic.py`                         | Claude           | Agentic benchmark measuring how Codemap/semble structural context changes Claude exploration                                                                      |
-| `run-claude-structural.py`                      | Claude           | Repo-agnostic structural benchmark driven by the `tasks-bench.json` repository header                                                                             |
-| `run-all.sh`                                    | Provider-neutral | Sole batch dispatcher: no-model cross-provider smoke, paid Claude batches, or approval-gated Codex structural and agentic studies                                 |
-| `run-codemap-cli.py`                            | Provider-neutral | Query-level correctness, coverage, and latency against a real repository                                                                                          |
-| `run-codex-structural.py`                       | Codex            | Codex structural provider-parity transport for canonical A/B/C cells with isolated plugin homes, native telemetry normalization, and shared structural evaluators |
-| `run-codex-agentic.py`                          | Codex            | 16-task Codex agentic runner with shared Claude-parity scoring, treatment isolation, paid admission, telemetry, and partial-artifact preservation                 |
-| `generate-tasks-bench.py`                       | Provider-neutral | Validates or refreshes shared structural oracle fields; it does not author prompts                                                                                |
-| `generate-tasks-real-issues.py`                 | Provider-neutral | Refreshes shared real-issue evidence                                                                                                                              |
-| `suites/tasks-agentic.json`                     | Provider-neutral | Shared 16 blast-radius navigation tasks (BA-01–BA-16), answer contracts, and difficulty tiers used by both agentic adapters                                       |
-| `suites/tasks-bench.json`                       | Provider-neutral | 60 tasks across 11 series plus the target repository header                                                                                                       |
-| `suites/tasks-code.json`                        | Provider-neutral | 15 code-level tasks used by the scan-query benchmark                                                                                                              |
-| `suites/tasks-patch.json`                       | Provider-neutral | 5 end-to-end patch tasks requiring patch application and tests                                                                                                    |
-| `suites/tasks-readcrop.json`                    | Provider-neutral | 6 symbol-contract extraction tasks scored by keyword recall                                                                                                       |
-| `suites/tasks-fix-single.json`                  | Provider-neutral | 4 single-file fix tasks scored by diff keyword recall                                                                                                             |
-| `suites/tasks-fix-multi.json`                   | Provider-neutral | 3 multicaller fix tasks scored by clean patch application, exact changed-path boundaries, and complete-caller AST behavior oracles                                |
-| `results/`                                      | Provider-neutral | JSON snapshots and Markdown reports from past runs                                                                                                                |
-
-</details>
 
 ## Agentic benchmark (shared Claude/Codex contract)
 
@@ -773,7 +809,7 @@ Patch scope admission fingerprints the absolute pytest launcher selected by the 
 
 Patch progress rows always render the semantic score to three decimals. The leading `✓` or `✗` reports pooling eligibility, while `patch` and `oracle` expose the executable gates; a visible score on an ineligible row never places that row in paired efficiency or quality aggregates.
 
-The current Claude Patch scope has two valid A/C pairs (PT-01/02): equal 2/2 quality with strict C/A `0.852×/0.731×/0.716×/0.667×/0.712×` gross input, fresh input, output, commands, and elapsed time; strict C alone also passes PT-03 and PT-05, while PT-04 fails in every Claude arm. The current Codex Patch scope has three valid A/C pairs (PT-01/02/03): equal 3/3 quality with strict C/A `0.772×/0.872×/0.900×/0.950×/0.912×` gross input, fresh input, output, commands, and elapsed time. Codex PT-04/C and PT-05/C remain independent-oracle failures despite exact successful strict queries. The comparable strata are one repetition, one frozen Lightning family, and different provider/model transports; these results support quality parity and adaptive retrieval, not a universal Patch efficiency claim.
+The current Claude Patch scope has two valid A/C pairs (PT-01/02): equal 2/2 quality with strict C against A at `−14.8%/−26.9%/−28.4%/−33.3%/−28.8%` gross input, fresh input, output, commands, and elapsed time; strict C alone also passes PT-03 and PT-05, while PT-04 fails in every Claude arm. The current Codex Patch scope has three valid A/C pairs (PT-01/02/03): equal 3/3 quality with strict C against A at `−22.8%/−12.8%/−10.0%/−5.0%/−8.8%` gross input, fresh input, output, commands, and elapsed time. Codex PT-04/C and PT-05/C remain independent-oracle failures despite exact successful strict queries. The comparable strata are one repetition, one frozen Lightning family, and different provider/model transports; these results support quality parity and adaptive retrieval, not a universal Patch efficiency claim.
 
 W5 broader generalization is explicitly deferred with zero paid cells. The program maintainer/parent owns reopening it for cross-repository external validity only after committed hash-locked issue/PR snapshots, deterministic generation and ordering, exact source/merge/pre-fix/test evidence, independently scored runtime/oracle contracts, and prospective limits on tasks, repositories, providers, models, repetitions, timeout, paid-cell count, and cost/time. Current terminal evidence therefore remains limited to Lightning exact revisions and named provider/model strata; no universal or cross-repository claim is made.
 
@@ -854,454 +890,467 @@ Omitting `--tasks` runs all 73 locked tasks (219 A/B/C cells); use an explicit f
 | `bench-<model>-<YYYYMMDD-HHMMSS>.jsonl` | Real-codebase benchmark JSONL results |
 | `code-YYYY-MM-DD[-N].md`                | Query benchmark markdown report       |
 
-### Agentic blast-radius run — 2026-08-04 (⚠ unfinished)
+<!-- Related result tables — editing one figure means checking the others that restate the same run.
+  Structural lane:
+    - benchmarks/README.md § Structural results — every model on one cohort (cross-provider, binary, medians)
+    - benchmarks/README.md § Spread behind those medians + § Voluntary Codemap use inside B_auto (same pairs, distributions)
+    - benchmarks/README.md § Claude multi-model — paired accuracy and efficiency (all 55 tasks, with cost)
+    - benchmarks/README.md § Codex results (headline cohort, mean quality, totals estimator, stage strata)
+    - benchmarks/README.md § Codex results — gpt-5.6-sol (second Codex stratum, same estimators)
+    - benchmarks/README.md § Codex results — gpt-5.6-terra (third Codex stratum, same estimators)
+    - plugins/codemap-py/README.md § benchmark snapshot tables (Claude and Codex)
+  Agentic lane:
+    - benchmarks/README.md § Agentic results — every model on one cohort (cross-provider, binary, medians)
+    - benchmarks/README.md § Claude multi-model — median change against A_plain
+    - benchmarks/README.md § Codex agentic results (mean semantic quality)
+    - benchmarks/README.md § Codex agentic re-executions — 2026-09-07 (two further Luna runs, same estimators)
+    - benchmarks/README.md § Codex agentic strata — 2026-09-07 (first terra and sol agentic runs, same estimators)
+  A number changes here only when it is recomputed from an artifact under results/; the artifacts are
+  immutable, so a corrected figure means a new run, never an edited row. -->
 
-`code-2026-08-04.json` / `code-2026-08-04.md` — killed by user at 62/144 cells (BA-01..BA-07 of 16 tasks; BA-08..BA-16 never ran). Single repetition (n=1), target `pytorch-lightning` 2.6.5. Numbers below describe what ran, not a confirmatory result.
+Every published measurement lives in this section, split into the two lanes that never share a cohort: structural tasks answered from the frozen index, and agentic blast-radius tasks. Each lane opens with the one table that puts every model on a single cohort, metric, and estimator, and is followed by the per-provider views that keep their own canonical scoring. Superseded, partial, and infrastructure-only runs are retained at the end of their lane rather than deleted, because they are the evidence behind harness fixes.
 
-Rows below use the canonical arm name with the retired one in parentheses: `C_strict` was called `C_required` when this run was frozen, and `benchmarks/results/code-2026-08-04.json` still records the old string — search that artifact for `C_required`, not `C_strict`. The [agentic measurement caveats](#agentic-measurement-caveats) apply to this table: the arms ran in fixed A→B→C order against a warm provider cache, and the `erec`/`rrec`/`aqs` columns carry the substring-credit and unweighted-mean inflation described there.
+Every table below is measured on the corrected task suite against `pytorch-lightning` 2.6.5 at `be98784a1` with frozen index `3c584089…` (scan_version 13), one repetition per cell. Claude sources: `results/bench-haiku-20260906-090705.jsonl`, `results/bench-sonnet-20260906-091410.jsonl`, and `results/bench-opus-20260906-091619.jsonl` (structural, 55 tasks × 3 arms × 3 tiers = 495 cells), plus `results/code-2026-09-06.json` with the re-rendered `results/code-2026-09-06-rerender.md` (agentic, 16 tasks × 3 arms × 3 tiers = 144 cells). Codex sources: `results/codex-combined-20260906T085207Z/structural` (219 cells) and `.../agentic` (48 cells) for `gpt-5.6-luna`, `results/codex-combined-20260906T221515Z/structural/gpt-5.6-sol` (219 cells over 73 tasks in five stages) for `gpt-5.6-sol`, and `results/codex-combined-20260907T055156Z/structural` (219 cells over the same 73 tasks) for `gpt-5.6-terra`, all on Codex CLI 0.153.4. The `gpt-5.6-sol` and `gpt-5.6-terra` structural runs carry no agentic stage of their own. Four further Codex agentic executions are published, all 48 cells and all on Codex CLI 0.153.4: `results/codex-agentic-20260907T065010Z` and `results/codex-combined-20260907T055156Z/agentic` for `gpt-5.6-luna` — the first launched `--agentic --isolated` against a relocated copy of the locked index, the second against the locked index every other table uses — then `results/codex-agentic-20260907T140422Z` for `gpt-5.6-terra` and `results/codex-agentic-20260907T141122Z` for `gpt-5.6-sol`, the latter also isolated with a relocated index. The interrupted `results/codex-agentic-20260907T140408Z` holds zero cells and is not a source for anything here.
 
-<!-- result-sync: ../plugins/codemap-py/README.md#claude-agentic-2026-08-04 is an anchor stub only — the plugin README intentionally no longer duplicates run-specific tables (§Benchmark Isolation). This table is canonical; do not re-add values there. -->
+Only the 18 cells whose task definition changed were re-executed. The runner's resume key is `(task_id, arm, model, repo_sha, index_sha, task_hash)`, and 53 of the 55 task hashes were untouched by the CQ-03 and GR-04 corrections, so 477 cells were reused from the earlier same-day execution and carry `resumed: true` in the artifacts. Repository, index fingerprint, arm contracts, and evaluator source are identical across reused and fresh rows; re-executing the unchanged 477 would have cost $99 and could not have changed their inputs.
 
-| Model  | Arm                       |   n |     in tok |  out tok |    cost $ | elapsed s |     erec |     rrec |      aqs |  correct |
-| ------ | ------------------------- | --: | ---------: | -------: | --------: | --------: | -------: | -------: | -------: | -------: |
-| haiku  | A_plain                   |   7 |     674.6k |     9.8k |     0.171 |     136.0 |     0.70 |     0.69 |     0.27 | **0.00** |
-| haiku  | B_auto                    |   7 | **281.3k** | **3.6k** | **0.091** |  **48.0** | **0.86** | **0.86** | **0.35** | **0.00** |
-| haiku  | C_strict (was C_required) |   7 |     362.1k |     4.2k |     0.097 |      57.2 |     0.85 |     0.85 |     0.30 | **0.00** |
-| sonnet | A_plain                   |   7 |     722.4k |    17.8k |     0.636 |     179.3 |     0.97 |     0.97 |     0.51 |     0.00 |
-| sonnet | B_auto                    |   7 | **251.6k** | **4.3k** | **0.310** |  **57.3** | **1.00** | **1.00** | **0.58** | **0.14** |
-| sonnet | C_strict (was C_required) |   7 |     370.0k |     4.9k |     0.311 |      60.1 |     0.97 |     0.97 |     0.57 | **0.14** |
-| opus   | A_plain                   |   7 |     238.3k |     9.2k |     0.497 |     116.8 |     0.57 |     0.57 |     0.32 |     0.00 |
-| opus   | B_auto                    |   7 |     299.6k |     6.2k |     0.529 |      88.0 | **1.00** | **1.00** | **0.61** |     0.00 |
-| opus   | C_strict (was C_required) |   6 | **173.6k** | **2.9k** | **0.344** |  **54.9** |     0.83 |     0.83 |     0.49 | **0.17** |
+Earlier result tables were removed rather than carried forward; what survives of those runs is kept in the superseded-runs block at the end of each lane.
 
-Bold = best value per model per column (lower is better for tok/cost/elapsed s, higher for erec/rrec/aqs/correct); ties bolded on both rows. `erec`/`rrec` = exposure/report recall of expected reverse-dependencies; `aqs` = mean `answer_quality_score`; `correct` = exact-match `answer_correct` fraction. Opus `C_strict` n=6 — one cell excluded (`answer_error`).
+### Structural results
 
-**No single arm wins everywhere.** `B_auto` sweeps every metric on haiku and sonnet — cheapest and best recall, meaning the skill genuinely substitutes for manual exploration on those two models. Opus splits: `C_strict` wins cost/tokens/elapsed/correct, `B_auto` wins recall/quality — opus under `B_auto` pays extra to explore on top of the skill without recovering any recall `C_strict` didn't already have, making `C_strict` the stronger opus arm on this partial data. Opus `A_plain` erec (0.57) is partly a markdown-fence parse artifact (fixed this session, not yet applied to this snapshot — see `rescore-claude-agentic.py`) but not entirely: 2 of 3 failing cells have genuinely malformed answer shapes even after unfencing. Full breakdown, per-cell `answer_error` list, and caveats: `code-2026-08-04.md`.
+Structural tasks are answered from the frozen index without editing the repository. The aggregated table comes first; the per-provider views below it differ in cohort, metric, or estimator and say so where they do.
 
-### Codex integration study (A/B/C)
+#### Structural results — every model on one cohort — 2026-09-06
 
-The complete Codex run used the same 55 non-RI task objects, prompts, provider-neutral evaluators, target tree, and ground truth as the Claude structural benchmark. It ran one Claude-parity iteration over `A_plain`, `B_direct`, and `C_skill`: 165 cells, with 45 preregistered headline task blocks and 10 diagnostics reported separately.
+Every model stratum measured ran the same 55-task suite against the same frozen repository revision and index, so they belong in one table. The provider sections below each report their own canonical numbers, which differ from these because each provider's tooling reports a different cohort, metric, and estimator. This table removes all three differences: it is restricted to the 45-task headline cohort both providers share, counts a cell as correct or not rather than scoring it continuously, and takes per-task medians of treatment ÷ control. Every row is a within-model paired comparison over tasks where both of its arms produced a scored, parsed answer.
 
-| Field              | Locked value                                                                                                                                                                                                                                          |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Artifact           | `benchmarks/results/codex-integration-20260803T211755Z` (local, ignored run output)                                                                                                                                                                   |
-| Target             | `pytorch-lightning` 2.6.5, commit `be98784a1a03581b7051a355ae1084fd352d7cea`                                                                                                                                                                          |
-| Software           | codemap-py 0.28.2, codex-rig 0.4.1, Codex CLI 0.146.0                                                                                                                                                                                                 |
-| Model              | `gpt-5.6-luna`, high effort                                                                                                                                                                                                                           |
-| Design             | 55 tasks × 1 repetition × 3 treatments = 165 cells; 45 headline blocks + 10 diagnostics                                                                                                                                                               |
-| Manifest           | `568caefa6cdd1e876e2f35a5e2476d5e661d9672894191c930017f14a29305e4`                                                                                                                                                                                    |
-| Artifact checksums | Raw telemetry `44f0f734bda0f422605041d245442fdbe70115eb575bac976d005d276b381405`; canonical telemetry `0d5d06f730e8a39322781d27a9f82bf58b2e239c25d6bbf2b174a77e0f7e56f5`; metadata `b075e2c05313cfa4f3d186c829e2e5187f64de4092d0343c0362aed53e989831` |
+Admission also requires `treatment_adherence is True` on both cells of a pair, matching `result_eligibility` in `_bench_common/provider_parity_contracts.py`, so this table measures the arm as *delivered* rather than as assigned. That clause excludes five `C_strict` cells which answered the required-use prompt without ever calling Codemap (`compliance: false`, zero queries): Haiku `DG-05`, Haiku `FT-04`, Sonnet `BR-09`, one Luna cell, and Terra `FT-01`. An earlier revision of this table omitted the clause and published Haiku `C_strict` at 41 pairs (30/41 against 36/41, −73% tokens), Sonnet `C_strict` at 43 (36/43 against 40/43, −54%), and Luna `C_strict` at 44 (38/44 against 42/44, −30%); the eight other rows were unaffected, and on Sol the clause is a no-op. The three Claude cells scored correct in both arms, so they move the denominator and both numerators together; the Luna cell (`RV-01`) is incorrect in both arms, so dropping it lifts both of that row's accuracies from 86.4%/95.5% to 88.4%/97.7%. Terra `FT-01` is correct in both arms and read 1.20× its control, so dropping it moves that row from 41 pairs (36/41 against 38/41, −41% tokens) to 40. No row's gain changed sign.
 
-All 165 coordinates completed. All 491 listed artifact checksums verify; planned, raw, and canonical coordinate sets match; every arm followed its treatment; contamination, compliance, extraction, incomplete, token-accounting, and infrastructure failures are zero. A made no Codemap call; B and C made successful compact Codemap calls in all 55 cells; C delivered the exact installed Skill in all 55 cells. The run is pooling-eligible only under its historical 0.28.2 manifest; it cannot satisfy the active prospective 0.28.3 contract.
+Two consequences of the clause deserve stating, because neither is self-evident. One of the excluded cells was the distribution's worst outlier — the dropped Sonnet cell read 44.9× its control's input tokens, which is what a `C_strict` cell that ignores Codemap and explores by hand looks like; removing it cuts that row's log-spread from 1.210 to 0.984. And **the efficiency columns move further than the accuracy columns, always in the flattering direction**: Haiku `C_strict` gains seven points of apparent token saving (−73% to −80%) purely from dropping two cells that behaved like their control. That is a selection effect of the admission rule, not a measurement — the rule removes the ratios nearest 1.0 by construction, because a treatment cell that never used the treatment is the cell most likely to match its control.
 
-Headline results use one task block as the paired unit (`n=45`). Ratios are paired geometric means. Intervals use 10,000 paired percentile bootstrap resamples under the manifest-derived deterministic seed; gross input is the locked primary token measure.
+| Treatment arm | Provider | Model  | Paired n | Control accuracy | Treatment accuracy |          Gain | Tokens | Cost | Time |
+| ------------- | -------- | ------ | -------: | ---------------: | -----------------: | ------------: | -----: | ---: | ---: |
+| C_strict      | Claude   | Haiku  |       39 |    71.8% (28/39) |      87.2% (34/39) | +15.4 pp (+6) |   −80% | −75% | −74% |
+| C_strict      | Claude   | Sonnet |       42 |    83.3% (35/42) |      92.9% (39/42) |  +9.5 pp (+4) |   −57% | −52% | −53% |
+| C_strict      | Claude   | Opus   |       43 |    88.4% (38/43) |      97.7% (42/43) |  +9.3 pp (+4) |   −19% | −23% | −31% |
+| C_strict      | Codex    | Luna   |       43 |    88.4% (38/43) |      97.7% (42/43) |  +9.3 pp (+4) |   −29% |    — | −36% |
+| C_strict      | Codex    | Terra  |       40 |    87.5% (35/40) |      92.5% (37/40) |  +5.0 pp (+2) |   −42% |    — | −51% |
+| C_strict      | Codex    | Sol    |       45 |    93.3% (42/45) |      93.3% (42/45) |   0.0 pp (+0) |   −51% |    — | −49% |
+| B_auto        | Claude   | Haiku  |       42 |    73.8% (31/42) |      85.7% (36/42) | +11.9 pp (+5) |   −49% | −58% | −56% |
+| B_auto        | Claude   | Sonnet |       42 |    83.3% (35/42) |      97.6% (41/42) | +14.3 pp (+6) |   −59% | −44% | −50% |
+| B_auto        | Claude   | Opus   |       44 |    88.6% (39/44) |      95.5% (42/44) |  +6.8 pp (+3) |   −30% | −28% | −31% |
+| B_auto        | Codex    | Luna   |       44 |    86.4% (38/44) |      93.2% (41/44) |  +6.8 pp (+3) |   −33% |    — | −27% |
+| B_auto        | Codex    | Terra  |       41 |    87.8% (36/41) |      95.1% (39/41) |  +7.3 pp (+3) |    −5% |    — | −20% |
+| B_auto        | Codex    | Sol    |       44 |    93.2% (41/44) |      97.7% (43/44) |  +4.5 pp (+2) |    +1% |    — | −13% |
 
-<!-- result-sync: summarized in ../plugins/codemap-py/README.md#codex-structural-2026-08-03; update both files or record an explicit divergence note. -->
+The three Codex strata are three separate studies, not a Codex average: `gpt-5.6-luna` ran on 2026-09-06, `gpt-5.6-sol` and `gpt-5.6-terra` on 2026-09-07, each once. Terra is the stratum whose first launch was refused on a paid-approval token; it was relaunched on 2026-09-07 and completed all 219 cells, so the sentence that once stood here — that terra had never run a paid cell — no longer holds.
 
-| Arm        |   Correct | Mean quality | Mean gross input | Mean output | Mean elapsed |
-| ---------- | --------: | -----------: | ---------------: | ----------: | -----------: |
-| `A_plain`  |     34/45 |       0.8626 |           200.6k |       3,484 |       75.2 s |
-| `B_direct` | **42/45** |   **0.9673** |           103.6k |       2,094 |       47.9 s |
-| `C_skill`  |     40/45 |       0.9525 |        **74.0k** |   **1,420** |   **33.2 s** |
+The six `C` rows are directly comparable: every one requires the installed Codemap Skill, and the three Codex rows carry byte-identical `A_plain` and `C_strict` arm contracts (`arm_contract_hash` `936a684f…` and `83db65ba…`). Five of the six improve accuracy while reading less. `Sol` `C_strict` is the exception and the reason that sentence is not universal: it answers exactly the same 42 of 45 cells as its own control for 51% fewer gross input tokens, so on that stratum the required arm buys cost and not accuracy. It converts DI-01 and loses FT-01; on a 45-task cohort at one repetition per cell, a net of zero is a tie, not a demonstrated absence of effect. (DI-03 was previously named here as a third flip and a loss. It is neither: it is scored incorrect in both arms, and its continuous score rises from 0.490 to 0.900 — the largest quality gain `C_strict` makes on this stratum.) Terra converts DI-01 and DI-02 and loses nothing, which is the cleanest `C` row in the table: every task it changed, it changed upward.
 
-Bold = best comparable arm value per column (higher is better for correct and quality; lower is better for input, output, and elapsed time).
+The `B` rows are not comparable across providers, and grouping them together under one label is a presentation convenience rather than a claim — Claude's `B_auto` makes Codemap *optional* and measures whether a model reaches for it unprompted, while the frozen 2026-09-06 Codex Luna run's `B_auto` arm ran under a prompt that *required* a Codemap query, measuring whether the Skill packaging costs anything against raw command use instead. Reading a Claude `B` row against the Luna `B` row compares two different questions. The Luna `B` row is likewise not comparable to the other two Codex `B` rows, for exactly the reason this file predicted before the second run existed: the contract was changed to optional-use after Luna, and `Sol` and `Terra` are the Codex studies executed under it (`arm_contract_hash` `9b66c2da…` for Luna against `ae5f9a51…` for both of the others). Only the `Sol` and `Terra` `B` rows answer the same question as a Claude `B` row; the Luna `B` row must never be blended with them or read as their baseline.
 
-<!-- result-sync: summarized in ../plugins/codemap-py/README.md#codex-structural-2026-08-03; update both files or record an explicit divergence note. These pairwise rows use different baselines and are not cross-row comparable; retain values unbolded. -->
+Cost is empty for Codex because that runner captures no per-cell price; the Claude figures are each run's recorded `total_cost_usd`. Transports, harnesses, and prompt caching also differ by provider, so cross-provider gaps of a few points carry far less weight than the direction each row shows on its own.
 
-| Comparison |        Quality delta, 95% CI | Gross-input ratio, 95% CI |   Output ratio, 95% CI |  Elapsed ratio, 95% CI |
-| ---------- | ---------------------------: | ------------------------: | ---------------------: | ---------------------: |
-| B/A        | +0.1047 `[+0.0390, +0.1720]` |    0.735 `[0.580, 0.919]` | 0.775 `[0.596, 0.996]` | 0.800 `[0.644, 0.979]` |
-| C/A        | +0.0900 `[+0.0204, +0.1605]` |    0.542 `[0.426, 0.681]` | 0.520 `[0.408, 0.663]` | 0.558 `[0.452, 0.685]` |
-| C/B        | -0.0147 `[-0.0522, +0.0169]` |    0.738 `[0.644, 0.847]` | 0.672 `[0.602, 0.753]` | 0.698 `[0.636, 0.770]` |
+The Tokens column is gross input, cached reads included, on every row. That distinction is load-bearing on the `Sol` rows, where roughly 91% of gross input is cached: the whole-run gross totals are 19,460,972 / 10,357,890 / 5,646,505 for `A_plain` / `B_auto` / `C_strict` against fresh totals of 1,812,844 / 1,502,978 / 1,046,441, so the 71% gross reduction from `A_plain` to `C_strict` is a 42% fresh reduction. On the 45-task cohort in the table the median per-task ratio is −51% gross but −36% fresh, and on the analysis's stricter three-arm cohort the median paired delta is −51,666 gross tokens against −4,186 fresh. Any dollar claim must be stated on fresh tokens or must say that it is not.
 
-**Historical judgment.** Under the completed 0.28.2 study contract, C met its then-locked product acceptance policy versus A: gross-input CI upper `<1.00`, quality mean `>=0`, quality CI lower `>-0.02` and also `>0`, with no repeated task-family block below `-0.10`. The installed Skill produced higher structural-answer quality with lower gross input, output, and elapsed time than plain Codex in that run. B also improved over A. C was materially more efficient than B, but the locked C-B quality interval did not establish Skill quality superiority or strict non-inferiority. These findings remain immutable historical evidence; acceptance under the prospective 0.28.3 contract requires the pending fresh 165-cell run.
+##### Spread behind those medians
 
-**Limits.** This is one `gpt-5.6-luna` run per task on one frozen repository. Task-block intervals measure variation across tasks, not rerun stochasticity. Provider cache could not be reset; index-build cost, cross-model/repository generalization, and end-to-end patch/test quality are outside scope.
+A single median cannot say whether an arm saves reliably or saves on average because a few tasks saved enormously. This table reports the distribution of the same per-task input-token ratios that produce the Tokens column above, over the same pairs.
 
-**Diagnostics.** The 10 manifest-designated diagnostic tasks remain separate. Across all B/C execution cells, 44 successful queries did not exactly match the locked expected tuple; this is not a treatment or pooling failure, and 38/44 mismatch cells were binary-correct. The label currently mixes harmless exact-shape deviations with genuine routing gaps. Future reporting should call it exact locked-query conformance, split endpoint/target/option fitness, teach the Skill production `rdeps ... --exclude-tests` and feature-extension routing, and reconcile provider-neutral locks. The FT evaluator also rejects exact ground-truth entry points followed by the terminal period shown in its own prompt. A punctuation-tolerant post-hoc sensitivity changes mean quality A/B/C to `0.8848/0.9784/0.9859`; this supports robustness but does not replace the frozen score or telemetry.
+| Arm      | Provider | Model  | Paired n | Median | Geo mean |     p10–p90 |      Min–max | sd(log) | Cheaper in |
+| -------- | -------- | ------ | -------: | -----: | -------: | ----------: | -----------: | ------: | ---------: |
+| C_strict | Claude   | Haiku  |       39 | 0.204× |   0.215× | 0.031–1.384 |  0.010–2.296 |   1.461 |      32/39 |
+| C_strict | Claude   | Sonnet |       42 | 0.431× |   0.398× | 0.112–1.184 |  0.046–2.559 |   0.984 |      32/42 |
+| C_strict | Claude   | Opus   |       43 | 0.806× |   0.697× | 0.304–1.282 |  0.118–1.677 |   0.606 |      26/43 |
+| C_strict | Codex    | Luna   |       43 | 0.711× |   0.566× | 0.176–1.505 |  0.033–2.112 |   0.962 |      29/43 |
+| C_strict | Codex    | Terra  |       40 | 0.581× |   0.565× | 0.308–1.125 |  0.101–2.405 |   0.618 |      33/40 |
+| C_strict | Codex    | Sol    |       45 | 0.486× |   0.496× | 0.258–1.066 |  0.054–1.174 |   0.596 |      39/45 |
+| B_auto   | Claude   | Haiku  |       42 | 0.508× |   0.286× | 0.033–1.175 |  0.010–5.148 |   1.462 |      35/42 |
+| B_auto   | Claude   | Sonnet |       42 | 0.412× |   0.407× | 0.104–1.183 | 0.047–14.359 |   1.143 |      31/42 |
+| B_auto   | Claude   | Opus   |       44 | 0.700× |   0.697× | 0.322–1.256 |  0.121–1.610 |   0.603 |      27/44 |
+| B_auto   | Codex    | Luna   |       44 | 0.667× |   0.578× | 0.187–1.292 |  0.097–2.860 |   0.749 |      34/44 |
+| B_auto   | Codex    | Terra  |       41 | 0.947× |   0.888× | 0.434–1.439 |  0.218–2.160 |   0.482 |      23/41 |
+| B_auto   | Codex    | Sol    |       44 | 1.014× |   0.991× | 0.535–1.951 |  0.205–2.740 |   0.555 |      19/44 |
 
-#### Prospective codemap-py 0.28.3 execution
+- **Median**: middle per-task ratio of treatment ÷ control [below 1.0× = treatment spent less; this is the Tokens column above, restated as a ratio]
+- **Geo mean**: geometric mean of the same ratios [the average appropriate to ratios]
+- **p10–p90**: interior 80% of tasks, 10th to 90th percentile of the ratio [narrow = consistent]
+- **Min–max**: full observed range, including the single most extreme task in each direction
+- **sd(log)**: standard deviation of the log ratio [scale-free spread; a plain standard deviation would be dominated by the largest task]
+- **Cheaper in**: tasks where the treatment arm spent less, out of the paired total
 
-The fresh 0.28.3 run at `benchmarks/results/codex-integration-20260804T092013Z` completed all 165 cells under machine manifest `3a69c31a82db95526d8b3e7ab3edf3c9b3a49dd917683413dc43154ddd6f42f8`, and all 491 listed checksums verify. It does not replace the clean historical result or satisfy prospective acceptance: `RV-02/A_plain` failed extraction and `DG-02/B_direct` missed required treatment adherence, so run metadata correctly declares the canonical artifact pooling-ineligible for `extraction_failed` and `required_use_missing`. The four extraction failures across all 55 blocks are `RV-02/A_plain`, `RV-05/B_direct`, `CQ-03/A_plain`, and `CQ-04/C_skill`; only `RV-02` is headline-eligible.
+Three things follow that the headline table cannot show. **The median understates the typical proportional saving wherever spread is large** — Haiku `B_auto` reads −49% at the median but 0.286× as a geometric mean, because six of its 42 cells never called Codemap at all and sit at parity, dragging a mixture median away from either mode. **At least a tenth of tasks cost the treatment arm more in every one of the twelve token rows** — every p90 exceeds 1.0×, so "reads less" is a distributional claim, never a per-task guarantee. And **the arms are not equally reliable at equal medians**: Sonnet `C_strict` and Sol `C_strict` sit at 0.431× and 0.486× with sd(log) 0.984 against 0.596, so the same headline saving is delivered far more evenly on one stratum than the other.
 
-Removing the two invalid headline triplets leaves a common descriptive cohort of 43 tasks. This is a sensitivity view, not confirmatory inference. Mean quality A/B/C is `0.8907/0.9850/0.9759`; binary correctness is `35/43`, `41/43`, and `41/43`; arithmetic mean gross input is `179.7k/135.2k/71.0k` tokens; arithmetic mean elapsed time is `81.9/60.5/37.9` seconds.
+The paired differences behind those ratios are heavy-tailed, and naming the tail is what makes it auditable. Every stratum's largest single saving is one task: `FN-01` on Haiku (3,956,490 gross input tokens unaided against 41,449 with `C_strict`) and `GR-03` on Sonnet, Luna, and Sol (for Sol, 645,074 against 35,010). Its largest loss is always a blast-radius task — `BR-08`, `CQ-01`, `BR-09`, `BR-01` depending on the stratum. Mean paired deltas are therefore much larger than medians: Haiku `C_strict` saves 659,533 input tokens on average but 229,590 at the median, with a standard deviation of 949,042 across tasks.
 
-Gross-input ratios below are computed per task before aggregation. Geometric mean summarizes multiplicative efficiency; p10–p90 and observed min–max describe task heterogeneity, not confidence intervals or rerun variance.
+Wall-clock ratios behave the same way and are reported in the per-provider sections rather than repeated here. Every percentile is an order statistic over 41–45 single observations at one repetition per cell: it describes the observed spread across tasks, not uncertainty about the median.
 
-| Comparison | Geometric mean |   Median |        p10–p90 | Observed min–max | Lower-token tasks | Tasks at least 1.5× comparison baseline |
-| ---------- | -------------: | -------: | -------------: | ---------------: | ----------------: | --------------------------------------: |
-| B/A        |       `0.729×` | `0.815×` | `0.259–1.801×` |   `0.107–2.667×` |     26/43 (60.5%) |                            8/43 (18.6%) |
-| C/A        |       `0.493×` | `0.476×` | `0.252–1.194×` |   `0.053–1.317×` |     35/43 (81.4%) |                             0/43 (0.0%) |
-| C/B        |       `0.676×` | `0.727×` | `0.365–1.260×` |   `0.108–1.912×` |     35/43 (81.4%) |                             2/43 (4.7%) |
+##### Voluntary Codemap use inside `B_auto`
 
-The distribution matters: direct CLI has a substantial upper tail despite its aggregate saving, while the Skill never exceeds 1.5× plain input in the valid headline cohort. The worst B/A case is `BR-01` at `2.667×`; the worst C/A case is `DG-06` at `1.317×`. C can still cost more than B on individual tasks—the worst C/B case is `RV-03` at `1.912×`—so the result supports greater consistency, not a guarantee for every task. Raw telemetry SHA-256 is `def09bc4ee55957752da3e58a52fc309e1c58899e9b75f98a17f0db7b7ba55b8`; canonical telemetry is `575371ba0b4988356bfb16ee02e4222ab974fb0b9cad54235402c943621791ea`; metadata is `88d4ae24a109eba08d3b68acc49854a8cfe7b2819ebcdcde7cd5a82d6803e930`.
+`B_auto` makes Codemap available without requiring it, so each `B_auto` row mixes cells that used the tool with cells that did not, and the mix differs sharply by model.
 
-#### Unified Structural checkpoint — 2026-08-11
+| Provider | Model  | Used Codemap | Median ratio, used | Median ratio, unused |
+| -------- | ------ | -----------: | -----------------: | -------------------: |
+| Claude   | Haiku  |        36/42 |             0.340× |               0.989× |
+| Claude   | Sonnet |        39/42 |             0.362× |               1.142× |
+| Claude   | Opus   |        44/44 |             0.700× |                    — |
+| Codex    | Luna   |        44/44 |             0.667× |                    — |
+| Codex    | Terra  |        34/41 |             0.942× |               0.947× |
+| Codex    | Sol    |        26/44 |             0.974× |               1.016× |
 
-The `benchmarks/results/codex-unified-88c93a32f471/structural` child completed all 165 Structural cells with checksum-valid telemetry, 165/165 successful transports, 165/165 scoreable answers, full treatment adherence, A Codemap use 0/55, and B/C Codemap use 55/55. The parent then stopped before the first ReadCrop model call because benchmark runner and manifest bytes changed while the three-hour Structural stage was active; the recomputed ReadCrop child scope no longer matched the admitted aggregate scope. This is a correct immutable-coordinate rejection, not a model, Codemap, task-selection, or progress-counter failure. The completed Structural child is preserved as descriptive evidence; the failed parent cannot be resumed or represented as a complete 68-task artifact, and the 13 remaining `RC,FS,FM` tasks require a fresh approval and result directory.
+On Haiku and Sonnet the two groups separate cleanly: cells that queried Codemap saved 66% and 64% at the median, cells that did not are indistinguishable from their control, and the published `B_auto` median describes neither group. Opus and Luna have no unused group to compare — Opus reached for the tool on all 44 admitted cells, and Luna's frozen `B_auto` contract required a query, so its 44/44 is contractual rather than behavioural. Sol and Terra are the informative negatives, and they agree: both are optional-use like Claude's, uptake was 26 of 44 and 34 of 41, and in both the two groups are indistinguishable (0.974× against 1.016× on Sol, 0.942× against 0.947× on Terra), so on the two strata that ran the optional contract, choosing to query bought no token saving. The null now reproduces on a second stratum with much higher uptake, which rules out low uptake as its explanation. In all six strata `A_plain` used Codemap on zero cells, so no control is contaminated.
 
-| Arm       | Clean headline pairs | Evaluator-correct | Mean quality | Mean gross / fresh input | Mean output | Mean elapsed |
-| --------- | -------------------: | ----------------: | -----------: | -----------------------: | ----------: | -----------: |
-| `A_plain` |                   45 |             37/45 |       0.9046 |           203.9k / 31.1k |       3,787 |       89.4 s |
-| `C_skill` |                   45 |             42/45 |   **0.9770** |       **111.1k / 18.7k** |   **1,697** |   **43.8 s** |
+#### Claude multi-model — paired accuracy and efficiency
 
-Across the 45 decision-grade A/C pairs, C increased mean quality by 0.0724, reduced mean gross input 45.5%, fresh input 39.7%, output 55.2%, elapsed time 51.1%, and command calls 64.5%; the preregistered paired geometric-mean gross-input ratio was `0.560×`. C won/tied/lost quality on 12/31/2 tasks. On the common 44 clean B/C pairs, C improved mean quality by 0.0104 and reduced gross input 0.7%, fresh input 5.2%, output 13.8%, and elapsed time 19.6%, supporting the installed Skill over optional direct availability. Benefits concentrated in diff-impact, graph-reasoning, and review tasks. Feature scaffolding regressed from A quality 1.000 to C 0.900 and used 16.7% more gross input plus 38.7% more time; debug-from-trace retained perfect quality but used 41.8% more gross input, 140.9% more output, and 57.8% more time. Exact locked-query conformance was C 33/45 and B 19/45 on headline tasks, with C misses concentrated in DG and FT; treatment adherence remained 100% because exact query shape is a separate diagnostic.
+This is the Claude-only view over all 55 tasks, with cost. For the cross-provider view on the shared 45-task headline cohort, see [Structural results — every model on one cohort](#structural-results--every-model-on-one-cohort--2026-09-06); the numbers there are smaller denominators and differ accordingly.
 
-The artifact remains descriptive rather than formally pooling-eligible because headline `RV-02/B_direct` and diagnostic `CQ-03/A_plain` failed answer extraction. The clean A/C headline comparison does not exclude any task, but this is still one model, repository revision, and repetition with heavy-tailed token usage. This partial current checkpoint is intentionally not synchronized into the plugin README; plugin-facing result claims remain frozen until a complete terminal artifact is accepted.
+Paired accuracy uses only tasks where both arms of that pair produced a scored, parsed answer, so both percentages share one denominator — the count in parentheses is that denominator's numerator, the cells answered correctly. Gain is the treatment minus the control in percentage points, with the cell delta beside it. Token, cost, and time columns are per-task medians of treatment ÷ control restated as change against the control: negative means the Codemap arm needed less.
 
-#### Current ReadCrop and executable-fix checkpoints — 2026-08-11
+| Tier   | Pair                | Paired n | Control accuracy | Treatment accuracy |          Gain | Tokens | Cost | Time |
+| ------ | ------------------- | -------: | ---------------: | -----------------: | ------------: | -----: | ---: | ---: |
+| Haiku  | A_plain vs C_strict |       47 |    74.5% (35/47) |  **87.2%** (41/47) | +12.7 pp (+6) |   −65% | −71% | −54% |
+| Haiku  | A_plain vs B_auto   |       48 |    75.0% (36/48) |  **85.4%** (41/48) | +10.4 pp (+5) |   −48% | −52% | −40% |
+| Sonnet | A_plain vs C_strict |       50 |    84.0% (42/50) |  **92.0%** (46/50) |  +8.0 pp (+4) |   −52% | −40% | −46% |
+| Sonnet | A_plain vs B_auto   |       49 |    83.7% (41/49) |  **95.9%** (47/49) | +12.2 pp (+6) |   −52% | −43% | −48% |
+| Opus   | A_plain vs C_strict |       50 |    88.0% (44/50) |  **96.0%** (48/50) |  +8.0 pp (+4) |   −21% | −11% | −24% |
+| Opus   | A_plain vs B_auto   |       51 |    88.2% (45/51) |  **94.1%** (48/51) |  +5.9 pp (+3) |   −23% | −23% | −25% |
 
-The checksum-valid children `benchmarks/results/codex-unified-6837a40300e9/readcrop` and `benchmarks/results/codex-unified-6837a40300e9/fix-single` completed 18/18 and 12/12 cells, respectively. That parent stopped before Fix-Multi because the installed Codex Rig package changed after aggregate admission. The separately approved `benchmarks/results/codex-unified-a860ca237d82/fix-multi` child then completed 9/9 cells with all 505 checksum entries valid. These are current stage-local descriptive checkpoints, not one resumable or terminal 68-task artifact.
+Bold marks the better arm of each pair. Cost is each run's captured `total_cost_usd`, not a local price table.
 
-| Stage                              |         A/C quality | C/A gross input | C/A fresh input | C/A output | C/A commands | C/A elapsed | Decision                                                                                                                                                   |
-| ---------------------------------- | ------------------: | --------------: | --------------: | ---------: | -----------: | ----------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ReadCrop                           |       `6/6` / `6/6` |        `0.562×` |        `0.917×` |   `0.691×` |     `0.583×` |    `0.703×` | C selects substantially less context at equal source-answer quality.                                                                                       |
-| Fix-Single                         |       `4/4` / `4/4` |        `1.101×` |        `1.575×` |   `1.428×` |     `1.158×` |    `1.240×` | Forced retrieval adds cost without a quality gain when the exact file and symbol are already supplied.                                                     |
-| Fix-Multi (superseded FM-01/FM-03) |                 `—` |             `—` |             `—` |        `—` |          `—` |         `—` | Retained as diagnostic provenance only; FM-02 remains accepted and the revised W3 evidence is reported in the current acceptance section.                  |
-| Fix-Multi (revised W3)             | `varied` / `varied` |        `varied` |        `varied` |   `varied` |     `varied` |    `varied` | P1.3 accepted as a bounded harness/heterogeneous-evidence milestone; valid A/C pairs are reported above and incomplete pairs are excluded from efficiency. |
+Per-arm accuracy over every cell that arm scored, without pairing:
 
-The superseded Fix-Multi totals are deliberately not interpreted: the old FM-03 task required `super().setup` in full-replacement strategy overrides and therefore measured an invalid contract. The accepted FM-02 evidence and revised W3 results are multi-file quality/control evidence, not a suite-wide efficiency claim. Production guidance remains adaptive: skip Codemap when a localized edit has no unresolved structural fact; query the smallest relevant caller, dependency, importer, source-slice, test-impact, or override-candidate surface when scope is uncertain. `C_strict` remains a forced-use treatment and therefore intentionally measures the localized-edit overhead rather than simulating that production skip decision.
+| Tier   |       A_plain |        B_auto |      C_strict |
+| ------ | ------------: | ------------: | ------------: |
+| Haiku  | 75.0% (36/48) | 80.8% (42/52) | 80.4% (41/51) |
+| Sonnet | 82.4% (42/51) | 96.0% (48/50) | 92.2% (47/51) |
+| Opus   | 88.2% (45/51) | 92.3% (48/52) | 96.1% (49/51) |
 
-`B_auto` remains a canary rather than the decision-grade comparison. In ReadCrop it used Codemap on all six tasks but cost `1.736×` A gross input and missed RC-03; in Fix-Single it made no Codemap calls and reproduced plain-like quality/cost. The revised Fix-Multi B rows are retained for treatment/adoption context and are not used to claim adaptive benefit. This pattern supports installed adaptive guidance over mere optional CLI availability; P1 closes without forcing a favorable B outcome.
+These denominators differ by arm, because each arm drops its own extraction failures and contaminated cells, so the columns are not a like-for-like comparison and the differences between them are not the gain. Haiku shows why: `C_strict` reads below `B_auto` here (80.4% against 80.8%) while beating it on every shared denominator in the paired table above. Use this table for what each arm scored on its own, and the paired table for which arm is better.
 
-#### Current Claude Fix-Multi diagnostic — 2026-08-12
+Safety-grade (FN + BR tasks answered with recall ≥ 0.90) separates the arms where accuracy alone saturates: Haiku `A_plain` 10/14 against `B_auto` 13/14 and `C_strict` **14/14**; Sonnet and Opus reach 14/14 in all three arms. The pattern matches the ratio columns — the Codemap arms help most where the unaided model is weakest, and on Opus they converge toward parity on quality while still cutting roughly a quarter of the tokens and time.
 
-`benchmarks/results/claude-fix-multi-f16f4b86418d` is checksum-valid but rejected for P1 acceptance. FM-01 A/B/C all applied patches but scored `quality=0.000` because the implementations omitted the required explicit `should_stop` value in the dry-run log; this is a genuine task failure, not an oracle-only false negative. FM-02 A/B/C all passed the patch and independent oracle at `quality=1.000`, so that task's evidence remains accepted. FM-03 A and C applied exact-path patches but failed the independent oracle, while B timed out after producing an incomplete result; the task itself was invalid because `Strategy.setup` overrides are full replacements and a required `super().setup` call would duplicate stateful setup. The artifact is therefore nonpoolable for FM-01/FM-03 and does not establish a Claude provider or Codemap-engine regression.
+Median wall-clock per structural task: Haiku 1m18s control against 19s `C_strict`; Sonnet 44s against 15s; Opus 32s against 16s.
 
-The revised canonical FM-03 task targets cooperative `Strategy.setup_environment` propagation across six production files, with behavior fingerprints that preserve existing setup semantics. The selected A/B/C reruns on both providers are now complete under fresh scope locks; the old Codex and Claude FM-03 artifacts remain immutable historical diagnostics and are not pooled with the revised task.
+#### Codex results — 2026-09-06
 
-#### Current Fix-Multi W3 acceptance — 2026-08-12
+`results/codex-combined-20260906T085207Z/structural` — `gpt-5.6-luna` at high reasoning effort, Codex CLI 0.153.4, all five stages completed, 219/219 cells persisted. Previous Codex tables were removed rather than carried forward: they were produced under earlier manifests, earlier arm-reporting code, and in one case a run that aborted at 33 of 219 cells when a second study was started against the clone the Claude suite still held. The launcher now takes an exclusive lock on the target clone for the duration of a study, so a second run against the same clone is refused before it spends anything rather than failing partway through on the other run's staged edits.
 
-The revised six-cell scopes completed with valid immutable artifacts: Claude Haiku `benchmarks/results/claude-fix-multi-f2719755cb23`, Claude Sonnet `benchmarks/results/claude-fix-multi-243a7e2174ea`, and Codex Luna `benchmarks/results/codex-unified-91752e388e4e/fix-multi`. Stored row glyphs and quality values remain exactly as emitted. Independent prospective replay corrects only the semantic interpretation of harmless method-docstring changes and the FM-01 decision-log verbosity gate; it does not rewrite telemetry or manufacture favorable rows.
+This is the Codex-only view, scored on mean semantic quality with the runner's own totals estimator. For the same run restated on the metric and estimator the Claude tables use, see [Structural results — every model on one cohort](#structural-results--every-model-on-one-cohort--2026-09-06).
 
-**! The Fix-Multi efficiency ratios in this section are exploratory-only.** The scorer revision that decides which A/C pairs count as valid was written after the outcomes were observed and is not pre-registered in the locked policy JSON. It excludes one Claude-favorable pair (Haiku FM-01) and one incomplete pair (Sonnet FM-01) while retaining pairs that read against Codemap (both Codex rows), so the direction of the post-hoc gate is not one-sided — but a validity rule chosen with the results in view cannot support a confirmatory efficiency claim. The correctness verdicts and the retained failures stand; only the C/A ratios carry this label.
+This frozen run's `B_auto` arm was executed under a prompt that required a Codemap query; the contract has since been changed to optional-use to match Claude's `B_auto`, so a future Codex `B_auto` run answers a different question and its numbers must not be blended with the `B_auto` figures below.
 
-| Provider/model | Task  | Valid A/C semantic result                                 | C/A gross input | C/A output | C/A commands | C/A elapsed | Admission judgment                                       |
-| -------------- | ----- | --------------------------------------------------------- | --------------: | ---------: | -----------: | ----------: | -------------------------------------------------------- |
-| Claude Haiku   | FM-01 | A/B/C fail (`reason`/verbose-gated)                       |               — |          — |            — |           — | Exclude efficiency; retain all three failures.           |
-| Claude Haiku   | FM-03 | A/C pass; B's docstring-only change is semantically valid |        `0.228×` |   `0.682×` |     `0.396×` |    `0.534×` | Bounded Codemap efficiency win on this valid pair.       |
-| Claude Sonnet  | FM-01 | A/B pass prospectively; C fails verbose gate              |               — |          — |            — |           — | Exclude efficiency because the A/C pair is incomplete.   |
-| Claude Sonnet  | FM-03 | A/C pass; B's docstring-only change is semantically valid |       `~0.616×` |  `~0.394×` |    `~0.679×` |   `~0.529×` | Bounded Codemap efficiency win on this valid pair.       |
-| Codex Luna     | FM-01 | A/B/C pass                                                |        `1.189×` |   `1.377×` |     `1.000×` |    `1.283×` | Correctness parity with an efficiency loss for forced C. |
-| Codex Luna     | FM-03 | A/B/C pass                                                |        `1.021×` |   `0.870×` |     `1.429×` |    `0.889×` | Correctness parity with mixed efficiency.                |
+Structural stage, headline cohort (45 tasks; the ten self-consistency and symbol-extraction tasks marked diagnostic in the locked policy are excluded):
 
-The scientific admission rule is to retain valid failures rather than rerun until a favorable outcome appears. `A_plain` versus `C_strict` remains the decision-grade comparison and `B_auto` remains a canary; incomplete A/C pairs are excluded from efficiency ratios but remain visible in the artifact record. The combined evidence supports adaptive production guidance—use Codemap when the edit has unresolved structural scope, and skip it for a fully localized edit—not a claim that Codemap universally improves multi-file edits. The runner now derives the leading progress glyph from pooling eligibility and persists the exact scored Claude diff plus SHA-256 in future executable artifacts; historical artifacts remain immutable and do not require a paid rerun for P1 closure.
+| Model | Pair                | Paired n | Control accuracy | Treatment accuracy |    Gain | Cells correct | Tokens | Output | Time |
+| ----- | ------------------- | -------: | ---------------: | -----------------: | ------: | ------------: | -----: | -----: | ---: |
+| Luna  | A_plain vs C_strict |       43 |            93.0% |          **98.9%** | +6.0 pp |   38 → **42** |   −53% |   −59% | −51% |
+| Luna  | A_plain vs B_auto   |       44 |            91.3% |          **97.4%** | +6.1 pp |   38 → **41** |   −42% |   −50% | −42% |
 
-#### Current Claude Fix-Single full checkpoint — 2026-08-11
+Luna was the only Codex stratum measured when this section was written. `gpt-5.6-sol` and `gpt-5.6-terra` have since been executed and have their own sections below; all three declared Codex strata now carry a completed 219-cell study.
 
-The checksum-valid `benchmarks/results/claude-fix-single-5647f59aeeba` artifact executes the complete four-task Fix-Single suite rather than a favorable selected subset: FS-01 through FS-04 × A/B/C = 12/12 persisted cells. All cells use distinct provider sessions, pass the independent executable oracle and exact changed-path boundary, clean up their disposable checkout, remain uncontaminated and accounting-consistent, and score quality `1.000`. Every C cell launches the installed Skill and completes its frozen exact query. The paid approval `f8bc2b2746115092a8178bdf67167899e68c6cef9705b17ee36524739919da9e` binds the model, source/index, all four task/prompt/oracle hashes, all three arms, runner, treatment artifacts, and 12-cell scope; the snapshotted task suite matches the repository suite SHA-256 `2316927ea63da21f45752e33e3dc884aae0913faff2bf1d5fc5730abd39c446a`, whose task definitions predate this run.
+Codex accuracy is the mean semantic quality score over the paired cells, not a pass count, so the percentage and the correct-cell count move independently: `C_strict` gains 6.0 points of mean quality while converting four more cells outright. Both arms also convert 33 perfect headline cells into 37, over 43 pairs for `C_strict` and 44 for `B_auto`. The `C_strict` row is paired over 43 tasks rather than 44 because the adherence clause described above removes `RV-01`, whose `C_strict` cell never called Codemap; that cell is incorrect in both arms, so dropping it raises both means and narrows the gain from the +7.0 pp this row read before the clause was applied. Token, output, and time here are totals across the cohort — treatment sum ÷ control sum — restated as change against the control, a different estimator from the Claude tables above, which use per-task medians. Totals let a few expensive cells move the figure; medians do not. Both readings are reported rather than reconciled, because each answers a different question: what the whole study cost, and what a typical task cost.
 
-| Scope                     |   A/C quality | C/A gross input | C/A fresh input | C/A output | C/A commands | C/A elapsed |
-| ------------------------- | ------------: | --------------: | --------------: | ---------: | -----------: | ----------: |
-| Four-task totals          | `4/4` / `4/4` |        `0.898×` |        `0.770×` |   `0.947×` |     `0.708×` |    `0.622×` |
-| Equal-task geometric mean | `4/4` / `4/4` |        `0.859×` |        `0.761×` |   `0.931×` |     `0.690×` |    `0.671×` |
+The gap between them is large and almost always in the same direction. Measured on identical cells, the totals estimator reports a bigger saving than the paired per-task median on 32 of the 36 provider/arm/metric combinations, ties on one, and is smaller on three, with the gap reaching 26 percentage points: Luna `C_strict` input tokens read −53% as totals against −29% paired on the same 43 cells, Haiku `B_auto` −75% against −49%, Opus `C_strict` −37% against −19%, Terra `B_auto` elapsed −36% against −20%.
 
-| Task  | A/C quality | C/A gross input | C/A output | C/A commands | C/A elapsed | Interpretation                                                                |
-| ----- | ----------: | --------------: | ---------: | -----------: | ----------: | ----------------------------------------------------------------------------- |
-| FS-01 |   `1.0/1.0` |        `0.687×` |   `0.837×` |     `0.600×` |    `0.275×` | Strict navigation avoids repeated path discovery at equal executable quality. |
-| FS-02 |   `1.0/1.0` |        `0.755×` |   `0.830×` |     `0.636×` |    `0.797×` | Strict navigation wins modestly on every measured efficiency dimension.       |
-| FS-03 |   `1.0/1.0` |        `0.998×` |   `1.007×` |     `0.692×` |    `0.945×` | Token parity: fewer commands do not materially change token consumption.      |
-| FS-04 |   `1.0/1.0` |        `1.051×` |   `1.073×` |     `0.857×` |    `0.981×` | Honest loss: forced Codemap adds 5.1% gross input and 7.3% output.            |
+The mechanism is concentration, not distortion. On Luna `C_strict`, five tasks hold 36.5% of all control input tokens — `GR-03`, `RV-03`, `GR-04`, `GR-01`, `CQ-01` — and four of those five are also among the cheapest ratios in the stratum (0.033× to 0.119×). A sum therefore weights the study toward exactly the cases where Codemap helps most, while a median counts each of them once. It can cut the other way: Luna `B_auto`'s largest control cell is `BR-08` at 1,244,119 tokens, 14.2% of the control total at a losing 1.096×, which is why that row's gap is only 9 pp. The paired geometric mean sits between the two and is the honest bridge — on Haiku `B_auto` the three readings are −75% totals, −71% geometric mean, and −49% median, which shows the median is low because the log-space distribution is strongly right-skewed rather than because the totals are wrong. The cause is the tail named above — a handful of tasks where the unaided arm spends millions of tokens dominate a sum and count once in a median. Where a figure will be read as "what you should expect on your next task", the paired median or geometric mean is the honest one; the totals figure answers "what this study cost in aggregate" and nothing narrower.
 
-This checkpoint's primary success is executable-quality parity; lower token use is secondary and heterogeneous. It is not evidence of universal Codemap savings: FS-04's regression is retained, the prior Claude full diagnostic records C/A `1.077×` gross input and `1.559×` elapsed when one C cell missed its required query, and the current Codex Fix-Single checkpoint records C/A `1.101×` gross input and `1.240×` elapsed. `B_auto` also made no Codemap call in this Claude run and cost `1.043×` A gross input, preserving an unfavorable canary instead of filtering it out. These disclosed counterexamples, the complete pre-existing task scope, immutable input snapshots, and checksums support non-selective reporting; they cannot prove absence of deliberate fabrication by themselves. Remaining limits are one repetition, fixed A→B→C order, provider prefix-cache state, one repository/model, and four localized synthetic tasks spanning only two source files. Production guidance therefore remains adaptive: require Codemap where a structural fact is unresolved, but accept plain-tool parity or skip retrieval when the exact edit location already makes discovery trivial.
+Over all 55 structural tasks including the diagnostic cohort, `C_strict` reads 88.4% → 97.6% across 53 pairs at −61% tokens, and `B_auto` reads 88.6% → 97.0% across 54 pairs at −52% tokens.
 
-#### Combined codemap-py 0.28.7 structural execution — 2026-08-07
+Per-arm mean quality over every headline cell that arm scored, without pairing: `A_plain` 0.915 (39/45 correct), `B_auto` 0.974 (41/44), `C_strict` 0.983 (42/44). As in the Claude tables, these denominators differ by arm and are not a like-for-like comparison.
 
-The frozen `benchmarks/results/codex-combined-20260807T130711Z/structural` execution persisted all 165 cells under machine manifest `0ae79d69d1cabf6b020afa419bffa196b690191ee7a2c1dd2307ae08a8adb7ee`, `gpt-5.6-luna` at high effort, observed Codex CLI 0.146.1, codemap-py 0.28.7, codex-rig 0.4.6, Lightning 2.6.5 commit `be98784`, and schema-13 index `3c5840893e9c939baa61a6c5ce95994ff69ffe4a67d225aeb412c73deb61e0c1`. All 329 listed checksums and the recursive frozen-source checksum ledger verify. The run is descriptive and nonpoolable: 164/165 cells succeeded, `DI-03/C_skill` was contaminated and incomplete, `RV-04/C_skill` exposed an answer-extraction gap, `SE-04/C_skill` omitted the requested source, and diagnostic `CQ-03/A_plain` also failed extraction. The comparable table therefore uses the common 43-task headline cohort after excluding the complete `DI-03` and `RV-04` triplets; it does not hide the full-run failures stated above.
+The four executable and extraction stages are separate, nonpoolable strata:
 
-<!-- result-sync: duplicated/summarized in ../plugins/codemap-py/README.md#codex-structural-2026-08-07; update both files or record an explicit divergence note. -->
+| Model | Stage      | Cells | A_plain correct | B_auto correct | C_strict correct | C tokens | C time |
+| ----- | ---------- | ----: | --------------- | -------------- | ---------------- | -------: | -----: |
+| Luna  | ReadCrop   |    18 | 6/6             | 6/6            | 6/6              |     −37% |   −31% |
+| Luna  | Fix-Single |    12 | 4/4             | 4/4            | 4/4              |     +45% |   +25% |
+| Luna  | Fix-Multi  |     9 | 3/3             | 3/3            | 3/3              |     +29% |   +24% |
+| Luna  | Patch      |    15 | 5/5             | 5/5            | 4/5              |     −51% |   −18% |
 
-| Arm        | Mean quality | Mean gross input | Mean output | Mean elapsed | Required-use compliant | Exact locked query |
-| ---------- | -----------: | ---------------: | ----------: | -----------: | ---------------------: | -----------------: |
-| `A_plain`  |       0.9060 |           199.3k |       3,820 |       86.4 s |                    N/A |                N/A |
-| `B_direct` |       0.9682 |       **103.9k** |       1,962 |       49.4 s |              **43/43** |              14/43 |
-| `C_skill`  |   **0.9875** |           124.5k |   **1,629** |   **43.4 s** |              **43/43** |          **41/43** |
+ReadCrop reproduces the Claude finding: equal correctness, and the strict arm reads less. The two localized-edit stages are the honest counterexample — Fix-Single and Fix-Multi cost 45% and 29% more input than the control for identical correctness, which is why production guidance already says to skip Codemap for a fully localized edit with no unresolved structural fact. The single Patch loss is PT-04/C_strict: the patch applied to the correct file and the regression suite stayed green, but the target test still failed on a different assertion, so the fix was wrong rather than the tooling. One task at n=1 supports no efficiency or quality claim either way.
 
-Bold = best comparable arm value per column (higher is better for quality and conformance; lower is better for token and elapsed measures). Required use and exact-query conformance are fidelity diagnostics, not quality metrics.
+Four structural cells need naming rather than averaging:
 
-| Comparison | Descriptive mean-quality delta | Total gross-input ratio | Per-task input saving: median `[p10, p90]`, observed range | Output ratio | Elapsed ratio |
-| ---------- | -----------------------------: | ----------------------: | ---------------------------------------------------------: | -----------: | ------------: |
-| B/A        |                        +0.0622 |                 0.5215× |                34.8% `[-44.2%, 74.0%]`, `[-446.8%, 90.1%]` |      0.5136× |       0.5717× |
-| C/A        |                        +0.0815 |                 0.6246× |                 35.2% `[-47.6%, 81.1%]`, `[-97.4%, 96.2%]` |      0.4264× |       0.5028× |
+- **BR-08 / C_strict — unscoreable.** The terminal event arrived while a command item was still open (`pending_item`), so the cell is recorded incomplete and excluded from both sides of the pair. Its answer text is present but was never admitted.
+- **RV-01 / C_strict — treatment not credited.** The model resolved `CODEMAP_BIN` itself and ran `codemap-py query --compact undocumented lightning.pytorch.core.module` through the launcher's absolute path, exit 0. The locked contract credits only the unexpanded `$CODEMAP_BIN` form and explicitly declines to infer delivery from a path, so the call counted as zero and the cell is marked non-adherent. That is the contract behaving as specified, not a bug; whether it should stay that way is a live question — see the defects section below.
+- **RV-04 / B_auto and RV-05 / C_strict — correct answers scored as extraction failures.** Both gave the ground-truth number (24 and 11) in a phrasing the count patterns do not match. Both are excluded from every paired figure rather than counted as zeros.
 
-The ranges prevent an aggregate-saving claim from hiding task-level explosions: B used up to 446.8% more input than plain and C up to 97.4% more, while their best tasks saved 90.1% and 96.2%. B used less input on 34/43 common tasks and C on 29/43; each exceeded 1.5× plain input on four tasks. `BR-08/C_skill` is the clearest C outlier at almost twice plain input despite equal quality. Exact locked-query conformance improved to 43/45 across all C headline tasks, including the failed exact-query `DI-03` cell, while B reached only 14/45. Raw telemetry SHA-256 is `142672b860ff1d270b3e1b5e04c66cb25cc6d7741b58df9158d866acabb2bcd6`; canonical telemetry is `fecfdfbc54262215633465a70664d6d866abe08d38536a0e98561e3dc1f2e25c`; metadata is `8381a326add000bf801f4c6c481c600330e8203bb4860c9edb9f9508424083c0`.
+Thirty-six of the 110 treatment cells did not issue the exact locked query (28 `B_auto`, 8 `C_strict`); the failing component was the option set in 26, the target in 16, and the endpoint in 14. Nonconformance did not cost quality — those cells mean 0.971 against 0.954 for the conforming ones — so this is a contract-fidelity measure, not a performance one. Recall that this frozen run's `B_auto` arm required a Codemap query, unlike the optional-use `B_auto` contract now in force.
 
-**Post-run diagnosis.** The repaired C route contract now follows the exact locked headline query on 43/45 tasks and restores `CQ-04`, `CQ-05`, the scoreable DI tasks, and `FT-05`. The remaining structural blockers are narrower. `DI-03/C_skill` ran the exact two compact queries and produced the expected answer, but postflight detected an unexpected worktree change; telemetry records only the generic contamination error rather than the observed path/status, so the isolation defect cannot yet be localized. `RV-04/C_skill` returned the correct count in a natural phrase unsupported by the count extractor, while `SE-04/C_skill` genuinely failed to include the requested source. `FT-01/B_direct` scored `0.500`, B exact-query fidelity remains 14/45, and the `BR-08/C_skill` token explosion shows that strict routing is not a per-task efficiency guarantee. These are P0 benchmark observability/evaluator and focused route-calibration gaps; they do not justify rewriting the immutable artifact or claiming a query-engine defect.
+#### Codex results — `gpt-5.6-sol` — 2026-09-07
+
+`results/codex-combined-20260906T221515Z/structural/gpt-5.6-sol` — `gpt-5.6-sol` at high reasoning effort, Codex CLI 0.153.4, 219 cells over 73 tasks in five stages, one repetition per cell, a 600 s wall-clock cap per cell, against `pytorch-lightning` 2.6.5 at `be98784a1` with frozen index `3c5840893e9c939baa61a6c5ce95994ff69ffe4a67d225aeb412c73deb61e0c1`. Every stage is marked `completed` in its `run-metadata.json` and all 219 cells persisted; the structural stage ran from 2026-09-06T22:20:45Z to 2026-09-07T01:26:08Z. `execution.codex_cli` records `observed_version: codex-cli 0.153.4` against `reviewed_version: codex-cli 0.146.1`, so this executed on a CLI build the methodology had not reviewed, and `auth_source_recorded` is false. Full analysis: `.reports/benchmarks/codex-sol-paid-analysis.md`.
+
+**This run is half of the launch it came from, and remains a one-stratum result.** Its sibling `gpt-5.6-terra` stratum ran no paid cell in that launch: the launcher refused with `ERROR: paid Codex mode requires CODEX_PAID_APPROVAL=…` before the first model call, leaving `structural/gpt-5.6-terra` with a run log and no telemetry. Terra was relaunched separately on 2026-09-07 and completed — [its section follows](#codex-results--gpt-56-terra--2026-09-07) — but it is a different study on a different launch, so nothing in this section may be restated as a two-stratum Codex result.
+
+The binary paired rows on the shared 45-task headline cohort are in [Structural results — every model on one cohort](#structural-results--every-model-on-one-cohort--2026-09-06). On the run's own semantic-quality metric, over the stricter cohort the analysis uses — the 44 tasks where all three arms produced an admissible scored cell — mean quality is `A_plain` 0.9477, `B_auto` 0.9889, `C_strict` 0.9742, and the median is exactly 1.000 in every arm, with 36 of those 44 tasks scoring identically in all three arms. Paired per-task deltas on that cohort: `C_strict` against `A_plain` is +0.0265 mean and 0.0000 median at 6 wins / 36 ties / 2 losses, and `B_auto` against `A_plain` is +0.0412 mean and 0.0000 median at 7 / 36 / 1. Input tokens move where quality does not: `C_strict` is cheaper on 38 of those 44 tasks at a median paired delta of −51,666 gross tokens, while `B_auto` matches its control at +566. The honest reading is that the cost effect is real and large and the quality effect is indistinguishable from zero at this sample size.
+
+Structural quality here is ceiling-bound: with medians of 1.000 in all three arms, this design can detect degradation and cannot detect improvement, so a `0.0 pp` gain is a tie against a saturated control rather than evidence that Codemap does nothing.
+
+Medians alone make the two treatment arms look equally good, and per-task spread is what separates them. Over the same 44 pairs, the per-task input-token ratio against `A_plain` runs 0.254–1.066 between the 10th and 90th percentiles for `C_strict` (full range 0.054–1.174, cheaper on 38 of 44) against 0.535–1.951 for `B_auto` (full range 0.205–2.740, cheaper on 19 of 44). The dispersion itself is nearly the same — the standard deviation of the log ratio is 0.593 for `C_strict` and 0.549 for `B_auto` — so the difference is where the distribution sits, not how wide it is: the required arm's interval lies below parity and the optional arm's straddles it with a heavier losing tail. Wall clock behaves the same way, 0.272–1.029 against 0.439–1.315. On quality the asymmetry reverses: `B_auto`'s worst task loses 0.028 while `C_strict`'s worst loses 0.500, so the one large quality regression in this run belongs to the required arm.
+
+Optional access is not failing for lack of uptake. Twenty-six of those 44 `B_auto` cells issued at least one successful Codemap query, and splitting the token ratio on that boundary barely moves it — 0.974× median when Codemap was queried against 1.016× when it was not. The optional arm queries Codemap *in addition to* ordinary exploration rather than instead of it, which is why availability alone buys nothing.
+
+The four executable and extraction stages are separate, nonpoolable strata, and their token direction is heterogeneous enough that averaging them would invert the finding:
+
+| Model | Stage      | Cells | A_plain correct | B_auto correct | C_strict correct | B tokens | C tokens | B time | C time |
+| ----- | ---------- | ----: | --------------- | -------------- | ---------------- | -------: | -------: | -----: | -----: |
+| Sol   | ReadCrop   |    18 | 5/6             | 5/6            | 5/6              |     +60% |     −34% |   +25% |   −34% |
+| Sol   | Fix-Single |    12 | 4/4             | 4/4            | 4/4              |     +16% |     +15% |    +3% |   +16% |
+| Sol   | Fix-Multi  |     9 | 3/3             | 3/3            | 3/3              |     −15% |     +34% |   −55% |   −41% |
+| Sol   | Patch      |    15 | 5/5             | 5/5            | 4/5              |     −36% |     −67% |   −11% |   −23% |
+
+Token and time columns are cohort totals restated as change against `A_plain`, the same estimator the Luna stage table above uses. Requiring Codemap costs more on localized and multi-file editing — `+15%` on Fix-Single and `+34%` on Fix-Multi — and saves on ReadCrop and Patch, so the four stages must be read one at a time. The Patch saving is carried almost entirely by two cells where `A_plain` spent 536,886 and 1,464,515 gross input tokens against `C_strict`'s 112,210 and 153,314. ReadCrop's 5/6 is RC-03 failing `primary_correct` identically in all three arms, not an arm difference.
+
+`B_auto` abandons the tool wherever code has to be modified. Voluntary uptake is 5 of 6 cells in ReadCrop and 35 of 55 in the structural stage, but **0 of 12 across Fix-Single, Fix-Multi, and Patch** — not one editing cell chose to call Codemap. That is why the editing-stage `B` figures track `A_plain`, and why an optional rollout should not be expected to reproduce the `C_strict` result.
+
+The run's only correctness failure in these four stages is PT-04 under `C_strict`, the Codemap-required arm, where `A_plain` and `B_auto` both passed — at 536,886 and 540,165 gross input tokens against `C_strict`'s 112,210. The strict arm was 4.8× cheaper and wrong. Luna lost the same cell in the same arm; two failures of one task at one repetition each still support no efficiency or quality claim in either direction, but they do cut against reading the strict arm as strictly safer.
+
+What the `C_strict` evidence does and does not establish: `skill_delivery_observed` is `false` in all 219 cells, including every `C_strict` cell whose `codemap_delivery` reads `installed_skill`. The `_arm_compliance` contract sets the delivery prefix by construction and treats `skill_delivery_observed` as the separate observational signal, and it never fired. There is therefore no observational proof that the Skill file was read in any cell; the claim the data supports is that **required Codemap querying** produced the effect, not that the Skill was read. Delivery is also confounded with arm — structural `B_auto` used `direct_cli` in all 35 of its Codemap cells and `C_strict` used `installed_skill` in all 55 — so no `B`-versus-`C` difference can be attributed to strictness alone.
+
+Data-quality notes for this run: one repetition per cell throughout, so no cell has a variance estimate and no significance testing was performed; the agentic-family stages carry 3 to 6 tasks each, where a single task flip moves a pass rate by 17 to 33 points. `A_plain` CQ-05 timed out at 600.12 s with zero tokens and null quality — it is a diagnostic-cohort cell and cannot reach any headline figure. `B_auto` RV-02 is the run's one `extraction_failed` cell and is the reason the `B` comparison pairs 44 tasks where `C` pairs 45. `canonical_telemetry_pooling_eligible` is `false` on the structural stage, which is a whole-file admission flag raised by those two run-level failures; it forbids pooling the canonical file wholesale, not per-cell filtering. Token figures throughout this section are gross input including cached reads — see the fresh-token caveat under the aggregated table.
+
+This run has no agentic blast-radius stage, so `gpt-5.6-sol` has no row in the agentic lane below.
+
+#### Codex results — `gpt-5.6-terra` — 2026-09-07
+
+`results/codex-combined-20260907T055156Z/structural` — `gpt-5.6-terra` at high reasoning effort, Codex CLI 0.153.4, 219 cells over 73 tasks in five stages, one repetition per cell, a 600 s wall-clock cap per cell, against the same `pytorch-lightning` 2.6.5 revision `be98784a1` and the same frozen index `3c584089…` every other table here uses. The structural stage started at 2026-09-07T05:55:12Z; every stage is marked `completed` and all 219 cells persisted. Arm contracts are byte-identical to the `gpt-5.6-sol` run's on all three arms (`936a684f…`, `ae5f9a51…`, `83db65ba…`), so this is the second Codex study executed under the optional-use `B_auto` contract. As on Sol, `execution.codex_cli` records `observed_version: codex-cli 0.153.4` against `reviewed_version: codex-cli 0.146.1` and `auth_source_recorded` is false. Full analysis, together with the two Luna agentic re-executions from the same day: `.reports/benchmarks/codex-terra-agentic-paid-analysis.md`.
+
+This is the stratum whose first launch, on 2026-09-06, was refused on a paid-approval token before any model call. The refusal cost nothing and left no telemetry; this section is the relaunch, and it is a separate study from the `gpt-5.6-sol` one it was originally launched beside.
+
+The binary paired rows on the shared 45-task headline cohort are in [Structural results — every model on one cohort](#structural-results--every-model-on-one-cohort--2026-09-06). On the run's own mean-semantic-quality metric with the runner's totals estimator, over the headline cohort:
+
+| Model | Pair                | Paired n | Control accuracy | Treatment accuracy |    Gain | Cells correct | Tokens | Output | Time |
+| ----- | ------------------- | -------: | ---------------: | -----------------: | ------: | ------------: | -----: | -----: | ---: |
+| Terra | A_plain vs C_strict |       40 |            91.6% |          **97.2%** | +5.6 pp |   35 → **37** |   −55% |   −55% | −59% |
+| Terra | A_plain vs B_auto   |       41 |            91.8% |          **98.4%** | +6.6 pp |   36 → **39** |   −16% |   −40% | −36% |
+
+Over all 55 structural tasks including the diagnostic cohort, `C_strict` reads 92.0% → 96.6% across 42 pairs at −50% tokens and `B_auto` 92.2% → 98.5% across 43 pairs at −12%. Per-arm mean quality over every headline cell that arm scored, without pairing: `A_plain` 0.918 (36/41 correct), `B_auto` 0.986 (43/45), `C_strict` 0.975 (42/45) — different denominators by arm, so not a like-for-like comparison.
+
+**Both treatment arms changed tasks in one direction only.** Neither converts a correct control cell into an incorrect one: `C_strict` gains DI-01 and DI-02, `B_auto` gains DI-01, DI-02, and DI-06, and the sole quality regression anywhere in the cohort is BR-07, which loses 0.056 in both arms. Per-task paired quality deltas are +0.056 mean and 0.000 median for `C_strict` at 10 wins / 29 ties / 1 loss, and +0.066 / 0.000 for `B_auto` at 10 / 30 / 1. As on Sol, the median is 0.000 because the control is already near ceiling; the movement lives in the minority of tasks where it is not.
+
+**The control lost four cells that the treatment arms did not, and the admission rule then credits the control for it.** `A_plain` `CQ-01` ended with a command item still open (`pending_item`, 459,672 tokens), `A_plain` `FT-05` and `A_plain` `DI-05` exited non-zero with zero tokens recorded, and `A_plain` `FT-03` failed answer extraction. One treatment cell is also dropped, `C_strict` `FT-01` for non-adherence. That is why this stratum pairs 40 and 41 tasks where Sol pairs 45 and 44 — and because every one of the dropped control cells is a cell the unaided arm failed to complete, dropping them raises the control's measured accuracy. The gains above are therefore conservative rather than flattered.
+
+Optional access again bought nothing on tokens, and this time uptake cannot be the explanation. Thirty-four of the 41 admitted `B_auto` cells issued a successful query — against 26 of 44 on Sol — and the split is still flat: 0.942× median when Codemap was queried against 0.947× when it was not. `B_auto` is nevertheless the better arm on accuracy here (+7.3 pp against `C_strict`'s +5.0 pp on the shared binary cohort) while spending roughly what its control spent, so on this stratum availability moved answers without moving cost, and requirement moved cost.
+
+Tokens are gross input including cached reads, and terra is cached at about 85%: whole-run gross totals are 7,081,329 / 5,357,713 / 3,161,083 for `A_plain` / `B_auto` / `C_strict` against fresh totals of 1,062,001 / 808,849 / 746,235, so the 55% whole-run gross reduction from `A_plain` to `C_strict` is a 30% fresh reduction. On the headline cohort the median per-task ratio is −42% gross but −26% fresh, and the median paired delta is −29,376 gross tokens against −3,642 fresh. Any dollar claim must be stated on fresh tokens or must say that it is not.
+
+The four executable and extraction stages are separate, nonpoolable strata:
+
+| Model | Stage      | Cells | A_plain correct | B_auto correct | C_strict correct | B tokens | C tokens | B time | C time |
+| ----- | ---------- | ----: | --------------- | -------------- | ---------------- | -------: | -------: | -----: | -----: |
+| Terra | ReadCrop   |    18 | 5/6             | 6/6            | 6/6              |    +101% |     +10% |   +93% |   +26% |
+| Terra | Fix-Single |    12 | 4/4             | 4/4            | 4/4              |     −12% |      +3% |   −19% |    +9% |
+| Terra | Fix-Multi  |     9 | 2/3             | 3/3            | 3/3              |      −5% |      −2% |   −13% |    −7% |
+| Terra | Patch      |    15 | 3/5             | 3/5            | 4/5              |     −20% |      −9% |   −22% |     0% |
+
+Token and time columns are cohort totals restated as change against `A_plain`, the same estimator the Luna and Sol stage tables use. **ReadCrop inverts here**: on Luna and Sol the strict arm read 37% and 34% less on this stage, while on terra it reads 10% more and the optional arm reads 101% more — `B_auto` spent 142,476 tokens on RC-04 against the control's 47,213 without issuing a single Codemap call. The stage's correctness moves the other way: RC-03 is wrong in the control and right in both treatment arms, where on Sol the same task failed identically in all three. Editing stages are close to parity in both directions and support no claim at 3 to 5 tasks each.
+
+`B_auto` again abandons the tool wherever code must be modified: voluntary uptake is 4 of 6 cells in ReadCrop and 48 of 55 in the structural stage, but **0 of 12 across Fix-Single, Fix-Multi, and Patch** — the identical count Sol produced. Two independent strata now show that an optional rollout will not reproduce the `C_strict` behaviour on editing work.
+
+The Patch stage is the one place the strict arm looks better rather than cheaper: PT-05 is solved only by `C_strict`, where `A_plain` and `B_auto` both fail, and PT-04 fails in all three arms. Sol's Patch loss ran the other way — there `C_strict` was the only arm to fail PT-04. Two strata, one repetition each, disagreeing on which arm fails which patch task, is the shape of noise and not of an effect.
+
+Contract fidelity, unchanged in character from the earlier strata: 40 of the 110 treatment cells did not issue the exact locked query (31 `B_auto`, 9 `C_strict`); the failing component was the option set in 26, the target in 17, and the endpoint in 14. Nonconformance did not cost quality — nonconforming cells mean 0.995 against 0.959 for conforming ones. `skill_delivery_observed` is false in all 165 structural cells, including every `C_strict` cell whose `codemap_delivery` reads `installed_skill`, so as on Sol the supported claim is that required Codemap *querying* produced the effect, not that the Skill file was read. Delivery is also confounded with arm — `B_auto` used `direct_cli` in all 48 of its Codemap cells and `C_strict` used `installed_skill` in all 54 of its own.
+
+Data-quality notes: one repetition per cell throughout, so no cell has a variance estimate and no significance testing was performed; the four agentic-family stages carry 3 to 6 tasks each, where a single task flip moves a pass rate by 17 to 33 points. The three incomplete `A_plain` cells and one `A_plain` extraction failure are described above and are all control-side. This run has no agentic blast-radius stage of its own; the agentic cells executed in the same launch ran `gpt-5.6-luna` and are reported in the agentic lane.
 
 <details>
+<summary>Superseded and partial structural runs</summary>
 
-<summary>Historical selected and bounded Codex diagnostics</summary>
-
-The earlier selected Codex runs used the same frozen methodology to locate and repair integration defects. They are descriptive and explicitly non-poolable; they are not mixed with the completed headline result.
-
-| Field              | Locked value                                                                                                                                                                                                                                          |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Artifact           | `benchmarks/results/codex-integration-selected-20260803T091057Z` (local, ignored run output)                                                                                                                                                          |
-| Target             | `pytorch-lightning` 2.6.5, commit `be98784a1a03581b7051a355ae1084fd352d7cea`                                                                                                                                                                          |
-| Software           | Codemap-py `0.28.2`, codex-rig 0.4.1, Codex CLI 0.146.0.                                                                                                                                                                                              |
-| Model              | `gpt-5.6-luna`, high effort                                                                                                                                                                                                                           |
-| Design             | `DI-01`, `GR-01`, and `GR-03` × 3 repetitions × 3 treatments = 27 cells; explicitly selected and non-poolable                                                                                                                                         |
-| Artifact checksums | Raw telemetry `aebf677437c6b65d04681ea1d67b52030710df44e91b9cad4f9097e8591bed69`; canonical telemetry `15ab38a5fbda643032ee21bdf833b9229fe2e47856caeeffa5e2673ca743e5d3`; metadata `d9d8032fa10795935ae53811729adf50eb5fa82d79ce723b7549249a465bc0c3` |
-| Offline rescore    | `offline-rescore-v1-aebf677437c6b65d-cec6f4d18d3f5a6a.json`; SHA-256 `8458e5dc58957453fd3ba94507d27c8f2b1a8e9cdb4d6f2b5b205bd74b400e34`; derived SHA-256 `e9cca34f35da0672716bf12a6dd0fdd22e1d3158509856203d16cb93a2a1d987`                           |
-
-Offline-derived selected diagnostics (continuous quality is the mean per-cell fitness; input and elapsed values are arithmetic means):
-
-| Treatment  | Correctness by family                             | Quality by family                                   | Gross input   | Elapsed       | Adherence |
-| ---------- | ------------------------------------------------- | --------------------------------------------------- | ------------- | ------------- | --------- |
-| `A_plain`  | DI-01 **`0/3`**, GR-01 **`3/3`**, GR-03 **`3/3`** | DI-01 `0.367`, GR-01 **`0.767`**, GR-03 **`1.000`** | see telemetry | see telemetry | **9/9**   |
-| `B_direct` | DI-01 **`0/3`**, GR-01 **`3/3`**, GR-03 **`3/3`** | DI-01 **`0.500`**, GR-01 `0.700`, GR-03 **`1.000`** | see telemetry | see telemetry | **9/9**   |
-| `C_skill`  | DI-01 **`0/3`**, GR-01 **`3/3`**, GR-03 **`3/3`** | DI-01 `0.333`, GR-01 `0.700`, GR-03 **`1.000`**     | see telemetry | see telemetry | **9/9**   |
-
-No pooled interval or treatment-effect estimate is reported for this selected scope: it is targeted, non-poolable diagnostic evidence with only three task families. Gross-input and elapsed comparisons remain available in the immutable telemetry for audit, but are not a headline result.
-
-**Validity and interpretation.** All 27 selected cells completed and passed artifact integrity, but the run is explicitly non-poolable. The offline replay classifies all 27 cells as treatment-adherent and reports seven semantic query-shape misses: C `DI-01` (3), B `DI-01` (1), and B `GR-01` (3). `DI-01` binary correctness is 0/3 for each arm because the returned test-module identity did not match the locked oracle; `GR-01` is 3/3 for each arm and `GR-03` is 3/3 for each arm. These targeted results do not establish a causal Codemap advantage, confirmatory effect, or cross-provider raw-token comparison. The offline replay is diagnostic derived evidence only; the raw and canonical telemetry remain immutable and no active acceptance claim depends on the replay.
-
-The selected run confirms the repaired parser and evaluator plumbing but also keeps the remaining query-shape mismatch visible. Root fixes now include unquoted `$CODEMAP_BIN` parsing, preserved Markdown message boundaries, provider-neutral DiffImpact caller-and-test precision/recall F1, scanner normalization to `tests_fabric...`, production-only `central --exclude-tests` in-degree, direct `fn-rdeps` versus explicit transitive `fn-blast` guidance, and fail-closed offline rescore.
-
-The follow-up 18-cell validation at `benchmarks/results/codex-integration-selected-20260803T160316Z` completed all coordinates with zero treatment, contamination, extraction, completeness, or token-accounting failures; all 491 checksums verify. Raw/canonical/metadata SHA-256 values are `26535b20a9e2511df30a3277e0364128c4d96ff6254d2f031c07fa62e21a5705`, `c240dd4e366028149cb8530efd37295bcedd1fe4af3d911ae8bbd309a20e289e`, and `bd8cd8ed0eeac3ed79e874fd97486cc219c937300441ca57fb2edfe645235da6`.
-
-| Task    | A quality | B quality | C quality | B/A input · elapsed | C/A input · elapsed |
-| ------- | --------: | --------: | --------: | ------------------: | ------------------: |
-| `DI-01` |   `0.500` | **1.000** |   `0.501` | `1.603×` · `0.909×` | `1.008×` · `0.989×` |
-| `GR-01` |   `0.733` |   `0.600` | **1.000** | `0.282×` · `0.136×` | `0.197×` · `0.089×` |
-
-These are paired geometric economy ratios and arithmetic mean quality over three repetitions. They are descriptive because the scope is targeted and non-poolable. C achieved quality parity on DI and improved GR while using much less input overall, but DI showed no stable input saving and B degraded on GR. Raw events establish deterministic causes: the GR prompt omitted the oracle's exclude-tests scope, while the Skill mapped DI's direct-import test request to transitive module `test-impact` and returned 247 tests. The semantic audit also checked only the caller half of DI. The shared task prompt now states production-only centrality; all DI tasks require exact caller and direct-importer queries; both runtime Skills reserve `test-impact` for transitive affected-test selection. A new bounded validation is required before the full study can be unlocked.
-
-The corrected bounded gate at `benchmarks/results/codex-integration-selected-20260803T172707Z` completed 18/18 cells and verified all 491 checksums under the current manifest and selected-scope locks. Raw/canonical/metadata SHA-256 values are `1b20bb6756d9e301215b20cbc6bd90b01c6798667ee2be7a261be819604e8c77`, `2c810e840f2f9f03c6b8bd2a976f13c12df1a4cee3e46051b255add7dff106cf`, and `d6f4e0a71a52cb05d849a10d7635e3b4579f13c570694cf871e2574ccfd0c8b4`.
-
-| Task    | A quality | B quality | C quality |   B/A input · output · elapsed |   C/A input · output · elapsed |
-| ------- | --------: | --------: | --------: | -----------------------------: | -----------------------------: |
-| `DI-01` |   `0.500` | **1.000** | **1.000** | `0.842×` · `0.704×` · `0.826×` | `0.627×` · `0.494×` · `0.555×` |
-| `GR-01` |   `0.800` | **1.000** | **1.000** | `0.356×` · `0.113×` · `0.300×` | `0.251×` · `0.081×` · `0.169×` |
-
-The run has zero treatment, contamination, extraction, completeness, token-accounting, or execution failures. Its three semantic-query misses are all DI-01/B_direct: the direct model omitted one or both exact locked query components but still used Codemap and returned every expected caller and test module. C_skill matched the exact caller-plus-direct-import route in every repetition. The methodology records exact query fitness independently from treatment delivery, so the misses remain discoverability diagnostics rather than exclusion failures. The bounded operational gate passes and permits the separately authorized complete 165-cell study; this targeted run remains non-poolable and cannot satisfy confirmatory product acceptance.
-
-The Claude adapter remains the repeatedly debugged reference; only shared methodology corrections apply to both providers, and no Claude quality change is implied by this Codex recovery work.
-
-The run is retained for audit and follow-up, not silently mixed with Claude results. Audit the local artifacts with `benchmarks/results/codex-integration-selected-20260803T091057Z/checksums.sha256`; the ignored result directory is intentionally not a published fixture. The offline rescore is immutable-derived evidence, not a rewrite of paid telemetry.
+Earlier structural tables were removed rather than carried forward: they were measured under retired harnesses, retired arm names, or incomplete runs, and blending them with the current numbers is not defensible. On the Codex side one run aborted at 33 of 219 cells when a second study was started against the clone the Claude suite still held. The launcher now takes an exclusive lock on the target clone for the duration of a study, so a second run against the same clone is refused before it spends anything rather than failing partway through on the other run's staged edits.
 
 </details>
 
-### Multi-model results: real-codebase benchmark
+### Agentic results
 
-#### Latest — 2026-07-29 (39 tasks × 2 arms × 3 tiers)
+Agentic tasks give the model a blast-radius question and a working repository. Both providers share the arm labels and the scorer here, so the aggregated table needs no arm translation. Every caveat under [Agentic measurement caveats](#agentic-measurement-caveats) applies to all tables in this lane.
 
-Full summary + per-task reading: [`results/bench-summary-2026-07-29.md`](results/bench-summary-2026-07-29.md). **codemap v0.27.0** · models `claude-haiku-4-5` / `claude-sonnet-5` / `claude-opus-5` · symmetric-prompt harness (post 2026-07-03 fairness overhaul). Single run (n=1); DI/GR series (10 tasks) skipped pending ground truth. Sources: `bench-{haiku,sonnet,opus}-20260729-*.jsonl`. Ratios reported as **median / mean** of the per-task codemap/plain distribution.
+#### Agentic results — every model on one cohort — 2026-09-06
 
-**Two value axes — read separately, never blended.** (1) **Reliability/quality**: safety-grade + structural recall — codemap **13/13 safety-grade every tier** vs plain 8/13 → 12/13 → 13/13; the primary proposition, holds up-tier. (2) **Economy (cost/tokens/time)**: read at *matched caller fan-in* — the win grows with fan-in (cost 0.35× haiku / 0.54× opus on high-fan-in tasks); raw median token ratio is a *secondary, caveated* number that → 1 as models get terser. Accuracy Δ is a saturation-sensitive tie-breaker, not a headline.
+All four models ran the same 16 blast-radius tasks through the same shared prompt materializer, response assessor, AST oracle, and semantic component scorer, under the same three arm labels — the Codex agentic runner maps its native homes onto `A_plain`, `B_auto`, and `C_strict`, so no arm renaming is involved here. This table scores each cell correct or not, rather than by the continuous semantic score the provider sections report, and takes per-task medians of treatment ÷ control. A pair is used only when both of its cells returned a scored, poolable answer.
 
-<!-- result-sync: this is the canonical July 29 table. ../plugins/codemap-py/README.md#three-model-comparison is now an anchor stub only — the June 22 legacy run it used to hold was removed from the plugin README (§Benchmark Isolation). The June 22 table below remains the canonical copy; the two runs are still distinct and must not be blended. -->
+| Treatment arm | Provider | Model  | Paired n | Control accuracy | Treatment accuracy |          Gain | Tokens | Cost | Time |
+| ------------- | -------- | ------ | -------: | ---------------: | -----------------: | ------------: | -----: | ---: | ---: |
+| C_strict      | Claude   | Haiku  |       16 |     18.8% (3/16) |      68.8% (11/16) | +50.0 pp (+8) |   −60% | −45% | −46% |
+| C_strict      | Claude   | Sonnet |       15 |     53.3% (8/15) |      73.3% (11/15) | +20.0 pp (+3) |   −77% | −65% | −82% |
+| C_strict      | Claude   | Opus   |       16 |    62.5% (10/16) |      68.8% (11/16) |  +6.2 pp (+1) |   −50% | −41% | −73% |
+| C_strict      | Codex    | Luna   |       16 |    68.8% (11/16) |      81.2% (13/16) | +12.5 pp (+2) |   −45% |    — | −49% |
+| C_strict      | Codex    | Terra  |       10 |     70.0% (7/10) |       80.0% (8/10) | +10.0 pp (+1) |   −14% |    — | −27% |
+| C_strict      | Codex    | Sol    |       16 |    75.0% (12/16) |      93.8% (15/16) | +18.8 pp (+3) |   −21% |    — | −43% |
+| B_auto        | Claude   | Haiku  |       16 |     18.8% (3/16) |      68.8% (11/16) | +50.0 pp (+8) |   −70% | −51% | −53% |
+| B_auto        | Claude   | Sonnet |       15 |     53.3% (8/15) |      86.7% (13/15) | +33.3 pp (+5) |   −72% | −56% | −76% |
+| B_auto        | Claude   | Opus   |       16 |    62.5% (10/16) |      87.5% (14/16) | +25.0 pp (+4) |   −43% | −51% | −77% |
+| B_auto        | Codex    | Luna   |       16 |    68.8% (11/16) |       43.8% (7/16) | −25.0 pp (−4) |   −15% |    — | −35% |
+| B_auto        | Codex    | Terra  |       16 |    68.8% (11/16) |       31.2% (5/16) | −37.5 pp (−6) |    +7% |    — | −32% |
+| B_auto        | Codex    | Sol    |       16 |    75.0% (12/16) |       37.5% (6/16) | −37.5 pp (−6) |   +45% |    — | −15% |
 
-| Tier      | Plain accuracy    | Codemap accuracy  | Δ accuracy | Safety-grade plain | Safety-grade codemap | Token× med / mean | Cost× med / mean |
-| --------- | ----------------- | ----------------- | ---------- | ------------------ | -------------------- | ----------------- | ---------------- |
-| Haiku 4.5 | 66.7% (24/36)     | **91.7% (33/36)** | **+25 pp** | 8/13               | **13/13**            | **0.57 / 0.65**   | **0.81 / 0.73**  |
-| Sonnet 5  | 82.4% (28/34)     | **94.3% (33/35)** | **+12 pp** | 12/13              | **13/13**            | **0.82 / 0.93**   | **0.97 / 0.91**  |
-| Opus 5    | **88.6% (31/35)** | 80.6% (29/36)     | −8 pp ⚠¹   | **13/13**          | **13/13**            | **0.83 / 0.96**   | **0.95 / 0.91**  |
+One row per stratum, and each row is one execution. `Luna` here is the 2026-09-07 combined-launch execution — the Luna study that shares the repaired `agentic_contracts` prompt with `Terra` and `Sol` and is therefore the only one comparable to them. Two other Luna executions of the same 16 tasks exist and are **not** in this table: the frozen 2026-09-06 run, which used the earlier prompt and lost twelve cells to it, and an isolated-worktree re-execution from the same morning. Both are reported in full under [Codex agentic re-executions](#codex-agentic-re-executions--2026-09-07). They are separate studies of one model, never an average and never a three-repetition design, so pooling or averaging them into this row is wrong.
 
-Bold = better arm within each model and metric (higher accuracy/safety is better; token and cost ratios below `1.0` favor Codemap). Positive accuracy deltas are bolded; the audited Opus regression remains unbolded and caveated below. ¹ This 36-task headline number was never itself re-run on the fixed scorer — only a 14-task subset was (see caveat below); treat −8 pp as the last full-suite measurement, not a settled result.
+`Terra` and `Sol` are the 2026-09-07 agentic studies of the other two declared Codex strata, described under [Codex agentic strata](#codex-agentic-strata--2026-09-07). They exist because the launcher's `--models` selection previously reached the structural lane only, so every earlier agentic run executed the manifest's default stratum whatever an operator selected — which is why three separate Luna studies exist and no terra or sol study did until that defect was fixed.
 
-Per-workflow codemap accuracy: query (n=28) 92.0 / 95.8 / 84.0%; debug (n=6) 100 / 100 / 100%; feature (n=5) 80 / 80 / **40% ⚠ — unresolved, see below** (haiku / sonnet / opus).
+Unlike the structural lane, both `B` and `C` rows are comparable across providers here, because the agentic arms carry the same contract on both: `B_auto` makes Codemap available and optional, `C_strict` requires a compact query.
 
-> **⚠ The opus codemap figures are partly deflated by two harness bugs found in a post-run audit** — do not cite the full opus codemap −8 pp headline as settled. (1) The count-extraction regex (`run-claude-structural.py:1422`) grabs the first stray number in verbose codemap prose (RV-02/opus answered "65 modules", correct, but the regex read "0 symbols" → recall 0.000). (2) `codemap query methods used` (`:2975`) silently drops the method on non-pure-JSON tool output, so "index-lookup only" is a parse artifact — opus actually ran `rdeps` in ~17 runs. See the report's scoring banner + the bug list below. **Partially re-run (2026-07-29), scope-limited:** after landing both fixes, only the 14 caller-enumeration tasks (FN + BR + BR-09) were re-run, ×2 repeats — not the full 36-task headline set, and not the RV count tasks or the FT feature-scaffolding tasks. On that 14-task subset, opus codemap = plain **100% / 100%** accuracy with codemap *better* on tail-recall (fewer missed callers, fewer turns); the "codemap short-circuits opus" (anchoring) hypothesis is refuted 0/14. See the report's "Opus anchoring probe" section (`results/bench-summary-2026-07-29.md`). **The FT feature-scaffolding regression (opus 40% vs haiku/sonnet 80%, above) sits outside this re-run's scope and remains unexplained** — it is a distinct, still-open data point, not covered by either harness-bug fix.
+Every declared Codex stratum now has a row here. The sentence that once stood in this place — that `gpt-5.6-sol` had run no blast-radius task — was true of its structural study and is no longer true of the stratum: sol and terra each ran the 48-cell agentic suite on 2026-09-07. Their ReadCrop, Fix-Single, Fix-Multi, and Patch stages remain a different cohort with a different scorer, in the structural lane and never pooled with these rows. Every Codex row now pairs 16 of 16 tasks except `Terra`'s `C_strict`, which pairs 10; the excluded 2026-09-06 Luna study paired only 8 and 11 because twelve of its 48 cells lost the strict answer envelope, which is the defect the repaired prompt fixed.
 
-**Reading it**: codemap's lift is inversely proportional to model strength — biggest where native navigation is weakest (Haiku +25 pp, Sonnet +12 pp). The opus row shows codemap −8 pp **as measured**, but that is mostly the scoring artifact above (below-plain recalls on RV-02/CQ-03 are count-regex false-fails, not real misses); there is no per-model skill routing (both arms share one symmetric prompt), so the residual gap is model behavior, not a plugin defect. Token savings are real at Haiku, near break-even by Opus (fixed index-injection overhead); codemap is faster on wall-clock at every tier (median time× 0.81 / 0.95 / 0.92). The historical 2026-07-29 query report recorded **PARTIAL** (26/32); it is distinct from the current no-model diagnostic (14/18 primary and 10/14 self-consistency). The agentic run was **interrupted** and is not reportable this cycle.
+The adherence clause is not symmetric across providers in this lane and the asymmetry is worth stating: the Codex agentic artifacts carry `treatment_adherence`, and across the five Codex agentic executions it is false on **six of Terra's** sixteen `C_strict` cells (`BA-01`, `BA-04`, `BA-05`, `BA-12`, `BA-14`, `BA-16`), on three of the 09-06 Luna study's (`BA-01`, `BA-13`, `BA-14`, all with zero successful Codemap calls), on two of the isolated Luna re-execution's (`BA-13`, `BA-14`), and on none at all in the published `Luna` and `Sol` rows. Terra is where the clause bites hardest and where its cost is clearest: the six removed cells take two of the arm's conversions (`BA-01`, `BA-12`) and one of its losses (`BA-16`) out of the row, so the published `+10.0 pp (+1)` on ten pairs stands beside a sixteen-cell reading of `11 → 13` correct. Reporting the ten-pair row is the conservative choice, not the flattering one, but a stratum that skips the required query on 6 of 16 cells is describing its own compliance rather than Codemap's effect. The Claude agentic artifacts carry no such field, only `codemap_compliant`, which is true in all 48 Claude `C_strict` cells and not evaluated for the optional `B_auto` arm — so no Claude row moves under either rule, and the clause bites the Codex rows alone. Codex is also the only row set where the optional-use arm goes backwards, and it now does so in all **five** of its executions, across all three declared strata: −18.2, −40.0, −25.0, −37.5, and −37.5 points. That is the most reproducible result in this lane, and it points the opposite way from every Claude `B` row.
 
-**Why the gains look smaller than June 22 — comparability**: the drop in token savings (June 0.22–0.38× → July 0.57–0.83×) is **confounded** and cannot be attributed to the 5-series models alone. Three things changed at once between the two runs: (a) the **harness fairness overhaul** — June ran under codemap-favoring steering (codemap arm capped at 3 calls + forbidden to verify, plain arm coached toward more grepping), which by the README's own note made June ratios *upper bounds*; removing it raises the ratio toward 1.0 independent of model; (b) **model version** (Sonnet 4.6→5, Opus 4.6→5) — newer models navigate code better unaided, so the plain-arm denominator shrinks and the ratio rises even with codemap unchanged; (c) **codemap version** (pre-v0.13.2 → v0.27.0). To isolate the model-version effect you must hold the harness constant — run 4.6-era and 5-era models under the *current* fair harness. What *is* clean is the **within-July up-tier shrink** (0.57 → 0.82 → 0.83, one harness + one codemap version, only the tier varies): codemap injects a roughly fixed index blob while the plain arm's exploration cost falls as models strengthen → ratio → 1. So token savings are structurally largest where the plain baseline is most wasteful (weak models); on strong models the value proposition shifts from tokens to **structural recall / safety-grade** (8/13 → 13/13 at Haiku), which holds at every tier.
+Binary correctness is a harsher reading than the semantic score: Haiku's control answers 18.8% of cells outright while scoring far higher component-wise, so the large Haiku gains are movement from partially-right to exactly-right. Cost is empty for Codex because that runner captures no per-cell price. Every [agentic measurement caveat](#agentic-measurement-caveats) applies to this table, in particular the fixed `A_plain` → `B_auto` → `C_strict` execution order with no prompt-cache reset, which inflates the elapsed reductions.
 
-<details>
-<summary><strong>Past experiments (pre-2026-07-03, stale)</strong> — June-22 real-codebase + older agentic runs, kept for history. Predate the fairness overhaul; not comparable with the latest above. Click to expand.</summary>
+#### Claude multi-model — median change against `A_plain`
 
-> **⚠ Stale (2026-07-03)**: all results below predate the fairness overhaul (symmetric arm prompts, AST-oracle ground truth, real C1/C2 metrics). Token ratios and FN/BR/RV/CQ accuracy were measured under codemap-favoring prompt steering and partially circular GT — treat as upper bounds; re-run pending.
+Per-task medians over the 16 blast-radius tasks, stated as change against the control: negative means the arm needed less. This is the Claude-only view; for the cross-provider view with accuracy, see [Agentic results — every model on one cohort](#agentic-results--every-model-on-one-cohort--2026-09-06).
 
-Results — June 22 2026 — 44 tasks × 2 arms × 3 models, pytorch-lightning-master. **Models** `claude-haiku-4-5` / `claude-sonnet-4-6` / `claude-opus-4-6` · **codemap version not recorded in these result lines** (predates the v0.13.2 agentic run; ~mid-June 2026) · **codemap-favoring steering harness** (not comparable with the July run above — see comparability note).
+| Tier   | Arm      | Elapsed | Cost | Input tokens | Tool calls |
+| ------ | -------- | ------: | ---: | -----------: | ---------: |
+| Haiku  | C_strict |    −46% | −45% |         −60% |       −62% |
+| Haiku  | B_auto   |    −53% | −51% |         −70% |       −68% |
+| Sonnet | C_strict |    −82% | −65% |         −77% |       −72% |
+| Sonnet | B_auto   |    −76% | −56% |         −72% |       −62% |
+| Opus   | C_strict |    −73% | −41% |         −50% |       −52% |
+| Opus   | B_auto   |    −77% | −51% |         −43% |       −59% |
 
-<!-- result-sync: ../plugins/codemap-py/README.md#three-model-comparison is an anchor stub only — the plugin README no longer duplicates run-specific tables (§Benchmark Isolation). All result tables in this historical block are the canonical sources for downstream summaries; do not re-add values to the plugin README. -->
+Evidence recall is at parity or better in every Codemap cell: the treatment arms answer 100% `erec`/`rrec` throughout, while `A_plain` drops below it on BA-03 (haiku 81%), BA-12 (haiku 89%), and BA-15 (85% on all three tiers). Sonnet's denominators are 15 rather than 16 because BA-12 `A_plain` hit the 600-second coordinate timeout and is excluded, not scored as a loss.
 
-| Model      | Plain accuracy    | Codemap accuracy  | Accuracy lift | Safety-grade plain | Safety-grade codemap | Token ratio (median) | Token ratio range |
-| ---------- | ----------------- | ----------------- | ------------- | ------------------ | -------------------- | -------------------- | ----------------- |
-| Haiku 4.5  | 85.3% (29/34)     | **93.9% (31/33)** | **+9 pp**     | 5/13               | **12/13**            | **0.38×**            | 0.04–68.2×        |
-| Sonnet 4.6 | 83.8% (31/37)     | **91.9% (34/37)** | **+8 pp**     | 11/13              | **12/12**            | **0.22×**            | 0.05–1.21×        |
-| Opus 4.6   | **86.1% (31/36)** | 91.7% (33/36)     | **+6 pp**     | **13/13**          | 12/12                | **0.31×**            | 0.05–1.46×        |
+Tool *time* moves the other way — median +57% to +155%, more rather than less — because each index call costs more than a single grep. The win is in needing far fewer calls, not in each call being faster.
 
-Bold = better arm within each model and metric (higher accuracy/safety is better; a token ratio below `1.0` favors Codemap). Positive lift is bolded; the range is descriptive and unbolded.
+#### Codex agentic results — 2026-09-06
 
-Safety-grade = fraction of FN + BR tasks with explicit recall where recall ≥ 0.90. Token ratio = codemap / plain input tokens. June 22 Haiku tok× max of 68.2× is RI-04 codemap `error_max_turns` (token spiral, fixed June 23). June 22 Opus codemap safety-grade 10/12: FN-02/BR-03 regressions fixed June 23 (both recall=1.000) — corrected post-fix safety-grade is **12/12**.
+`results/codex-combined-20260906T085207Z/agentic` — `gpt-5.6-luna` at high reasoning effort, Codex CLI 0.153.4, 48/48 cells persisted, none incomplete, none contaminated.
 
-Per-workflow-type breakdown (codemap arm, tok× = median codemap/plain token ratio):
+| Model | Pair                | Cells | Control score | Treatment score |   Gain | Cells correct | Tokens | Time |
+| ----- | ------------------- | ----: | ------------: | --------------: | -----: | ------------: | -----: | ---: |
+| Luna  | A_plain vs C_strict |    16 |         0.929 |       **0.960** | +0.031 |    9 → **13** |   −48% | −47% |
+| Luna  | A_plain vs B_auto   |    16 |         0.929 |           0.860 | −0.069 |         9 → 6 |   −21% | −33% |
 
-| Workflow type          | n tasks | Haiku tok× | Haiku cm_acc | Sonnet tok× | Sonnet cm_acc | Opus tok× | Opus cm_acc |
-| ---------------------- | ------- | ---------- | ------------ | ----------- | ------------- | --------- | ----------- |
-| query (SE/FN/RV/CQ/BR) | 28      | **0.28×**  | 95.0%        | **0.14×**   | 95.5%         | **0.23×** | 86.4%       |
-| debug (DG)             | 6       | **0.33×**  | 100%         | **0.31×**   | 100%          | **0.39×** | 100%        |
-| feature (FT)           | 5       | **0.55×**  | 100%         | **0.71×**   | 80%           | **0.58×** | 100%        |
-| real_issue (RI)        | 5       | 3.36× ⚠    | 50%          | **0.85×**   | 75%           | **0.41×** | 100%        |
+Score is mean semantic quality across the 16 cells; the correct-cell count is how many of those cells were right outright. For this run beside the Claude models on one binary-scored cohort, see [Agentic results — every model on one cohort](#agentic-results--every-model-on-one-cohort--2026-09-06). `B_auto` is worse on both — it loses three cells the unaided control answered — so its cheaper tokens buy a real quality regression rather than a trade.
 
-Bold token ratios below `1.0` indicate lower Codemap input than the same-model plain arm. Codemap-only accuracy columns have no displayed plain comparator and remain unbolded.
+Restricted to pairs where both cells returned the strict answer envelope — the only poolable comparison — `C_strict` reads 0.935 → **0.996** over 9 pairs at −44% tokens and −45% time, and `B_auto` reads 0.937 → 0.857 over 11 pairs at −15% tokens and −32% time. The strict arm is better on both readings and the optional-use canary is worse on both; the direction does not depend on which subset is used.
 
-#### Haiku 4.5 — `results/bench-haiku-20260622-223206.jsonl`
+Expected-importer recall was 0.990 for `A_plain` and `B_auto` and 1.000 for `C_strict`, in both the full agent text and the final report. Exposure hits per command (DEFF) were 2.00 / 1.76 / 2.42.
 
-44 tasks × 2 arms, pytorch-lightning-master.
+Twelve of the 48 cells lost the strict envelope and fall back to diagnostic bare-JSON recovery, which is not poolable: seven `C_strict`, three `B_auto`, two `A_plain`. This is a prompt-contract defect rather than a provider result — see [Task defects found, fixed, and what remains](#task-defects-found-fixed-and-what-remains). Three `C_strict` cells (BA-01, BA-13, BA-14) issued no Codemap call at all and are recorded as treatment not followed; BA-01's transcript narrates running the query it never ran.
 
-**Token efficiency** (codemap/plain ratio):
+#### Codex agentic re-executions — 2026-09-07
 
-| Statistic | Value                                                              |
-| --------- | ------------------------------------------------------------------ |
-| Median    | 0.38× (62% reduction)                                              |
-| Min       | 0.04× (FN-04)                                                      |
-| Max       | 68.2× (RI-04, error_max_turns — arm-permission bug, fixed June 23) |
+The same 16 blast-radius tasks were executed twice more on `gpt-5.6-luna`, at high reasoning effort on Codex CLI 0.153.4, 48/48 cells persisted in each:
 
-Note: max of 68.2× was RI-04 arm-permission bug (token spiral, fixed June 23) — not a normal operating point.
+- **`Luna⁺`** — `results/codex-agentic-20260907T065010Z`, launched `--agentic --isolated`, which builds a private run worktree and relocates the locked index into it (`e0ce11d9…`, the same index content at a different path). Started 2026-09-07T06:50:13Z.
+- **`Luna⁺⁺`** — `results/codex-combined-20260907T055156Z/agentic`, the agentic stage of the combined launch whose structural half ran terra, against the shared clone and the locked index `3c584089…`. Started 2026-09-07T09:51:11Z.
 
-**Accuracy** (scored tasks only):
+Both ran the repaired `agentic_contracts` prompt; the 2026-09-06 run did not, so these two are executions of one contract and the older run is not a third repetition of it. The two 09-07 manifests differ only in the structural-manifest and launcher hashes they carry, not in any agentic material.
 
-| Arm     | Score     | Correct/Scored | extraction_failed              | incomplete                       |
-| ------- | --------- | -------------- | ------------------------------ | -------------------------------- |
-| plain   | 85.3%     | 29/34          | 4 (SE-05, CQ-01, CQ-05, RI-04) | 2 (CQ-01, BR-04)                 |
-| codemap | **93.9%** | **31/33**      | 3 (SE-05, CQ-03, CQ-05)        | 2 (RI-02, RI-04) ⟵ fixed June 23 |
+`Luna⁺⁺` is the execution promoted to the [cross-provider agentic table](#agentic-results--every-model-on-one-cohort--2026-09-06) under the plain name `Luna`, because it is the Luna study that shares both the repaired prompt and a full 16-pair cohort with `Terra` and `Sol`. The other two Luna executions are reported here and nowhere else: one model with three studies published as three adjacent rows read as a three-repetition design, which it is not.
 
-By series:
+| Run    | Pair                | Cells | Control score | Treatment score |   Gain | Cells correct | Tokens | Time |
+| ------ | ------------------- | ----: | ------------: | --------------: | -----: | ------------: | -----: | ---: |
+| Luna⁺  | A_plain vs C_strict |    15 |         0.959 |       **0.971** | +0.012 |       11 → 11 |   −65% | −62% |
+| Luna⁺  | A_plain vs B_auto   |    15 |         0.959 |           0.844 | −0.115 |        11 → 5 |   −32% | −43% |
+| Luna⁺⁺ | A_plain vs C_strict |    16 |         0.959 |       **0.985** | +0.026 |   11 → **13** |   −51% | −46% |
+| Luna⁺⁺ | A_plain vs B_auto   |    16 |         0.959 |           0.851 | −0.108 |        11 → 7 |    −6% | −28% |
 
-| Series       | plain   | codemap | Notes                                                                                                                       |
-| ------------ | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
-| SE (5 tasks) | **4/4** | **4/4** | SE-05 ext-fail both arms                                                                                                    |
-| FN (5 tasks) | **5/5** | **5/5** | Plain struggles (FN-01=0.769, FN-03=0.917); codemap perfect                                                                 |
-| RV (5 tasks) | n/a     | n/a     | Scored in current runs (RV-01/05: symbol recall ≥0.70; RV-02/03/04: count ±10%); pre-June-23 runs had no RV ground truth    |
-| CQ (5 tasks) | 1/3     | **2/3** | CQ-01 plain timeout; CQ-05 ext-fail both; CQ-03 codemap ext-fail                                                            |
-| BR (8 tasks) | **8/8** | 7/8     | BR-07 codemap recall=0.778 < plain=0.889 ⚠                                                                                  |
-| DG (6 tasks) | **6/6** | **6/6** | Both arms perfect; codemap saves 19–58% tokens                                                                              |
-| FT (5 tasks) | **5/5** | **5/5** | Both arms perfect                                                                                                           |
-| RI (5 tasks) | **4/5** | 1/3     | RI-01 codemap recall=0.667; RI-02/RI-04 codemap `error_max_turns` ⚠ (arm-permission bug — fixed June 23, both recall=1.000) |
+Score is the mean semantic quality over the scored cells; token and time are cohort totals against `A_plain`, the same estimator the 09-06 table uses. `Luna⁺` reports 15 cells rather than 16 because its `A_plain` `BA-06` cell exited without an answer (`incomplete`) — an absent answer, not an envelope loss.
 
-**Safety-grade**: plain 5/13 → codemap 12/13 (June 22 run). BR-07 codemap recall=0.778 is the one miss. RI-02/RI-04 codemap `error_max_turns` were arm-permission bugs fixed June 23 (see `results/bench-haiku-20260623-003825.jsonl`, both recall=1.000).
+`Luna⁺`'s `C_strict` row is the one place the two views disagree in sign, and the reason is the admission rule rather than the model: over its 15 scored cells the strict arm converts `BA-13` and `BA-15` and loses `BA-07` and `BA-11`, for 11 correct against 11. The binary cross-provider row drops `BA-13` and `BA-14` for non-adherence — `BA-13` being one of the two cells the arm converted — which is what turns 11 → 11 into 10 → 9. Read the −7.7 pp there as the cost of removing a converted cell, not as a regression the arm produced.
 
-#### Sonnet 4.6 — `results/bench-sonnet-20260622-235143.jsonl`
+**The direction reproduces; the size does not.** Across the three executions `C_strict` scores +0.031, +0.012, and +0.026 against its control while reading 48%, 65%, and 51% fewer input tokens, and `B_auto` scores −0.069, −0.115, and −0.108 while reading 21%, 32%, and 6% fewer. Every run has the strict arm up and the optional arm down; no run has them within noise of each other. Correct-cell counts move the same way — `B_auto` ends below its own control in all three (9 → 6, 11 → 5, 11 → 7) — and the same task, `BA-07`, is lost by `B_auto` in all three and by `C_strict` in all three, which makes it the clearest single-task counterexample in this lane.
 
-44 tasks × 2 arms, pytorch-lightning-master.
+**The envelope repair holds.** The 09-06 run lost 12 of 48 cells to the missing wrap instruction; `Luna⁺` and `Luna⁺⁺` lose zero, and `Luna⁺⁺` is the first *Codex* agentic run in this record with no non-poolable cell and no non-adherent cell — 48 admissible cells out of 48. (Claude's Haiku and Opus tiers already pair 16 of 16 in both arms on their own 2026-09-06 artifact.) Voluntary Codemap use in `B_auto` was 16/16, 14/16, and 16/16, and `A_plain` used it in none, so no control is contaminated in any run.
 
-**Token efficiency** (codemap/plain ratio):
+Expected-importer recall is 0.99 for `A_plain` and 1.00 for both treatment arms in each 09-07 run, with exposure hits per command (DEFF) 1.84 / 1.76 / 2.60 on `Luna⁺` and 2.56 / 1.75 / 2.53 on `Luna⁺⁺`. Both absolutes carry the recall and floor caveats below.
 
-| Statistic | Value                 |
-| --------- | --------------------- |
-| Median    | 0.22× (78% reduction) |
-| Min       | 0.05× (BR-05)         |
-| Max       | 1.21× (BR-03)         |
+These runs share the arm-order confound with every other agentic table: arms ran `A_plain` → `B_auto` → `C_strict` per task with no provider cache reset, so the elapsed reductions overstate the treatment effect.
 
-**Accuracy** (scored tasks only):
+#### Codex agentic strata — 2026-09-07
 
-| Arm     | Score     | Correct/Scored | extraction_failed | incomplete |
-| ------- | --------- | -------------- | ----------------- | ---------- |
-| plain   | 83.8%     | 31/37          | 1 (FT-03)         | 0          |
-| codemap | **91.9%** | **34/37**      | 1 (FN-03)         | 0          |
+The same 16 blast-radius tasks were then executed on the other two declared strata, at high reasoning effort on Codex CLI 0.153.4, 48/48 cells persisted in each, under the same repaired `agentic_contracts` prompt as `Luna⁺` and `Luna⁺⁺`:
 
-By series:
+- **`Terra`** — `results/codex-agentic-20260907T140422Z`, `gpt-5.6-terra` against the shared clone and the locked index `3c584089…`. Started 2026-09-07T14:04:22Z.
+- **`Sol`** — `results/codex-agentic-20260907T141122Z`, `gpt-5.6-sol`, launched `--agentic --isolated` against a private run worktree holding a relocated copy of that index (`6f2d3cd7…`, same graph content at a different path). Started 2026-09-07T14:11:22Z.
 
-| Series       | plain   | codemap | Notes                                                                                                                    |
-| ------------ | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
-| SE (5 tasks) | **5/5** | **5/5** | Both arms perfect                                                                                                        |
-| FN (5 tasks) | **4/5** | 3/4     | FN-02 plain=0.108 → codemap=1.000; FN-03 codemap ext-fail                                                                |
-| RV (5 tasks) | n/a     | n/a     | Scored in current runs (RV-01/05: symbol recall ≥0.70; RV-02/03/04: count ±10%); pre-June-23 runs had no RV ground truth |
-| CQ (5 tasks) | 3/5     | **4/5** | CQ-05 plain recall=^3.333 (over-count); codemap 4/5 correct                                                              |
-| BR (8 tasks) | **8/8** | **8/8** | Both arms perfect; codemap saves 14–94% tokens                                                                           |
-| DG (6 tasks) | **6/6** | **6/6** | Both arms perfect                                                                                                        |
-| FT (5 tasks) | 4/4     | **4/5** | FT-03 plain ext-fail; FT-03 codemap recall=0.500 ⚠ — single instance, no June-23 fix filed, unexplained                  |
-| RI (5 tasks) | **4/5** | **4/5** | RI-01 both arms 0.667; RI-05 n/a both                                                                                    |
+These are the first agentic studies of either stratum, and they exist because of a defect rather than a plan: until 2026-09-07 the launcher's `--models` selection reached the structural lane only, and the agentic lane silently ran the manifest's default stratum. Every earlier "sol" or "terra" agentic invocation therefore produced a Luna study. A third artifact from the same afternoon, `results/codex-agentic-20260907T140408Z`, holds zero cells and a `KeyboardInterrupt` status: it is an interrupted launch, not a study, and nothing in this file reads from it.
 
-**Safety-grade**: plain 11/13 → codemap 12/12. Token savings primary codemap benefit at sonnet tier — query workflow median 0.14×.
+| Run   | Pair                | Cells | Control score | Treatment score |   Gain | Cells correct | Tokens | Time |
+| ----- | ------------------- | ----: | ------------: | --------------: | -----: | ------------: | -----: | ---: |
+| Terra | A_plain vs C_strict |    16 |         0.932 |       **0.970** | +0.038 |   11 → **13** |    −3% | −31% |
+| Terra | A_plain vs B_auto   |    16 |         0.932 |           0.826 | −0.106 |        11 → 5 |    −1% | −33% |
+| Sol   | A_plain vs C_strict |    16 |         0.967 |       **0.991** | +0.023 |   12 → **15** |   −21% | −40% |
+| Sol   | A_plain vs B_auto   |    16 |         0.967 |           0.855 | −0.112 |        12 → 6 |   +54% | −14% |
 
-#### Opus 4.6 — `results/bench-opus-20260622-230210.jsonl`
+Score is the mean semantic quality over the scored cells; token and time are cohort totals against `A_plain`, the same estimator the two tables above use. Both runs scored all 16 cells in all three arms — no envelope loss, no incomplete cell, no contamination — so these are the cleanest Codex agentic artifacts in the record.
 
-44 tasks × 2 arms, pytorch-lightning-master.
+**Sol is the strongest strict-arm result this lane has produced, and it is also the cleanest.** Fifteen of sixteen cells correct against twelve, every `C_strict` cell adherent, 21% fewer input tokens, 43% less wall-clock at the paired median. It converts `BA-01`, `BA-12`, `BA-13`, and `BA-15` and loses only `BA-08`, where both treatment arms land on 0.850 against a perfect control.
 
-**Token efficiency** (codemap/plain ratio):
+**Terra's strict arm gains on the same tasks but pays nothing back in tokens.** Its cohort totals are almost flat across the three arms — 3.12M, 3.08M, and 3.04M gross input for `A_plain`, `B_auto`, and `C_strict` — so the saving that every other stratum shows is absent here, and the paired median over its ten admissible pairs is only −14%. The reason is visible in the adherence field rather than in the scores: `C_strict` skipped the required query on six of sixteen cells (`BA-01`, `BA-04`, `BA-05`, `BA-12`, `BA-14`, `BA-16`), and a strict cell that explores by hand costs what a control costs. `BA-12` is the extreme case at 574.0k input tokens against its control's 267.7k.
 
-| Statistic | Value                 |
-| --------- | --------------------- |
-| Median    | 0.31× (69% reduction) |
-| Min       | 0.05× (BR-01)         |
-| Max       | 1.46× (BR-02)         |
+**The optional arm now fails on every Codex stratum, not just on Luna.** `B_auto` ends below its own control in all five Codex agentic executions, and the two new strata are the worst of them: 11 → 5 on terra and 12 → 6 on sol, both −37.5 points. Sol's optional arm also reads **more** input than its control — 3.90M against 2.53M gross, a +45% paired median — so on that stratum the available-but-optional integration costs both accuracy and tokens. Uptake does not explain it: `B_auto` reached for Codemap on 14 of 16 terra cells and 16 of 16 sol cells. Those counts are `codemap_used`, the observational signal, which credits a query issued inside a compound shell command; the stricter `codemap_calls`, which demands one standalone canonical query, reads 5 of 16 on terra and 14 of 16 on sol. Terra habitually chained its queries behind `&&` or `;`, so the gap between the two fields is a shell-style difference and not a difference in whether the tool ran. `A_plain` used it on none under either field, in both runs.
 
-**Accuracy** (scored tasks only):
+Expected-importer recall is 0.990 for `A_plain` and `B_auto` and 1.000 for `C_strict` in both runs; the single cell below full recall in each is `BA-15`, which the strict arm alone resolves completely. Discovery efficiency (DEFF) means run 3.56 / 2.71 / 2.47 on terra and 3.45 / 1.73 / 3.29 on sol — the one metric where the unaided control leads, because a grep-driven arm issues many cheap commands that each touch an expected importer.
 
-| Arm     | Score     | Correct/Scored | extraction_failed | incomplete |
-| ------- | --------- | -------------- | ----------------- | ---------- |
-| plain   | 86.1%     | 31/36          | 2 (CQ-01, CQ-05)  | 0          |
-| codemap | **91.7%** | **33/36**      | 2 (FN-03, RI-02)  | 0          |
+Cached input is 86% of gross on terra's control and 84% on sol's, so the token columns here are gross-input claims with the same caveat the structural tables carry: sol's 21% gross reduction is a 21% fresh reduction (410.6k → 322.7k), which is the one place gross and fresh happen to agree.
 
-By series:
+These runs share the arm-order confound with every other table in this lane, and each is one execution at one repetition per cell. Two strata agreeing on the direction of `B_auto` is worth more than either alone; neither is a replication of the other's magnitude.
 
-| Series       | plain   | codemap | Notes                                                                                                                    |
-| ------------ | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
-| SE (5 tasks) | **5/5** | **5/5** | Both arms perfect                                                                                                        |
-| FN (5 tasks) | **4/5** | 2/4     | 🔴 FN-02: codemap recall=0.027 vs plain=1.000 (Δ=−0.97); FN-03 codemap ext-fail                                          |
-| RV (5 tasks) | n/a     | n/a     | Scored in current runs (RV-01/05: symbol recall ≥0.70; RV-02/03/04: count ±10%); pre-June-23 runs had no RV ground truth |
-| CQ (5 tasks) | 2/3     | **4/5** | CQ-02 codemap recall=0.100 < plain=0.250; CQ-03/04/05 codemap perfect; CQ-03 plain=0.265 → codemap=1.000                 |
-| BR (8 tasks) | **7/8** | 6/7     | 🔴 BR-03: codemap recall=0.042 vs plain=1.000 (Δ=−0.96)                                                                  |
-| DG (6 tasks) | **6/6** | **6/6** | Both arms perfect                                                                                                        |
-| FT (5 tasks) | **5/5** | **5/5** | Both arms perfect                                                                                                        |
-| RI (5 tasks) | **4/5** | 3/4     | RI-01 codemap recall=1.000 vs plain=0.667 (+0.33); RI-02 codemap ext-fail                                                |
+#### Why a treatment arm sometimes reads more than its control
 
-**Safety-grade**: plain 13/13 → codemap 10/12 (June 22 run). FN-02 and BR-03 regressions were evaluator bugs — fixed June 23 (see `results/bench-opus-20260623-003745.jsonl`, both recall=1.000).
+Several rows above show the Codemap arm reading *more* input than the plain control — `+45%` on sol `B_auto`, `+7%` on terra `C_strict`, `+15%` and `+34%` on the structural editing stages. A command-level replay of all 96 agentic cells and the 54 structural cells shows no harness defect behind any of them: `token_accounting_inconsistent` is false in all 150 cells, every `A_plain` cell records zero Codemap launcher calls, and the treatment arms really do invoke the tool (155 calls over sol's 16 strict cells). The cause is agent behaviour, and it has three parts.
+
+**Gross input counts round-trips, not tool cost.** Each command is another model round-trip that re-sends the whole conversation, so cost follows how many commands an arm issues and how much text each drags in. A Codemap query returns a median 140–184 tokens against roughly 1,100 for the grep it replaces, which is why the strict arm can issue 64% more commands than the control (10.5 against 6.4 per cell) and still read less (157k against 177k).
+
+**The optional arm is additive rather than substitutive.** Across both runs `B_auto` pulls 18,991 tokens of command output into each cell against the control's 7,075 and the strict arm's 6,333 — it queries the index *and* explores by hand anyway. `B_auto` and `C_strict` issue the same number of commands; the whole 61k-per-cell gap between them is what those commands return.
+
+**Some cells bypass the tool and read the raw index file.** The locked index is on disk at `.cache/codemap/*.json`, and a cell that discovers it may `rg` or `jq` it directly. Terra `B_auto` `BA-06` pulled 262,151 tokens — about a megabyte of raw index — in a single `rg`, 65% of that cell's entire 401k input, two commands after the tool had already answered the same question in 1,494 tokens. That one command, not Codemap, is the largest single cost event in either run.
+
+A fourth, milder pattern rides along: several cells spend two to four round-trips on `--help` and `doctor --json` before their first real query. None of these three mechanisms is a property of the tool, and all three are visible one command at a time in `native_attempt_events` in the frozen telemetry.
+
+#### Agentic measurement caveats
+
+These apply to every agentic result table in this file, on both providers, and to the frozen artifacts behind them. They do not apply to the structural lanes.
+
+- **Arm order and provider cache.** Every published agentic run executed the arms in fixed `A_plain` → `B_auto` → `C_strict` order per task, with no per-cell provider prompt-cache reset. The agentic lanes were never counterbalanced. Elapsed time is the metric most exposed to this: a later arm inherits a warmed provider cache, so elapsed headlines above overstate how much of the reduction is attributable to the treatment. Input-token ratios are much less exposed but not immune. Read the elapsed figures as order-confounded rather than as a clean treatment effect.
+- **EREC/RREC absolutes.** The scorer behind the frozen artifacts credited an expected module when its name appeared anywhere inside the exposure or report text, including as a substring of an unrelated dotted name. Every `1.0000` recall reading above therefore includes free credit. The rule now anchors whole dotted names. The bias is arm-symmetric, so A/B/C deltas survive; the absolute values in frozen artifacts do not.
+- **Quality-score floor.** The semantic score is an unweighted mean over components, several of which are enumerated fields a model can hit without doing the work. Absolute `aqs` and mean-semantic-score values therefore sit above true zero-work performance. This too is arm-symmetric.
 
 <details>
-<summary><strong>Historical agentic benchmark — plain vs codemap vs semble — 2026-06-27 (obsolete)</strong></summary>
+<summary>Stopped, partial, and historical agentic runs</summary>
 
-> **Outdated (2026-06-27).** This obsolete section reports Claude Haiku 4.5, Sonnet 4.6, and Opus 4.6. The exact Codemap execution version is unresolved: the section label says v0.13.2, while the run note records a v0.13.1 cache; the Semble package/MCP version was not recorded. Do not compare or pool these values with current results.
+The stopped directory `results/codex-agentic-20260804T205639Z` is infrastructure-only evidence with zero model cells. The launcher previously opened its console capture inside the new result directory before the runner's strict launcher-only admission check, so the runner rejected the launcher's own file. Console capture now uses a private temporary file outside the result directory, while the strict admission invariant remains unchanged. Any supported-entrypoint failure preserves the reported artifact and prints the exact dry-run command plus a fresh timestamped paid command; reuse of an existing result directory remains forbidden.
 
-### Agentic benchmark — plain vs codemap vs semble — 2026-06-27 (v0.13.2)
+The stopped directory `results/codex-agentic-20260805T122121Z` contains 14 successful transport rows but is infrastructure/scoring diagnostic evidence only. Runtime identity drift stopped admission before the fifteenth cell, and the superseded response path conflated strict-envelope failure with absent semantic and raw-text evidence. The prospective runner freezes plugin source bytes before the first cell, preserves identity evidence even when initial C admission fails, and records semantic validity, diagnostic recovery, pooling eligibility, EREC, RREC, and DEFF as separate fields.
 
-pytorch-lightning-master, 16 tasks × 3 models × 3 arms = 144 runs (143 completed; BA-16/opus/semble missing 1). erec = fraction of expected rdeps in agent output_text (tool results excluded, arm-fair).
+The stopped directory `results/codex-agentic-20260805T144950Z` contains one successful A row and is infrastructure-only evidence. The snapshot archive preserved the B launcher bytes but stripped its executable mode from `0755` to `0600`, so B admission failed before a model call. The repaired archive writes executable inputs as private `0700`, writes other inputs as `0600`, records each mode in the snapshot ledger, and fails closed on later byte or mode drift.
 
-> **🚧 Under reconstruction** — numbers from a benchmark run with skill failures (RC1 PID bug) and v0.13.1 cache. Clean numbers pending after v0.13.2 fix rollout.
-
-**By model — quality + efficiency:**
-
-| Model       | Plain erec | Codemap erec | Semble erec | Δ cm−plain | Plain tok | Codemap tok |
-| ----------- | ---------- | ------------ | ----------- | ---------- | --------- | ----------- |
-| Haiku 4.5   | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
-| Sonnet 4.6  | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
-| Opus 4.6    | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
-| **Overall** | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
-
-Tokens = avg input tokens per run.
-
-**By difficulty — quality:**
-
-| Difficulty | Tasks          | Plain erec | Codemap erec | Semble erec | Δ cm−plain |
-| ---------- | -------------- | ---------- | ------------ | ----------- | ---------- |
-| simple     | BA-01,05,09,13 | 🚧         | 🚧           | 🚧          | 🚧         |
-| medium     | BA-02,06,10,14 | 🚧         | 🚧           | 🚧          | 🚧         |
-| hard       | BA-03,11,12,15 | 🚧         | 🚧           | 🚧          | 🚧         |
-| extreme    | BA-04,07,08,16 | 🚧         | 🚧           | 🚧          | 🚧         |
-
-**Notable runs (v0.13.2)**: 🚧 pending clean re-run after bug fixes.
-
-**Token component breakdown (143 runs, v0.13.2):**
-
-| Component     | Plain mean | Codemap mean | Semble mean | Δ cm−plain |
-| ------------- | ---------- | ------------ | ----------- | ---------- |
-| input_tokens  | 🚧         | 🚧           | 🚧          | 🚧         |
-| output_tokens | 🚧         | 🚧           | 🚧          | 🚧         |
-| **total**     | 🚧         | 🚧           | 🚧          | 🚧         |
-
-Token overhead 🚧 (pending clean re-run). Semble uses fewer input tokens than plain due to fewer tool calls.
-
-**Tool call count (mean per run):**
-
-| Tier    | Plain calls | Codemap calls | Delta |
-| ------- | ----------- | ------------- | ----- |
-| simple  | 🚧          | 🚧            | 🚧    |
-| medium  | 🚧          | 🚧            | 🚧    |
-| hard    | 🚧          | 🚧            | 🚧    |
-| extreme | 🚧          | 🚧            | 🚧    |
-
-Codemap reduces tool calls in every tier (🚧) — exploration savings are real but small vs preamble cost. Known limitations and planned mitigations: see `plugins/codemap-py/README.md`.
-
-Results above include all three arms. Combined arm excluded from default "all" runs (run with `--arm combined` to include).
-
-### Previous: agentic benchmark — 2026-04-29
-
-`results/agentic-2026-04-29.md` — pytorch-lightning, 4 arms × 3 models × 8 tasks = 96 runs.
+The completed frozen run `results/codex-agentic-20260804T172617Z` is historical immutable evidence: it persisted 9/9 BA-01 cells under archived machine manifest `f8490d39e2dbade395600423e4096cee94d7f87d1ada4cbe0a876fa74052fa8c`. Direct-importer exposure and final-report recall were `1.0` in every arm and repetition. Relative to `A_plain`, `B_auto` reduced mean input tokens by 39.6%, output tokens by 58.4%, and elapsed time by 52.5%; the then-named `C_required` arm reduced them by 66.3%, 71.9%, and 69.6%, respectively. These bounded exploratory means from one task and three repetitions are not the current default, are not pooled with the 16-task study, and do not define provider-wide performance.
 
 </details>
 
-</details>
+### Task defects found, fixed, and what remains
+
+Two suite defects were found after the first execution and corrected before these numbers were taken; a third is a real tool gap and is deliberately still scored as a miss. Full evidence: `.reports/benchmarks/2026-09-06/analysis.md`.
+
+- **CQ-03 — fixed.** Its `coupled --top 5` ground truth had drifted from the frozen index (`trainer` 49 against the index's 52, and a different fifth module), so `ordered_coupled_ranking` scored 0 in every arm of every model, including arms reporting the tool's own output verbatim. Regenerated from the frozen index. Haiku and Opus now score 1.000 in both Codemap arms.
+- **GR-04 — fixed.** The prompt asked for "the 15 most-imported modules" while the ground truth was `central --top 15 --exclude-tests`, so answers including test helpers were scored down to a deterministic 10/15. The prompt now states the constraint. All three tiers now score 1.000 in both Codemap arms, and the unaided arm improves as well (Haiku 0.333 → 0.800, Sonnet 0.867 → 0.933, Opus 1.000).
+- **CQ-05 — a genuine tool gap, left as a miss.** The task asks for unique public symbols with repeated declarations deduplicated; the independent AST oracle finds 9, while `uncovered` reports `unique_total: 20` for the same module — 11 of those 20 do have coverage under the oracle. The Codemap arms answer 20 and are marked wrong. Accepting the tool's own count as a second correct answer would have laundered an accuracy defect into a pass, so the fix belongs in `uncovered`.
+
+One genuine model-behaviour miss survives on the corrected CQ-03: Sonnet's Codemap arms return the correct five modules with correct counts but re-sorted by `dep_count`, while the prompt asks for the tool's returned order. `ordered_coupled_ranking` scores that 0, correctly. Haiku and Opus preserve the returned order.
+
+Twelve of 495 structural cells (2.4%) failed answer extraction and two control cells were dropped as contaminated (Haiku CQ-02, Sonnet CQ-03 — the unaided arm reaching Codemap material). All are excluded from both sides of every paired figure, which is why paired n varies between 47 and 51.
+
+The Codex run surfaced two further harness defects, both of which cost the treatment arms rather than the control. Neither is rescored in place — the artifacts are immutable — so each fix takes effect prospectively. This run's `B_auto` arm predates the optional-use alignment and required a Codemap query, so the cells named below are not comparable to a future `B_auto` run:
+
+- **The answer envelope was only implied — fixed, and the fix is now measured.** `answer_format_instruction` in `benchmarks/_bench_common/agentic_contracts.py` said "Return one JSON object containing exactly these labels" and then showed `BEGIN_ANSWER_JSON` / `END_ANSWER_JSON` inside a block explicitly labelled "Example using synthetic values only". Nothing instructed the model to wrap its own answer. Claude inferred it anyway (1 miss in 144 cells); Codex took it literally and returned bare JSON in 12 of 48. The instruction now states the wrap requirement outside the example, and all four 2026-09-07 Codex agentic executions — two on Luna, one each on terra and sol — lost **zero** cells to it, 192 cells with no envelope loss; see [Codex agentic re-executions](#codex-agentic-re-executions--2026-09-07) and [Codex agentic strata](#codex-agentic-strata--2026-09-07). The 09-06 artifact keeps its twelve losses; they are not rescored.
+- **Two correct counts were scored as extraction failures.** `_evaluate_rv`'s count patterns require the word order "N distinct/unique production callers". RV-04/B_auto wrote "24 production functions uniquely call …" and RV-05/C_strict answered "1. **11**" as a numbered sub-answer. Both numbers are the ground truth; neither matched a pattern. The control arm's phrasing on the same task did match, so the gap is arm-asymmetric by accident. Fixed: the patterns now accept a trailing qualifier and an enumerated sub-answer that carries the number alone. A replay of all 60 RV rows across both providers changes exactly these two and nothing else.
+
+One further observation is *not* being changed, because the current behaviour is specified and tested: canonical query credit requires the literal `$CODEMAP_BIN` token, and `test_historical_exact_launcher_and_compound_forms_reject_native_item_contract` asserts that an absolute path to the very launcher the arm provisioned is rejected. RV-01 lost its treatment credit to that rule. The rule is defensible — it keeps delivery evidence to one exact command shape — but it scores the spelling of a command rather than the act, and the same regex backs the contamination signal for the control arm. Changing it is a contract decision, not a bug fix, so it stays open rather than being quietly flipped.
+
+### Query benchmark — 2026-09-06
+
+`PARTIAL`, 14 of 18 primary scenarios, with self-consistency `CONSISTENT` 14/14. The four misses are honest gate failures on this corpus, not crashes:
+
+| Scenario | Measured                              | Gate     |
+| -------- | ------------------------------------- | -------- |
+| C1       | coverage gap 0.00 (0 verified extras) | ≥ 0.10   |
+| C3       | leverage ratio 1.45 (45 cold/31 warm) | ≥ 2.0    |
+| L2       | `rdeps` median 146 ms                 | ≤ 100 ms |
+| L4       | cold 351 ms vs warm 291 ms → 1.21×    | ≥ 2.0×   |
+
+L4 previously failed on undefined data: the timing helper counted `grep`'s "no matches" exit status 1 as a failed command, so the cold-baseline median was `NaN` and the speedup gate compared against nothing. Search tools now count exit 1 as a completed search. L1 (`central`, 142 ms against a 200 ms gate) and L2 together show roughly 140 ms of fixed process start-up per call, which is what both latency gates are really measuring.

@@ -60,7 +60,7 @@ PRODUCT_ACCEPTANCE_POLICY = {
         "c_a_gross_input_ratio_95_upper": "<= 1.05",
         "c_a_paired_quality_95_lower": "> 0",
     },
-    "task_family_block": "Any repeated task-family mean C_skill-A_plain quality difference < -0.10 blocks acceptance.",
+    "task_family_block": "Any repeated task-family mean C_strict-A_plain quality difference < -0.10 blocks acceptance.",
     "historical_evidence": "Historical nonpoolable evidence cannot satisfy this prospective policy.",
 }
 
@@ -341,7 +341,10 @@ def _build_manifest() -> dict[str, Any]:
             "claude": len(agentic_suite["ordered_task_ids"]) * len(core.ARM_CONTRACTS) * 3,
             "codex": len(agentic_suite["ordered_task_ids"]) * len(core.ARM_CONTRACTS),
         },
-        "models_by_provider": {"claude": ["haiku", "sonnet", "opus"], "codex": ["gpt-5.6-luna"]},
+        "models_by_provider": {
+            "claude": ["haiku", "sonnet", "opus"],
+            "codex": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"],
+        },
         "providers": ["claude", "codex"],
         "repeat_override": (
             "Each provider adapter admits a nondefault positive repeat only with a deterministic scope hash binding "

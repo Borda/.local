@@ -134,7 +134,12 @@ def _build_manifest() -> dict[str, Any]:
         "experiment_revision": EXPERIMENT_REVISION,
         "schema_version": "codex-agentic-manifest-v1",
         "status": "review_ready_paid_execution_pending_human_launch",
-        "model": {"name": "gpt-5.6-luna", "reasoning_effort": "high", "strict_config": True},
+        "model": {
+            "name": "gpt-5.6-luna",
+            "additional_strata": ["gpt-5.6-terra", "gpt-5.6-sol"],
+            "reasoning_effort": "high",
+            "strict_config": True,
+        },
         "target_source": source["target_source"],
         "frozen_index_contract": {
             "path": source["index"]["path"],
@@ -249,8 +254,8 @@ def _build_manifest() -> dict[str, Any]:
             ),
             "mapping": {
                 "A_plain": "A_plain",
-                "B_auto": "B_direct_required capability home; use remains optional",
-                "C_strict": "C_skill_required",
+                "B_auto": "B_auto capability home; use remains optional",
+                "C_strict": "C_strict",
             },
         },
     }

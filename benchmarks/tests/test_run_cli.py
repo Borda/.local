@@ -21,6 +21,7 @@ import json
 import math
 import os
 import subprocess
+import sys
 from types import SimpleNamespace
 from datetime import date
 from pathlib import Path
@@ -2226,3 +2227,91 @@ class TestTimingCensoring:
 
         assert stats.failed == 2
         assert stats.measured == 0
+
+
+# ===========================================================================
+# Optional-rich fallback
+# ===========================================================================
+
+
+def _load_cli_without_rich(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Import the CLI runner afresh with ``rich`` made unimportable.
+
+    Blocking the package in ``sys.modules`` is what makes the runner's guarded import fail the way a
+    host without rich installed makes it fail, and ``monkeypatch`` restores the entry afterwards.
+    The module is loaded under a throwaway name so the session-scoped ``script_run_cli`` fixture,
+    which every other test shares, keeps its own rich-enabled instance.
+
+    Args:
+        monkeypatch: Fixture used to block the import and restore it at teardown.
+
+    Returns:
+        The freshly executed module object.
+    """
+    import importlib.util
+
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "benchmarks"))
+    monkeypatch.setitem(sys.modules, "rich", None)
+    monkeypatch.setitem(sys.modules, "rich.console", None)
+    name = "run_cli_without_rich"
+    spec = importlib.util.spec_from_file_location(name, REPO_ROOT / "benchmarks" / "run-codemap-cli.py")
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, name, module)
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestRichAbsentFallback:
+    """The CLI runner stays usable on a host where rich is not installed."""
+
+    def test_import_degrades_to_the_console_free_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A missing rich leaves no console behind instead of aborting the import.
+
+        Scenario: the runner's console now comes from the shared ``benchmark_console`` helper, which
+        imports rich lazily inside the function rather than at the top of the module. That import
+        still has to raise through the runner's own guard, or a host without rich would lose the
+        whole benchmark instead of just its progress bar.
+        """
+        module = _load_cli_without_rich(monkeypatch)
+
+        assert module._IS_RICH_AVAILABLE is False
+        assert module._console is None
+
+    def test_progress_messages_fall_back_to_stderr(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Without a console, narration goes to stderr and leaves stdout clean for machine output.
+
+        Scenario: stdout carries scenario JSONL and the summary envelope, so the fallback branch
+        must never write narration there — a downstream JSON consumer would choke on it.
+        """
+        module = _load_cli_without_rich(monkeypatch)
+
+        module.log("[verify] Checking task modules against index...")
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err == "[verify] Checking task modules against index...\n"
+
+    def test_suites_run_without_a_progress_bar(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Every suite still runs and reports when the progress display is unavailable.
+
+        Scenario: ``_run_all_suites`` asks for a bar whenever the caller wants one, so the guard on
+        console availability is the only thing keeping a rich-free host from failing mid-benchmark.
+        """
+        module = _load_cli_without_rich(monkeypatch)
+        run_labels: list[str] = []
+
+        def _suite(label: str) -> Any:
+            """Build a zero-argument suite that records its own execution and yields no results."""
+
+            def _run() -> list:
+                run_labels.append(label)
+                return []
+
+            return _run
+
+        results = module._run_all_suites([("first", _suite("first")), ("second", _suite("second"))], True)
+
+        assert run_labels == ["first", "second"]
+        assert results == []

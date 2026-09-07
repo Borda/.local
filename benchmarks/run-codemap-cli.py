@@ -164,6 +164,7 @@ import time
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import fire
 import pandas as pd
@@ -178,13 +179,14 @@ from _bench_common.codemap_discovery import (
     git_toplevel,
     resolve_index_path as _util_resolve_index_path,
 )  # noqa: E402
-from _bench_common.presentation import make_progress  # noqa: E402
+from _bench_common.presentation import benchmark_console, make_progress  # noqa: E402
 from _bench_common.python_source import extract_import_targets, resolve_relative_base  # noqa: E402
 
 try:
-    from rich.console import Console
-
-    _console: Console | None = Console()
+    # benchmark_console imports rich lazily, so a missing rich still raises ImportError here and
+    # the runner keeps its plain-stderr fallback. Sharing the console is what puts this runner's
+    # progress bar and messages at the same width as every other benchmark surface.
+    _console: Any | None = benchmark_console()
     _IS_RICH_AVAILABLE = True
 except ImportError:
     _console = None
@@ -1016,6 +1018,38 @@ def score_rdeps_accuracy(
 
 # ---- LATENCY ----
 
+#: Search tools that report "no lines selected" with exit status 1 — a completed search, not a failure.
+_SEARCH_TOOLS = frozenset({"grep", "egrep", "fgrep", "rg", "ag", "ack"})
+
+
+def _command_completed(cmd: list[str], returncode: int) -> bool:
+    """Return whether *cmd* finished its work, treating an empty search result as completion.
+
+    ``grep`` exits 1 when a pattern matches nothing and 2 only on a real error, so counting exit 1 as
+    a failure discards the timing of a search that ran to completion. The cold-baseline sequences pair
+    a broad grep with a narrow one, so one empty match dropped every repetition and left the baseline
+    median undefined.
+
+    Args:
+        cmd: The command that was run, as a subprocess argument list.
+        returncode: Exit status the command reported.
+
+    Returns:
+        True when the command completed its search or exited zero.
+
+    Examples:
+        >>> _command_completed(["grep", "-rn", "nothing", "."], 1)
+        True
+        >>> _command_completed(["grep", "-rn", "nothing", "/missing"], 2)
+        False
+        >>> _command_completed(["scan-query", "central"], 1)
+        False
+    """
+    if returncode == 0:
+        return True
+    tool = Path(cmd[0]).name if cmd else ""
+    return returncode == 1 and tool in _SEARCH_TOOLS
+
 
 def time_command(cmd: list[str], n: int = 5, cwd: str | None = None) -> TimingStats:
     """Time a single command over ``n`` repeated runs and return sorted wall-clock statistics.
@@ -1052,7 +1086,7 @@ def time_command(cmd: list[str], n: int = 5, cwd: str | None = None) -> TimingSt
             timed_out += 1
             continue
         elapsed_ms = (time.perf_counter() - start) * 1000
-        if completed.returncode != 0:
+        if not _command_completed(cmd, completed.returncode):
             failed += 1
             continue
         timings.append(elapsed_ms)
@@ -1111,7 +1145,7 @@ def time_commands(cmds: list[list[str]], n: int = 3, cwd: str | None = None) -> 
             except subprocess.TimeoutExpired:
                 sequence_timed_out = True
                 continue
-            if completed.returncode != 0:
+            if not _command_completed(cmd, completed.returncode):
                 sequence_failed = True
         elapsed_ms = (time.perf_counter() - start) * 1000
         # A sequence whose commands failed or were censored is not a latency
@@ -1834,7 +1868,9 @@ def log(msg: str) -> None:
     if _OUT.quiet:
         return
     if _IS_RICH_AVAILABLE and _console is not None:
-        _console.print(msg)
+        # soft_wrap keeps a message with a long path on one line, so the rich branch says exactly
+        # what the plain-stderr fallback below says instead of folding at the framing width.
+        _console.print(msg, soft_wrap=True)
     else:
         print(msg, file=sys.stderr)
 

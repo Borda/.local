@@ -178,6 +178,11 @@ def answer_format_instruction(task: Mapping[str, Any]) -> str:
             *specs,
             IMPORT_CONVENTION_INSTRUCTION,
             "Do not put objects or counts inside array fields. Values outside these shapes are invalid.",
+            # The delimiters used to appear only inside the example below, which is labelled
+            # synthetic — so nothing told a model to wrap its own answer. Codex read that literally
+            # and returned bare JSON in 12 of 48 cells on 2026-09-06 while Claude lost 1 of 144.
+            "Wrap your answer between a BEGIN_ANSWER_JSON line and an END_ANSWER_JSON line, "
+            "exactly once, with the JSON object alone between them.",
             "Example using synthetic values only:",
             "BEGIN_ANSWER_JSON",
             json.dumps(example, separators=(",", ":")),

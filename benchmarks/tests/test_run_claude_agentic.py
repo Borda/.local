@@ -21,6 +21,10 @@ import pytest
 
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BENCHMARKS_DIR))
+
+from _bench_common.presentation import BENCHMARK_OUTPUT_WIDTH  # noqa: E402
+
 AGENTIC_SUITE_PATH = BENCHMARKS_DIR / "suites" / "tasks-agentic.json"
 PARITY_MANIFEST_PATH = BENCHMARKS_DIR / "manifests" / "provider-parity-methodology.json"
 ACTIVE_MANIFEST = json.loads(PARITY_MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -3755,3 +3759,226 @@ class TestQueryArmIsolation:
         assert seen["cwd"] != repo
         assert seen["cwd"].name == repo.name
         assert not (repo / "MUTATED.txt").exists()  # the stray edit stayed in the throwaway copy
+
+
+# ===========================================================================
+# report rendering — canonical parity arms
+# ===========================================================================
+
+
+class TestParityArmReport:
+    """The markdown report must pair the canonical parity arms, not only the legacy plain/codemap names."""
+
+    @staticmethod
+    def _parity_results(mod: Any) -> list[Any]:
+        """Build one task's three canonical parity runs with distinct elapsed times."""
+        return [
+            mod.BenchmarkRun(
+                arm=arm,
+                task_id="BA-01",
+                task_type="blast_radius_analysis",
+                model="haiku",
+                success=True,
+                elapsed_s=elapsed,
+                input_tokens=tokens,
+            )
+            for arm, elapsed, tokens in (
+                ("A_plain", 120.0, 400_000),
+                ("B_auto", 60.0, 200_000),
+                ("C_strict", 30.0, 100_000),
+            )
+        ]
+
+    def test_savings_summary_pairs_each_treatment_with_the_parity_control(self, script_run_agentic: Any) -> None:
+        """A_plain is recognised as the control, so both treatment arms report savings.
+
+        Scenario: the renderer assumed a ``plain`` baseline, so a parity snapshot produced only the
+        "no completed baseline + injected arm pairs" placeholder for every model.
+        """
+        mod = script_run_agentic
+        task = mod.Task(id="BA-01", type="blast_radius_analysis", prompt="p")
+        report = mod.Report(self._parity_results(mod), [task], {"date": "2026-09-06"})
+        markdown = report.render()
+
+        assert mod.Report._NO_PAIRS_MD not in markdown
+        assert "| C_strict | Elapsed (s)" in markdown
+        assert "| B_auto   | Elapsed (s)" in markdown
+
+    def test_baseline_arm_falls_back_to_the_legacy_name(self, script_run_agentic: Any) -> None:
+        """Legacy snapshots keep rendering against their own ``plain`` control."""
+        mod = script_run_agentic
+        results = [
+            mod.BenchmarkRun(
+                arm="plain",
+                task_id="BA-01",
+                task_type="blast_radius_analysis",
+                model="haiku",
+                success=True,
+                elapsed_s=120.0,
+            ),
+            mod.BenchmarkRun(
+                arm="codemap",
+                task_id="BA-01",
+                task_type="blast_radius_analysis",
+                model="haiku",
+                success=True,
+                elapsed_s=60.0,
+            ),
+        ]
+        task = mod.Task(id="BA-01", type="blast_radius_analysis", prompt="p")
+        assert mod.Report(results, [task], {})._baseline_arm() == "plain"
+
+
+# ===========================================================================
+# Relocated-index admission
+# ===========================================================================
+
+
+def _relocated_worktree_index(tmp_path: Path) -> tuple[Path, Path, Path, dict[str, str]]:
+    """Build a clean committed worktree holding a root-relocated copy of a frozen index.
+
+    Args:
+        tmp_path: Directory the worktree, index, and manifest are created under.
+
+    Returns:
+        The worktree root, the relocated index path, a manifest locking the frozen index bytes, and
+        the relocation provenance a run in that worktree would carry.
+    """
+    import subprocess
+
+    from _bench_common.mutation_isolation import relocate_frozen_index_for_worktree
+
+    source = tmp_path / "managed-clone"
+    source.mkdir()
+    repo = tmp_path / "worktree"
+    (repo / "pkg").mkdir(parents=True)
+    (repo / "pkg" / "a.py").write_text("def foo():\n    return 1\n", encoding="utf-8")
+    for args in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"],
+    ):
+        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+    commit = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    tree = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD^{tree}"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    frozen_payload = {
+        "scan_root": str(source.resolve()),
+        "git_sha": commit,
+        "scan_version": 3,
+        "modules": [{"name": "pkg.a"}, {"name": "pkg.b"}],
+    }
+    frozen_bytes = (json.dumps(frozen_payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    derived_bytes, relocation = relocate_frozen_index_for_worktree(frozen_bytes, source_root=source, worktree_root=repo)
+    index_path = tmp_path / "relocated-index.json"
+    index_path.write_bytes(derived_bytes)
+    manifest_path = tmp_path / "relocated-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "target_source": {"commit": commit, "tree": tree},
+                "index": {
+                    "raw_sha256": hashlib.sha256(frozen_bytes).hexdigest(),
+                    "git_sha": commit,
+                    "scan_version": 3,
+                    "module_count": 2,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return repo, index_path, manifest_path, dict(relocation)
+
+
+class TestRelocatedIndexAdmission:
+    """A worktree run proves index identity through relocation provenance, never byte identity."""
+
+    def test_valid_provenance_admits_a_worktree_index(self, script_run_agentic: Any, tmp_path: Path) -> None:
+        """Relocation provenance admits an index whose bytes differ from the locked hash.
+
+        Scenario: a run executes in its own worktree, so its index carries the worktree's
+        ``scan_root`` and can never reproduce the manifest's locked raw hash; the provenance written
+        by the relocation is what proves the graph is still the frozen one.
+        """
+        repo, index_path, manifest_path, relocation = _relocated_worktree_index(tmp_path)
+
+        script_run_agentic._validate_parity_runtime(repo, index_path, manifest_path, relocation)
+
+        assert hashlib.sha256(index_path.read_bytes()).hexdigest() != relocation["frozen_index_sha256"]
+
+    def test_provenance_naming_the_wrong_frozen_source_is_rejected(
+        self, script_run_agentic: Any, tmp_path: Path
+    ) -> None:
+        """Provenance whose frozen source is not the locked index is rejected.
+
+        Scenario: a caller supplies provenance derived from some other frozen index; admitting it
+        would let an unrelated graph enter the run under the locked manifest's authority.
+        """
+        repo, index_path, manifest_path, relocation = _relocated_worktree_index(tmp_path)
+        relocation["frozen_index_sha256"] = "0" * 64
+
+        with pytest.raises(ValueError, match="wrong frozen source"):
+            script_run_agentic._validate_parity_runtime(repo, index_path, manifest_path, relocation)
+
+    def test_provenance_disagreeing_with_the_bytes_on_disk_is_rejected(
+        self, script_run_agentic: Any, tmp_path: Path
+    ) -> None:
+        """Provenance whose derived hash misses the on-disk index is rejected.
+
+        Scenario: the relocated copy changed after its provenance was written, so the digest the
+        run would attest to is no longer the index the model actually reads.
+        """
+        repo, index_path, manifest_path, relocation = _relocated_worktree_index(tmp_path)
+        relocation["derived_index_sha256"] = "1" * 64
+
+        with pytest.raises(ValueError, match="changed after relocation"):
+            script_run_agentic._validate_parity_runtime(repo, index_path, manifest_path, relocation)
+
+    def test_absent_provenance_keeps_the_byte_gate(self, script_run_agentic: Any, tmp_path: Path) -> None:
+        """Without provenance a non-locked index is still rejected on its bytes.
+
+        Scenario: the same relocated index is offered by a run that claims no relocation; the
+        original byte-identity gate must reject it exactly as before.
+        """
+        repo, index_path, manifest_path, _relocation = _relocated_worktree_index(tmp_path)
+
+        with pytest.raises(ValueError, match="canonical run requires the locked index bytes"):
+            script_run_agentic._validate_parity_runtime(repo, index_path, manifest_path)
+
+
+# ===========================================================================
+# Shared terminal presentation
+# ===========================================================================
+
+
+class TestSharedPresentation:
+    """The runner renders through the shared benchmark console instead of its own."""
+
+    def test_console_is_fixed_at_the_shared_benchmark_width(self, script_run_agentic: Any) -> None:
+        """Framed output takes the shared benchmark width rather than the window's own width.
+
+        Scenario: this runner built a bare ``rich.Console``, so a panel it printed stretched to
+        whatever the terminal happened to be while the paid-command block beside it stayed at 78
+        columns. Both now come from the one console every benchmark surface shares.
+        """
+        assert script_run_agentic._console.width == BENCHMARK_OUTPUT_WIDTH
+
+    def test_stage_preflight_announces_itself_with_the_shared_section_rule(
+        self, script_run_agentic: Any, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A redirected stage preflight prints its banner as a plain titled rule.
+
+        Scenario: an operator pipes a no-model preflight into an archived log. The banner was a
+        bare upper-case line that no other run phase matched; its redirected form is now the same
+        ``== title ==`` rule every phase uses, while the PLAN and SCOPE lines under it, which the
+        launcher greps and paid admission depends on, stay byte-identical.
+        """
+        script_run_agentic.main(study="fix-single", tasks=["FS-01"], dry_run=True)
+
+        lines = capsys.readouterr().out.splitlines()
+        assert lines[0] == "== FIX-SINGLE PREFLIGHT (no model) =="
+        assert lines[1] == "PLAN    FS-01  rep=1  A_plain"
+        assert lines[-1].startswith("SCOPE   ")

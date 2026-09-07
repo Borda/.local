@@ -805,18 +805,18 @@
       ],
       "ground_truth": {
         "check": "coupled",
-        "top_dep_count": 49,
-        "top_internal_dep_count": 38,
+        "top_dep_count": 52,
+        "top_internal_dep_count": 41,
         "top_module": "lightning.pytorch.trainer.trainer",
         "top_modules": [
           {
-            "dep_count": 49,
-            "internal_dep_count": 38,
+            "dep_count": 52,
+            "internal_dep_count": 41,
             "name": "lightning.pytorch.trainer.trainer"
           },
           {
-            "dep_count": 45,
-            "internal_dep_count": 25,
+            "dep_count": 46,
+            "internal_dep_count": 26,
             "name": "lightning.pytorch.core.module"
           },
           {
@@ -830,9 +830,9 @@
             "name": "lightning.pytorch.strategies.fsdp"
           },
           {
-            "dep_count": 34,
-            "internal_dep_count": 20,
-            "name": "lightning.fabric.fabric"
+            "dep_count": 42,
+            "internal_dep_count": 22,
+            "name": "tests_pytorch.trainer.test_trainer"
           }
         ]
       },
@@ -2725,7 +2725,7 @@
         "top": 15
       },
       "id": "GR-04",
-      "prompt": "List the 15 most-imported modules in the codebase (the modules imported by the most other modules). Put them under a `## Modules` heading, one dotted module name per line (e.g. `lightning.pytorch.trainer.trainer`).",
+      "prompt": "List the 15 most-imported modules in the codebase (the modules imported by the most other modules), counting only non-test modules \u2014 exclude anything under the test tree. Put them under a `## Modules` heading, one dotted module name per line (e.g. `lightning.pytorch.trainer.trainer`).",
       "scoreable": true,
       "type": "graph_central",
       "workflow_subtype": "pre_implementation_research",

@@ -23,7 +23,7 @@ TASKS_PATH = BENCHMARKS / "suites" / "tasks-readcrop.json"
 METHODOLOGY_PATH = BENCHMARKS / "manifests" / "provider-parity-methodology.json"
 STRUCTURAL_PATH = BENCHMARKS / "run-codex-structural.py"
 ARMS = ("A_plain", "B_auto", "C_strict")
-_NATIVE_ARMS = {"A_plain": "A_plain", "B_auto": "B_direct_required", "C_strict": "C_skill_required"}
+_NATIVE_ARMS = {"A_plain": "A_plain", "B_auto": "B_auto", "C_strict": "C_strict"}
 _ANSWER_RE = re.compile(r"BEGIN_READ_CROP_JSON\s*(?P<payload>\{.*?\})\s*END_READ_CROP_JSON", re.DOTALL)
 
 sys.path.insert(0, str(BENCHMARKS))
@@ -50,7 +50,12 @@ from _bench_common.paid_lifecycle import (  # noqa: E402
     write_checksums,
 )
 from . import runtime  # noqa: E402
-from _bench_common.presentation import format_artifact_block, fmt_time, fmt_tok  # noqa: E402
+from _bench_common.presentation import (  # noqa: E402
+    format_artifact_block,
+    format_probe_row,
+    fmt_time,
+    fmt_tok,
+)
 
 
 _STRUCTURAL_MODULE: Any = None
@@ -164,7 +169,7 @@ def readcrop_prompt(arm: str, task: Mapping[str, Any]) -> str:
         if not isinstance(symbol, str) or not symbol:
             raise ValueError("C_strict read-crop task requires a symbol")
         supplement = (
-            _structural().arm_envelope("C_skill_required")
+            _structural().arm_envelope("C_strict")
             + f' The required canonical query is exactly `"$CODEMAP_BIN" query --compact symbol {symbol}`.'
             + codemap_boundary
         )
@@ -333,13 +338,7 @@ def rescore_results(
                 contract = contracts[task_id]
                 validate_provider_binding(contract, source_row.get("provider_binding", {}))
                 skill_path = (
-                    source_run_dir
-                    / "inputs"
-                    / "C_skill_required"
-                    / "codemap-py"
-                    / "codex-skills"
-                    / "query-code"
-                    / "SKILL.md"
+                    source_run_dir / "inputs" / "C_strict" / "codemap-py" / "codex-skills" / "query-code" / "SKILL.md"
                     if arm == "C_strict"
                     else None
                 )
@@ -401,11 +400,29 @@ def rescore_results(
     return output_dir
 
 
-def dry_run(tasks: list[dict[str, Any]]) -> list[str]:
-    """Return deterministic no-model rows for every task and treatment."""
-    rows = ["READCROP PREFLIGHT (no model)"]
+def dry_run(tasks: list[dict[str, Any]], *, observed_codemap: Mapping[str, bool]) -> list[str]:
+    """Return deterministic no-model rows for every task and treatment.
+
+    The stage banner is not a row: it is a section heading the caller renders through the shared
+    presentation helper, so a terminal draws a rule where a redirected run keeps plain text.
+
+    Args:
+        tasks: Loaded read-crop tasks, each carrying its frozen-source contract.
+        observed_codemap: Per-arm Codemap availability measured by :func:`preflight_isolation`.
+            ``codemap`` reports this observation and ``use`` the arm's declared obligation, so the
+            two disagree exactly when the environment fails an arm that requires Codemap. An arm the
+            probe could not measure reports ``unknown`` rather than borrowing its label's
+            expectation.
+    """
+    rows = []
     for arm in ARMS:
-        rows.append(f"PROBE   {arm:<10} codemap={arm != 'A_plain'} skill-required={arm == 'C_strict'}")
+        measured = observed_codemap.get(arm)
+        rows.append(
+            format_probe_row(
+                arm,
+                {"codemap": "unknown" if measured is None else measured, "use": runtime.probe_use(arm)},
+            )
+        )
     for item in tasks:
         for arm in ARMS:
             rows.append(f"PLAN    {item['contract'].task_id:<6} rep=1  {arm}")
@@ -490,8 +507,18 @@ def preflight_isolation(
     codemap_bin: Path,
     model: str,
     structural_manifest_path: Path,
-) -> None:
-    """Exercise the established disposable A/B/C homes without a model or auth."""
+    index_relocation: Mapping[str, str] | None = None,
+) -> dict[str, bool]:
+    """Exercise the established disposable A/B/C homes without a model or auth.
+
+    ``index_relocation`` is present only for a run outside the canonical clone, whose index is the locked graph with its
+    scan root moved; each probe then proves that provenance rather than the byte hash, which reproduces at the canonical
+    path alone.
+
+    Returns:
+        Each arm's observed Codemap availability, so a plan row can report what this probe actually
+        measured instead of restating what the arm's own label implies.
+    """
     adapter = _structural().CodexRunner(
         model,
         repo_path,
@@ -499,12 +526,19 @@ def preflight_isolation(
         marketplace_root=marketplace_root,
         codemap_bin=codemap_bin,
         manifest_path=structural_manifest_path,
+        index_relocation=index_relocation,
     )
+    observed: dict[str, bool] = {}
     try:
         for arm in _NATIVE_ARMS.values():
-            adapter.probe_arm(arm)
+            evidence = adapter.probe_arm(arm)
+            # A probe that reports nothing has measured nothing, so the arm stays out of the mapping
+            # rather than being recorded as an availability this run never observed.
+            if isinstance(evidence, Mapping):
+                observed[arm] = bool(evidence.get("codemap_available"))
     finally:
         adapter.close()
+    return observed
 
 
 def run_paid(
@@ -519,6 +553,7 @@ def run_paid(
     run_dir: Path,
     model: str,
     structural_manifest_path: Path,
+    index_relocation: Mapping[str, str] | None = None,
 ) -> Path:
     """Execute a human-authorized selected calibration in isolated native homes."""
     run_log = run_dir / "run.log"
@@ -531,6 +566,7 @@ def run_paid(
         codemap_bin=codemap_bin,
         manifest_path=structural_manifest_path,
         auth_source=auth_source,
+        index_relocation=index_relocation,
     )
 
     def prepare_run(destination: Path) -> None:
@@ -633,8 +669,13 @@ def run_stage(
     rescore_run_dir: Path | None = None,
     rescore_output_dir: Path | None = None,
     emit_authorization: bool = True,
+    index_relocation: Mapping[str, str] | None = None,
 ) -> None:
-    """Run, plan, resolve, or rescore the nonpoolable ReadCrop stage."""
+    """Run, plan, resolve, or rescore the nonpoolable ReadCrop stage.
+
+    ``index_relocation`` is present only for a run outside the canonical clone; it travels to every adapter this stage
+    builds, because each one admits the source and index before touching them.
+    """
     index_path = index_path or (repo_path / ".cache" / "codemap" / f"{repo_path.name}.json")
     marketplace_root = marketplace_root or ROOT
     codemap_bin = codemap_bin or (ROOT / "plugins" / "codemap-py" / "bin" / "codemap-py")
@@ -656,16 +697,18 @@ def run_stage(
         print(f"rescored: {output_path}")
         return
     if dry_run_requested:
-        preflight_isolation(
+        observed_codemap = preflight_isolation(
             repo_path=repo_path,
             index_path=index_path,
             marketplace_root=marketplace_root,
             codemap_bin=codemap_bin,
             model=model,
             structural_manifest_path=structural_manifest_path,
+            index_relocation=index_relocation,
         )
-        for row in dry_run(tasks):
-            print(row)
+        runtime.print_section_rule("READCROP PREFLIGHT (no model)")
+        for row in dry_run(tasks, observed_codemap=observed_codemap):
+            runtime.print_plan_row(row)
         if emit_authorization:
             print(f"SCOPE   {scope['scope_sha256']}")
         return
@@ -703,5 +746,6 @@ def run_stage(
         run_dir=run_dir,
         model=model,
         structural_manifest_path=structural_manifest_path,
+        index_relocation=index_relocation,
     )
     print(f"done: {run_path}")

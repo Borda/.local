@@ -23,6 +23,8 @@ BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BENCHMARKS_DIR))
 
 from _bench_codex import runtime as codex_runtime  # noqa: E402
+from _bench_common.presentation import LEGEND_CLOSE_RULE, LEGEND_OPEN_RULE  # noqa: E402
+from _bench_common import mutation_isolation  # noqa: E402
 from benchmarks._bench_common import provider_parity_contracts as core  # noqa: E402
 
 
@@ -144,7 +146,9 @@ def test_worktree_index_relocation_changes_only_scan_root(script_run_codex: Any,
     assert relocation["derived_index_sha256"] == hashlib.sha256(derived_bytes).hexdigest()
     assert relocation["source_scan_root"] == str(source_root.resolve())
     assert relocation["worktree_scan_root"] == str(worktree_root.resolve())
-    assert relocation["non_root_content_sha256"] == script_run_codex._non_root_index_sha256(frozen_payload)
+    # The root-stripped digest belongs to the shared relocation helper, which the runner imports rather
+    # than redefines, so the expectation is read from its owner.
+    assert relocation["non_root_content_sha256"] == mutation_isolation._non_root_index_sha256(frozen_payload)
 
 
 def test_worktree_index_relocation_rejects_an_unrelated_source_root(script_run_codex: Any, tmp_path: Path) -> None:
@@ -187,7 +191,7 @@ def test_deterministic_order_uses_only_current_plain_cli_skill_arms(script_run_c
     )
 
     assert first == second
-    assert set(first) == {"A_plain", "B_direct_required", "C_skill_required"}
+    assert set(first) == {"A_plain", "B_auto", "C_strict"}
 
 
 def test_exact_suite_counterbalances_arm_ordinals_at_one_repetition(script_run_codex: Any) -> None:
@@ -266,7 +270,7 @@ def test_permission_profiles_replace_legacy_sandbox_and_grant_only_coordination_
     for denied_root in script_run_codex._untrusted_host_agent_roots(home, "A_plain"):
         assert f'"{denied_root}" = "deny"' in plain_text
 
-    for arm in ("B_direct_required", "C_skill_required"):
+    for arm in ("B_auto", "C_strict"):
         treatment_home_path = tmp_path / f"codex-home-{arm}"
         treatment_home_path.mkdir()
         treatment_auth_path = treatment_home_path / "auth.json"
@@ -378,7 +382,7 @@ def test_plain_and_direct_homes_drop_host_skill_file_binding(
     with script_run_codex.prepare_arm_home("A_plain", root=tmp_path) as plain_home:
         assert "CODEMAP_SKILL_FILE" not in plain_home.env
     with script_run_codex.prepare_arm_home(
-        "B_direct_required",
+        "B_auto",
         root=tmp_path,
         codemap_bin=launcher,
     ) as direct_home:
@@ -465,7 +469,7 @@ def test_skill_home_preserves_plugin_registration_when_permissions_are_applied(
         marketplace_root=marketplace_root,
     )
 
-    with runner._prepare_verified_home("C_skill_required") as home:
+    with runner._prepare_verified_home("C_strict") as home:
         config_text = (home.path / "config.toml").read_text(encoding="utf-8")
         coordination_path = home.coordination_path
 
@@ -484,7 +488,7 @@ def test_active_manifest_requires_a_portable_treatment_python_resolver() -> None
     assert manifest["experiment_revision"]
     assert runtime == {
         "required_major_minor": [3, 11],
-        "scope": ["B_direct_required", "C_skill_required"],
+        "scope": ["B_auto", "C_strict"],
         "resolution": "first executable Python reporting the required major/minor from the reviewed runtime path candidates",
     }
 
@@ -505,7 +509,7 @@ def test_locked_treatment_python_is_executable_and_version_checked(
                     "treatment_runtime": {
                         "environment": {"CODEMAP_PYTHON": str(python_path)},
                         "required_major_minor": [3, 11],
-                        "scope": ["B_direct_required", "C_skill_required"],
+                        "scope": ["B_auto", "C_strict"],
                     }
                 }
             }
@@ -568,7 +572,7 @@ def test_verified_home_overrides_treatment_python_and_removes_it_from_plain(
     with runner._prepare_verified_home("A_plain") as plain:
         plain_evidence = script_run_codex.probe_arm_home(plain)
         plain_has_runtime = "CODEMAP_PYTHON" in plain.env
-    with runner._prepare_verified_home("B_direct_required") as treatment:
+    with runner._prepare_verified_home("B_auto") as treatment:
         treatment_evidence = script_run_codex.probe_arm_home(treatment)
         coordination_path = treatment.coordination_path
 
@@ -714,13 +718,13 @@ def test_structural_snapshot_cleans_a_shared_treatment_coordination_root_once(
         tasks_path=SUITE_PATH,
         manifest_path=MANIFEST_PATH,
         tasks=[],
-        arms=["A_plain", "B_direct_required", "C_skill_required"],
+        arms=["A_plain", "B_auto", "C_strict"],
     ) == {"ok": True}
     assert events == [
         "home:A_plain",
         "coordination:.index-rw",
-        "home:B_direct_required",
-        "home:C_skill_required",
+        "home:B_auto",
+        "home:C_strict",
     ]
 
 
@@ -764,7 +768,7 @@ def test_permission_profile_verification_fails_closed_when_codex_rejects_the_pro
     repo_path.mkdir()
     home_path = tmp_path / "codex-home"
     home_path.mkdir()
-    home = script_run_codex.ArmHome("B_direct_required", home_path, {}, True, True)
+    home = script_run_codex.ArmHome("B_auto", home_path, {}, True, True)
 
     def _reject_profile(command: list[str], **_kwargs: Any) -> SimpleNamespace:
         """Reject the selected profile at the fixture validation boundary."""
@@ -829,12 +833,12 @@ def test_real_codex_profile_denies_source_and_auth_but_allows_coordination(
     index_path.write_text("{}", encoding="utf-8")
     home_path = tmp_path / "codex-home"
     home_path.mkdir()
-    home = script_run_codex.ArmHome("B_direct_required", home_path, {}, True, True)
+    home = script_run_codex.ArmHome("B_auto", home_path, {}, True, True)
     auth_path = home.path / "auth.json"
     auth_path.write_text('{"fixture":"credential-sentinel"}', encoding="utf-8")
     auth_path.chmod(0o600)
     home.coordination_path = script_run_codex._prepare_coordination_root(index_path)
-    script_run_codex._write_permission_config(home, "B_direct_required", index_path)
+    script_run_codex._write_permission_config(home, "B_auto", index_path)
 
     try:
         script_run_codex._verify_permission_profile(home, repo_path, index_path)
@@ -1058,7 +1062,7 @@ def test_loaded_task_keeps_canonical_identity_and_shared_evaluator_input(script_
         evaluator=_evaluator,
     )
 
-    result = runner.run(loaded_task, "B_direct_required")
+    result = runner.run(loaded_task, "B_auto")
 
     assert result.task_hash == core.canonical_task_hash(raw_task)
     assert result.prompt_hash == core.prompt_hash(raw_task)
@@ -1089,10 +1093,10 @@ def test_loaded_task_keeps_canonical_identity_and_shared_evaluator_input(script_
             False,
             id="plain-contaminated",
         ),
-        pytest.param("B_direct_required", [], False, False, True, id="direct-no-call-separate"),
-        pytest.param("C_skill_required", [], False, False, True, id="skill-no-call-separate"),
+        pytest.param("B_auto", [], False, False, True, id="direct-no-call-separate"),
+        pytest.param("C_strict", [], False, False, True, id="skill-no-call-separate"),
         pytest.param(
-            "C_skill_required",
+            "C_strict",
             [
                 {
                     "type": "command_execution",
@@ -1201,7 +1205,7 @@ def test_result_rows_expose_query_conformance_and_cohort(script_run_codex: Any) 
         status="✓",
         task_id="SE-01",
         repetition=1,
-        arm="C_skill_required",
+        arm="C_strict",
         input_tokens=120,
         cached_input_tokens=80,
         fresh_tokens=40,
@@ -1617,7 +1621,7 @@ def test_runner_rejects_tampered_nested_provenance(script_run_codex: Any, tmp_pa
     )
 
     with pytest.raises(ValueError, match="task hash"):
-        runner.run(tampered, "B_direct_required")
+        runner.run(tampered, "B_auto")
 
 
 def test_skill_arm_installs_and_locks_rig_and_codemap_plugins(script_run_codex: Any, tmp_path: Path) -> None:
@@ -1628,7 +1632,7 @@ def test_skill_arm_installs_and_locks_rig_and_codemap_plugins(script_run_codex: 
     manifest.write_text('{"name":"borda-ai-rig","plugins":[]}', encoding="utf-8")
     calls: list[list[str]] = []
 
-    with script_run_codex.prepare_arm_home("C_skill_required", root=tmp_path) as home:
+    with script_run_codex.prepare_arm_home("C_strict", root=tmp_path) as home:
         rig_path = home.path / "plugins" / "cache" / "borda-ai-rig" / "codex-rig" / "0.4.0"
         rig_manifest = rig_path / ".codex-plugin" / "plugin.json"
         rig_manifest.parent.mkdir(parents=True)
@@ -1899,16 +1903,16 @@ def test_paid_skill_home_installs_only_from_bound_run_snapshot(
     """
     snapshot_root = tmp_path / "run" / "inputs"
     snapshot_root.mkdir(parents=True)
-    codemap_source = _write_snapshot_plugin_tree(snapshot_root / "C_skill_required", "codemap-py", "0.27.0")
-    rig_source = _write_snapshot_plugin_tree(snapshot_root / "C_skill_required", "codex-rig", "0.4.0")
-    marketplace_manifest = _write_frozen_snapshot_marketplace(snapshot_root / "C_skill_required")
+    codemap_source = _write_snapshot_plugin_tree(snapshot_root / "C_strict", "codemap-py", "0.27.0")
+    rig_source = _write_snapshot_plugin_tree(snapshot_root / "C_strict", "codex-rig", "0.4.0")
+    marketplace_manifest = _write_frozen_snapshot_marketplace(snapshot_root / "C_strict")
     _write_runtime_snapshot_metadata(
         snapshot_root,
         {
-            "C_skill_required:codemap-py": codemap_source,
-            "C_skill_required:codex-rig": rig_source,
+            "C_strict:codemap-py": codemap_source,
+            "C_strict:codex-rig": rig_source,
         },
-        locked_files={"C_skill_required:marketplace": marketplace_manifest},
+        locked_files={"C_strict:marketplace": marketplace_manifest},
     )
     frozen_name = "borda-ai-rig-frozen"
     snapshot_manifest = json.loads(marketplace_manifest.read_text(encoding="utf-8"))
@@ -1922,8 +1926,8 @@ def test_paid_skill_home_installs_only_from_bound_run_snapshot(
     }
     assert marketplace_manifest.stat().st_mode & 0o777 == 0o600
     assert {
-        "role": "C_skill_required:marketplace",
-        "archived_path": "C_skill_required/.agents/plugins/marketplace.json",
+        "role": "C_strict:marketplace",
+        "archived_path": "C_strict/.agents/plugins/marketplace.json",
         "sha256": hashlib.sha256(marketplace_manifest.read_bytes()).hexdigest(),
         "bytes": marketplace_manifest.stat().st_size,
         "mode": 0o600,
@@ -2002,7 +2006,7 @@ def test_paid_skill_home_installs_only_from_bound_run_snapshot(
     )
     runner._bind_runtime_snapshot(
         snapshot_root,
-        {"C_skill_required": {"codemap-py": codemap_source, "codex-rig": rig_source}},
+        {"C_strict": {"codemap-py": codemap_source, "codex-rig": rig_source}},
     )
     monkeypatch.setattr(script_run_codex, "prepare_arm_home", _prepare)
     monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
@@ -2013,7 +2017,7 @@ def test_paid_skill_home_installs_only_from_bound_run_snapshot(
     monkeypatch.setattr(script_run_codex, "_verify_installed_plugin_pair", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(script_run_codex, "_verify_permission_profile", lambda *_args, **_kwargs: None)
 
-    home = runner._prepare_verified_home("C_skill_required")
+    home = runner._prepare_verified_home("C_strict")
     try:
         assert frozen_marketplace is not None
         assert home.codemap_plugin_path == installed_paths["codemap-py"]
@@ -2049,27 +2053,27 @@ def test_bound_runtime_snapshot_rejects_byte_drift_and_records_observed_identity
     """
     snapshot_root = tmp_path / "run" / "inputs"
     snapshot_root.mkdir(parents=True)
-    source = _write_snapshot_plugin_tree(snapshot_root / "C_skill_required", "codemap-py", "0.27.0")
-    rig_source = _write_snapshot_plugin_tree(snapshot_root / "C_skill_required", "codex-rig", "0.4.0")
+    source = _write_snapshot_plugin_tree(snapshot_root / "C_strict", "codemap-py", "0.27.0")
+    rig_source = _write_snapshot_plugin_tree(snapshot_root / "C_strict", "codex-rig", "0.4.0")
     _write_runtime_snapshot_metadata(
         snapshot_root,
-        {"C_skill_required:codemap-py": source, "C_skill_required:codex-rig": rig_source},
+        {"C_strict:codemap-py": source, "C_strict:codex-rig": rig_source},
     )
     runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
     runner._bind_runtime_snapshot(
         snapshot_root,
-        {"C_skill_required": {"codemap-py": source, "codex-rig": rig_source}},
+        {"C_strict": {"codemap-py": source, "codex-rig": rig_source}},
     )
     manifest = source / ".codex-plugin" / "plugin.json"
     manifest.write_text('{"name":"codemap-py","version":"drifted"}', encoding="utf-8")
 
     with pytest.raises(ValueError, match=r"codemap-py.*expected=.*observed="):
-        runner._runtime_plugin_sources("C_skill_required")
+        runner._runtime_plugin_sources("C_strict")
 
     evidence_path = snapshot_root.parent / "runtime-isolation.jsonl"
-    runner._record_runtime_failure("C_skill_required", ValueError("snapshot byte drift"), source_paths=[source])
+    runner._record_runtime_failure("C_strict", ValueError("snapshot byte drift"), source_paths=[source])
     evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
-    assert evidence["arm"] == "C_skill_required"
+    assert evidence["arm"] == "C_strict"
     assert evidence["error"] == "snapshot byte drift"
     assert evidence["observed_plugin_identities"]["codemap-py"]["version"] == "drifted"
 
@@ -2098,7 +2102,7 @@ def test_verified_runtime_identity_is_recorded_before_home_cleanup(script_run_co
     runner._runtime_evidence_path = tmp_path / "runtime-isolation.jsonl"
     home = SimpleNamespace(codemap_plugin_path=codemap, codex_rig_path=codex_rig)
 
-    runner._record_runtime_success("C_skill_required", home)
+    runner._record_runtime_success("C_strict", home)
 
     evidence = json.loads(runner._runtime_evidence_path.read_text(encoding="utf-8"))
     assert evidence["status"] == "verified"
@@ -2170,13 +2174,13 @@ def test_initial_skill_admission_failure_keeps_identity_evidence_after_cleanup(
             tasks_path=tasks_path,
             manifest_path=manifest_path,
             tasks=[],
-            arms=["C_skill_required"],
+            arms=["C_strict"],
         )
 
     evidence_path = run_dir / "runtime-isolation.jsonl"
     assert evidence_path.stat().st_mode & 0o777 == 0o600
     evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
-    assert evidence["arm"] == "C_skill_required"
+    assert evidence["arm"] == "C_strict"
     assert evidence["error"] == "fixture plugin identity mismatch"
     assert evidence["expected_plugin_identities"]["codemap-py"]["version"] == "0.27.0"
     assert evidence["observed_plugin_identities"]["codex-rig"]["version"] == "0.4.0"
@@ -2212,7 +2216,7 @@ def test_final_skill_plugin_roster_rejects_missing_disabled_or_extra_entries(
     """Final C admission requires exactly the two enabled treatment plugins."""
     home_path = tmp_path / "codex-home"
     home_path.mkdir()
-    home = script_run_codex.ArmHome("C_skill_required", home_path, {}, True, True)
+    home = script_run_codex.ArmHome("C_strict", home_path, {}, True, True)
 
     def _command_runner(_command: list[str], **_kwargs: Any) -> SimpleNamespace:
         """Record commands and return fixture responses."""
@@ -2398,7 +2402,15 @@ def test_probe_verifies_authentication_without_disclosing_auth_source(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A no-model probe must prove login while returning no credential material."""
+    """A no-model probe must prove login while returning no credential material.
+
+    The probe rejects an A_plain home that can reach a Codemap binary, so the host's own PATH — which carries the
+    installed plugin on a development machine — has to be replaced with an empty directory for the assertion under test
+    to be about authentication rather than the developer's shell.
+    """
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
     auth_source = tmp_path / "source-auth.json"
     auth_source.write_text('{"fixture_token":"do-not-report"}', encoding="utf-8")
     auth_source.chmod(0o600)
@@ -2596,7 +2608,7 @@ def test_runner_rejects_auth_source_drift_before_the_next_model_call(
 
 def test_probe_requires_verified_treatment_home(script_run_codex: Any, tmp_path: Path) -> None:
     """A copied or merely declared treatment home is not installation evidence."""
-    with script_run_codex.prepare_arm_home("C_skill_required", root=tmp_path) as home:
+    with script_run_codex.prepare_arm_home("C_strict", root=tmp_path) as home:
         with pytest.raises(ValueError, match="verified"):
             script_run_codex.probe_arm_home(home)
         home.codemap_available = True
@@ -2649,7 +2661,7 @@ def test_locked_runtime_requires_one_shared_locked_index_for_every_arm(
     )
 
     script_run_codex._validate_locked_runtime(repo_path, index_path, "A_plain", manifest_path)
-    script_run_codex._validate_locked_runtime(repo_path, index_path, "B_direct_required", manifest_path)
+    script_run_codex._validate_locked_runtime(repo_path, index_path, "B_auto", manifest_path)
 
     with pytest.raises(ValueError, match="requires the locked index"):
         script_run_codex._validate_locked_runtime(repo_path, None, "A_plain", manifest_path)
@@ -2698,7 +2710,7 @@ def test_locked_runtime_admits_only_a_provenance_bound_worktree_index(
     script_run_codex._validate_locked_runtime(
         worktree_root,
         index_path,
-        "C_skill_required",
+        "C_strict",
         manifest_path,
         index_relocation=relocation,
     )
@@ -2710,7 +2722,7 @@ def test_locked_runtime_admits_only_a_provenance_bound_worktree_index(
         script_run_codex._validate_locked_runtime(
             worktree_root,
             index_path,
-            "C_skill_required",
+            "C_strict",
             manifest_path,
             index_relocation=relocation,
         )
@@ -2761,7 +2773,7 @@ def test_historical_runtime_coordinate_uses_patch_baseline_not_main_manifest(
     script_run_codex._validate_locked_runtime(
         worktree_root,
         index_path,
-        "C_skill_required",
+        "C_strict",
         manifest_path,
         index_relocation=relocation,
         historical_runtime_coordinate=coordinate,
@@ -2771,7 +2783,7 @@ def test_historical_runtime_coordinate_uses_patch_baseline_not_main_manifest(
         script_run_codex._validate_locked_runtime(
             worktree_root,
             index_path,
-            "C_skill_required",
+            "C_strict",
             manifest_path,
             index_relocation=relocation,
             historical_runtime_coordinate={**coordinate, "baseline_commit": "d" * 40},
@@ -2787,7 +2799,7 @@ def test_result_exposes_native_telemetry_and_turn_limit_capability(script_run_co
         evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
     )
 
-    result = runner.run({"id": "fixture", "prompt": "prompt", "type": "demo"}, "B_direct_required")
+    result = runner.run({"id": "fixture", "prompt": "prompt", "type": "demo"}, "B_auto")
 
     assert result.elapsed_s >= 0.0
     assert result.native_item_counts == {"agent_message": 1}
@@ -3069,6 +3081,7 @@ def test_dry_run_prints_the_manifest_driven_per_cell_timeout_without_global_dead
     monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
     monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
     monkeypatch.setattr(script_run_codex, "print", planned.append, raising=False)
+    monkeypatch.setattr(codex_runtime, "print_plan_row", planned.append)
 
     script_run_codex.main(
         repo_path=tmp_path,
@@ -3306,7 +3319,7 @@ def test_main_records_cell_failures_and_continues_after_smoke(
         model=script_run_codex.PARITY_CODEX_MODEL,
         tasks_path=tmp_path / "tasks.json",
         output_path=output_path,
-        arm="B_direct_required",
+        arm="B_auto",
     )
 
     assert len(output_path.read_text(encoding="utf-8").splitlines()) == 2
@@ -3324,8 +3337,8 @@ def test_main_records_cell_failures_and_continues_after_smoke(
     assert metadata["artifacts"]["canonical_telemetry_pooling_ineligibility_reasons"] == []
     stdout = capsys.readouterr().out
     assert stdout.count("quality=    ?") == 2
-    assert sum(line == "LEGEND" for line in stdout.splitlines()) == 1
-    assert sum(line == "END LEGEND" for line in stdout.splitlines()) == 1
+    assert sum(line == LEGEND_OPEN_RULE for line in stdout.splitlines()) == 1
+    assert sum(line == LEGEND_CLOSE_RULE for line in stdout.splitlines()) == 1
     assert all(not line.startswith("LEGEND  ") for line in stdout.splitlines())
     assert stdout.count("ARTIFACTS:") == 1
     assert f" - telemetry={output_path}" in stdout
@@ -3343,7 +3356,7 @@ def test_pooling_still_excludes_a_non_compliant_strict_cell(script_run_codex: An
     ``required_use_missing`` when it makes no successful query.
     """
     run = script_run_codex.CodexRun(
-        arm="C_skill_required",
+        arm="C_strict",
         task_id="first",
         task_type="demo",
         model=script_run_codex.PARITY_CODEX_MODEL,
@@ -3360,7 +3373,7 @@ def test_pooling_still_excludes_a_non_compliant_strict_cell(script_run_codex: An
 def test_pooling_admits_a_non_compliant_optional_use_cell(script_run_codex: Any) -> None:
     """A zero-query B cell carries no required-use exclusion."""
     run = script_run_codex.CodexRun(
-        arm="B_direct_required",
+        arm="B_auto",
         task_id="first",
         task_type="demo",
         model=script_run_codex.PARITY_CODEX_MODEL,
@@ -3766,12 +3779,17 @@ def test_main_emits_plans_only_for_dry_runs_and_paths_only_in_artifact_announcem
     )
 
 
-def test_main_dry_run_prints_plan_without_arm_color_helper(
+def test_main_dry_run_routes_plan_through_shared_plan_renderer(
     script_run_codex: Any,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Dry-run plans stay plain while paid result rows retain arm coloring."""
+    """Dry-run probe and plan rows reach the shared arm renderer instead of a direct print.
+
+    An operator reading a 219-cell plan scrolls past hundreds of near-identical rows, so each coordinate carries its arm
+    color on a terminal. Routing through the shared renderer is what keeps that color out of redirected logs, so a
+    direct ``print`` path would silently reintroduce the ANSI contamination the redirected-output contract forbids.
+    """
     task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
     printed: list[str] = []
 
@@ -3791,12 +3809,9 @@ def test_main_dry_run_prints_plan_without_arm_color_helper(
     monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
     monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
     monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
-    monkeypatch.setattr(script_run_codex, "print", printed.append, raising=False)
-    monkeypatch.setattr(
-        codex_runtime,
-        "print_arm_row",
-        lambda *_args, **_kwargs: pytest.fail("dry-run plan reached the arm-color helper"),
-    )
+    plain: list[str] = []
+    monkeypatch.setattr(script_run_codex, "print", plain.append, raising=False)
+    monkeypatch.setattr(codex_runtime, "print_plan_row", printed.append)
 
     script_run_codex.main(
         repo_path=tmp_path,
@@ -3808,13 +3823,15 @@ def test_main_dry_run_prints_plan_without_arm_color_helper(
     )
 
     assert "PLAN    fixture  rep=1  A_plain" in printed
+    assert "PROBE   A_plain   codemap=false  use=forbidden  codemap_python=absent" in printed
+    assert not any(row.startswith(("PLAN", "PROBE")) for row in plain)
 
 
 @pytest.mark.parametrize(
     ("arm", "expected_prefixes"),
     [
         pytest.param("all", ["(1/3)", "(2/3)", "(3/3)"], id="task-subset-all-arms"),
-        pytest.param("B_direct_required", ["(1/1)"], id="task-subset-single-arm"),
+        pytest.param("B_auto", ["(1/1)"], id="task-subset-single-arm"),
     ],
 )
 def test_main_progress_denominator_matches_selected_cells(
@@ -3861,7 +3878,7 @@ def test_main_progress_denominator_matches_selected_cells(
     monkeypatch.setattr(
         script_run_codex,
         "deterministic_arm_order",
-        lambda *_args, **_kwargs: ("C_skill_required", "B_direct_required", "A_plain"),
+        lambda *_args, **_kwargs: ("C_strict", "B_auto", "A_plain"),
     )
     monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
 
@@ -3878,7 +3895,7 @@ def test_main_progress_denominator_matches_selected_cells(
     assert [row.split()[0] for row in result_rows] == expected_prefixes
     assert all("RESULT" not in row for row in result_rows)
     if arm == "all":
-        assert [row.split()[4] for row in result_rows] == ["A_plain", "B_direct", "C_skill"]
+        assert [row.split()[4] for row in result_rows] == ["A_plain", "B_auto", "C_strict"]
 
 
 def test_main_prints_interrupted_partial_block_with_planned_denominator(
@@ -3921,7 +3938,7 @@ def test_main_prints_interrupted_partial_block_with_planned_denominator(
     monkeypatch.setattr(
         script_run_codex,
         "deterministic_arm_order",
-        lambda *_args, **_kwargs: ("C_skill_required", "B_direct_required", "A_plain"),
+        lambda *_args, **_kwargs: ("C_strict", "B_auto", "A_plain"),
     )
     monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
 
@@ -3935,7 +3952,7 @@ def test_main_prints_interrupted_partial_block_with_planned_denominator(
 
     result_rows = [line for line in capsys.readouterr().out.splitlines() if line.startswith("(")]
     assert [row.split()[0] for row in result_rows] == ["(1/3)", "(2/3)"]
-    assert [row.split()[4] for row in result_rows] == ["B_direct", "C_skill"]
+    assert [row.split()[4] for row in result_rows] == ["B_auto", "C_strict"]
 
 
 def test_output_legend_defines_treatments_tasks_and_measurement_marks(script_run_codex: Any) -> None:
@@ -3943,15 +3960,18 @@ def test_output_legend_defines_treatments_tasks_and_measurement_marks(script_run
     legend = script_run_codex.runtime.STRUCTURAL_OUTPUT_LEGEND
     lines = legend.splitlines()
 
-    assert legend.startswith("LEGEND\n")
-    assert legend.endswith("END LEGEND")
+    assert legend.startswith(f"{LEGEND_OPEN_RULE}\n")
+    assert legend.endswith(LEGEND_CLOSE_RULE)
     assert all(not line.startswith("LEGEND  ") for line in lines)
     for field in ("treatments", "status", "quality", "progress", "treatment", "codemap-used", "input tokens"):
         assert sum(line.startswith(f"  {field}:") for line in lines) == 1
     assert sum(line == "  tasks:" for line in lines) == 1
-    assert "treatments: A_plain=no Codemap, B_direct=direct Codemap required, C_skill=Codemap Skill required" in legend
-    assert "B_direct_required" not in legend
-    assert "C_skill_required" not in legend
+    assert (
+        "treatments: A_plain=no Codemap, B_auto=direct Codemap available and optional, "
+        "C_strict=Codemap Skill required" in legend
+    )
+    assert "B_direct" not in legend
+    assert "C_skill" not in legend
     assert "status: ✓ completed, ✗ failed" in legend
     assert "quality: continuous [0,1], ? unscoreable (higher is better)" in legend
     assert "progress: N completed cells / M planned cells" in legend
@@ -3972,8 +3992,8 @@ def test_output_legend_defines_treatments_tasks_and_measurement_marks(script_run
     ("canonical_arm", "display_arm"),
     [
         pytest.param("A_plain", "A_plain", id="plain"),
-        pytest.param("B_direct_required", "B_direct", id="direct"),
-        pytest.param("C_skill_required", "C_skill", id="skill"),
+        pytest.param("B_auto", "B_auto", id="direct"),
+        pytest.param("C_strict", "C_strict", id="skill"),
     ],
 )
 def test_human_arm_labels_shorten_only_presentation_names(
@@ -4026,158 +4046,8 @@ def test_output_legend_defines_each_task_code(script_run_codex: Any, code: str, 
     assert f"      {code}: {meaning}" in script_run_codex.runtime.STRUCTURAL_OUTPUT_LEGEND.splitlines()
 
 
-def _render_result_stream(input_text: str, *args: str) -> subprocess.CompletedProcess[str]:
-    """Run the runner's stream-rendering mode with captured text output."""
-    return subprocess.run(
-        [sys.executable, str(SCRIPT_PATH), "--render-results", *args],
-        cwd=BENCHMARKS_DIR.parent,
-        input=input_text,
-        capture_output=True,
-        encoding="utf-8",
-        text=True,
-        check=False,
-    )
-
-
-@pytest.mark.parametrize(
-    ("arm", "color_code"),
-    [
-        pytest.param("A_plain", "33", id="plain-yellow"),
-        pytest.param("B_direct_required", "36", id="direct-cyan"),
-        pytest.param("C_skill_required", "35", id="skill-magenta"),
-        pytest.param("B_auto", "36", id="agentic-auto-cyan"),
-        pytest.param("C_strict", "35", id="agentic-required-magenta"),
-    ],
-)
-def test_render_results_force_color_maps_each_arm_to_its_review_color(arm: str, color_code: str) -> None:
-    """The test-only flag proves the exact A/B/C terminal palette."""
-    row = f"(1/3) ✓  FN-02  rep=1  {arm}  quality=1.000\n"
-
-    completed = _render_result_stream(row, "--force-color")
-
-    assert completed.returncode == 0, completed.stderr
-    assert f"\x1b[{color_code}m" in completed.stdout
-    assert row.rstrip("\n") in completed.stdout
-    assert completed.stdout.endswith("\x1b[0m\n")
-
-
-def test_render_results_recovers_bare_force_color_flag_at_cli_boundary(
-    script_run_codex: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The test-only bare flag survives a Windows Fire subprocess boundary."""
-    received: list[bool] = []
-
-    def _render(_rows: object, _output: object, *, force_color: bool, hide_plan: bool) -> None:
-        """Record renderer flags without consuming pytest's standard streams."""
-        assert hide_plan is False
-        received.append(force_color)
-
-    monkeypatch.setattr(codex_runtime, "render_result_rows", _render)
-    monkeypatch.setattr(script_run_codex.sys, "argv", ["runner", "--render-results", "--force-color"])
-
-    script_run_codex.cli(render_results=True)
-
-    assert received == [True]
-
-
-def test_render_results_force_color_renders_legend_as_bounded_rich_panel() -> None:
-    """Interactive rendering turns the plain legend block into one titled Rich box."""
-    input_text = (
-        "LEGEND\n"
-        "  treatments: A_plain=no Codemap\n"
-        "  status: ✓ completed, ✗ failed\n"
-        "END LEGEND\n"
-        "(1/3) ✓  FN-02  rep=1  A_plain  quality=1.000\n"
-    )
-
-    completed = _render_result_stream(input_text, "--force-color")
-
-    assert completed.returncode == 0, completed.stderr
-    assert "Legend" in completed.stdout
-    assert "End legend" in completed.stdout
-    assert "treatments: A_plain=no Codemap" in completed.stdout
-    assert completed.stdout.count("Legend") == 1
-    assert completed.stdout.count("End legend") == 1
-
-
-def test_render_results_preserves_noninteractive_stream_byte_for_byte() -> None:
-    """Redirected renderer output remains a plain machine-reviewable stream."""
-    input_text = "INFO keep this byte-for-byte\n(1/3) ✓  FN-02  rep=1  A_plain  quality=1.000\n"
-
-    completed = _render_result_stream(input_text)
-
-    assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == input_text
-    assert "\x1b[" not in completed.stdout
-
-
-def test_render_results_noninteractive_legend_is_byte_stable() -> None:
-    """The noninteractive renderer does not rewrite a bounded plain legend."""
-    input_text = (
-        "LEGEND\n"
-        "  treatments: A_plain=no Codemap\n"
-        "  status: ✓ completed, ✗ failed\n"
-        "END LEGEND\n"
-        "(1/3) ✓  FN-02  rep=1  A_plain  quality=1.000\n"
-    )
-
-    completed = _render_result_stream(input_text)
-
-    assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == input_text
-
-
-def test_render_results_force_color_preserves_unknown_and_non_result_rows() -> None:
-    """Only recognized A/B/C progress rows receive terminal styling."""
-    input_text = "INFO preparation\n(1/3) ✓  FN-02  rep=1  unknown  quality=1.000\n"
-
-    completed = _render_result_stream(input_text, "--force-color")
-
-    assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == input_text
-    assert "\x1b[" not in completed.stdout
-
-
-def test_render_results_hide_plan_omits_only_human_plan_rows() -> None:
-    """The optional renderer filter removes PLAN rows without changing other output."""
-    input_text = (
-        "LEGEND  fields\n"
-        "PROBE\tA_plain\tcodemap=false\n"
-        "PLAN    SE-01  rep=1  A_plain\n"
-        "PLAN    FN-02  rep=1  B_direct_required\n"
-        "CONTROL\tcell_wall_clock_seconds=600\n"
-        "ARTIFACTS  telemetry=run.jsonl  metadata=metadata.json\n"
-        "(1/3) ✓  SE-01  rep=1  A_plain  quality=1.000\n"
-        "SUMMARY\tstatus=completed\n"
-    )
-    expected = (
-        "LEGEND  fields\n"
-        "PROBE\tA_plain\tcodemap=false\n"
-        "CONTROL\tcell_wall_clock_seconds=600\n"
-        "ARTIFACTS  telemetry=run.jsonl  metadata=metadata.json\n"
-        "(1/3) ✓  SE-01  rep=1  A_plain  quality=1.000\n"
-        "SUMMARY\tstatus=completed\n"
-    )
-
-    completed = _render_result_stream(input_text, "--hide-plan")
-
-    assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == expected
-
-
-def test_hide_plan_requires_render_results_mode() -> None:
-    """The internal stream filter cannot alter normal benchmark execution."""
-    completed = subprocess.run(
-        [sys.executable, str(SCRIPT_PATH), "--hide-plan"],
-        cwd=BENCHMARKS_DIR.parent,
-        input="",
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert completed.returncode == 2
-    assert "--hide-plan requires --render-results" in completed.stderr
+#: Arm names are printed unabbreviated, so the expected padding tracks the widest canonical name.
+_ARM_COLUMN_WIDTH = codex_runtime._DISPLAY_ARM_COLUMN_WIDTH
 
 
 @pytest.mark.parametrize(
@@ -4202,11 +4072,12 @@ def test_hide_plan_requires_render_results_mode() -> None:
             "1.000",
             True,
             False,
-            "✓  SE-01  rep=1  A_plain   in= 44.4k  out=  658  time=  17s  quality=1.000  treatment:✓  codemap-used:✗",
+            f"✓  SE-01  rep=1  {'A_plain':<{_ARM_COLUMN_WIDTH}}  in= 44.4k  out=  658  time=  17s  "
+            "quality=1.000  treatment:✓  codemap-used:✗",
             id="plain-small-output",
         ),
         pytest.param(
-            "C_skill_required",
+            "C_strict",
             74_530,
             10_000,
             995,
@@ -4214,11 +4085,12 @@ def test_hide_plan_requires_render_results_mode() -> None:
             "1.000",
             True,
             True,
-            "✓  SE-01  rep=1  C_skill   in= 74.5k  out=  995  time=  24s  quality=1.000  treatment:✓  codemap-used:✓",
+            f"✓  SE-01  rep=1  {'C_strict':<{_ARM_COLUMN_WIDTH}}  in= 74.5k  out=  995  time=  24s  "
+            "quality=1.000  treatment:✓  codemap-used:✓",
             id="skill-required",
         ),
         pytest.param(
-            "B_direct_required",
+            "B_auto",
             1_230_920,
             230_920,
             1_475,
@@ -4226,7 +4098,8 @@ def test_hide_plan_requires_render_results_mode() -> None:
             "?",
             False,
             True,
-            "✗  SE-01  rep=1  B_direct  in=  1.2M  out= 1.5k  time=1m38s  quality=    ?  treatment:✗  codemap-used:✓",
+            f"✗  SE-01  rep=1  {'B_auto':<{_ARM_COLUMN_WIDTH}}  in=  1.2M  out= 1.5k  time=1m38s  "
+            "quality=    ?  treatment:✗  codemap-used:✓",
             id="direct-million-and-failure",
         ),
     ],
@@ -4341,7 +4214,7 @@ def test_print_arm_row_colors_only_interactive_output(
     monkeypatch.setattr(codex_runtime, "_CONSOLE", FixtureConsole())
     monkeypatch.setattr(codex_runtime.presentation, "print", plain_calls.append, raising=False)
 
-    codex_runtime.print_arm_row("progress fixture", "B_direct_required")
+    codex_runtime.print_arm_row("progress fixture", "B_auto")
 
     assert len(rich_calls) == expected_rich_calls
     assert len(plain_calls) == expected_plain_calls
@@ -4356,6 +4229,69 @@ def test_print_arm_row_colors_only_interactive_output(
         assert plain_calls == ["progress fixture"]
 
 
+@pytest.mark.parametrize(
+    ("row", "expected_style"),
+    [
+        pytest.param("PLAN    FN-02  rep=1  A_plain", "yellow", id="plan-a-plain"),
+        pytest.param("PLAN    FN-02  rep=1  B_auto", "cyan", id="plan-b-direct"),
+        pytest.param("PLAN    RC-01  rep=1  C_strict", "magenta", id="plan-c-strict"),
+        pytest.param("PROBE   B_auto       codemap=true", "cyan", id="probe-b-direct-required"),
+    ],
+)
+def test_print_plan_row_colors_each_arm_distinctly(
+    monkeypatch: pytest.MonkeyPatch,
+    row: str,
+    expected_style: str,
+) -> None:
+    """Every no-model plan and probe row carries its own arm color on a terminal.
+
+    The three arms are visually indistinguishable in a long plan listing without this, which is where an operator checks
+    that the coordinate set they are about to pay for is the one they intended. A row naming no arm must still print
+    unchanged.
+    """
+    rich_calls: list[tuple[str, dict[str, Any]]] = []
+
+    class FixtureConsole:
+        """Record Rich calls behind an interactive terminal boundary."""
+
+        is_terminal = True
+
+        def print(self, printed_row: str, **kwargs: Any) -> None:
+            """Handle console output through the test double instead of a live terminal."""
+            rich_calls.append((printed_row, kwargs))
+
+    monkeypatch.setattr(codex_runtime, "_CONSOLE", FixtureConsole())
+
+    codex_runtime.print_plan_row(row)
+
+    assert rich_calls == [(row, {"style": expected_style, "markup": False, "highlight": False, "soft_wrap": True})]
+
+
+def test_print_plan_row_leaves_armless_banner_uncolored(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A stage preflight banner names no arm and must not acquire one arm's color.
+
+    Stage headers such as the ReadCrop banner share the plan stream with coordinate rows; coloring them would attribute
+    the whole section to whichever arm the regex happened to match.
+    """
+    plain_calls: list[str] = []
+
+    class FixtureConsole:
+        """Fail the test if an armless row reaches Rich."""
+
+        is_terminal = True
+
+        def print(self, *_args: Any, **_kwargs: Any) -> None:
+            """Reject console output for a row that names no arm."""
+            pytest.fail("an armless banner reached the arm-color path")
+
+    monkeypatch.setattr(codex_runtime, "_CONSOLE", FixtureConsole())
+    monkeypatch.setattr(codex_runtime.presentation, "print", plain_calls.append, raising=False)
+
+    codex_runtime.print_plan_row("READCROP PREFLIGHT (no model)")
+
+    assert plain_calls == ["READCROP PREFLIGHT (no model)"]
+
+
 def test_print_result_block_numbers_rows_in_fixed_display_order(
     script_run_codex: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -4365,9 +4301,9 @@ def test_print_result_block_numbers_rows_in_fixed_display_order(
 
     next_progress = script_run_codex._print_result_block(
         [
-            ("C_skill_required", "✓  task  rep=1  C_skill"),
+            ("C_strict", "✓  task  rep=1  C_strict"),
             ("A_plain", "✓  task  rep=1  A_plain"),
-            ("B_direct_required", "✓  task  rep=1  B_direct"),
+            ("B_auto", "✓  task  rep=1  B_auto"),
         ],
         printed_cells=4,
         planned_cells=9,
@@ -4375,8 +4311,8 @@ def test_print_result_block_numbers_rows_in_fixed_display_order(
 
     assert printed == [
         ("(5/9) ✓  task  rep=1  A_plain", "A_plain"),
-        ("(6/9) ✓  task  rep=1  B_direct", "B_direct_required"),
-        ("(7/9) ✓  task  rep=1  C_skill", "C_skill_required"),
+        ("(6/9) ✓  task  rep=1  B_auto", "B_auto"),
+        ("(7/9) ✓  task  rep=1  C_strict", "C_strict"),
     ]
     assert next_progress == 7
     assert all("RESULT" not in row for row, _arm in printed)
@@ -4390,14 +4326,14 @@ def test_print_result_block_keeps_partial_progress_relative_to_full_plan(
     monkeypatch.setattr(codex_runtime, "print_arm_row", lambda row, arm: printed.append((row, arm)))
 
     next_progress = script_run_codex._print_result_block(
-        [("C_skill_required", "✓  task  rep=1  C_skill"), ("B_direct_required", "✓  task  rep=1  B_direct")],
+        [("C_strict", "✓  task  rep=1  C_strict"), ("B_auto", "✓  task  rep=1  B_auto")],
         printed_cells=0,
         planned_cells=3,
     )
 
     assert printed == [
-        ("(1/3) ✓  task  rep=1  B_direct", "B_direct_required"),
-        ("(2/3) ✓  task  rep=1  C_skill", "C_skill_required"),
+        ("(1/3) ✓  task  rep=1  B_auto", "B_auto"),
+        ("(2/3) ✓  task  rep=1  C_strict", "C_strict"),
     ]
     assert next_progress == 2
 
@@ -4434,6 +4370,7 @@ def test_main_filters_locked_tasks_in_suite_order_and_rejects_invalid_ids(
         lambda text: planned.append(text),
         raising=False,
     )
+    monkeypatch.setattr(codex_runtime, "print_plan_row", planned.append)
 
     script_run_codex.main(
         repo_path=tmp_path,
@@ -4501,6 +4438,7 @@ def test_main_plans_every_preregistered_pilot_coordinate_once(
 
     monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
     monkeypatch.setattr(script_run_codex, "print", planned.append, raising=False)
+    monkeypatch.setattr(codex_runtime, "print_plan_row", planned.append)
     monkeypatch.setattr(
         script_run_codex,
         "deterministic_arm_order",
@@ -4521,9 +4459,7 @@ def test_main_plans_every_preregistered_pilot_coordinate_once(
         [task_id, f"rep={repetition}", arm]
         for task_id in pilot_ids
         for repetition in range(1, repetitions + 1)
-        for arm in (
-            codex_runtime._DISPLAY_ARM_LABELS[canonical_arm] for canonical_arm in script_run_codex.CODEX_STRUCTURAL_ARMS
-        )
+        for arm in script_run_codex.CODEX_STRUCTURAL_ARMS
     ]
     assert plan_rows == expected
     assert len(plan_rows) == len({tuple(row) for row in plan_rows}) == 54
@@ -4533,20 +4469,20 @@ def test_codex_arm_envelopes_define_plain_cli_and_skill_treatments(script_run_co
     """The new Codex arms must make delivery mode and required use unambiguous."""
     assert script_run_codex.CODEX_STRUCTURAL_ARMS == (
         "A_plain",
-        "B_direct_required",
-        "C_skill_required",
+        "B_auto",
+        "C_strict",
     )
     assert "Codemap is absent" in script_run_codex._arm_envelope("A_plain")
-    assert '"$CODEMAP_BIN" query --compact' in script_run_codex._arm_envelope("B_direct_required")
-    assert "dedicated native command item" in script_run_codex._arm_envelope("B_direct_required")
-    assert "Do not use batch" in script_run_codex._arm_envelope("B_direct_required")
-    assert '"$CODEMAP_BIN" query --help' in script_run_codex._arm_envelope("B_direct_required")
-    assert "$codemap-py:query-code" in script_run_codex._arm_envelope("C_skill_required")
-    assert "installed $codemap-py:query-code Skill is available" in script_run_codex._arm_envelope("C_skill_required")
-    assert 'cat "$CODEMAP_SKILL_FILE"' not in script_run_codex._arm_envelope("C_skill_required")
-    assert "Do not use batch" in script_run_codex._arm_envelope("C_skill_required")
-    assert '"$CODEMAP_BIN" query --help' in script_run_codex._arm_envelope("C_skill_required")
-    assert "sed -n" not in script_run_codex._arm_envelope("C_skill_required")
+    assert '"$CODEMAP_BIN" query --compact' in script_run_codex._arm_envelope("B_auto")
+    assert "dedicated native command item" in script_run_codex._arm_envelope("B_auto")
+    assert "Do not use batch" in script_run_codex._arm_envelope("B_auto")
+    assert '"$CODEMAP_BIN" query --help' in script_run_codex._arm_envelope("B_auto")
+    assert "$codemap-py:query-code" in script_run_codex._arm_envelope("C_strict")
+    assert "installed $codemap-py:query-code Skill is available" in script_run_codex._arm_envelope("C_strict")
+    assert 'cat "$CODEMAP_SKILL_FILE"' not in script_run_codex._arm_envelope("C_strict")
+    assert "Do not use batch" in script_run_codex._arm_envelope("C_strict")
+    assert '"$CODEMAP_BIN" query --help' in script_run_codex._arm_envelope("C_strict")
+    assert "sed -n" not in script_run_codex._arm_envelope("C_strict")
 
 
 @pytest.mark.parametrize(
@@ -4718,7 +4654,7 @@ def test_canonical_native_item_query_contract(
     )
 
     assert parsed.codemap_direct_compact_successful_calls == int(expected_credit)
-    assert script_run_codex._arm_compliance("B_direct_required", parsed) is expected_credit
+    assert script_run_codex._arm_compliance("B_auto", parsed) is expected_credit
 
 
 def test_canonical_native_query_allows_auxiliary_separate_events(script_run_codex: Any) -> None:
@@ -4752,7 +4688,7 @@ def test_canonical_native_query_allows_auxiliary_separate_events(script_run_code
     )
 
     assert parsed.codemap_direct_compact_successful_calls == 1
-    assert script_run_codex._arm_compliance("B_direct_required", parsed) is True
+    assert script_run_codex._arm_compliance("B_auto", parsed) is True
 
 
 @pytest.mark.parametrize(
@@ -4862,7 +4798,7 @@ def test_locked_query_conformance_requires_expected_endpoint_and_target(
     if expected_query_policy is not None:
         task["expected_query_policy"] = expected_query_policy
     run = script_run_codex.CodexRun(
-        arm="B_direct_required",
+        arm="B_auto",
         task_id="GR-01",
         task_type="graph_reasoning",
         model=script_run_codex.PARITY_CODEX_MODEL,
@@ -4915,7 +4851,7 @@ def test_locked_query_fitness_reports_mismatch_components(
     """Query fitness identifies endpoint, target, and option/filter mismatches."""
     task = {"id": "GR-01", "expected_queries": [expected_query]}
     run = script_run_codex.CodexRun(
-        arm="B_direct_required",
+        arm="B_auto",
         task_id="GR-01",
         task_type="graph_reasoning",
         model=script_run_codex.PARITY_CODEX_MODEL,
@@ -4939,7 +4875,7 @@ def test_locked_query_fitness_averages_all_required_queries(script_run_codex: An
         ],
     }
     run = script_run_codex.CodexRun(
-        arm="B_direct_required",
+        arm="B_auto",
         task_id="DI-01",
         task_type="diff_impact",
         model=script_run_codex.PARITY_CODEX_MODEL,
@@ -4957,7 +4893,7 @@ def test_query_mismatch_does_not_reclassify_successful_transport_or_pooling(
 ) -> None:
     """A required Codemap call remains treatment-adherent when query fitness is imperfect."""
     run = script_run_codex.CodexRun(
-        arm="C_skill_required",
+        arm="C_strict",
         task_id="GR-01",
         task_type="graph_reasoning",
         model=script_run_codex.PARITY_CODEX_MODEL,
@@ -5021,7 +4957,7 @@ def test_all_locked_execution_queries_accept_strict_option_permutations(script_r
             assert isinstance(command, str) and isinstance(arguments, list), (task_id, query_index, query)
             assert all(isinstance(argument, str) for argument in arguments), (task_id, query_index, query)
             actual.append([command, *_permute_options(arguments)])
-        for arm in ("B_direct_required", "C_skill_required"):
+        for arm in ("B_auto", "C_strict"):
             run = script_run_codex.CodexRun(
                 arm=arm,
                 task_id=task_id,
@@ -5070,7 +5006,7 @@ def test_input_snapshot_archives_hashes_but_never_credential_bytes(script_run_co
         invocation_launcher_path=launcher,
         index_path=index,
         auth_source=auth,
-        arm_archives={"B_direct_required": {"direct-cli": package}},
+        arm_archives={"B_auto": {"direct-cli": package}},
         additional_shared_files={"readcrop-contracts.py": contract},
     )
     payload = json.loads((tmp_path / "inputs" / "input-snapshot.json").read_text(encoding="utf-8"))
@@ -5149,9 +5085,9 @@ def test_input_snapshot_keeps_private_executable_launcher_for_later_b_home(
         runner_path=runner_path,
         index_path=None,
         auth_source=None,
-        arm_archives={"B_direct_required": {"direct-cli": runtime}},
+        arm_archives={"B_auto": {"direct-cli": runtime}},
     )
-    archived_root = snapshot_root / "B_direct_required" / "direct-cli"
+    archived_root = snapshot_root / "B_auto" / "direct-cli"
     archived_launcher = archived_root / "bin" / "codemap-py"
     archived_metadata = archived_launcher.lstat()
     assert stat.S_ISREG(archived_metadata.st_mode)
@@ -5163,11 +5099,11 @@ def test_input_snapshot_keeps_private_executable_launcher_for_later_b_home(
     adapter = script_run_codex.CodexRunner("fixture-model", tmp_path)
     adapter._bind_runtime_snapshot(
         snapshot_root,
-        {"B_direct_required": {"direct-cli": archived_root}},
+        {"B_auto": {"direct-cli": archived_root}},
     )
-    frozen_launcher = adapter._runtime_direct_launcher("B_direct_required")
+    frozen_launcher = adapter._runtime_direct_launcher("B_auto")
     home = script_run_codex.prepare_arm_home(
-        "B_direct_required",
+        "B_auto",
         root=tmp_path,
         codemap_bin=frozen_launcher,
     )
@@ -5204,7 +5140,7 @@ def test_input_snapshot_includes_configuration_for_every_arm(script_run_codex: A
 
     arm_files: dict[str, dict[str, Path]] = {}
     arm_archives: dict[str, dict[str, Path]] = {}
-    for arm in ("A_plain", "B_direct_required", "C_skill_required"):
+    for arm in ("A_plain", "B_auto", "C_strict"):
         arm_root = tmp_path / arm
         arm_root.mkdir()
         config = arm_root / "config.toml"
@@ -5337,7 +5273,7 @@ def test_staged_direct_cli_admission_rejects_malformed_output_and_index_mutation
     launcher = home_path / "codemap-py"
     launcher.write_text("launcher", encoding="utf-8")
     home = script_run_codex.ArmHome(
-        "B_direct_required",
+        "B_auto",
         home_path,
         {"PATH": "/fixture"},
         True,
@@ -5372,7 +5308,7 @@ def test_staged_direct_cli_admission_rejects_malformed_output_and_index_mutation
 
 @pytest.mark.parametrize(
     "selected_arms",
-    [("B_direct_required", "C_skill_required"), ("C_skill_required",)],
+    [("B_auto", "C_strict"), ("C_strict",)],
     ids=["both-treatments", "skill-only"],
 )
 def test_expected_query_preflight_runs_unique_b_queries_once_and_never_replays_c(
@@ -5399,7 +5335,7 @@ def test_expected_query_preflight_runs_unique_b_queries_once_and_never_replays_c
     class Home:
         """Supply the B-only runtime fields required by query preflight."""
 
-        arm = "B_direct_required"
+        arm = "B_auto"
         env = {"PATH": "/fixture"}
         permission_profile = "provider-parity-codemap"
         codemap_launcher_path = launcher
@@ -5435,7 +5371,7 @@ def test_expected_query_preflight_runs_unique_b_queries_once_and_never_replays_c
         selected_arms,
     )
 
-    assert prepared_arms == ["B_direct_required"]
+    assert prepared_arms == ["B_auto"]
     assert [command[-2:] for command in commands] == [
         ["central", "package"],
         ["fn-rdeps", "package.module::target"],
@@ -5476,12 +5412,12 @@ def test_expected_query_preflight_rejects_malformed_or_failed_b_queries(
     with pytest.raises(RuntimeError, match="malformed expected query args"):
         runner.preflight_expected_queries(
             [{"id": "malformed", "expected_queries": [{"cmd": "central", "args": "package"}]}],
-            ("B_direct_required",),
+            ("B_auto",),
         )
     with pytest.raises(RuntimeError, match="expected query failed.*fixture failure"):
         runner.preflight_expected_queries(
             [{"id": "failed", "expected_queries": [{"cmd": "central", "args": ["package"]}]}],
-            ("B_direct_required",),
+            ("B_auto",),
         )
 
 
@@ -5974,7 +5910,7 @@ def test_main_dry_run_calls_diff_impact_preflight_and_can_suppress_legend(
     output = capsys.readouterr().out
     assert calls == [script_run_codex.CODEX_STRUCTURAL_ARMS]
     assert "LEGEND" not in output
-    assert "PROBE\tA_plain" in output
+    assert "PROBE   A_plain " in output
     assert "PLAN    DI-fixture" in output
 
 
@@ -6007,7 +5943,7 @@ def test_public_query_forms_credit_completed_queries_but_not_help(
     )
 
     assert parsed.codemap_direct_compact_successful_calls == int(expected_credit)
-    assert script_run_codex._arm_compliance("B_direct_required", parsed) is expected_credit
+    assert script_run_codex._arm_compliance("B_auto", parsed) is expected_credit
 
 
 def test_skill_activation_then_public_coupled_query_satisfies_compliance_and_adherence(
@@ -6049,12 +5985,12 @@ def test_skill_activation_then_public_coupled_query_satisfies_compliance_and_adh
         skill_path=skill_path,
         skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
     )
-    compliance = script_run_codex._arm_compliance("C_skill_required", parsed)
+    compliance = script_run_codex._arm_compliance("C_strict", parsed)
 
     assert parsed.skill_delivery_observed is True
     assert parsed.codemap_skill_compact_successful_calls == 1
     assert compliance is True
-    assert core.treatment_adherence("C_skill_required", codemap_use_compliance=compliance, contaminated=False) is True
+    assert core.treatment_adherence("C_strict", codemap_use_compliance=compliance, contaminated=False) is True
 
 
 @pytest.mark.parametrize(
@@ -6079,7 +6015,7 @@ def test_skill_activation_then_public_coupled_query_satisfies_compliance_and_adh
         pytest.param('cat "$CODEMAP_SKILL_FILE"', "locked", True, False, id="read-after-query"),
     ],
 )
-def test_C_skill_binding_credits_a_valid_query_while_retaining_manual_read_diagnostics(
+def test_C_strict_binding_credits_a_valid_query_while_retaining_manual_read_diagnostics(
     script_run_codex: Any,
     tmp_path: Path,
     read_command: str,
@@ -6123,7 +6059,7 @@ def test_C_skill_binding_credits_a_valid_query_while_retaining_manual_read_diagn
 
     assert parsed.codemap_skill_compact_successful_calls == 1
     assert parsed.skill_delivery_observed is expected_manual_read
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is True
+    assert script_run_codex._arm_compliance("C_strict", parsed) is True
 
 
 def test_cli_exposes_only_task_selection_not_study_or_paid_switches(script_run_codex: Any) -> None:
@@ -6183,12 +6119,15 @@ def test_unified_paid_command_preserves_the_supplied_absolute_manifest_path(
 
     command = capsys.readouterr().out
     assert f"--manifest-path '{custom_manifest.resolve()}'" in command
-    assert command.splitlines()[1].startswith("CODEMAP_BENCH_PATCH_PYTEST='/opt/bench runtime/bin/pytest' python3")
+    # The label and its rule precede the copyable command, so the assignment opens the third line.
+    assert command.splitlines()[2].startswith("CODEMAP_BENCH_PATCH_PYTEST='/opt/bench runtime/bin/pytest' python3")
     assert "--tasks RC,FS-03" in command
     assert "--study" not in command
     assert "--paid " not in command
     assert "--task-id" not in command
-    assert command.splitlines()[-1] == "  --paid-approval aaaaaaaaaaaaaaaa"
+    # The command is framed, so its last flag sits above the closing rule rather than at the end.
+    assert command.splitlines()[-2] == "  --paid-approval aaaaaaaaaaaaaaaa"
+    assert command.splitlines()[-1] == "-" * 78
 
 
 def test_resolve_task_selection_without_selectors_plans_all_stage_cells(script_run_codex: Any) -> None:
@@ -6362,3 +6301,63 @@ def test_unified_paid_execution_uses_one_counter_across_native_stage_rows(
     assert "→ sequential stages: structural=1 tasks/3 cells, readcrop=1 tasks/3 cells" in output
     progress = [re.match(r"^\((\d+)/(\d+)\)", row).groups() for row in output.splitlines() if row.startswith("(")]
     assert progress == [(str(completed), "12") for completed in range(1, 13)]
+
+
+def test_run_level_relocation_reaches_every_admission_inside_the_runner(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A runner built with relocation provenance admits every arm against it.
+
+    Scenario: a run in its own worktree proves its index once, at construction. Admission happens at
+    many points inside the runner, and one of them reaching the gate without the provenance would
+    demand the byte identity a worktree index cannot have — the failure the flag exists to prevent.
+    """
+    captured: list[Any] = []
+    monkeypatch.setattr(
+        script_run_codex,
+        "_validate_locked_runtime",
+        lambda *args, **kwargs: captured.append(args[5] if len(args) > 5 else kwargs.get("index_relocation")),
+    )
+    relocation = {"frozen_index_sha256": "a" * 64, "worktree_scan_root": str(tmp_path)}
+    index_path = tmp_path / ".cache" / "codemap" / f"{tmp_path.name}.json"
+    index_path.parent.mkdir(parents=True)
+    index_path.write_text(json.dumps({"scan_root": str(tmp_path), "modules": []}), encoding="utf-8")
+    runner = script_run_codex.CodexRunner(
+        "gpt-5.6-luna",
+        tmp_path,
+        index_path=index_path,
+        manifest_path=MANIFEST_PATH,
+        index_relocation=relocation,
+    )
+
+    runner._admit_runtime("A_plain")
+
+    assert captured == [relocation]
+
+
+def test_index_relocation_provenance_loads_without_its_operator_facing_path(
+    script_run_codex: Any,
+    tmp_path: Path,
+) -> None:
+    """The loader hands admission the digests and drops the path written for the operator.
+
+    Scenario: the relocation writer records where it installed the index so a person can find it,
+    but admission compares an exact key set. Passing the extra key through would fail every
+    relocated run, and accepting a non-object file would silently admit an unverified index.
+    """
+    provenance = tmp_path / "index-relocation.json"
+    provenance.write_text(
+        json.dumps({"frozen_index_sha256": "a" * 64, "derived_index_path": "/somewhere/index.json"}),
+        encoding="utf-8",
+    )
+
+    loaded = script_run_codex.load_index_relocation(provenance)
+
+    assert loaded == {"frozen_index_sha256": "a" * 64}
+    assert script_run_codex.load_index_relocation(None) is None
+    malformed = tmp_path / "malformed.json"
+    malformed.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="JSON object of strings"):
+        script_run_codex.load_index_relocation(malformed)

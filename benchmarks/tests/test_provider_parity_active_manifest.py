@@ -203,8 +203,29 @@ def test_agentic_execution_contract_records_provider_specific_default_cells() ->
     assert contract["default_total_cells_by_provider"] == {"claude": 144, "codex": 48}
     assert contract["models_by_provider"] == {
         "claude": ["haiku", "sonnet", "opus"],
-        "codex": ["gpt-5.6-luna"],
+        "codex": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"],
     }
+
+
+@pytest.mark.parametrize(
+    "manifest_name",
+    [
+        pytest.param("codex-integration.json", id="structural"),
+        pytest.param("codex-agentic.json", id="agentic"),
+    ],
+)
+def test_every_codex_manifest_admits_the_same_declared_strata(manifest_name: str) -> None:
+    """Each Codex runner admits exactly the strata the methodology declares, in the same set.
+
+    Scenario: --models resolves a name against the methodology manifest, while each runner admits a
+    name against its own manifest's model block. A stratum missing from one of those blocks is a
+    name the launcher accepts and the runner then refuses — the agentic manifest omitted gpt-5.6-sol
+    while the structural one declared it, so the two lanes disagreed about what could be selected.
+    """
+    declared = _load(METHODOLOGY_MANIFEST)["agentic_execution_contract"]["models_by_provider"]["codex"]
+    model = _load(BENCHMARKS / "manifests" / manifest_name)["model"]
+
+    assert [model["name"], *model["additional_strata"]] == declared
 
 
 def test_methodology_builder_rejects_tampered_passthrough_policy_seed(tmp_path: Path) -> None:
@@ -475,7 +496,7 @@ def test_methodology_manifest_locks_shared_continuous_fitness_and_observed_capab
             "c_a_gross_input_ratio_95_upper": "<= 1.05",
             "c_a_paired_quality_95_lower": "> 0",
         },
-        "task_family_block": "Any repeated task-family mean C_skill-A_plain quality difference < -0.10 blocks acceptance.",
+        "task_family_block": "Any repeated task-family mean C_strict-A_plain quality difference < -0.10 blocks acceptance.",
         "historical_evidence": "Historical nonpoolable evidence cannot satisfy this prospective policy.",
     }
     assert manifest["preregistered_cells"]["arm_order"] == (

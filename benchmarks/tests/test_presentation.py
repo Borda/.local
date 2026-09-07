@@ -9,7 +9,7 @@ import sys
 BENCHMARKS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BENCHMARKS))
 
-from _bench_common.presentation import format_artifact_block, format_quality  # noqa: E402
+from _bench_common.presentation import format_artifact_block, format_paid_command_block, format_quality  # noqa: E402
 
 
 def test_multiple_artifacts_render_as_a_readable_list() -> None:
@@ -17,6 +17,27 @@ def test_multiple_artifacts_render_as_a_readable_list() -> None:
     assert format_artifact_block(telemetry="results/run/telemetry.jsonl", metadata="results/run/run-metadata.json") == (
         "ARTIFACTS:\n - telemetry=results/run/telemetry.jsonl\n - metadata=results/run/run-metadata.json"
     )
+
+
+def test_paid_command_is_framed_so_its_first_line_cannot_read_as_the_label() -> None:
+    """The copyable command is delimited above and below, not merely announced by a label.
+
+    A paid command frequently opens with an upper-case environment assignment, which on a terminal looks exactly like
+    the ``PAID_COMMAND`` label printed above it. Without the rules an operator reads the label as part of the command,
+    or the assignment as another heading, and copies the wrong span into a run that spends money.
+    """
+    block = format_paid_command_block(
+        [
+            "CODEMAP_BENCH_PATCH_PYTEST=/venv/bin/pytest python3 benchmarks/run-codex-structural.py \\",
+            "  --paid-approval 71bb01f80ac200c1",
+        ]
+    )
+
+    lines = block.splitlines()
+    assert lines[0] == "PAID_COMMAND:"
+    assert lines[1] == "-" * 78
+    assert lines[2].startswith("CODEMAP_BENCH_PATCH_PYTEST=")
+    assert lines[-1] == "-" * 78
 
 
 def test_quality_format_preserves_the_shared_column_width() -> None:

@@ -67,7 +67,6 @@ from typing import Any, Optional
 
 import fire
 import pandas as pd
-from rich.console import Console as _Console
 
 # benchmarks/ is not a package; make its private shared package importable
 # regardless of how this script is launched (direct path, symlink, or any cwd).
@@ -76,8 +75,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _bench_common.benchmark_paths import RESULTS_DIR, TASKS_BENCH_FILE as TASKS_FILE, gt_is_pending  # noqa: E402
 from _bench_common.claude_transport import MODEL_TIMEOUT, MODELS, parse_result_usage, stream_claude  # noqa: E402
 from _bench_common.codemap_discovery import codemap_bin_on_path, resolve_index_path  # noqa: E402
-from _bench_common.presentation import fmt_time, fmt_tok, make_progress  # noqa: E402
-from _bench_common.mutation_isolation import IsolatedMutationCell, MutationCleanupError  # noqa: E402
+from _bench_common.presentation import (  # noqa: E402
+    benchmark_console,
+    fmt_time,
+    fmt_tok,
+    make_progress,
+    print_legend,
+    print_plan_row,
+    print_section_rule,
+)
+from _bench_common.mutation_isolation import (  # noqa: E402
+    IsolatedMutationCell,
+    MutationCleanupError,
+    load_index_relocation,
+    verify_index_relocation,
+)
 from _bench_common.provider_parity_contracts import (  # noqa: E402
     ARM_CONTRACTS,
     EvaluationResult,
@@ -100,7 +112,7 @@ _GREEN = "\033[32m" if _USE_COLOR else ""
 _RED = "\033[31m" if _USE_COLOR else ""
 _BLUE = "\033[34m" if _USE_COLOR else ""
 _RESET = "\033[0m" if _USE_COLOR else ""
-_console = _Console()
+_console = benchmark_console()
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -783,16 +795,23 @@ def _load_primary_parity_contract() -> tuple[list[dict[str, Any]], Mapping[str, 
     return tasks, _PARITY_TASK_POLICIES
 
 
-def _validate_primary_runtime(repo_path: Path, index_path: Path) -> None:
+def _validate_primary_runtime(
+    repo_path: Path,
+    index_path: Path,
+    index_relocation: Mapping[str, str] | None = None,
+) -> None:
     """Reject a canonical run outside the manifest's locked target and index.
 
     Args:
         repo_path: Candidate target repository root.
         index_path: Candidate Codemap index for that target.
+        index_relocation: Relocation provenance for a run whose index was moved into its own
+            worktree. When supplied it replaces the locked byte-hash check, and only that check;
+            when absent the index must still match the locked bytes exactly.
 
     Raises:
-        ValueError: If the repository, worktree, index bytes, or index metadata differ
-            from the locked primary parity inputs.
+        ValueError: If the repository, worktree, index bytes, relocation provenance, or index
+            metadata differ from the locked primary parity inputs.
     """
     target = _PARITY_MANIFEST["target_source"]
     expected_commit = target["commit"]
@@ -811,12 +830,21 @@ def _validate_primary_runtime(repo_path: Path, index_path: Path) -> None:
         raise ValueError("canonical run requires a clean target worktree")
 
     expected_index = _PARITY_MANIFEST["index"]
-    if hashlib.sha256(index_path.read_bytes()).hexdigest() != expected_index["raw_sha256"]:
+    index_sha256 = hashlib.sha256(index_path.read_bytes()).hexdigest()
+    if index_relocation is None and index_sha256 != expected_index["raw_sha256"]:
         raise ValueError("canonical run requires the locked index bytes")
     try:
         index_meta = json.loads(index_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError("canonical run index is not valid JSON") from exc
+    if index_relocation is not None:
+        verify_index_relocation(
+            index_relocation,
+            metadata=index_meta,
+            index_sha256=index_sha256,
+            repo_path=repo_path,
+            frozen_index_sha256=expected_index["raw_sha256"],
+        )
     for index_field in ("git_sha", "scan_version"):
         if index_meta.get(index_field) != expected_index[index_field]:
             raise ValueError(f"canonical run index {index_field} does not match the locked manifest")
@@ -1412,7 +1440,7 @@ def _max_turns_for_task(task: dict) -> int:
 
 _EVAL_VER_NAME_RECALL = "v5"  # _evaluate_develop_br (v5: drop .md file-dump; tighten precision for fuzzy tiers)
 _EVAL_VER_SYMBOL = "v2"  # _evaluate_symbol — accepts conventional source-location ranges
-_EVAL_VER_REVIEW = "v7"  # _evaluate_rv — natural direct-import and uncovered-count grammar
+_EVAL_VER_REVIEW = "v8"  # _evaluate_rv — adds trailing-qualifier and numbered sub-answer counts
 _EVAL_VER_OSS = "v7"  # _evaluate_oss — explicit label-first count grammar for required AST components
 _EVAL_VER_DEBUG = "v2"  # _evaluate_debug — v2: structured-block + stem-blocklist matching
 _EVAL_VER_FEATURE = "v4"  # _evaluate_feature — accepts one terminal sentence period after the exact entry point
@@ -1558,6 +1586,31 @@ def _extract_int(text: str, patterns: list[str]) -> Optional[int]:
             except (IndexError, ValueError):
                 continue
     return None
+
+
+def _numbered_subanswer_count(text: str) -> Optional[int]:
+    """Extract a bare integer answering an enumerated sub-question.
+
+    Review tasks pose numbered sub-questions, and a compliant reply may answer the first one with the
+    number alone ("1. **11**"). No noun follows it, so every noun-anchored count pattern misses a
+    correct answer. This reads the integer that opens an enumerated line, which is the shape the
+    sub-question numbering itself invites. It runs only after the noun-anchored patterns, so a
+    phrased answer still wins.
+
+    Args:
+        text: Model output text to search.
+
+    Returns:
+        The first such integer, or None when no enumerated line opens with one.
+
+    Examples:
+        >>> _numbered_subanswer_count("1. **11**\\n2. LayerSummary\\n")
+        11
+        >>> _numbered_subanswer_count("1. eleven uncovered symbols")
+    """
+    stripped = re.sub(r"[*`]+", " ", text)
+    match = re.search(r"^\s{0,3}\d+[.)]\s+(\d+)\b", stripped, re.MULTILINE)
+    return int(match.group(1)) if match else None
 
 
 def _extract_count_answer_first(
@@ -1840,6 +1893,9 @@ def _evaluate_rv(task: dict, output_text: str) -> BenchQuality:
         r"(\d+)\s+reverse\s+dependenc(?:y|ies)",
         r"(\d+)\s+(?:distinct|unique)\s+production\s+functions?",
         r"(\d+)\s+(?:distinct|unique)\s+production\s+callers?",
+        # "24 production functions uniquely call X" puts the qualifier after the noun, so the
+        # two patterns above cannot match a correct answer that reads naturally.
+        r"(\d+)\s+production\s+(?:function|caller)s?",
         r"(\d+)\s+(?:function|symbol|method|class)",
         r"(\d+)\s+(?:production\s+)?call\s*site",
         r"(\d+)\s+(?:production\s+)?calls?\b",
@@ -1887,6 +1943,8 @@ def _evaluate_rv(task: dict, output_text: str) -> BenchQuality:
     for question_id, match, ground_truth in validated_questions:
         if match == "integer_extract":
             got_count = _extract_count_answer_first(output_text, _count_patterns)
+            if got_count is None:
+                got_count = _numbered_subanswer_count(output_text)
             if got_count is None:
                 list_items = re.findall(r"^\s*[-*•]\s+\S", output_text, re.MULTILINE)
                 if list_items:
@@ -4132,11 +4190,68 @@ class TaskRatioRow:
     cost_ratio: float | None  # codemap $ / plain $ — price-accurate cross-arm comparison
 
 
-def _token_ratio_table(runs: list[BenchRun]) -> pd.DataFrame:
-    """Build a per-task token-ratio table comparing codemap vs plain arms.
+#: Control arm names in preference order; the first one present in a run set is the baseline.
+_BASELINE_ARM_ORDER = ("A_plain", "plain")
+#: Treatment arm names in the order their comparisons are rendered.
+_TREATMENT_ARM_ORDER = ("C_strict", "B_auto", "codemap")
+
+
+def _arms_present(runs: list[BenchRun]) -> list[str]:
+    """Return the baseline and treatment arms present in *runs*, baseline first.
 
     Args:
         runs: All benchmark runs.
+
+    Returns:
+        Arm names in canonical render order; arms outside the known rosters are appended sorted.
+
+    Examples:
+        >>> mk = lambda arm: BenchRun(arm=arm, task_id="X", task_type="t", model="haiku", success=True)
+        >>> _arms_present([mk("C_strict"), mk("A_plain"), mk("B_auto")])
+        ['A_plain', 'B_auto', 'C_strict']
+    """
+    present = {r.arm for r in runs}
+    known = [a for a in _BASELINE_ARM_ORDER if a in present][:1]
+    known += [a for a in ("B_auto", "C_strict", "codemap") if a in present]
+    return known + sorted(present - set(known))
+
+
+def _arm_pairs(runs: list[BenchRun]) -> list[tuple[str, str]]:
+    """Return every (baseline, treatment) arm pair to compare for *runs*.
+
+    A parity run carries two treatment arms against one control, so the comparison is rendered once
+    per treatment instead of collapsing both onto a single ``codemap`` key, which would silently drop
+    whichever arm was recorded first.
+
+    Args:
+        runs: All benchmark runs.
+
+    Returns:
+        Pairs in render order; empty when no control arm ran.
+
+    Examples:
+        >>> mk = lambda arm: BenchRun(arm=arm, task_id="X", task_type="t", model="haiku", success=True)
+        >>> _arm_pairs([mk("A_plain"), mk("B_auto"), mk("C_strict")])
+        [('A_plain', 'C_strict'), ('A_plain', 'B_auto')]
+        >>> _arm_pairs([mk("plain"), mk("codemap")])
+        [('plain', 'codemap')]
+        >>> _arm_pairs([mk("B_auto")])
+        []
+    """
+    present = {r.arm for r in runs}
+    baseline = next((a for a in _BASELINE_ARM_ORDER if a in present), None)
+    if baseline is None:
+        return []
+    return [(baseline, t) for t in _TREATMENT_ARM_ORDER if t in present]
+
+
+def _token_ratio_table(runs: list[BenchRun], baseline: str = "plain", treatment: str = "codemap") -> pd.DataFrame:
+    """Build a per-task token-ratio table comparing one treatment arm against the control arm.
+
+    Args:
+        runs: All benchmark runs.
+        baseline: Control arm name whose figures fill the ``plain_*`` columns.
+        treatment: Codemap-bearing arm name whose figures fill the ``codemap_*`` columns.
 
     Returns:
         DataFrame with columns: task_id, task_type, plain_tok, codemap_tok, ratio, delta_correct.
@@ -4147,8 +4262,8 @@ def _token_ratio_table(runs: list[BenchRun]) -> pd.DataFrame:
 
     rows = []
     for task_id, arms in sorted(by_task.items()):
-        plain = arms.get("plain")
-        codemap = arms.get("codemap")
+        plain = arms.get(baseline)
+        codemap = arms.get(treatment)
         plain_tok = plain.input_tokens if plain else 0
         codemap_tok = codemap.input_tokens if codemap else 0
         ratio = _safe_ratio(codemap_tok, plain_tok)
@@ -4210,15 +4325,17 @@ def _workflow_type_of(run: BenchRun) -> str:
     return run.workflow_type or run.task_type
 
 
-def _print_workflow_breakdown(runs: list[BenchRun]) -> None:
+def _print_workflow_breakdown(runs: list[BenchRun], baseline: str = "plain", treatment: str = "codemap") -> None:
     """Print a per-workflow_type breakdown of token ratio and accuracy.
 
     Groups runs by :func:`_workflow_type_of`. For each workflow type, reports
-    the median and mean codemap/plain token ratio (computed per task that has both arms)
-    and the codemap-arm accuracy over scored, completed runs.
+    the median and mean treatment/baseline token ratio (computed per task that has both arms)
+    and the treatment-arm accuracy over scored, completed runs.
 
     Args:
         runs: All benchmark runs (may span multiple arms and workflow types).
+        baseline: Control arm name used as the ratio denominator.
+        treatment: Codemap-bearing arm name used as the ratio numerator.
     """
     by_wf: dict[str, list[BenchRun]] = defaultdict(list)
     for r in runs:
@@ -4238,8 +4355,8 @@ def _print_workflow_breakdown(runs: list[BenchRun]) -> None:
             by_task[r.task_id][r.arm] = r
         ratios: list[float] = []
         for arms in by_task.values():
-            plain = arms.get("plain")
-            codemap = arms.get("codemap")
+            plain = arms.get(baseline)
+            codemap = arms.get(treatment)
             if plain and codemap and plain.input_tokens:
                 ratios.append(codemap.input_tokens / plain.input_tokens)
         ratio_str = f"{statistics.median(ratios):>10.2f}" if ratios else f"{'n/a':>10}"
@@ -4250,7 +4367,7 @@ def _print_workflow_breakdown(runs: list[BenchRun]) -> None:
         cm_scored = [
             r
             for r in wf_runs
-            if r.arm == "codemap"
+            if r.arm == treatment
             and r.quality.scored
             and not r.quality.extraction_failed
             and not r.incomplete
@@ -4301,7 +4418,9 @@ def _is_self_consistency(run: Optional[BenchRun]) -> bool:
     return bool(run and run.self_consistency)
 
 
-def _paired_accuracy(runs: list[BenchRun]) -> Optional[dict[str, int]]:
+def _paired_accuracy(
+    runs: list[BenchRun], baseline: str = "plain", treatment: str = "codemap"
+) -> Optional[dict[str, int]]:
     """Compute paired accuracy over tasks where BOTH arms extracted successfully.
 
     The per-arm accuracy printed elsewhere drops ``extraction_failed`` runs independently per arm, so
@@ -4315,6 +4434,8 @@ def _paired_accuracy(runs: list[BenchRun]) -> Optional[dict[str, int]]:
 
     Args:
         runs: All benchmark runs (both arms, all tasks).
+        baseline: Control arm name counted as ``plain_correct``.
+        treatment: Codemap-bearing arm name counted as ``codemap_correct``.
 
     Returns:
         Dict with ``n`` (paired task count), ``plain_correct``, and ``codemap_correct``; None when no
@@ -4326,16 +4447,16 @@ def _paired_accuracy(runs: list[BenchRun]) -> Optional[dict[str, int]]:
     paired = [
         arms
         for arms in by_task.values()
-        if _arm_extracted(arms.get("plain"))
-        and _arm_extracted(arms.get("codemap"))
-        and not _is_self_consistency(arms.get("codemap"))
+        if _arm_extracted(arms.get(baseline))
+        and _arm_extracted(arms.get(treatment))
+        and not _is_self_consistency(arms.get(treatment))
     ]
     if not paired:
         return None
     return {
         "n": len(paired),
-        "plain_correct": sum(1 for a in paired if a["plain"].quality.correct),
-        "codemap_correct": sum(1 for a in paired if a["codemap"].quality.correct),
+        "plain_correct": sum(1 for a in paired if a[baseline].quality.correct),
+        "codemap_correct": sum(1 for a in paired if a[treatment].quality.correct),
     }
 
 
@@ -4354,7 +4475,7 @@ def _print_self_consistency(runs: list[BenchRun]) -> None:
         return
     ids = sorted({r.task_id for r in sc})
     print(f"\n  Self-consistency (index-derived GT — excluded from headline accuracy; tasks: {', '.join(ids)}):")
-    for arm in ("plain", "codemap"):
+    for arm in _arms_present(sc):
         arm_sc = [r for r in sc if r.arm == arm]
         if not arm_sc:
             continue
@@ -4362,51 +4483,48 @@ def _print_self_consistency(runs: list[BenchRun]) -> None:
         print(f"    {arm}   = {n_correct / len(arm_sc):.1%}  ({n_correct}/{len(arm_sc)})")
 
 
-def _print_paired_accuracy(runs: list[BenchRun]) -> None:
+def _print_paired_accuracy(runs: list[BenchRun], baseline: str = "plain", treatment: str = "codemap") -> None:
     """Print the paired accuracy view (both arms extracted, shared denominator).
 
     Args:
         runs: All benchmark runs (both arms, all tasks).
+        baseline: Control arm name.
+        treatment: Codemap-bearing arm name.
     """
-    paired = _paired_accuracy(runs)
+    paired = _paired_accuracy(runs, baseline, treatment)
     if paired is None:
         return
     n = paired["n"]
     pc = paired["plain_correct"]
     cc = paired["codemap_correct"]
+    width = max(len(baseline), len(treatment))
     print(f"\n  Paired accuracy (both arms extracted, paired-n={n}):")
-    print(f"    plain   = {pc / n:.1%}  ({pc}/{n})")
-    print(f"    codemap = {cc / n:.1%}  ({cc}/{n})")
+    print(f"    {baseline:<{width}} = {pc / n:.1%}  ({pc}/{n})")
+    print(f"    {treatment:<{width}} = {cc / n:.1%}  ({cc}/{n})")
 
 
-def _print_summary(runs: list[BenchRun], model: str) -> None:
-    """Print a summary table of token ratios and accuracy to stdout.
+def _print_pair_table(df: pd.DataFrame, baseline: str, treatment: str) -> None:
+    """Print the per-task comparison table for one (baseline, treatment) arm pair.
 
     Args:
-        runs: All benchmark runs (may span multiple arms).
-        model: Short model name shown in header.
+        df: Ratio table produced by :func:`_token_ratio_table` for this pair.
+        baseline: Control arm name labelling the left-hand columns.
+        treatment: Codemap-bearing arm name labelling the right-hand columns.
     """
-    df = _token_ratio_table(runs)
-    if df.empty:
-        print("No runs to summarise.")
-        return
-
-    print(f"\n\n{'=' * 64}")
-    print(f"  Codemap benchmark — model={model}")
-    print(f"{'=' * 64}")
-
-    # Build display table manually to support colored Δrecall column.
-    hdr = f"{'task_id':<9}  {'plain_tok':>9}  {'cm_tok':>9}  {'tok×':>5}  {'$×':>5}  {'plain_t':>7}  {'cm_t':>7}  {'t×':>5}  {'Δrecall':>9}"
+    hdr = (
+        f"{'task_id':<9}  {baseline + '_tok':>12}  {treatment + '_tok':>12}  {'tok×':>5}  {'$×':>5}  "
+        f"{baseline + '_t':>9}  {treatment + '_t':>9}  {'t×':>5}  {'Δrecall':>9}"
+    )
     print(hdr)
     print("-" * len(hdr))
     for _, row in df.iterrows():
         tid = str(row["task_id"])
-        ptok = f"{int(row['plain_tok']):>9,}" if pd.notna(row["plain_tok"]) else f"{'n/a':>9}"
-        ctok = f"{int(row['codemap_tok']):>9,}" if pd.notna(row["codemap_tok"]) else f"{'n/a':>9}"
+        ptok = f"{int(row['plain_tok']):>12,}" if pd.notna(row["plain_tok"]) else f"{'n/a':>12}"
+        ctok = f"{int(row['codemap_tok']):>12,}" if pd.notna(row["codemap_tok"]) else f"{'n/a':>12}"
         tratio = f"{row['ratio']:>5.2f}" if pd.notna(row["ratio"]) else f"{'n/a':>5}"
         cratio = f"{row['cost_ratio']:>5.2f}" if pd.notna(row.get("cost_ratio", float("nan"))) else f"{'n/a':>5}"
-        pt = f"{row['plain_elapsed_s'] / 60:>6.1f}m" if pd.notna(row["plain_elapsed_s"]) else f"{'n/a':>7}"
-        ct = f"{row['codemap_elapsed_s'] / 60:>6.1f}m" if pd.notna(row["codemap_elapsed_s"]) else f"{'n/a':>7}"
+        pt = f"{row['plain_elapsed_s'] / 60:>8.1f}m" if pd.notna(row["plain_elapsed_s"]) else f"{'n/a':>9}"
+        ct = f"{row['codemap_elapsed_s'] / 60:>8.1f}m" if pd.notna(row["codemap_elapsed_s"]) else f"{'n/a':>9}"
         trm = f"{row['time_ratio']:>5.2f}" if pd.notna(row.get("time_ratio", float("nan"))) else f"{'n/a':>5}"
         pr = row["plain_recall"]
         cr = row["codemap_recall"]
@@ -4431,18 +4549,28 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
             recall_col = f"{'n/a':>9}"
         print(f"{tid:<9}  {ptok}  {ctok}  {tratio}  {cratio}  {pt}  {ct}  {trm}  {recall_col}")
 
+
+def _print_pair_ratios(df: pd.DataFrame, baseline: str, treatment: str) -> None:
+    """Print the median, mean, and range of the token, cost, and time ratios for one arm pair.
+
+    Args:
+        df: Ratio table produced by :func:`_token_ratio_table` for this pair.
+        baseline: Control arm name forming the ratio denominator.
+        treatment: Codemap-bearing arm name forming the ratio numerator.
+    """
+    label = f"({treatment}/{baseline})"
     valid = df.dropna(subset=["ratio"])
     if not valid.empty:
         ratios = valid["ratio"].tolist()
         print(
-            f"\nToken ratio (codemap/plain):  median={statistics.median(ratios):.2f}  mean={statistics.mean(ratios):.2f}  [{min(ratios):.2f}–{max(ratios):.2f}]"
+            f"\nToken ratio {label}:  median={statistics.median(ratios):.2f}  mean={statistics.mean(ratios):.2f}  [{min(ratios):.2f}–{max(ratios):.2f}]"
         )
 
     valid_c = df.dropna(subset=["cost_ratio"])
     if not valid_c.empty:
         cost_ratios = valid_c["cost_ratio"].tolist()
         print(
-            f"Cost ratio  (codemap/plain):  median={statistics.median(cost_ratios):.2f}  mean={statistics.mean(cost_ratios):.2f}  [{min(cost_ratios):.2f}–{max(cost_ratios):.2f}]  (price-accurate)"
+            f"Cost ratio  {label}:  median={statistics.median(cost_ratios):.2f}  mean={statistics.mean(cost_ratios):.2f}  [{min(cost_ratios):.2f}–{max(cost_ratios):.2f}]  (price-accurate)"
         )
 
     valid_t = df.dropna(subset=["time_ratio"])
@@ -4450,17 +4578,29 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
         time_ratios = valid_t["time_ratio"].tolist()
         plain_times = valid_t["plain_elapsed_s"].tolist()
         codemap_times = valid_t["codemap_elapsed_s"].tolist()
+        width = max(len(baseline), len(treatment))
         print(
-            f"Time ratio   (codemap/plain):  median={statistics.median(time_ratios):.2f}  mean={statistics.mean(time_ratios):.2f}  [{min(time_ratios):.2f}–{max(time_ratios):.2f}]"
+            f"Time ratio  {label}:  median={statistics.median(time_ratios):.2f}  mean={statistics.mean(time_ratios):.2f}  [{min(time_ratios):.2f}–{max(time_ratios):.2f}]"
         )
         print(
-            f"  plain   median={fmt_time(statistics.median(plain_times))}  mean={fmt_time(statistics.mean(plain_times))}"
+            f"  {baseline:<{width}} median={fmt_time(statistics.median(plain_times))}  mean={fmt_time(statistics.mean(plain_times))}"
         )
         print(
-            f"  codemap median={fmt_time(statistics.median(codemap_times))}  mean={fmt_time(statistics.mean(codemap_times))}"
+            f"  {treatment:<{width}} median={fmt_time(statistics.median(codemap_times))}  mean={fmt_time(statistics.mean(codemap_times))}"
         )
 
-    for arm in ("plain", "codemap"):
+
+def _print_arm_diagnostics(runs: list[BenchRun]) -> None:
+    """Print per-arm accuracy and exclusion counts for every arm present in *runs*.
+
+    Reported once per arm rather than once per comparison, so a parity run with two treatment arms
+    does not repeat the control arm's figures under each pair.
+
+    Args:
+        runs: All benchmark runs (may span multiple arms).
+    """
+    treatments = set(_TREATMENT_ARM_ORDER)
+    for arm in _arms_present(runs):
         # Denominator matches canonical accuracy and _arm_extracted: scored, parsed, and
         # NOT budget-cut. Timeout-incomplete runs get scored on partial output but must be excluded
         # here too, else the per-arm % counts a run the headline verdict drops.
@@ -4501,35 +4641,111 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
         if safety_runs:
             n_safe = sum(1 for r in safety_runs if r.quality.scoring_detail.get("safety_grade"))
             print(f"  {arm} safety-grade (recall>=0.90) = {n_safe}/{len(safety_runs)}")
-        if arm == "codemap":
-            all_nc = sorted({nc for r in runs if r.arm == "codemap" for nc in r.codemap_not_covered})
+        if arm in treatments:
+            all_nc = sorted({nc for r in arm_runs for nc in r.codemap_not_covered})
             if all_nc:
-                print(f"  codemap not_covered gaps: {', '.join(all_nc)}")
-            all_methods = sorted({m for r in runs if r.arm == "codemap" for m in r.codemap_methods})
+                print(f"  {arm} not_covered gaps: {', '.join(all_nc)}")
+            all_methods = sorted({m for r in arm_runs for m in r.codemap_methods})
             if all_methods:
-                print(f"  codemap query methods used: {', '.join(all_methods)}")
-
-    # Paired accuracy: both arms scored over the SAME both-extracted task set. The
-    # per-arm figures above use different denominators (each arm drops its own extraction failures),
-    # so the paired view is the like-for-like headline comparison with its shared n stated.
-    _print_paired_accuracy(runs)
-
-    # Self-consistency row: index-derived GT tasks, reported apart from the headline accuracy.
-    _print_self_consistency(runs)
+                print(f"  {arm} query methods used: {', '.join(all_methods)}")
 
     # Tier E: patch pass rate (failing test → fix → test pass). Only shown when any
     # run carries a patch_pass signal; agents emitting prose without a diff score 0.
     patch_runs = [r for r in runs if r.patch_pass is not None]
-    if patch_runs:
-        for arm in ("plain", "codemap"):
-            arm_patch = [r for r in patch_runs if r.arm == arm]
-            if not arm_patch:
-                continue
-            n_pass = sum(1 for r in arm_patch if r.patch_pass)
-            rate = n_pass / len(arm_patch)
-            print(f"  patch_pass_rate ({arm}) = {n_pass}/{len(arm_patch)}  ({rate:.1%})")
+    for arm in _arms_present(patch_runs):
+        arm_patch = [r for r in patch_runs if r.arm == arm]
+        n_pass = sum(1 for r in arm_patch if r.patch_pass)
+        rate = n_pass / len(arm_patch)
+        print(f"  patch_pass_rate ({arm}) = {n_pass}/{len(arm_patch)}  ({rate:.1%})")
 
-    _print_workflow_breakdown(runs)
+
+def _print_summary(runs: list[BenchRun], model: str) -> None:
+    """Print token-ratio and accuracy summaries to stdout, once per treatment arm.
+
+    A parity run carries one control arm and two treatment arms, so the comparison table, its ratio
+    aggregates, the paired accuracy, and the workflow breakdown are rendered per (control, treatment)
+    pair. Per-arm diagnostics and the self-consistency row cover every arm once.
+
+    Args:
+        runs: All benchmark runs (may span multiple arms).
+        model: Short model name shown in header.
+    """
+    if not runs:
+        print("No runs to summarise.")
+        return
+
+    print("\n")
+    print_section_rule(f"Codemap benchmark — model={model}", console=_console)
+
+    pairs = _arm_pairs(runs)
+    if not pairs:
+        print(f"  no control arm among {', '.join(_arms_present(runs))} — comparison tables omitted")
+    for baseline, treatment in pairs:
+        df = _token_ratio_table(runs, baseline, treatment)
+        if df.empty:
+            continue
+        print(f"\n-- {baseline} (control) vs {treatment} (treatment) --")
+        _print_pair_table(df, baseline, treatment)
+        _print_pair_ratios(df, baseline, treatment)
+        # Paired accuracy: both arms scored over the SAME both-extracted task set. The per-arm
+        # figures below use different denominators (each arm drops its own extraction failures),
+        # so the paired view is the like-for-like headline comparison with its shared n stated.
+        _print_paired_accuracy(runs, baseline, treatment)
+        _print_workflow_breakdown(runs, baseline, treatment)
+
+    _print_arm_diagnostics(runs)
+
+    # Self-consistency row: index-derived GT tasks, reported apart from the headline accuracy.
+    _print_self_consistency(runs)
+
+
+def _runs_from_results_file(path: Path) -> list[BenchRun]:
+    """Reconstruct the runs stored in one ``bench-*.jsonl`` results file.
+
+    Args:
+        path: Path to a results file written by :func:`_save_results`.
+
+    Returns:
+        One :class:`BenchRun` per parseable line, in file order.
+
+    Raises:
+        SystemExit: When the file cannot be read.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        sys.exit(f"ERROR: cannot read results file {path}: {exc}")
+    runs: list[BenchRun] = []
+    for raw in text.splitlines():
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            line = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(line, dict):
+            runs.append(_run_from_cached(line))
+    return runs
+
+
+def _print_report_only(path: Path) -> None:
+    """Re-render the summary for an already-recorded results file, without running any model.
+
+    Reporting code evolves after a paid run has been recorded, and the rows carry every figure the
+    summary needs, so replaying them is the supported way to correct a report instead of re-spending
+    on the same cells.
+
+    Args:
+        path: Path to a results file written by :func:`_save_results`.
+    """
+    runs = _runs_from_results_file(path)
+    if not runs:
+        sys.exit(f"ERROR: no result rows in {path}")
+    models = sorted({r.model for r in runs})
+    for model in models:
+        _print_summary([r for r in runs if r.model == model], model)
+    print(f"\nReplayed {len(runs)} rows from {path}")
 
 
 def _save_results(runs: list[BenchRun], model: str) -> Path:
@@ -4701,7 +4917,9 @@ class _StructuralRunLoop:
             self.run_combo(
                 task,
                 arm_name,
-                progress.console.print,
+                # soft_wrap keeps the wide result row on one line; the console's own width frames
+                # legends and rules, and must not fold a row whose columns are meant to line up.
+                lambda row: progress.console.print(row, soft_wrap=True),
                 update_fn=_RichSubProgressUpdate(progress, outer, sub, task["id"], arm_name),
             )
             progress.remove_task(sub)
@@ -4750,6 +4968,8 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     tiered: bool = False,
     dry_run: bool = False,
     provider_parity: bool = False,
+    report: str = "",
+    index_relocation_path: Path = None,
 ) -> None:
     """Entry point: load tasks, run selected arms, print summary.
 
@@ -4773,8 +4993,16 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
             opus only on haiku/sonnet disagreements. Select the tier via ``--model`` per invocation.
         dry_run: Validate the locked inputs and print canonical A/B/C planned cells without Claude execution.
         provider_parity: Run the canonical A/B/C arms together in the shared deterministic order.
+        report: Re-render the summary for an existing ``bench-*.jsonl`` results file and exit. No
+            model runs, no writes — the stored rows are replayed through the current reporting code.
+        index_relocation_path: Relocation provenance written when this run's index was moved into an
+            isolated worktree; absent for a run at the canonical managed clone.
     """
     global _REPO_NAME, _REPO_NAMESPACE, _REPO_LOCAL_PATH
+
+    if report:
+        _print_report_only(Path(report))
+        return
 
     if profile is not None and profile not in _PROFILES:
         print(f"ERROR: --profile must be one of {_PROFILES}, got {profile!r}")
@@ -4944,7 +5172,10 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     if canonical_requested:
         try:
             _, task_policies = _load_primary_parity_contract()
-            _validate_primary_runtime(repo_path, index_path)
+            index_relocation = load_index_relocation(
+                None if index_relocation_path is None else Path(index_relocation_path)
+            )
+            _validate_primary_runtime(repo_path, index_path, index_relocation)
         except (OSError, ValueError) as exc:
             print(f"ERROR: cannot start canonical parity run: {exc}")
             sys.exit(1)
@@ -4963,7 +5194,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     if dry_run:
         for task in task_list:
             for arm_name in arm_orders[task["id"]]:
-                print(f"PLAN\t{task['id']}\t{arm_name}")
+                print_plan_row(f"PLAN\t{task['id']}\t{arm_name}", console=_console)
         return
 
     # Build runner
@@ -4989,23 +5220,27 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         suite_raw_hash=PRIMARY_SUITE_RAW_HASH if canonical_requested else None,
     )
 
-    print(f"\n{'─' * 64}")
-    print(f"  ▶ RUN START — model={model_short}")
-    print(f"{'─' * 64}")
+    print()
+    print_section_rule(f"▶ RUN START — model={model_short}", console=_console)
     print(f"Codemap benchmark: {len(task_list)} tasks × {len(arms_to_run)} arm(s) × model={model_short}")
     print(f"  index: {index_path}")
     print(f"  repo:  {repo_path}")
     print()
-    print("Task series legend:")
-    print("  SE  symbol_extraction     — locate symbol definition (file + line)")
-    print("  FN  fn_call_graph         — unique callers of a function (static graph)")
-    print("  RV  review_assistance     — doc-gap / rdep / coverage counts for review")
-    print("  CQ  code_quality          — coupling, broken xrefs, doc+coverage health")
-    print("  BR  develop_blast_radius  — enumerate direct callers before a change (recall ≥ 0.70)")
-    print("  DG  debug_from_trace      — identify fn + file from traceback/log (word-boundary match)")
-    print("  FT  feature_scaffolding   — identify files to create/modify for a feature (word-boundary match)")
-    print("  RI  real_issue            — reproduce + locate files for a GitHub issue (recall ≥ 0.70)")
-    print("  MB  module_blast_radius   — enumerate modules that import a target (importer recall ≥ 0.70)")
+    print_legend(
+        [
+            "  task series:",
+            "    SE  symbol_extraction     — locate symbol definition (file + line)",
+            "    FN  fn_call_graph         — unique callers of a function (static graph)",
+            "    RV  review_assistance     — doc-gap / rdep / coverage counts for review",
+            "    CQ  code_quality          — coupling, broken xrefs, doc+coverage health",
+            "    BR  develop_blast_radius  — enumerate direct callers before a change (recall ≥ 0.70)",
+            "    DG  debug_from_trace      — identify fn + file from traceback/log (word-boundary match)",
+            "    FT  feature_scaffolding   — identify files to create/modify for a feature (word-boundary match)",
+            "    RI  real_issue            — reproduce + locate files for a GitHub issue (recall ≥ 0.70)",
+            "    MB  module_blast_radius   — enumerate modules that import a target (importer recall ≥ 0.70)",
+        ],
+        console=_console,
+    )
     print()
 
     runs: list[BenchRun] = []
@@ -5031,7 +5266,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
                 # reverted any partial edit (see __enter__), so skip THIS task and continue: one
                 # un-stageable task must never abort the whole run or discard the summary and the
                 # results already gathered for every other task.
-                progress.console.print(f"[yellow]⚠ skipped DI task {task['id']} (cannot stage): {exc}[/yellow]")
+                progress.console.print(f"⚠ skipped DI task {task['id']} (cannot stage): {exc}", style="yellow")
                 _dirty_skips.append((task["id"], str(exc)))
 
     _print_summary(runs, model_short)

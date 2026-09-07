@@ -191,15 +191,23 @@ class TestArmContracts:
         with pytest.raises(TypeError):
             core.ARM_CONTRACTS["A_plain"]["contract"] = "changed"
 
-    def test_comparison_arm_registry_extends_claude_without_changing_its_lock(self) -> None:
-        """Codex comparisons add direct/Skill arms without broadening Claude's arm contract."""
+    def test_comparison_arm_registry_shares_one_arm_set_and_still_reads_pre_alignment_names(self) -> None:
+        """Both providers run the same three arms, and frozen Codex rows still resolve.
+
+        Codex once named its treatment arms after their delivery mechanism. Those runs are immutable, so their names
+        have to keep resolving for grouping and pairing even though no new run can produce them; a registry that
+        recognized only the canonical three would fail on frozen rows.
+        """
         assert core.COMPARISON_ARMS_BY_PROVIDER == {
             "claude": frozenset({"A_plain", "B_auto", "C_strict"}),
-            "codex": frozenset({"A_plain", "B_direct_required", "C_skill_required"}),
+            "codex": frozenset({"A_plain", "B_auto", "C_strict"}),
         }
+        assert core.CANONICAL_ARM_NAMES == frozenset({"A_plain", "B_auto", "C_strict"})
         assert core.COMPARISON_ARM_NAMES == frozenset(
             {"A_plain", "B_auto", "C_strict", "B_direct_required", "C_skill_required"}
         )
+        assert core.canonical_arm("B_direct_required") == "B_auto"
+        assert core.canonical_arm("C_skill_required") == "C_strict"
         assert set(core.ARM_CONTRACTS) == {"A_plain", "B_auto", "C_strict"}
 
         with pytest.raises(TypeError):
@@ -456,10 +464,8 @@ class TestResultEligibility:
         [
             pytest.param("claude", "A_plain", "B_auto", "A_plain", id="plain-adherence-false"),
             pytest.param("claude", "A_plain", "C_strict", "C_strict", id="claude-required-adherence-false"),
-            pytest.param(
-                "codex", "A_plain", "B_direct_required", "B_direct_required", id="codex-direct-adherence-false"
-            ),
-            pytest.param("codex", "A_plain", "C_skill_required", "C_skill_required", id="codex-skill-adherence-false"),
+            pytest.param("codex", "A_plain", "B_auto", "B_auto", id="codex-direct-adherence-false"),
+            pytest.param("codex", "A_plain", "C_strict", "C_strict", id="codex-skill-adherence-false"),
         ],
     )
     def test_false_treatment_adherence_is_ineligible_and_rejects_pairing(
@@ -485,7 +491,7 @@ class TestResultEligibility:
         "arm",
         [
             pytest.param("B_auto", id="claude-optional-use"),
-            pytest.param("B_direct_required", id="codex-optional-use"),
+            pytest.param("B_auto", id="codex-optional-use"),
         ],
     )
     def test_zero_query_b_cell_is_adherent_on_both_providers(self, arm: str) -> None:
@@ -500,7 +506,7 @@ class TestResultEligibility:
         "arm",
         [
             pytest.param("C_strict", id="claude-required-use"),
-            pytest.param("C_skill_required", id="codex-required-use"),
+            pytest.param("C_strict", id="codex-required-use"),
         ],
     )
     def test_zero_query_c_cell_remains_non_adherent(self, arm: str) -> None:
@@ -509,16 +515,14 @@ class TestResultEligibility:
 
     def test_contamination_still_overrides_optional_use_adherence(self) -> None:
         """Optional use never excuses a contaminated cell."""
-        assert core.treatment_adherence("B_direct_required", codemap_use_compliance=False, contaminated=True) is False
+        assert core.treatment_adherence("B_auto", codemap_use_compliance=False, contaminated=True) is False
 
     def test_zero_query_codex_b_cell_stays_pooling_eligible(self) -> None:
         """Adherence alone is useless if the row is still dropped from pooling."""
         record = _record(
             provider="codex",
-            arm="B_direct_required",
-            treatment_adherence=core.treatment_adherence(
-                "B_direct_required", codemap_use_compliance=False, contaminated=False
-            ),
+            arm="B_auto",
+            treatment_adherence=core.treatment_adherence("B_auto", codemap_use_compliance=False, contaminated=False),
         )
 
         assert core.result_eligibility(record, _synthetic_policies()) is True
@@ -575,28 +579,32 @@ class TestPairedEffects:
     @pytest.mark.parametrize(
         ("baseline_arm", "treatment_arm"),
         [
-            pytest.param("B_auto", "B_direct_required", id="claude-auto-vs-codex-direct"),
-            pytest.param("C_strict", "C_skill_required", id="claude-required-vs-codex-skill"),
+            pytest.param("A_plain", "C_strict", id="skill-vs-plain"),
+            pytest.param("A_plain", "B_auto", id="optional-vs-plain"),
         ],
     )
-    def test_pair_effects_rejects_cross_experiment_estimands_without_records(
-        self, baseline_arm: str, treatment_arm: str
-    ) -> None:
-        """Union arm membership cannot authorize an estimand no provider actually ran."""
-        with pytest.raises(ValueError, match="do not coexist"):
+    def test_pair_effects_over_no_records_reports_no_effects(self, baseline_arm: str, treatment_arm: str) -> None:
+        """A valid estimand with nothing measured yields no effects rather than a zero effect.
+
+        Both providers now run the same three arms, so naming a pair no longer implies it was run. The empty result is
+        what keeps an unmeasured comparison out of a table instead of entering it as a difference of zero.
+        """
+        assert (
             core.pair_effects(
                 [],
                 baseline_arm=baseline_arm,
                 treatment_arm=treatment_arm,
                 policies=_synthetic_policies(),
             )
+            == []
+        )
 
     @pytest.mark.parametrize(
         ("baseline_arm", "treatment_arm"),
         [
-            pytest.param("A_plain", "B_direct_required", id="direct-cli-vs-plain"),
-            pytest.param("A_plain", "C_skill_required", id="skill-vs-plain"),
-            pytest.param("B_direct_required", "C_skill_required", id="skill-vs-direct-cli"),
+            pytest.param("A_plain", "B_auto", id="direct-cli-vs-plain"),
+            pytest.param("A_plain", "C_strict", id="skill-vs-plain"),
+            pytest.param("B_auto", "C_strict", id="skill-vs-direct-cli"),
         ],
     )
     def test_pair_effects_accepts_each_codex_estimand(self, baseline_arm: str, treatment_arm: str) -> None:
@@ -651,7 +659,7 @@ class TestPairedEffects:
         ]
         codex_records = [
             _record(arm="A_plain", provider="codex"),
-            _record(arm="B_direct_required", provider="codex", input_tokens=200, quality_score=0.4),
+            _record(arm="B_auto", provider="codex", input_tokens=200, quality_score=0.4),
         ]
 
         claude_effect = core.pair_effects(
@@ -663,7 +671,7 @@ class TestPairedEffects:
         codex_effect = core.pair_effects(
             codex_records,
             baseline_arm="A_plain",
-            treatment_arm="B_direct_required",
+            treatment_arm="B_auto",
             policies=_synthetic_policies(),
         )[0]
 
@@ -673,28 +681,6 @@ class TestPairedEffects:
         assert codex_effect.provider == "codex"
         assert codex_effect.log_input_token_ratio == pytest.approx(math.log(2.0))
         assert codex_effect.quality_delta == pytest.approx(-0.2)
-
-    @pytest.mark.parametrize(
-        ("provider", "arm"),
-        [
-            pytest.param("codex", "B_auto", id="codex-cannot-use-claude-auto-arm"),
-            pytest.param("claude", "B_direct_required", id="claude-cannot-use-codex-direct-arm"),
-        ],
-    )
-    def test_pair_effects_rejects_provider_arm_mismatches(self, provider: str, arm: str) -> None:
-        """Union membership must not make another provider's treatment semantics valid."""
-        records = [
-            _record(provider=provider, arm="A_plain"),
-            _record(provider=provider, arm=arm),
-        ]
-
-        with pytest.raises(ValueError, match="not valid for provider"):
-            core.pair_effects(
-                records,
-                baseline_arm="A_plain",
-                treatment_arm=arm,
-                policies=_synthetic_policies(),
-            )
 
     @pytest.mark.parametrize(
         ("cached_input_tokens", "token_accounting_inconsistent", "fresh_input_tokens", "message"),
@@ -1124,6 +1110,8 @@ class TestAgenticAnswerContracts:
             "- production_importers: array of full dotted module-name strings.\n"
             f"{agentic_contracts.IMPORT_CONVENTION_INSTRUCTION}\n"
             "Do not put objects or counts inside array fields. Values outside these shapes are invalid.\n"
+            "Wrap your answer between a BEGIN_ANSWER_JSON line and an END_ANSWER_JSON line, "
+            "exactly once, with the JSON object alone between them.\n"
             "Example using synthetic values only:\n"
             "BEGIN_ANSWER_JSON\n"
             '{"production_importers":["pkg.consumer"]}\n'
@@ -1418,3 +1406,23 @@ class TestAgenticAnswerContracts:
 
         assert "pkg.sub.target" in modules["pkg.sub.client"].imports
         assert "pkg.sub.target" in modules["pkg.sub.child.client"].imports
+
+
+def test_answer_instruction_states_the_envelope_requirement_outside_the_example() -> None:
+    """The wrapping requirement must be an instruction, not an inference from a synthetic example.
+
+    Codex returned bare JSON in 12 of 48 agentic cells on 2026-09-06 because the delimiters appeared only inside a block
+    labelled "Example using synthetic values only".
+    """
+    task = {
+        "id": "T-06",
+        "prompt": "Inspect pkg.target.",
+        "primary_module": "pkg.target",
+        "answer_contract": {"fields": ["production_importers"], "params": {}},
+    }
+
+    instruction = agentic_contracts.answer_format_instruction(task)
+    before_example = instruction.split("Example using synthetic values only:")[0]
+
+    assert "BEGIN_ANSWER_JSON" in before_example
+    assert "END_ANSWER_JSON" in before_example

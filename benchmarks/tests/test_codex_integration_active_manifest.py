@@ -83,7 +83,7 @@ def test_builder_locks_optional_query_arguments_ordering_and_cache_policy() -> N
     task_selection = builder["_task_selection_contract"](source)
     telemetry = builder["_telemetry_admission"]()
     assert builder["EXPERIMENT_REVISION"] == "codex-integration-unified-task-cli-2026-08-11"
-    assert arms["B_direct_required"]["requirement"] == (
+    assert arms["B_auto"]["requirement"] == (
         "Run at least one successful compact direct query in its own native command item containing exactly "
         '"$CODEMAP_BIN" query --compact <subcommand> [arguments]; '
         "additional reads and shell work are allowed as separate items."
@@ -221,12 +221,17 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
     """Only the three planned Codex arms and their exact package bytes are eligible."""
     manifest = _load(MANIFEST)
 
-    assert list(manifest["arms"]) == ["A_plain", "B_direct_required", "C_skill_required"]
-    assert manifest["model"] == {"name": "gpt-5.6-luna", "reasoning_effort": "high", "strict_config": True}
+    assert list(manifest["arms"]) == ["A_plain", "B_auto", "C_strict"]
+    assert manifest["model"] == {
+        "name": "gpt-5.6-luna",
+        "additional_strata": ["gpt-5.6-terra", "gpt-5.6-sol"],
+        "reasoning_effort": "high",
+        "strict_config": True,
+    }
     assert manifest["estimands"] == {
-        "C_skill_required-A_plain": "product effect",
-        "B_direct_required-A_plain": "direct CLI effect",
-        "C_skill_required-B_direct_required": "integration effect",
+        "C_strict-A_plain": "product effect",
+        "B_auto-A_plain": "direct CLI availability effect",
+        "C_strict-B_auto": "integration effect",
     }
     assert manifest["package_roster"] == ["codemap-py", "codex-rig"]
     assert manifest["experiment_id"] == "codex-integration-v1"
@@ -234,8 +239,8 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
     assert manifest["experiment_revision"] == "codex-integration-unified-task-cli-2026-08-11"
     assert manifest["preregistered_cells"]["arms"] == [
         "A_plain",
-        "B_direct_required",
-        "C_skill_required",
+        "B_auto",
+        "C_strict",
     ]
     assert manifest["preregistered_cells"]["providers"] == ["codex"]
     assert manifest["preregistered_cells"]["confirmatory_repetitions"] == 1
@@ -254,23 +259,23 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
         manifest["preregistered_cells"]["structural_diagnostic_task_ids"]
     )
     assert manifest["codex_permission_profiles"]["treatment"]["arms"] == [
-        "B_direct_required",
-        "C_skill_required",
+        "B_auto",
+        "C_strict",
     ]
     assert manifest["codex_permission_profiles"]["treatment_runtime"]["scope"] == [
-        "B_direct_required",
-        "C_skill_required",
+        "B_auto",
+        "C_strict",
     ]
     assert manifest["codex_permission_profiles"]["host_tooling_isolation"] == {
         "access": "deny",
-        "arms": ["A_plain", "B_direct_required", "C_skill_required"],
+        "arms": ["A_plain", "B_auto", "C_strict"],
         "roots": ["<host-home>/.agents", "<host-home>/.claude", "<host-home>/.codex"],
         "verification": "no-model directory enumeration must fail without emitting entries",
     }
     assert manifest["codex_permission_profiles"]["marketplace_source_access"] == {
         "A_plain": "deny",
-        "B_direct_required": "deny after the locked direct runtime is staged inside its disposable home",
-        "C_skill_required": "deny",
+        "B_auto": "deny after the locked direct runtime is staged inside its disposable home",
+        "C_strict": "deny",
     }
     assert manifest["execution_controls"]["parity_timeout_seconds"] == 600
     assert manifest["execution_controls"]["coordinate_timeout_scope"] == (
@@ -342,7 +347,7 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
     telemetry = manifest["telemetry_admission"]
     assert telemetry["telemetry_contract_id"] == "installed-skill-binding-locked-query-components-v3"
     assert telemetry["skill_binding"] == {
-        "arm": "C_skill_required",
+        "arm": "C_strict",
         "environment_binding": "runner-owned immutable exact installed query Skill path; absent from A and B",
         "manual_read_telemetry": "skill_delivery_observed is diagnostic-only and never a query-credit prerequisite",
     }
@@ -353,8 +358,8 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
         "required_output": "one JSON document with index.query_complete=true and index.compact=true",
     }
     assert telemetry["treatment_attribution"] == {
-        "B_direct_required": "at least one successful compact direct CLI query",
-        "C_skill_required": "at least one successful canonical compact query in the immutable installed-Skill treatment",
+        "B_auto": "direct CLI reachable; the model decides whether to query",
+        "C_strict": "at least one successful canonical compact query in the immutable installed-Skill treatment",
     }
     assert all("Skill read" not in item for item in telemetry["rejected_evidence"])
 
@@ -382,7 +387,7 @@ def test_integration_manifest_locks_unified_nonpoolable_task_selection() -> None
         "deduplicate": "selector tokens and overlapping expanded IDs are evaluated once",
         "reject": ["empty tokens", "unknown task IDs", "unknown families"],
     }
-    assert scope["stages"]["structural"]["arms"] == ["A_plain", "B_direct_required", "C_skill_required"]
+    assert scope["stages"]["structural"]["arms"] == ["A_plain", "B_auto", "C_strict"]
     assert scope["stages"]["structural"]["default_repetitions"] == 1
     assert scope["stages"]["structural"]["selected_repetitions"] == 3
     for stage in ("readcrop", "fix-single", "fix-multi", "patch"):

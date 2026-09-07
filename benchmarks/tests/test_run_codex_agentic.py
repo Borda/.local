@@ -13,6 +13,10 @@ import pytest
 
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BENCHMARKS_DIR))
+
+from _bench_common.presentation import LEGEND_CLOSE_RULE, LEGEND_OPEN_RULE  # noqa: E402
+
 AGENTIC_TASK_IDS = tuple(f"BA-{number:02d}" for number in range(1, 17))
 AGENTIC_ARMS = ("A_plain", "B_auto", "C_strict")
 POSIX_SECURITY = pytest.mark.skipif(sys.platform == "win32", reason="requires POSIX private-mode semantics")
@@ -245,8 +249,8 @@ def test_dry_run_preflights_snapshot_bound_c_admission_without_auth_or_model(
 def test_agentic_output_legend_uses_shared_renderer_contract(agentic: Any) -> None:
     """Agentic output declares its treatments and metrics in one shared-renderer block."""
     legend = agentic._OUTPUT_LEGEND
-    assert legend.startswith("LEGEND\n")
-    assert legend.endswith("END LEGEND")
+    assert legend.startswith(f"{LEGEND_OPEN_RULE}\n")
+    assert legend.endswith(LEGEND_CLOSE_RULE)
     assert legend.count("LEGEND") == 2
     assert (
         "treatments: A_plain=no Codemap, B_auto=CLI available and optional, C_strict=installed Codemap Skill" in legend
@@ -272,8 +276,8 @@ def test_agentic_output_legend_uses_shared_renderer_contract(agentic: Any) -> No
     ("arm", "native_arm", "available"),
     [
         pytest.param("A_plain", "A_plain", False, id="plain"),
-        pytest.param("B_auto", "B_direct_required", True, id="optional-direct-home"),
-        pytest.param("C_strict", "C_skill_required", True, id="required-skill-home"),
+        pytest.param("B_auto", "B_auto", True, id="optional-direct-home"),
+        pytest.param("C_strict", "C_strict", True, id="required-skill-home"),
     ],
 )
 def test_isolated_home_adapter_uses_existing_structural_isolation(
@@ -450,7 +454,7 @@ class _FixtureRunner:
         evidence_path.write_text(
             json.dumps(
                 {
-                    "arm": "C_skill_required",
+                    "arm": "C_strict",
                     "status": "verified",
                     "error": None,
                     "expected_plugin_identities": identity,
@@ -839,11 +843,11 @@ def test_agentic_first_strict_admission_failure_keeps_identity_evidence_after_cl
     evidence_path = run_dir / "runtime-isolation.jsonl"
     assert evidence_path.stat().st_mode & 0o777 == 0o600
     evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
-    assert evidence["arm"] == "C_skill_required"
+    assert evidence["arm"] == "C_strict"
     assert evidence["error"] == "fixture plugin identity mismatch"
     assert evidence["expected_plugin_identities"]["codemap-py"]["version"] == "0.27.0"
     assert evidence["observed_plugin_identities"]["codex-rig"]["version"] == "0.4.0"
-    assert install_calls == ["C_skill_required"]
+    assert install_calls == ["C_strict"]
     assert model_calls == []
     assert not any(tmp_path.rglob("plugin.json"))
 
@@ -853,7 +857,7 @@ def test_agentic_first_strict_admission_failure_keeps_identity_evidence_after_cl
             manifest_path=manifest_path,
             invocation_launcher_path=BENCHMARKS_DIR / "run-all.sh",
         )
-    assert install_calls == ["C_skill_required"]
+    assert install_calls == ["C_strict"]
 
 
 def test_agentic_snapshot_attempts_every_cleanup_after_auth_refresh_failure(
@@ -930,12 +934,12 @@ def test_agentic_snapshot_attempts_every_cleanup_after_auth_refresh_failure(
         "refresh:A_plain",
         "coordination:coordination-A_plain",
         "home:A_plain",
-        "refresh:B_direct_required",
-        "coordination:coordination-B_direct_required",
-        "home:B_direct_required",
-        "refresh:C_skill_required",
-        "coordination:coordination-C_skill_required",
-        "home:C_skill_required",
+        "refresh:B_auto",
+        "coordination:coordination-B_auto",
+        "home:B_auto",
+        "refresh:C_strict",
+        "coordination:coordination-C_strict",
+        "home:C_strict",
     ]
 
 
@@ -1008,14 +1012,14 @@ def test_agentic_snapshot_cleans_a_shared_treatment_coordination_root_once(
     assert events == [
         "home:A_plain",
         "coordination:.index-rw",
-        "home:B_direct_required",
-        "home:C_skill_required",
+        "home:B_auto",
+        "home:C_strict",
     ]
     assert runner.adapter.bound_sources == (
         tmp_path / "run" / "inputs",
         {
-            "B_direct_required": {"direct-cli": tmp_path / "run" / "inputs" / "B_auto" / "direct-cli"},
-            "C_skill_required": {
+            "B_auto": {"direct-cli": tmp_path / "run" / "inputs" / "B_auto" / "direct-cli"},
+            "C_strict": {
                 "codemap-py": tmp_path / "run" / "inputs" / "C_strict" / "codemap-py",
                 "codex-rig": tmp_path / "run" / "inputs" / "C_strict" / "codex-rig",
             },
@@ -1258,3 +1262,250 @@ def test_report_recall_uses_only_text_after_the_last_tool(task_and_truth: tuple[
     assert result.quality.erec == 1.0
     assert result.quality.rrec == 1.0
     assert result.report_text.startswith("Final: lightning.pytorch.loops.fit_loop.")
+
+
+def _relocated_worktree_index(tmp_path: Path) -> tuple[Path, Path, dict[str, Any], dict[str, str]]:
+    """Build a clean committed worktree holding a root-relocated copy of a frozen index.
+
+    Args:
+        tmp_path: Directory the worktree, index, and manifest are created under.
+
+    Returns:
+        The worktree root, the relocated index path, an agentic manifest locking the frozen index
+        bytes, and the relocation provenance a run in that worktree would carry.
+    """
+    import subprocess
+
+    from _bench_common.mutation_isolation import relocate_frozen_index_for_worktree
+
+    source = tmp_path / "managed-clone"
+    source.mkdir()
+    repo = tmp_path / "worktree"
+    (repo / "pkg").mkdir(parents=True)
+    (repo / "pkg" / "a.py").write_text("def foo():\n    return 1\n", encoding="utf-8")
+    for args in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"],
+    ):
+        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+    commit = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    frozen_payload = {
+        "scan_root": str(source.resolve()),
+        "git_sha": commit,
+        "scan_version": 3,
+        "modules": [{"name": "pkg.a"}],
+    }
+    frozen_bytes = (json.dumps(frozen_payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    derived_bytes, relocation = relocate_frozen_index_for_worktree(frozen_bytes, source_root=source, worktree_root=repo)
+    index_path = tmp_path / "relocated-index.json"
+    index_path.write_bytes(derived_bytes)
+    manifest = {
+        "target_source": {"commit": commit},
+        "frozen_index_contract": {
+            "raw_sha256": hashlib.sha256(frozen_bytes).hexdigest(),
+            "git_sha": commit,
+            "scan_version": 3,
+        },
+    }
+    return repo, index_path, manifest, dict(relocation)
+
+
+class TestRelocatedIndexAdmission:
+    """A worktree run proves index identity through relocation provenance, never byte identity."""
+
+    def test_valid_provenance_admits_a_worktree_index(self, agentic: Any, tmp_path: Path) -> None:
+        """Relocation provenance admits an index whose bytes differ from the locked hash.
+
+        Scenario: a run executes in its own worktree, so its index carries the worktree's
+        ``scan_root`` and can never reproduce the manifest's locked raw hash; the provenance written
+        by the relocation is what proves the graph is still the frozen one.
+        """
+        repo, index_path, manifest, relocation = _relocated_worktree_index(tmp_path)
+
+        agentic._validate_agentic_runtime(manifest, repo, index_path, relocation)
+
+        assert hashlib.sha256(index_path.read_bytes()).hexdigest() != relocation["frozen_index_sha256"]
+
+    def test_provenance_naming_the_wrong_frozen_source_is_rejected(self, agentic: Any, tmp_path: Path) -> None:
+        """Provenance whose frozen source is not the locked index is rejected.
+
+        Scenario: a caller supplies provenance derived from some other frozen index; admitting it
+        would let an unrelated graph enter the run under the locked manifest's authority.
+        """
+        repo, index_path, manifest, relocation = _relocated_worktree_index(tmp_path)
+        relocation["frozen_index_sha256"] = "0" * 64
+
+        with pytest.raises(ValueError, match="wrong frozen source"):
+            agentic._validate_agentic_runtime(manifest, repo, index_path, relocation)
+
+    def test_provenance_disagreeing_with_the_bytes_on_disk_is_rejected(self, agentic: Any, tmp_path: Path) -> None:
+        """Provenance whose derived hash misses the on-disk index is rejected.
+
+        Scenario: the relocated copy changed after its provenance was written, so the digest the
+        run would attest to is no longer the index the model actually reads.
+        """
+        repo, index_path, manifest, relocation = _relocated_worktree_index(tmp_path)
+        relocation["derived_index_sha256"] = "1" * 64
+
+        with pytest.raises(ValueError, match="changed after relocation"):
+            agentic._validate_agentic_runtime(manifest, repo, index_path, relocation)
+
+    def test_absent_provenance_keeps_the_byte_gate(self, agentic: Any, tmp_path: Path) -> None:
+        """Without provenance a non-locked index is still rejected on its bytes.
+
+        Scenario: the same relocated index is offered by a run that claims no relocation; the
+        original byte-identity gate must reject it exactly as before.
+        """
+        repo, index_path, manifest, _relocation = _relocated_worktree_index(tmp_path)
+
+        with pytest.raises(ValueError, match="agentic Codex run requires the locked frozen index bytes"):
+            agentic._validate_agentic_runtime(manifest, repo, index_path)
+
+
+def test_probe_rows_share_the_structural_column_layout(agentic: Any) -> None:
+    """Every agentic probe row puts its fields in the same tab-free columns as the other lanes.
+
+    Scenario: the three lanes each padded their probe rows differently, so the same capability read
+    printed in three shapes across one combined run log. All three now go through one formatter,
+    and the longer C_strict label must not push its own fields out of the shared column.
+    """
+    rows = [agentic._format_probe(agentic.probe_arm(arm)) for arm in AGENTIC_ARMS]
+
+    assert not any("\t" in row for row in rows)
+    assert {row.index("use=") for row in rows} == {rows[0].index("use=")}
+
+
+def test_probe_rows_separate_the_optional_and_required_arms(agentic: Any) -> None:
+    """B_auto and C_strict probe rows state different Codemap obligations.
+
+    Scenario: both arms find the binary, so a row carrying only ``codemap=true`` read identically
+    for an arm that may use Codemap and an arm that must. The measured availability stays where it
+    was — a missing binary must still surface as a failure — and the contract is named beside it.
+    """
+    optional, required = (agentic._format_probe(agentic.probe_arm(arm)) for arm in ("B_auto", "C_strict"))
+
+    assert "codemap=true" in optional and "codemap=true" in required
+    assert "use=optional" in optional
+    assert "use=required" in required
+
+
+def test_emitted_legend_keeps_the_framed_plain_form_when_redirected(
+    agentic: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A redirected agentic legend writes exactly the framed text the run log also archives.
+
+    Scenario: the legend now renders as a Rich panel on a terminal, but the same run writes the
+    plain constant into its own log file. A drift between the two would make an archived run
+    unreplayable against the stream it was captured from.
+    """
+    agentic._emit_output_legend()
+
+    assert capsys.readouterr().out == f"{agentic._OUTPUT_LEGEND}\n"
+
+
+def test_selected_stratum_hashes_into_its_own_scope(agentic: Any) -> None:
+    """A declared stratum other than the manifest default resolves to a scope of its own.
+
+    Scenario: the agentic lane runs one stratum per study, and the study's identity is its scope
+    hash. Leaving the stratum out of that hash would let one approval token pay for a study of any
+    declared model, which is how three executions of the default model were once published as
+    studies of the two strata an operator had actually named.
+    """
+    default = agentic.resolve_agentic_scope()
+    selected = agentic.resolve_agentic_scope(model="gpt-5.6-terra")
+    named_default = agentic.resolve_agentic_scope(model=default_stratum(agentic))
+
+    assert selected["scope_sha256"] != default["scope_sha256"]
+    assert selected["total_cells"] == default["total_cells"]
+    assert named_default["scope_sha256"] == default["scope_sha256"]
+
+
+def test_undeclared_stratum_is_refused_before_any_scope_exists(agentic: Any) -> None:
+    """A model the manifest never declared fails instead of becoming the study's model.
+
+    Scenario: the selection reaches the transport that spends money, so free text here would buy a
+    run of whatever the operator typed. Only the manifest's own default and its declared additional
+    strata may be selected.
+    """
+    with pytest.raises(ValueError, match="Codex provider parity requires one of"):
+        agentic.resolve_agentic_scope(model="gpt-5.3-codex")
+
+
+def test_paid_run_of_a_selected_stratum_binds_and_records_it(
+    agentic: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Paid execution of another declared stratum demands that stratum's scope and records its name.
+
+    Scenario: the run metadata is the only durable statement of which model was executed, and the
+    approval is the only gate before the money is spent. A selected stratum admitted by the manifest
+    digest would let the default study's token pay for it, and metadata naming the manifest default
+    would publish it as the model it was not.
+    """
+    manifest_path, manifest_approval, index_path, _launcher_path = _prepare_paid_fixture(agentic, monkeypatch, tmp_path)
+    run_dir = tmp_path / "stratum"
+    _manifest_approval, launcher_path = _lock_run_launcher(manifest_path, run_dir)
+    scope_approval = agentic.resolve_agentic_scope(manifest_path, model="gpt-5.6-terra")["scope_sha256"]
+
+    agentic.run_paid(
+        repo_path=tmp_path,
+        index_path=index_path,
+        auth_source=tmp_path / "auth-not-read.json",
+        approval_sha256=scope_approval,
+        run_dir=run_dir,
+        manifest_path=manifest_path,
+        model="gpt-5.6-terra",
+        scope_sha256=scope_approval,
+        runner_factory=_FixtureRunner,
+        invocation_launcher_path=launcher_path,
+    )
+
+    metadata = json.loads((run_dir / "run-metadata.json").read_text())
+    assert metadata["execution"]["model"] == "gpt-5.6-terra"
+    assert metadata["approval_sha256"] == scope_approval
+    assert manifest_approval != scope_approval
+
+
+def test_paid_run_of_a_selected_stratum_refuses_the_default_study_token(
+    agentic: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The token that admits the manifest's own stratum does not admit another one.
+
+    Scenario: the manifest digest authorizes the study the manifest describes. Accepting it for a
+    different stratum would make the approval a permission to run any declared model rather than the
+    one the operator reviewed and priced.
+    """
+    manifest_path, _approval, index_path, _launcher_path = _prepare_paid_fixture(agentic, monkeypatch, tmp_path)
+    run_dir = tmp_path / "mismatched"
+    manifest_approval, launcher_path = _lock_run_launcher(manifest_path, run_dir)
+
+    with pytest.raises(ValueError, match="nondefault agentic scope"):
+        agentic.run_paid(
+            repo_path=tmp_path,
+            index_path=index_path,
+            auth_source=tmp_path / "auth-not-read.json",
+            approval_sha256=manifest_approval,
+            run_dir=run_dir,
+            manifest_path=manifest_path,
+            model="gpt-5.6-terra",
+            runner_factory=_FixtureRunner,
+            invocation_launcher_path=launcher_path,
+        )
+
+
+def default_stratum(agentic: Any) -> str:
+    """Return the model stratum the active agentic manifest names as its own default.
+
+    Args:
+        agentic: The loaded agentic runner module.
+
+    Returns:
+        The declared default stratum name.
+
+    Examples:
+        >>> default_stratum(_load_agentic()).startswith("gpt-")
+        True
+    """
+    return str(json.loads(agentic._MANIFEST_PATH.read_text(encoding="utf-8"))["model"]["name"])

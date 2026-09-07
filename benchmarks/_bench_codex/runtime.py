@@ -27,33 +27,33 @@ from _bench_common.presentation import fmt_time, fmt_tok
 _SENSITIVE_EVENT_KEYS = frozenset(
     {"access_token", "refresh_token", "id_token", "authorization", "cookie", "set-cookie"}
 )
-STRUCTURAL_OUTPUT_LEGEND = (
-    "LEGEND\n"
-    "  treatments: A_plain=no Codemap, B_direct=direct Codemap required, "
-    "C_skill=Codemap Skill required\n"
-    "  tasks:\n"
-    "      SE: symbol extraction\n"
-    "      FN: function-call graph\n"
-    "      RV: review assistance\n"
-    "      CQ: code quality\n"
-    "      BR: blast radius\n"
-    "      DG: debug from trace\n"
-    "      FT: feature scaffolding\n"
-    "      RI: real issue\n"
-    "      DI: diff impact\n"
-    "      GR: graph reasoning\n"
-    "      MB: module blast radius\n"
-    "  status: ✓ completed, ✗ failed\n"
-    "  quality: continuous [0,1], ? unscoreable (higher is better)\n"
-    "  progress: N completed cells / M planned cells\n"
-    "  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\n"
-    "  codemap-used: ✓ Codemap call observed; ✗ no Codemap call "
-    "(expected for A_plain) or required use missed (B/C)\n"
-    "  query: ✓ exact expected query; ✗ mismatch; — not applicable\n"
-    "  cohort: H headline; D diagnostic\n"
-    "  input tokens: gross total; cached and fresh details remain in telemetry only "
-    "(lower is better at equal quality)\n"
-    "END LEGEND"
+#: Legend body lines without their framing rules, so a terminal can panel them and a redirected run
+#: can keep writing the plain rules its logs already carry.
+STRUCTURAL_LEGEND_BODY = (
+    "  treatments: A_plain=no Codemap, B_auto=direct Codemap available and optional, C_strict=Codemap Skill required",
+    "  tasks:",
+    "      SE: symbol extraction",
+    "      FN: function-call graph",
+    "      RV: review assistance",
+    "      CQ: code quality",
+    "      BR: blast radius",
+    "      DG: debug from trace",
+    "      FT: feature scaffolding",
+    "      RI: real issue",
+    "      DI: diff impact",
+    "      GR: graph reasoning",
+    "      MB: module blast radius",
+    "  status: ✓ completed, ✗ failed",
+    "  quality: continuous [0,1], ? unscoreable (higher is better)",
+    "  progress: N completed cells / M planned cells",
+    "  treatment: ✓ assigned arm followed, ✗ assigned arm not followed",
+    "  codemap-used: ✓ Codemap call observed; ✗ no Codemap call (expected for A_plain) or required use missed (B/C)",
+    "  query: ✓ exact expected query; ✗ mismatch; — not applicable",
+    "  cohort: H headline; D diagnostic",
+    "  input tokens: gross total; cached and fresh details remain in telemetry only (lower is better at equal quality)",
+)
+STRUCTURAL_OUTPUT_LEGEND = "\n".join(
+    (presentation.LEGEND_OPEN_RULE, *STRUCTURAL_LEGEND_BODY, presentation.LEGEND_CLOSE_RULE)
 )
 
 
@@ -318,6 +318,23 @@ def _has_unquoted_comment(command: str) -> bool:
     return False
 
 
+def validate_codex_stratum(model: str, reasoning_effort: str, manifest_path: Path) -> None:
+    """Reject execution outside the model and effort declared by the active manifest."""
+    try:
+        configured = json.loads(Path(manifest_path).read_text(encoding="utf-8"))["model"]
+        # Each declared stratum runs as its own nonpoolable study, like Claude's three tiers.
+        strata = [configured["name"], *configured.get("additional_strata", [])]
+        expected_effort = configured["reasoning_effort"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("provider-parity model stratum is unavailable or malformed") from exc
+    if not all(isinstance(name, str) for name in strata):
+        raise ValueError("provider-parity model stratum list is malformed")
+    if model not in strata:
+        raise ValueError(f"Codex provider parity requires one of {', '.join(strata)}")
+    if reasoning_effort != expected_effort:
+        raise ValueError(f"Codex provider-parity reasoning effort must be {expected_effort}")
+
+
 def _canonical_query_arguments(command: str) -> list[str] | None:
     """Return query arguments only for the dedicated canonical launcher command."""
     normalized = _unwrap_native_command(command)
@@ -530,7 +547,7 @@ def parse_codex_jsonl(
     Observed vs configured: the ``codemap_*`` call and error counters are read
     from the stream, but the ``_skill_`` / ``_direct_`` split is *not*. It is
     derived from whether the caller passed ``skill_path``, which the runner does
-    only for the C_skill_required home. Treat every skill-vs-direct number as a
+    only for the C_strict home. Treat every skill-vs-direct number as a
     restatement of the arm assignment, not as evidence of Skill mediation; the
     only observational Skill signal is ``skill_delivery_observed``.
     """
@@ -590,14 +607,14 @@ def parse_codex_jsonl(
                     if _canonical_query_arguments(command) is not None:
                         result.codemap_calls += 1
                         # CONFIGURED BY CONSTRUCTION, NOT OBSERVED. `skill_path` is
-                        # non-None only for the C_skill_required home, so this split
+                        # non-None only for the C_strict home, so this split
                         # restates the caller's arm assignment; the stream carries no
                         # evidence distinguishing a Skill-mediated query from a direct
                         # one, because both end as the same `$CODEMAP_BIN` command.
                         # The immutable C home proves the installed-Skill treatment.
                         # A manual Skill-file read remains useful audit evidence, but
                         # requiring it would add ceremony unrelated to a query's use.
-                        # Consequence: `_arm_compliance` for C_skill_required (see
+                        # Consequence: `_arm_compliance` for C_strict (see
                         # run-codex-structural.py) is a home-integrity claim plus an
                         # observed successful query — not proof the Skill was read.
                         # `skill_delivery_observed` is the separate observational signal.
@@ -709,60 +726,57 @@ def print_unified_paid_command(
     selectors: Sequence[str],
     scope_sha256: str,
     patch_pytest: str | None = None,
+    index_relocation_path: Path | None = None,
 ) -> None:
-    """Print the exact shell-safe command authorized by a unified dry run."""
+    """Print the exact shell-safe command authorized by a unified dry run.
+
+    A run whose index was relocated into its own worktree is admitted by that relocation's provenance, so the copyable
+    command has to carry it; without it the paid run would be refused for the byte identity a worktree index cannot
+    have.
+    """
     quote = shlex.quote
     run_dir = Path("benchmarks") / "results" / f"codex-unified-{uuid4().hex[:12]}"
-    print("PAID_COMMAND")
     prefix = f"CODEMAP_BENCH_PATCH_PYTEST={quote(patch_pytest)} " if patch_pytest else ""
-    print(f"{prefix}python3 benchmarks/run-codex-structural.py \\")
-    print(f"  --repo-path {quote(str(repo_path.resolve()))} \\")
-    print(f"  --manifest-path {quote(str(manifest_path.resolve()))} \\")
-    print(f"  --index-path {quote(str(index_path.resolve()))} \\")
-    print(f"  --marketplace-root {quote(str(marketplace_root.resolve()))} \\")
-    print(f"  --codemap-bin {quote(str(codemap_bin.resolve()))} \\")
-    print(f"  --model {quote(model)} \\")
+    lines = [
+        f"{prefix}python3 benchmarks/run-codex-structural.py \\",
+        f"  --repo-path {quote(str(repo_path.resolve()))} \\",
+        f"  --manifest-path {quote(str(manifest_path.resolve()))} \\",
+        f"  --index-path {quote(str(index_path.resolve()))} \\",
+        f"  --marketplace-root {quote(str(marketplace_root.resolve()))} \\",
+        f"  --codemap-bin {quote(str(codemap_bin.resolve()))} \\",
+        f"  --model {quote(model)} \\",
+    ]
     if selectors:
-        print(f"  --tasks {quote(','.join(selectors))} \\")
-    print('  --auth-source "$HOME/.codex/auth.json" \\')
-    print(f"  --run-dir {quote(str(run_dir))} \\")
-    print(f"  --paid-approval {paid_approval_token(scope_sha256)}")
+        lines.append(f"  --tasks {quote(','.join(selectors))} \\")
+    if index_relocation_path is not None:
+        lines.append(f"  --index-relocation-path {quote(str(Path(index_relocation_path).resolve()))} \\")
+    lines.append('  --auth-source "$HOME/.codex/auth.json" \\')
+    lines.append(f"  --run-dir {quote(str(run_dir))} \\")
+    lines.append(f"  --paid-approval {paid_approval_token(scope_sha256)}")
+    print(presentation.format_paid_command_block(lines))
 
 
 ARM_ROW_STYLES = presentation.ARM_ROW_STYLES
 ARM_ROW_ANSI_CODES = {
     "A_plain": "33",
-    "B_direct_required": "36",
-    "C_skill_required": "35",
     "B_auto": "36",
     "C_strict": "35",
 }
-_DISPLAY_ARM_TO_CANONICAL = {
-    "A_plain": "A_plain",
-    "B_direct_required": "B_direct_required",
-    "C_skill_required": "C_skill_required",
-    "B_direct": "B_direct_required",
-    "C_skill": "C_skill_required",
-    "B_auto": "B_direct_required",
-    "C_strict": "C_skill_required",
-}
-_RESULT_ARM = re.compile(
-    r"^\(\d+/\d+\)\s+.*\b(A_plain|B_direct_required|C_skill_required|B_direct|C_skill|B_auto|C_strict)\b"
-)
-_CONSOLE = Console(highlight=False)
+#: What each treatment's contract permits of Codemap, printed beside the probe's measured
+#: availability. B_auto and C_strict both find the binary, so ``codemap=true`` alone made their rows
+#: identical; the obligation belongs in its own field rather than overloading the measured fact.
+ARM_CODEMAP_USE = {"A_plain": "forbidden", "B_auto": "optional", "C_strict": "required"}
+_RESULT_ARM = re.compile(r"^\(\d+/\d+\)\s+.*\b(A_plain|B_auto|C_strict)\b")
+_CONSOLE = presentation.benchmark_console()
 _PROGRESS_PREFIX = re.compile(r"^\((\d+)/(\d+)\)")
 _PROGRESS_SCOPE: ContextVar[tuple[int, int] | None] = ContextVar("codex_progress_scope", default=None)
-_DISPLAY_ARM_LABELS = {
-    "A_plain": "A_plain",
-    "B_direct_required": "B_direct",
-    "C_skill_required": "C_skill",
-}
-_DISPLAY_ARM_COLUMN_WIDTH = max(len(label) for label in _DISPLAY_ARM_LABELS.values())
+#: Arm names are short enough to print unabbreviated, so the display label is the canonical name.
+_DISPLAY_ARM_COLUMN_WIDTH = max(len(arm) for arm in ARM_ROW_ANSI_CODES)
 
 
 def format_plan_row(task_id: str, repetition: int, arm: str) -> str:
     """Format one deterministic structural coordinate as an aligned terminal row."""
-    return f"PLAN    {task_id:<5}  rep={repetition}  {_DISPLAY_ARM_LABELS.get(arm, arm)}"
+    return f"PLAN    {task_id:<5}  rep={repetition}  {arm}"
 
 
 def format_structural_result_row(
@@ -788,7 +802,7 @@ def format_structural_result_row(
     if query_conformance is not None:
         cohort = "" if headline_eligible is None else ("  cohort:H" if headline_eligible else "  cohort:D")
         query_status = f"  query:{'✓' if query_conformance else '✗'}{cohort}"
-    display_arm = _DISPLAY_ARM_LABELS.get(arm, arm)
+    display_arm = arm
     return (
         f"{status}  {task_id:<5}  rep={repetition}  {display_arm:<{_DISPLAY_ARM_COLUMN_WIDTH}}"
         f"  in={fmt_tok(input_tokens):>6}"
@@ -847,10 +861,56 @@ def print_arm_row(row: str, arm: str) -> None:
     presentation.print_arm_row(row, arm, console=_CONSOLE)
 
 
+def print_plan_row(row: str) -> None:
+    """Print one no-model plan or probe row with interactive Rich arm color."""
+    presentation.print_plan_row(row, console=_CONSOLE)
+
+
+def print_section_rule(title: str) -> None:
+    """Announce one run phase as a titled rule, or as ``== title ==`` when output is redirected."""
+    presentation.print_section_rule(title, console=_CONSOLE)
+
+
+def print_structural_legend() -> None:
+    """Emit the structural legend as a panel on a terminal and as framed plain rules elsewhere."""
+    presentation.print_legend(STRUCTURAL_LEGEND_BODY, console=_CONSOLE)
+
+
+def format_probe_row(arm: str, fields: Mapping[str, Any]) -> str:
+    """Format one capability probe row with its fields in fixed, tab-free columns."""
+    return presentation.format_probe_row(arm, fields)
+
+
+def probe_use(arm: str) -> str:
+    """Return what one treatment's contract permits or demands of Codemap use.
+
+    Args:
+        arm: Canonical benchmark arm label.
+
+    Returns:
+        ``forbidden``, ``optional``, or ``required``.
+
+    Raises:
+        ValueError: If the row uses an unknown benchmark arm.
+    """
+    try:
+        return ARM_CODEMAP_USE[arm]
+    except KeyError as exc:
+        raise ValueError(f"unknown benchmark arm {arm!r}") from exc
+
+
 def _result_arm(row: str) -> str | None:
     """Return the canonical arm encoded in one human-readable result row."""
     match = _RESULT_ARM.search(row)
-    return _DISPLAY_ARM_TO_CANONICAL.get(match.group(1), match.group(1)) if match else None
+    return match.group(1) if match else None
+
+
+def _row_arm(row: str) -> str | None:
+    """Return the canonical arm of one result, plan, or probe row."""
+    arm = _result_arm(row)
+    if arm is not None:
+        return arm
+    return presentation.plan_row_arm(row)
 
 
 def render_result_rows(
@@ -882,7 +942,17 @@ def render_result_rows(
         if legend_lines is None:
             return
         body = "\n".join(line.rstrip("\r\n") for line in legend_lines[1:-1])
-        console.print(Panel(body, title="Legend", subtitle="End legend", border_style="blue"))
+        # Fixed at the shared benchmark width so a replayed legend lines up with every other framed
+        # block instead of stretching to whatever width the replaying terminal happens to have.
+        console.print(
+            Panel(
+                body,
+                title="Legend",
+                subtitle="End legend",
+                border_style="blue",
+                width=presentation.BENCHMARK_OUTPUT_WIDTH,
+            )
+        )
         legend_lines = None
 
     for row in rows:
@@ -891,13 +961,13 @@ def render_result_rows(
         stripped = row.rstrip("\r\n")
         if legend_lines is not None:
             legend_lines.append(row)
-            if stripped == "END LEGEND":
+            if stripped == presentation.LEGEND_CLOSE_RULE:
                 flush_legend()
             continue
-        if stripped == "LEGEND":
+        if stripped == presentation.LEGEND_OPEN_RULE:
             legend_lines = [row]
             continue
-        arm = _result_arm(row)
+        arm = _row_arm(row)
         if arm is None:
             output.write(row)
             continue

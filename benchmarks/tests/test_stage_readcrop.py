@@ -371,7 +371,7 @@ def test_dry_run_is_six_tasks_by_three_arms_when_loaded_from_the_locked_suite(tm
     runner = _load()
     tasks = [{"contract": type("Contract", (), {"task_id": f"RC-{number:02d}"})()} for number in range(1, 7)]
 
-    rows = runner.dry_run(tasks)
+    rows = runner.dry_run(tasks, observed_codemap={"A_plain": False, "B_auto": True, "C_strict": True})
 
     assert sum(row.startswith("PLAN") for row in rows) == 18
     assert rows[-1] == "PLAN    RC-06  rep=1  C_strict"
@@ -476,7 +476,7 @@ def test_preflight_probes_every_native_arm(monkeypatch: Any, tmp_path: Path) -> 
         structural_manifest_path=tmp_path / "manifest.json",
     )
 
-    assert calls == ["A_plain", "B_direct_required", "C_skill_required"]
+    assert calls == ["A_plain", "B_auto", "C_strict"]
 
 
 def test_paid_snapshot_binds_the_structural_launcher_and_readcrop_stage(monkeypatch: Any, tmp_path: Path) -> None:
@@ -531,3 +531,89 @@ def test_readcrop_execution_is_controlled_only_by_dry_run() -> None:
 
     assert "dry_run_requested" in parameters
     assert "paid" not in parameters
+
+
+def test_preflight_hands_the_run_relocation_to_the_adapter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The ReadCrop preflight adapter is built with this run's relocation provenance.
+
+    Scenario: a run outside the canonical clone carries the locked graph by relocation, and this preflight admits the
+    source and index before probing each arm. An adapter built without that provenance demands byte identity the
+    worktree cannot have, which failed the whole isolated study after its plan had already been accepted.
+    """
+    runner = _load()
+    captured: dict[str, Any] = {}
+
+    class _Adapter:
+        """Record construction and accept the probe/close surface the preflight uses."""
+
+        def __init__(self, *_args: Any, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+        def probe_arm(self, _arm: str) -> None:
+            """Accept a probe without launching Codex."""
+
+        def close(self) -> None:
+            """Accept teardown without releasing anything."""
+            return None
+
+    monkeypatch.setattr(runner, "_structural", lambda: SimpleNamespace(CodexRunner=_Adapter))
+    relocation = {"frozen_index_sha256": "a" * 64}
+
+    runner.preflight_isolation(
+        repo_path=tmp_path / "repo",
+        index_path=tmp_path / "repo" / "index.json",
+        marketplace_root=tmp_path,
+        codemap_bin=tmp_path / "codemap-py",
+        model="gpt-5.6-luna",
+        structural_manifest_path=tmp_path / "manifest.json",
+        index_relocation=relocation,
+    )
+
+    assert captured["index_relocation"] == relocation
+
+
+def test_dry_run_rows_are_probe_and_plan_rows_in_shared_columns() -> None:
+    """The read-crop plan returns only machine-shaped rows, with probes in the shared columns.
+
+    Scenario: the stage banner used to travel inside the row list, so a caller could not draw it as
+    a section heading, and the probe rows carried Python-cased booleans that matched no other lane.
+    The banner is now the caller's heading and the probe rows share one formatter.
+    """
+    runner = _load()
+    tasks = [{"contract": type("Contract", (), {"task_id": "RC-01"})()}]
+
+    rows = runner.dry_run(tasks, observed_codemap={"A_plain": False, "B_auto": True, "C_strict": True})
+
+    assert [row.split()[0] for row in rows[:3]] == ["PROBE"] * 3
+    assert rows[0] == "PROBE   A_plain   codemap=false  use=forbidden"
+    assert not any("PREFLIGHT" in row or "\t" in row for row in rows)
+
+
+def test_dry_run_reports_a_broken_environment_against_the_required_arm() -> None:
+    """A probe that finds no Codemap prints codemap=false beside use=required.
+
+    Scenario: C_strict obliges the run to call Codemap, so an environment where the binary is
+    missing is precisely when the row matters most. The measured field previously came from the arm
+    label, which meant it read codemap=true and asserted an availability nothing had observed.
+    """
+    runner = _load()
+
+    rows = runner.dry_run([], observed_codemap={"A_plain": False, "B_auto": False, "C_strict": False})
+
+    assert rows[2] == "PROBE   C_strict  codemap=false  use=required"
+    assert rows[1] == "PROBE   B_auto    codemap=false  use=optional"
+
+
+def test_dry_run_reports_unknown_for_an_arm_the_probe_never_measured() -> None:
+    """An arm absent from the probe evidence reports unknown, not its label's expectation.
+
+    Scenario: falling back to the arm label is what made the old row fabricate a measurement. When
+    a probe returns nothing usable the row has to say so, so a reader can tell an unobserved arm
+    apart from one observed to be missing Codemap.
+    """
+    runner = _load()
+
+    rows = runner.dry_run([], observed_codemap={"A_plain": False})
+
+    assert rows[0] == "PROBE   A_plain   codemap=false  use=forbidden"
+    assert rows[2] == "PROBE   C_strict  codemap=unknown use=required"

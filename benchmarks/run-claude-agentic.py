@@ -223,7 +223,7 @@ import sys
 import time
 from collections import defaultdict
 from collections.abc import Iterator, Mapping
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field, fields, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Optional, Sequence
@@ -231,7 +231,6 @@ from typing import Any, Callable, Optional, Sequence
 import fire
 import pandas as pd
 
-from rich.console import Console as _Console
 from rich.text import Text as _Text
 
 # benchmarks/ is not a package; make its private shared package importable
@@ -242,7 +241,14 @@ from _bench_common.benchmark_paths import RESULTS_DIR  # noqa: E402
 from _bench_common.claude_transport import MODEL_TIMEOUT, MODELS, parse_result_usage, stream_claude  # noqa: E402
 from _bench_common.codemap_discovery import codemap_bin_on_path, resolve_index_path  # noqa: E402
 from _bench_common import presentation  # noqa: E402
-from _bench_common.presentation import format_artifact_block, format_quality, fmt_time, fmt_tok, make_progress  # noqa: E402
+from _bench_common.presentation import (  # noqa: E402
+    format_artifact_block,
+    format_paid_command_block,
+    format_quality,
+    fmt_time,
+    fmt_tok,
+    make_progress,
+)
 from _bench_common.python_source import extract_import_targets, iter_py_files, module_from_init_chain  # noqa: E402
 
 # Re-exported for call-site/test compatibility (tests reference it via this module's namespace).
@@ -293,6 +299,8 @@ from _bench_common.edit_patch_contracts import (  # noqa: E402
 )
 from _bench_common.mutation_isolation import (  # noqa: E402
     PATCH_PYTEST_ENV,
+    load_index_relocation,
+    verify_index_relocation,
     create_patch_task_agent_workspace,
     create_executable_agent_workspace,
     execute_patch_task_answer,
@@ -309,7 +317,7 @@ from _bench_common.paid_lifecycle import (  # noqa: E402
     write_checksums,
 )
 
-_console = _Console()
+_console = presentation.benchmark_console()
 
 PARITY_MANIFEST_PATH = Path(__file__).resolve().parent / "manifests" / "provider-parity-methodology.json"
 READCROP_TASKS_PATH = Path(__file__).resolve().parent / "suites" / "tasks-readcrop.json"
@@ -1054,13 +1062,14 @@ def _resolve_claude_paid_scope(
     repo_path: Path,
     index_path: Path,
     model: str,
+    index_relocation: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Bind one Claude paid stage to runtime, transport, and treatment bytes."""
     if model not in MODELS:
         raise ValueError(f"Claude paid stage model must be one of {', '.join(MODELS)}")
     repo_path = repo_path.resolve(strict=True)
     index_path = index_path.resolve(strict=True)
-    _validate_parity_runtime(repo_path, index_path)
+    _validate_parity_runtime(repo_path, index_path, PARITY_MANIFEST_PATH, index_relocation)
     plugin_root_text = ModelRunner._codemap_plugin_dir()
     if plugin_root_text is None:
         raise ValueError("canonical Claude paid stage requires the repository Codemap plugin fixture")
@@ -1156,16 +1165,21 @@ def _print_claude_paid_command(
     patch_pytest: str | None = None,
 ) -> None:
     """Print the exact paid command admitted by the current immutable scope."""
-    print("PAID_COMMAND")
     prefix = f"{PATCH_PYTEST_ENV}={shlex.quote(patch_pytest)} " if patch_pytest else ""
-    print(f"{prefix}python3 benchmarks/run-claude-agentic.py \\")
-    print(f"  --study {study} \\")
-    print(f"  --repo-path {repo_path.resolve()} \\")
-    print(f"  --index {index_path.resolve()} \\")
-    print(f"  --model {model} \\")
-    print(f"  --tasks {','.join(task_ids)} \\")
-    print(f"  --run-dir {_suggested_claude_run_dir(study)} \\")
-    print(f"  --paid-approval {paid_approval_token(scope_sha256)}")
+    print(
+        format_paid_command_block(
+            [
+                f"{prefix}python3 benchmarks/run-claude-agentic.py \\",
+                f"  --study {study} \\",
+                f"  --repo-path {repo_path.resolve()} \\",
+                f"  --index {index_path.resolve()} \\",
+                f"  --model {model} \\",
+                f"  --tasks {','.join(task_ids)} \\",
+                f"  --run-dir {_suggested_claude_run_dir(study)} \\",
+                f"  --paid-approval {paid_approval_token(scope_sha256)}",
+            ]
+        )
+    )
 
 
 def _require_claude_paid_request(
@@ -1242,6 +1256,7 @@ def _run_claude_p1_stage(
     paid_approval: str | None,
     dry_run: bool,
     resolve_scope: bool,
+    index_relocation: Mapping[str, str] | None = None,
 ) -> None:
     """Dispatch one canonical Claude P1 stage without duplicating its execution loop."""
     if study == "readcrop":
@@ -1270,17 +1285,21 @@ def _run_claude_p1_stage(
     if repo_path is not None and model is not None:
         index_path = find_index(repo_path, index)
         full_scope = _resolve_claude_paid_scope(
-            base_scope=base_scope, repo_path=repo_path, index_path=index_path, model=model
+            base_scope=base_scope,
+            repo_path=repo_path,
+            index_path=index_path,
+            model=model,
+            index_relocation=index_relocation,
         )
     visible_scope = full_scope or base_scope
     if resolve_scope:
         print(json.dumps(dict(visible_scope), sort_keys=True))
         return
     if dry_run:
-        print(f"{study.upper()} PREFLIGHT (no model)")
+        presentation.print_section_rule(f"{study.upper()} PREFLIGHT (no model)", console=_console)
         for item in loaded:
             for arm in arms:
-                print(f"PLAN    {item['contract'].task_id:<6} rep=1  {arm}")
+                presentation.print_plan_row(f"PLAN    {item['contract'].task_id:<6} rep=1  {arm}", console=_console)
         print(f"SCOPE   {visible_scope['scope_sha256']}")
         if full_scope is not None and repo_path is not None and index_path is not None and model is not None:
             _print_claude_paid_command(
@@ -2293,8 +2312,14 @@ def _validate_parity_runtime(
     repo_path: Path,
     index_path: Path,
     manifest_path: Path = PARITY_MANIFEST_PATH,
+    index_relocation: Mapping[str, str] | None = None,
 ) -> None:
-    """Reject a canonical agentic run outside the locked target and index."""
+    """Reject a canonical agentic run outside the locked target and index.
+
+    ``index_relocation`` excuses the locked byte hash only: a run in its own worktree proves index identity through
+    relocation provenance, while the commit, tree, worktree cleanliness, metadata, and module-count checks stay exactly
+    as strict.
+    """
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -2321,12 +2346,21 @@ def _validate_parity_runtime(
         raise ValueError("canonical run requires a clean target worktree")
 
     expected_index = manifest["index"]
-    if _sha256_file(index_path) != expected_index["raw_sha256"]:
+    index_sha256 = _sha256_file(index_path)
+    if index_relocation is None and index_sha256 != expected_index["raw_sha256"]:
         raise ValueError("canonical run requires the locked index bytes")
     try:
         index = json.loads(index_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError("canonical run index is not valid JSON") from exc
+    if index_relocation is not None:
+        verify_index_relocation(
+            index_relocation,
+            metadata=index,
+            index_sha256=index_sha256,
+            repo_path=repo_path,
+            frozen_index_sha256=expected_index["raw_sha256"],
+        )
     for index_field in ("git_sha", "scan_version"):
         if index.get(index_field) != expected_index[index_field]:
             raise ValueError(f"canonical run index {index_field} does not match the locked manifest")
@@ -4132,9 +4166,11 @@ class Report:
     class-level attributes.
     """
 
-    _BASELINE = "plain"
-    _INJECTED_ARMS = ("codemap", "semble", "combined")
-    _NO_PAIRS_MD = "_(no completed plain + injected arm pairs)_"
+    #: Control arm names in preference order; the first one present in the results is the baseline.
+    _BASELINE_ARMS = ("A_plain", "plain")
+    #: Treatment arm names in the order their columns are rendered.
+    _INJECTED_ARMS = ("C_strict", "B_auto", "codemap", "semble", "combined")
+    _NO_PAIRS_MD = "_(no completed baseline + injected arm pairs)_"
 
     # Limitations appended verbatim to every report
     _LIMITATIONS_MD = [
@@ -4220,7 +4256,7 @@ class Report:
             f"**Tasks**: {len(self.task_ids)}  ",
             f"**Repeat runs**: {repeat}  ",
             "",
-            "> Savings = 1 − (arm / plain) per task; positive = arm needs less.",
+            f"> Savings = 1 − (arm / {self._baseline_arm()}) per task; positive = arm needs less.",
             "",
         ]
 
@@ -4275,6 +4311,15 @@ class Report:
             f"{arm.capitalize()} savings": f"{saved} {arrow}".strip(),
         }
 
+    def _baseline_arm(self) -> str:
+        """Return the control arm these results were run with.
+
+        Parity runs record ``A_plain`` while older runs record ``plain``; both are controls, so the renderer resolves
+        the name from the results instead of assuming one and rendering every savings column as an unpaired dash.
+        """
+        present = {r.arm for r in self.results}
+        return next((a for a in self._BASELINE_ARMS if a in present), self._BASELINE_ARMS[-1])
+
     def _efficiency_task_ids(self) -> list[str]:
         """Task ids eligible for efficiency savings — fix-family tasks are excluded."""
         return [tid for tid in self.task_ids if (t := self.task_meta.get(tid)) and t.type not in self._FIX_TYPES]
@@ -4286,7 +4331,7 @@ class Report:
         denominator behind every savings figure is visible. Fix-family tasks are excluded from the efficiency
         denominators.
         """
-        baseline = self._BASELINE
+        baseline = self._baseline_arm()
         present_arms = {r.arm for r in self.results}
         injected_arms = [a for a in self._INJECTED_ARMS if a in present_arms]
         eligible = self._efficiency_task_ids()
@@ -4317,7 +4362,7 @@ class Report:
 
     def _per_task_tables(self, agg: dict) -> list[str]:
         """Return markdown lines for per-task metric tables, with dynamic columns for all injected arms."""
-        baseline = self._BASELINE
+        baseline = self._baseline_arm()
         present_arms = {r.arm for r in self.results}
         injected_arms = [a for a in self._INJECTED_ARMS if a in present_arms]
         lines: list[str] = []
@@ -4327,7 +4372,11 @@ class Report:
                 t = self.task_meta.get(tid)
                 savings_ok = not (t and t.type in self._FIX_TYPES)
                 bv = agg.get(tid, {}).get(baseline, {}).get(key)
-                row = {"Task": tid, "Type": t.type if t else "?", "Plain": fmt(bv) if bv is not None else "—"}
+                row = {
+                    "Task": tid,
+                    "Type": t.type if t else "?",
+                    baseline.capitalize(): fmt(bv) if bv is not None else "—",
+                }
                 for arm in injected_arms:
                     iv = agg.get(tid, {}).get(arm, {}).get(key)
                     row.update(self._arm_cells(arm, bv, iv, fmt, savings_applicable=savings_ok))
@@ -4338,7 +4387,7 @@ class Report:
     def _rendered_arms(self) -> list[str]:
         """Baseline plus every injected arm that produced at least one run, in canonical order."""
         present_arms = {r.arm for r in self.results}
-        return [self._BASELINE] + [a for a in self._INJECTED_ARMS if a in present_arms]
+        return [self._baseline_arm()] + [a for a in self._INJECTED_ARMS if a in present_arms]
 
     def _per_task_quality_tables(self, agg: dict) -> list[str]:
         """Render absolute per-arm quality medians (erec / rrec / chunk hit rate) — no savings.
@@ -4761,7 +4810,9 @@ class Benchmark:
                     arm,
                     run_n,
                     total_runs,
-                    print_fn=lambda text: progress.console.print(text, markup=False, highlight=False),
+                    # soft_wrap keeps the wide run line on one line; the console's own width frames
+                    # legends and rules, and must not fold a row whose columns are meant to line up.
+                    print_fn=lambda text: progress.console.print(text, markup=False, highlight=False, soft_wrap=True),
                     metadata=metadata,
                     update_fn=_AgenticSubProgressUpdate(progress, sub),
                 )
@@ -4823,6 +4874,59 @@ class Benchmark:
 # ---------------------------------------------------------------------------
 
 
+def _run_from_snapshot_row(row: dict) -> BenchmarkRun:
+    """Rebuild one :class:`BenchmarkRun` from a persisted snapshot row.
+
+    Only fields the current dataclass declares are copied, so a snapshot written by an older or newer
+    schema still yields a renderable run instead of raising on an unknown key.
+
+    Args:
+        row: One entry of a snapshot's ``results`` list.
+
+    Returns:
+        The reconstructed run, with its nested tool counts and quality score restored.
+    """
+
+    def _filtered(cls: type, raw: object) -> dict:
+        names = {f.name for f in fields(cls)}
+        return {k: v for k, v in raw.items() if k in names} if isinstance(raw, dict) else {}
+
+    run = BenchmarkRun(**_filtered(BenchmarkRun, {k: v for k, v in row.items() if k not in ("tools", "quality")}))
+    run.tools = ToolCounts(**_filtered(ToolCounts, row.get("tools")))
+    run.quality = QualityScore(**_filtered(QualityScore, row.get("quality")))
+    return run
+
+
+def _render_report_from_snapshot(snapshot: Path, tasks_path: Path, output: Path = None) -> Path:
+    """Re-render the markdown report for an already-recorded snapshot, without running any model.
+
+    Reporting code evolves after a paid run has been recorded, and the snapshot carries every figure
+    the report needs, so replaying it is the supported way to correct a report instead of re-spending
+    on the same cells. The input snapshot and its original report are never overwritten.
+
+    Args:
+        snapshot: Path to a ``code-YYYY-MM-DD.json`` snapshot.
+        tasks_path: Task suite the snapshot was run from, used for task ids and types.
+        output: Markdown output path; defaults to ``<snapshot stem>-rerender.md`` beside the snapshot.
+
+    Returns:
+        Path to the written markdown report.
+    """
+    data = json.loads(snapshot.read_text(encoding="utf-8"))
+    runs = [_run_from_snapshot_row(row) for row in data.get("results", [])]
+    if not runs:
+        sys.exit(f"ERROR: no result rows in {snapshot}")
+    tasks = load_tasks_with_provenance(Path(tasks_path))
+    ran_ids = {r.task_id for r in runs}
+    tasks = [t for t in tasks if t.id in ran_ids]
+    metadata = dict(data.get("metadata") or {})
+    metadata.setdefault("date", snapshot.stem.replace("code-", ""))
+    report_path = Path(output) if output else snapshot.with_name(f"{snapshot.stem}-rerender.md")
+    report_path.write_text(Report(runs, tasks, metadata).render(), encoding="utf-8")
+    print(f"→ Report: {report_path}  ({len(runs)} rows replayed)")
+    return report_path
+
+
 def main(
     repo_path: Path = None,
     index: Path = None,
@@ -4845,6 +4949,8 @@ def main(
     dry_run: bool = False,
     run_dir: Path = None,
     paid_approval: str = None,
+    render_report: Path = None,
+    index_relocation_path: Path = None,
 ) -> None:
     """Codemap skill benchmark — agent exploration cost with vs without structural context.
 
@@ -4870,7 +4976,15 @@ def main(
         dry_run: Print plan without running claude.
         run_dir: New immutable artifact directory required for a paid P1 stage.
         paid_approval: Scope-prefix token emitted by the current dry-run command.
+        render_report: Re-render the markdown report for an existing snapshot JSON and exit. No model
+            runs and no writes to the snapshot — the recorded rows are replayed through the current
+            reporting code into a ``-rerender.md`` sibling (or ``--output``).
+        index_relocation_path: Relocation provenance written when this run's index was moved into an
+            isolated worktree; absent for a run at the canonical managed clone.
     """
+    if render_report:
+        _render_report_from_snapshot(Path(render_report), tasks_file, output)
+        return
     # fire passes CLI string args regardless of type annotation — coerce Path args explicitly.
     if index is not None:
         index = Path(index)
@@ -4886,6 +5000,10 @@ def main(
         run_dir = Path(run_dir)
     if output is not None:
         output = Path(output)
+    try:
+        index_relocation = load_index_relocation(None if index_relocation_path is None else Path(index_relocation_path))
+    except ValueError as exc:
+        sys.exit(str(exc))
     selected_tasks = [part.strip() for part in tasks.split(",") if part.strip()] if isinstance(tasks, str) else tasks
 
     if study in {"readcrop", "fix-single", "fix-multi", "patch"}:
@@ -4907,6 +5025,7 @@ def main(
             paid_approval=paid_approval,
             dry_run=dry_run,
             resolve_scope=resolve_scope,
+            index_relocation=index_relocation,
         )
         return
     if study != "agentic":
@@ -4973,7 +5092,7 @@ def main(
         print("[→ note:        defaulting to canonical A_plain/B_auto/C_strict parity arms]")
     if canonical_requested:
         try:
-            _validate_parity_runtime(repo_path, index_path, manifest_path)
+            _validate_parity_runtime(repo_path, index_path, manifest_path, index_relocation)
         except (OSError, ValueError) as exc:
             sys.exit(str(exc))
 

@@ -363,13 +363,13 @@ def test_rv05_exposes_independent_and_codemap_static_oracle_views_without_confla
         pytest.param("A_plain", None, False, True, id="plain-adheres-without-codemap"),
         pytest.param("A_plain", None, True, False, id="plain-contamination-breaks-adherence"),
         pytest.param("B_auto", None, False, True, id="optional-no-call-adheres"),
-        pytest.param("B_direct_required", True, False, True, id="direct-optional-use-observed"),
+        pytest.param("B_auto", True, False, True, id="direct-optional-use-observed"),
         # B is an optional-use canary on both providers, so a no-query B cell is
         # adherent. Its non-compliance is still recorded separately as observed evidence.
-        pytest.param("B_direct_required", False, False, True, id="direct-optional-no-call-adheres"),
-        pytest.param("B_direct_required", False, True, False, id="direct-contamination-breaks-adherence"),
-        pytest.param("C_skill_required", True, False, True, id="skill-required-use-observed"),
-        pytest.param("C_skill_required", True, True, False, id="skill-contamination-breaks-adherence"),
+        pytest.param("B_auto", False, False, True, id="direct-optional-no-call-adheres"),
+        pytest.param("B_auto", False, True, False, id="direct-contamination-breaks-adherence"),
+        pytest.param("C_strict", True, False, True, id="skill-required-use-observed"),
+        pytest.param("C_strict", True, True, False, id="skill-contamination-breaks-adherence"),
     ],
 )
 def test_treatment_adherence_is_distinct_from_codemap_use_compliance(
@@ -414,17 +414,17 @@ def test_fresh_input_tokens_rejects_negative_native_usage(input_tokens: int, cac
 def test_canonical_result_rows_sorts_a_derived_view_without_reordering_raw_execution() -> None:
     """Prevent random append order from being overwritten while publishing a reproducible sidecar order."""
     raw_rows = [
-        {"task_id": "CQ-01", "repetition": 1, "arm": "C_skill_required", "execution_index": 0},
-        {"task_id": "RV-02", "repetition": 2, "arm": "B_direct_required", "execution_index": 1},
-        {"task_id": "RV-02", "repetition": 1, "arm": "C_skill_required", "execution_index": 2},
+        {"task_id": "CQ-01", "repetition": 1, "arm": "C_strict", "execution_index": 0},
+        {"task_id": "RV-02", "repetition": 2, "arm": "B_auto", "execution_index": 1},
+        {"task_id": "RV-02", "repetition": 1, "arm": "C_strict", "execution_index": 2},
         {"task_id": "RV-02", "repetition": 1, "arm": "A_plain", "execution_index": 3},
-        {"task_id": "RV-02", "repetition": 1, "arm": "B_direct_required", "execution_index": 4},
+        {"task_id": "RV-02", "repetition": 1, "arm": "B_auto", "execution_index": 4},
     ]
 
     canonical = core.canonical_result_rows(
         raw_rows,
         task_order=("RV-02", "CQ-01"),
-        arm_order=("A_plain", "B_direct_required", "C_skill_required"),
+        arm_order=("A_plain", "B_auto", "C_strict"),
     )
 
     assert [row["execution_index"] for row in raw_rows] == [0, 1, 2, 3, 4]
@@ -457,7 +457,7 @@ def test_codex_canonical_sidecar_keeps_raw_order_and_starts_non_poolable(script_
     """Raw interruption evidence remains append-only while the sidecar is canonical and marked partial."""
     telemetry = tmp_path / "telemetry.jsonl"
     telemetry.touch()
-    first = script_run_codex.CodexRun("C_skill_required", "SE-01", "symbol_extraction", "fixture")
+    first = script_run_codex.CodexRun("C_strict", "SE-01", "symbol_extraction", "fixture")
     second = script_run_codex.CodexRun("A_plain", "SE-01", "symbol_extraction", "fixture")
     script_run_codex._append_run(telemetry, first, execution_index=0)
     script_run_codex._append_run(telemetry, second, execution_index=1)
@@ -471,9 +471,9 @@ def test_codex_canonical_sidecar_keeps_raw_order_and_starts_non_poolable(script_
     raw_rows = [json.loads(line) for line in telemetry.read_text(encoding="utf-8").splitlines()]
     canonical_rows = [json.loads(line) for line in canonical_path.read_text(encoding="utf-8").splitlines()]
 
-    assert [row["arm"] for row in raw_rows] == ["C_skill_required", "A_plain"]
+    assert [row["arm"] for row in raw_rows] == ["C_strict", "A_plain"]
     assert [row["execution_index"] for row in raw_rows] == [0, 1]
-    assert [row["arm"] for row in canonical_rows] == ["A_plain", "C_skill_required"]
+    assert [row["arm"] for row in canonical_rows] == ["A_plain", "C_strict"]
     assert hashlib.sha256(canonical_path.read_bytes()).hexdigest() == sidecar_hash
 
     metadata = script_run_codex._initial_run_metadata(
@@ -485,7 +485,7 @@ def test_codex_canonical_sidecar_keeps_raw_order_and_starts_non_poolable(script_
         model="gpt-5.6-luna",
         reasoning_effort="high",
         repetitions=1,
-        task_arms={("SE-01", 1): ("A_plain", "B_direct_required", "C_skill_required")},
+        task_arms={("SE-01", 1): ("A_plain", "B_auto", "C_strict")},
         cell_wall_clock_seconds=600,
         auth_provisioned=False,
     )
@@ -502,14 +502,14 @@ def test_codex_result_block_presents_persisted_arms_in_fixed_order(
     monkeypatch.setattr(script_run_codex.runtime, "print_arm_row", lambda row, arm: printed.append((arm, row)))
 
     next_progress = script_run_codex._print_result_block(
-        (("C_skill_required", "C row"), ("A_plain", "A row"), ("B_direct_required", "B row")),
+        (("C_strict", "C row"), ("A_plain", "A row"), ("B_auto", "B row")),
         printed_cells=4,
         planned_cells=9,
     )
 
     assert printed == [
         ("A_plain", "(5/9) A row"),
-        ("B_direct_required", "(6/9) B row"),
-        ("C_skill_required", "(7/9) C row"),
+        ("B_auto", "(6/9) B row"),
+        ("C_strict", "(7/9) C row"),
     ]
     assert next_progress == 7

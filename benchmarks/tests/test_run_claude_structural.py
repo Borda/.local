@@ -36,6 +36,14 @@ from typing import Any
 
 import pytest
 
+BENCHMARKS = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(BENCHMARKS))
+
+from _bench_common.presentation import (  # noqa: E402
+    BENCHMARK_OUTPUT_WIDTH,
+    LEGEND_CLOSE_RULE,
+    LEGEND_OPEN_RULE,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers shared across test classes
@@ -201,7 +209,7 @@ class TestProviderParityIntegration:
         class Console:
             """Accept result rows emitted by the run loop."""
 
-            def print(self, _message: str) -> None:
+            def print(self, _message: str, **_options: Any) -> None:
                 """Handle console output through the test double instead of a live terminal."""
                 return None
 
@@ -573,7 +581,7 @@ class TestProviderParityIntegration:
         monkeypatch.setattr(
             script_run_bench,
             "_validate_primary_runtime",
-            lambda repo_path, index: runtime_inputs.append((repo_path, index)),
+            lambda repo_path, index, *_relocation: runtime_inputs.append((repo_path, index)),
         )
         expected_order = ("C_strict", "A_plain", "B_auto")
         monkeypatch.setattr(script_run_bench, "deterministic_arm_order", lambda *_args, **_kwargs: expected_order)
@@ -592,6 +600,65 @@ class TestProviderParityIntegration:
         ]
         assert planned == [f"FN-02\t{arm_name}" for arm_name in expected_order]
         assert runtime_inputs == [(tmp_path, index_path)]
+
+    def test_run_header_and_legend_render_through_the_shared_framed_surfaces(
+        self,
+        script_run_bench: Any,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A redirected run frames its legend in titled rules and its banner as a plain section rule.
+
+        Scenario: an operator pipes a run into an archived log. The Claude and Codex lanes used to
+        disagree here — Codex framed its legend, this runner printed a bare ``Task series legend:``
+        header and hand-drawn 64-column banners. The redirected forms are what the log keeps and
+        what a replay upgrades to panels, so they are asserted rather than the terminal rendering.
+        """
+        index_path = tmp_path / "index.json"
+        index_path.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(script_run_bench, "_validate_primary_runtime", lambda *_args: None)
+        monkeypatch.setattr(script_run_bench, "BenchRunner", lambda **_kwargs: None)
+
+        class ProgressReached(RuntimeError):
+            """Stop the no-model test once the header and legend have been emitted."""
+
+            pass
+
+        def _stop_before_the_first_cell(_console: Any) -> None:
+            """Fail the run at progress construction, after the header block is printed."""
+            raise ProgressReached
+
+        monkeypatch.setattr(script_run_bench, "make_progress", _stop_before_the_first_cell)
+
+        with pytest.raises(ProgressReached):
+            script_run_bench.main(repo_path=tmp_path, index_path=index_path, tasks=["FN-02"], arm="all")
+
+        lines = capsys.readouterr().out.splitlines()
+        assert "== ▶ RUN START — model=haiku ==" in lines
+        assert sum(line == LEGEND_OPEN_RULE for line in lines) == 1
+        assert sum(line == LEGEND_CLOSE_RULE for line in lines) == 1
+        assert "  task series:" in lines
+
+    def test_summary_banner_renders_as_a_plain_section_rule_when_redirected(
+        self, script_run_bench: Any, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """The end-of-run summary announces itself with the same rule every other phase uses.
+
+        Scenario: the summary header was a hand-drawn 64-column ``=`` box, so it neither matched
+        the run-start banner above it nor the 78-column width every framed block now shares.
+        """
+        script_run_bench._print_summary(_parity_runs(script_run_bench), "haiku")
+
+        assert "== Codemap benchmark — model=haiku ==" in capsys.readouterr().out.splitlines()
+
+    def test_console_is_the_shared_benchmark_console(self, script_run_bench: Any) -> None:
+        """Framed output is fixed at the shared benchmark width instead of the window's own width.
+
+        Scenario: this runner built a bare ``rich.Console``, so its panels and rules stretched to
+        whatever the terminal happened to be while the paid-command block stayed at 78 columns.
+        """
+        assert script_run_bench._console.width == BENCHMARK_OUTPUT_WIDTH
 
     @pytest.mark.parametrize(
         ("arm", "timeout", "expected"),
@@ -941,6 +1008,72 @@ class TestCostAccounting:
         df = script_run_bench._token_ratio_table([plain, codemap])
         row = df[df["task_id"] == "SE-02"].iloc[0]
         assert math.isnan(row["cost_ratio"])
+
+
+# ===========================================================================
+# parity arm reporting — A_plain / B_auto / C_strict
+# ===========================================================================
+
+
+def _parity_runs(script_bench: Any) -> list[Any]:
+    """Build one task's three canonical parity runs with distinct token counts."""
+    return [
+        _make_run(script_bench, arm="A_plain", task_id="FN-02", input_tokens=3_000_000, cost_usd=0.50),
+        _make_run(script_bench, arm="B_auto", task_id="FN-02", input_tokens=1_200_000, cost_usd=0.25),
+        _make_run(script_bench, arm="C_strict", task_id="FN-02", input_tokens=41_000, cost_usd=0.03),
+    ]
+
+
+class TestParityArmReporting:
+    """Summaries must read the canonical parity arm names, not only the legacy plain/codemap pair."""
+
+    def test_arm_pairs_compares_each_treatment_against_the_control(self, script_run_bench: Any) -> None:
+        """Both treatment arms are paired with the single control arm.
+
+        Collapsing B_auto and C_strict onto one key would drop whichever arm was recorded second, discarding a third of
+        a paid parity run.
+        """
+        assert script_run_bench._arm_pairs(_parity_runs(script_run_bench)) == [
+            ("A_plain", "C_strict"),
+            ("A_plain", "B_auto"),
+        ]
+
+    def test_ratio_table_reads_parity_arm_names(self, script_run_bench: Any) -> None:
+        """A parity run yields real token figures instead of the zeros a legacy-name lookup produced."""
+        df = script_run_bench._token_ratio_table(_parity_runs(script_run_bench), "A_plain", "C_strict")
+        row = df[df["task_id"] == "FN-02"].iloc[0]
+        assert row["plain_tok"] == 3_000_000
+        assert row["codemap_tok"] == 41_000
+        assert row["ratio"] == pytest.approx(41_000 / 3_000_000)
+
+    def test_paired_accuracy_reads_parity_arm_names(self, script_run_bench: Any) -> None:
+        """The paired accuracy view pairs the named control and treatment arms."""
+        runs = _parity_runs(script_run_bench)
+        for run in runs:
+            run.quality.scored = True
+            run.quality.correct = run.arm != "A_plain"
+        paired = script_run_bench._paired_accuracy(runs, "A_plain", "B_auto")
+        assert paired == {"n": 1, "plain_correct": 0, "codemap_correct": 1}
+
+    def test_summary_renders_a_section_per_treatment_arm(self, script_run_bench: Any, capsys: Any) -> None:
+        """Every treatment arm gets its own labelled comparison against the control."""
+        script_run_bench._print_summary(_parity_runs(script_run_bench), "haiku")
+        out = capsys.readouterr().out
+        assert "A_plain (control) vs C_strict (treatment)" in out
+        assert "A_plain (control) vs B_auto (treatment)" in out
+        assert "Token ratio (C_strict/A_plain)" in out
+        assert "3,000,000" in out
+
+    def test_summary_still_reads_the_legacy_arm_pair(self, script_run_bench: Any, capsys: Any) -> None:
+        """Legacy plain/codemap results keep rendering, so older result files stay replayable."""
+        runs = [
+            _make_run(script_run_bench, arm="plain", task_id="SE-01", input_tokens=200_000),
+            _make_run(script_run_bench, arm="codemap", task_id="SE-01", input_tokens=50_000),
+        ]
+        script_run_bench._print_summary(runs, "haiku")
+        out = capsys.readouterr().out
+        assert "plain (control) vs codemap (treatment)" in out
+        assert "200,000" in out
 
 
 # ===========================================================================
@@ -1895,7 +2028,35 @@ class TestEvaluateRv:
         assert result.scoring_detail["components"]["q2.symbols"]["extraction_failed"] is False
         assert result.correct is False
         assert result.recall == pytest.approx(0.7, abs=1e-9)
-        assert result.evaluator_version == "v7"
+        assert result.evaluator_version == "v8"
+
+    def test_rv04_counts_production_functions_with_a_trailing_qualifier(self, script_run_bench: Any) -> None:
+        """A correct count is credited when the qualifier follows the noun instead of preceding it."""
+        answer = "1. **24** production functions uniquely call `lightning.pytorch.trainer.call::_call_callback_hooks`."
+
+        result = script_run_bench._evaluate_rv(self._rv_task_count(24), answer)
+
+        assert result.metric_got == 24
+        assert result.extraction_failed is False
+        assert result.correct is True
+
+    def test_bare_numbered_sub_answer_supplies_the_count(self, script_run_bench: Any) -> None:
+        """An enumerated sub-answer carrying the number alone is still an extractable count."""
+        answer = "Checked the oracle directly.\n1. **11**\n\n2. Lexicographically first five uncovered symbols:\n"
+
+        result = script_run_bench._evaluate_rv(self._rv_task_count(11), answer)
+
+        assert result.metric_got == 11
+        assert result.extraction_failed is False
+
+    def test_phrased_count_outranks_an_enumerated_step_number(self, script_run_bench: Any) -> None:
+        """A noun-anchored count wins over a leading integer on an enumerated exploration line."""
+        answer = "1. 3 candidate files inspected.\nThe module has 20 undocumented symbols."
+
+        result = script_run_bench._evaluate_rv(self._rv_task_count(20), answer)
+
+        assert result.metric_got == 20
+        assert result.correct is True
 
     def test_symbol_recall_path_correct_at_threshold(self, script_run_bench: Any) -> None:
         """Symbol-recall path: correct when ≥70% of expected symbols appear in output."""
@@ -3262,3 +3423,122 @@ class TestEffectiveRecall:
     def test_returns_none_when_none_run(self, script_run_bench: Any) -> None:
         """Return None for a None run argument."""
         assert script_run_bench._effective_recall(None) is None
+
+
+# ---------------------------------------------------------------------------
+# Relocated-index admission
+# ---------------------------------------------------------------------------
+
+
+def _relocated_worktree_index(tmp_path: Path) -> tuple[Path, Path, dict[str, Any], dict[str, str]]:
+    """Build a clean committed worktree holding a root-relocated copy of a frozen index.
+
+    Args:
+        tmp_path: Directory the worktree, index, and manifest are created under.
+
+    Returns:
+        The worktree root, the relocated index path, a parity manifest locking the frozen index
+        bytes, and the relocation provenance a run in that worktree would carry.
+    """
+    import hashlib
+    import subprocess
+
+    from _bench_common.mutation_isolation import relocate_frozen_index_for_worktree
+
+    source = tmp_path / "managed-clone"
+    source.mkdir()
+    repo = tmp_path / "worktree"
+    (repo / "pkg").mkdir(parents=True)
+    (repo / "pkg" / "a.py").write_text("def foo():\n    return 1\n", encoding="utf-8")
+    for args in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"],
+    ):
+        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+    commit = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    frozen_payload = {
+        "scan_root": str(source.resolve()),
+        "git_sha": commit,
+        "scan_version": 3,
+        "modules": [{"name": "pkg.a"}],
+    }
+    frozen_bytes = (json.dumps(frozen_payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    derived_bytes, relocation = relocate_frozen_index_for_worktree(frozen_bytes, source_root=source, worktree_root=repo)
+    index_path = tmp_path / "relocated-index.json"
+    index_path.write_bytes(derived_bytes)
+    manifest = {
+        "target_source": {"commit": commit},
+        "index": {
+            "raw_sha256": hashlib.sha256(frozen_bytes).hexdigest(),
+            "git_sha": commit,
+            "scan_version": 3,
+        },
+    }
+    return repo, index_path, manifest, dict(relocation)
+
+
+class TestRelocatedIndexAdmission:
+    """A worktree run proves index identity through relocation provenance, never byte identity."""
+
+    def test_valid_provenance_admits_a_worktree_index(
+        self, script_run_bench: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Relocation provenance admits an index whose bytes differ from the locked hash.
+
+        Scenario: a run executes in its own worktree, so its index carries the worktree's
+        ``scan_root`` and can never reproduce the manifest's locked raw hash; the provenance written
+        by the relocation is what proves the graph is still the frozen one.
+        """
+        repo, index_path, manifest, relocation = _relocated_worktree_index(tmp_path)
+        monkeypatch.setattr(script_run_bench, "_PARITY_MANIFEST", manifest)
+
+        script_run_bench._validate_primary_runtime(repo, index_path, relocation)
+
+        assert manifest["index"]["raw_sha256"] == relocation["frozen_index_sha256"]
+
+    def test_provenance_naming_the_wrong_frozen_source_is_rejected(
+        self, script_run_bench: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Provenance whose frozen source is not the locked index is rejected.
+
+        Scenario: a caller supplies provenance derived from some other frozen index; admitting it
+        would let an unrelated graph enter the run under the locked manifest's authority.
+        """
+        repo, index_path, manifest, relocation = _relocated_worktree_index(tmp_path)
+        monkeypatch.setattr(script_run_bench, "_PARITY_MANIFEST", manifest)
+        relocation["frozen_index_sha256"] = "0" * 64
+
+        with pytest.raises(ValueError, match="wrong frozen source"):
+            script_run_bench._validate_primary_runtime(repo, index_path, relocation)
+
+    def test_provenance_disagreeing_with_the_bytes_on_disk_is_rejected(
+        self, script_run_bench: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Provenance whose derived hash misses the on-disk index is rejected.
+
+        Scenario: the relocated copy changed after its provenance was written, so the digest the
+        run would attest to is no longer the index the model actually reads.
+        """
+        repo, index_path, manifest, relocation = _relocated_worktree_index(tmp_path)
+        monkeypatch.setattr(script_run_bench, "_PARITY_MANIFEST", manifest)
+        relocation["derived_index_sha256"] = "1" * 64
+
+        with pytest.raises(ValueError, match="changed after relocation"):
+            script_run_bench._validate_primary_runtime(repo, index_path, relocation)
+
+    def test_absent_provenance_keeps_the_byte_gate(
+        self, script_run_bench: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Without provenance a non-locked index is still rejected on its bytes.
+
+        Scenario: the same relocated index is offered by a run that claims no relocation; the
+        original byte-identity gate must reject it exactly as before.
+        """
+        repo, index_path, manifest, _relocation = _relocated_worktree_index(tmp_path)
+        monkeypatch.setattr(script_run_bench, "_PARITY_MANIFEST", manifest)
+
+        with pytest.raises(ValueError, match="canonical run requires the locked index bytes"):
+            script_run_bench._validate_primary_runtime(repo, index_path)

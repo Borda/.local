@@ -142,38 +142,197 @@ Performance and token use vary with repository size, model, index freshness, que
 
 ## 📈 Benchmark evidence
 
-The benchmark record gives Codemap a measurable, bounded value proposition: on structural questions with unresolved dependency or caller scope, a required Codemap Skill reduced context and elapsed time while improving the aggregate semantic answer score against a no-Codemap baseline. The same record retains unfavorable cells and explains when adaptive routing should skip Codemap.
+The benchmark record gives Codemap a measurable, bounded value proposition: on structural questions with unresolved dependency or caller scope, a required Codemap Skill reduced context and elapsed time in every model stratum measured so far, and improved the aggregate semantic answer score in five of the six. The sixth, the 2026-09-07 Codex `gpt-5.6-sol` stratum, is a quality tie against a control already at a median score of 1.000 — the cost reduction reproduced there and the quality gain did not. The same record retains unfavorable cells and explains when adaptive routing should skip Codemap.
 
-<a id="codex-structural-2026-08-07"></a>
+<!-- Related result tables — a figure here restates a run measured in the benchmark suite. Editing one means checking:
+  - plugins/codemap-py/README.md § All models on one cohort (both tables below)
+  - plugins/codemap-py/README.md § Structural navigation snapshot, § Agentic navigation snapshot, § Codex navigation snapshot, § Codex gpt-5.6-sol snapshot, § Codex gpt-5.6-terra snapshot
+  - benchmarks/README.md § Results — structural and agentic lanes, per-provider views included
+  Figures are recomputed from immutable artifacts under benchmarks/results/; a corrected number means a new run. -->
 
-### Structural navigation snapshot — 2026-08-07
+### All models on one cohort — 2026-09-06
 
-The run used 165 arm/task cells and reports a 43-task independently scored headline cohort after complete triplets with invalid evidence were excluded from that comparison. Host context was macOS 26.5.2 arm64 with 16 CPUs and Python 3.12.13; runtime context was Codex CLI 0.146.1, codemap-py 0.28.7, codex-rig 0.4.6, and `gpt-5.6-luna` at high effort. `A_plain` is the no-Codemap baseline, `B_direct` is required direct CLI access, and `C_skill` is the required installed Skill.
+Both providers and every model stratum measured on one cohort, one metric, and one estimator: the shared task cohort, a cell counted correct or not, and per-task medians of treatment ÷ baseline restated as change against the baseline. The per-provider snapshots below keep their own canonical scoring and therefore differ.
 
-| Arm        | Mean semantic quality | Mean gross input | Mean output | Mean elapsed |
-| ---------- | --------------------: | ---------------: | ----------: | -----------: |
-| `A_plain`  |                0.9060 |           199.3k |       3,820 |       86.4 s |
-| `B_direct` |                0.9682 |           103.9k |       1,962 |       49.4 s |
-| `C_skill`  |                0.9875 |           124.5k |       1,629 |       43.4 s |
+Structural, on the 45-task headline cohort both providers share:
 
-Quality is the evaluator's continuous semantic answer score in `[0, 1]` (higher is better); input/output are gross model tokens and elapsed is wall-clock time (lower is better). Relative to `A_plain`, the paired `C_skill` ratios were `0.6246×` gross input, `0.4264×` output, and `0.5028×` elapsed, with a descriptive mean-quality delta of `+0.0815`. These are paired aggregates, not a promise for every task: the benchmark reports observed per-task increases as well as savings.
+| Treatment arm | Provider | Model  | Paired n | Baseline accuracy | Treatment accuracy |          Gain | Input tokens | Cost | Elapsed |
+| ------------- | -------- | ------ | -------: | ----------------: | -----------------: | ------------: | -----------: | ---: | ------: |
+| C_strict      | Claude   | Haiku  |       39 |     71.8% (28/39) |      87.2% (34/39) | +15.4 pp (+6) |         −80% | −75% |    −74% |
+| C_strict      | Claude   | Sonnet |       42 |     83.3% (35/42) |      92.9% (39/42) |  +9.5 pp (+4) |         −57% | −52% |    −53% |
+| C_strict      | Claude   | Opus   |       43 |     88.4% (38/43) |      97.7% (42/43) |  +9.3 pp (+4) |         −19% | −23% |    −31% |
+| C_strict      | Codex    | Luna   |       43 |     88.4% (38/43) |      97.7% (42/43) |  +9.3 pp (+4) |         −29% |    — |    −36% |
+| C_strict      | Codex    | Terra  |       40 |     87.5% (35/40) |      92.5% (37/40) |  +5.0 pp (+2) |         −42% |    — |    −51% |
+| C_strict      | Codex    | Sol    |       45 |     93.3% (42/45) |      93.3% (42/45) |   0.0 pp (+0) |         −51% |    — |    −49% |
+| B_auto        | Claude   | Haiku  |       42 |     73.8% (31/42) |      85.7% (36/42) | +11.9 pp (+5) |         −49% | −58% |    −56% |
+| B_auto        | Claude   | Sonnet |       42 |     83.3% (35/42) |      97.6% (41/42) | +14.3 pp (+6) |         −59% | −44% |    −50% |
+| B_auto        | Claude   | Opus   |       44 |     88.6% (39/44) |      95.5% (42/44) |  +6.8 pp (+3) |         −30% | −28% |    −31% |
+| B_auto        | Codex    | Luna   |       44 |     86.4% (38/44) |      93.2% (41/44) |  +6.8 pp (+3) |         −33% |    — |    −27% |
+| B_auto        | Codex    | Terra  |       41 |     87.8% (36/41) |      95.1% (39/41) |  +7.3 pp (+3) |          −5% |    — |    −20% |
+| B_auto        | Codex    | Sol    |       44 |     93.2% (41/44) |      97.7% (43/44) |  +4.5 pp (+2) |          +1% |    — |    −13% |
 
-The full run is descriptive and non-poolable because it retained unsuccessful, contaminated, incomplete, and extraction-failed cells; it is one model, one frozen repository revision, one repetition, and a prebuilt index. Fixed arm order and provider cache can bias elapsed time, and index-build cost, cross-repository/model generalization, runtime behavior, and test-pass quality were outside scope. Treat the figures as evidence for task-fit structural retrieval, not proof of universal savings or runtime correctness. Future runs should repeat across repositories and models and add build-inclusive and executable patch/test outcomes before any broader claim. See the [canonical structural result and limitations](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#combined-codemap-py-0287-structural-execution--2026-08-07).
+The six `C` rows are directly comparable — every one requires the installed Skill, and the three Codex rows carry byte-identical `A_plain` and `C_strict` arm contracts. Five of them improve accuracy while reading less. `Sol` `C_strict` is the exception: it answers exactly the same 42 of 45 cells as its own baseline for 51% fewer gross input tokens, a cost win and a quality tie against a baseline already at a median score of 1.000. `Terra` `C_strict` converts two cells and loses none.
+
+A median cannot say whether an arm saves reliably or saves because a few tasks saved enormously, so the same per-task token ratios are restated below as distributions over the same pairs.
+
+| Arm      | Provider | Model  | Paired n | Median | Geo mean |     p10–p90 | sd(log) | Cheaper in |
+| -------- | -------- | ------ | -------: | -----: | -------: | ----------: | ------: | ---------: |
+| C_strict | Claude   | Haiku  |       39 | 0.204× |   0.215× | 0.031–1.384 |   1.461 |      32/39 |
+| C_strict | Claude   | Sonnet |       42 | 0.431× |   0.398× | 0.112–1.184 |   0.984 |      32/42 |
+| C_strict | Claude   | Opus   |       43 | 0.806× |   0.697× | 0.304–1.282 |   0.606 |      26/43 |
+| C_strict | Codex    | Luna   |       43 | 0.711× |   0.566× | 0.176–1.505 |   0.962 |      29/43 |
+| C_strict | Codex    | Terra  |       40 | 0.581× |   0.565× | 0.308–1.125 |   0.618 |      33/40 |
+| C_strict | Codex    | Sol    |       45 | 0.486× |   0.496× | 0.258–1.066 |   0.596 |      39/45 |
+| B_auto   | Claude   | Haiku  |       42 | 0.508× |   0.286× | 0.033–1.175 |   1.462 |      35/42 |
+| B_auto   | Claude   | Sonnet |       42 | 0.412× |   0.407× | 0.104–1.183 |   1.143 |      31/42 |
+| B_auto   | Claude   | Opus   |       44 | 0.700× |   0.697× | 0.322–1.256 |   0.603 |      27/44 |
+| B_auto   | Codex    | Luna   |       44 | 0.667× |   0.578× | 0.187–1.292 |   0.749 |      34/44 |
+| B_auto   | Codex    | Terra  |       41 | 0.947× |   0.888× | 0.434–1.439 |   0.482 |      23/41 |
+| B_auto   | Codex    | Sol    |       44 | 1.014× |   0.991× | 0.535–1.951 |   0.555 |      19/44 |
+
+- **Median**: middle per-task ratio of treatment ÷ baseline [below 1.0× = treatment spent less]
+- **Geo mean**: geometric mean of the same ratios [the average appropriate to ratios]
+- **p10–p90**: interior 80% of tasks [narrow = consistent]
+- **sd(log)**: standard deviation of the log ratio [scale-free spread]
+- **Cheaper in**: tasks where the treatment arm spent less, out of the paired total
+
+Every one of the twelve rows has a p90 above 1.0×, so at least a tenth of tasks cost the Codemap arm more: reading less is a distributional result, never a per-task guarantee. Similar medians also do not mean equal reliability — Sonnet and Sol `C_strict` sit at 0.431× and 0.486× with sd(log) 0.984 against 0.596. And where an arm mixes tool users with non-users, the median describes neither: Haiku's `B_auto` cells that queried Codemap saved 66% at the median while the six that did not sit at parity.
+
+The `B` rows are not comparable across providers, and the Luna `B` row is not comparable to the other two Codex ones. Claude's `B_auto` makes Codemap optional and measures unprompted reach; the frozen Luna run's `B_auto` was executed under a prompt that required the direct CLI, so it answers a different question. The contract was then changed to optional-use, and `Sol` and `Terra` are the Codex runs under it — so only those two `B` rows ask the Claude question, and the Luna `B` row must not be blended with them. Cost is empty for Codex because that runner captures no per-cell price.
+
+The optional arm's central negative now has two independent measurements. On both optional-contract strata, splitting the `B_auto` token ratio on whether the cell actually queried Codemap changes nothing — 0.974× against 1.016× on `Sol` at 26 of 44 uptake, 0.942× against 0.947× on `Terra` at 34 of 41 — so availability alone buys no saving, and low uptake is not the reason.
+
+Three things bound how the Codex rows may be stated. Each stratum is one study at one repetition per cell, never a Codex average. Input tokens are gross: roughly 91% of `Sol`'s and 85% of `Terra`'s gross input is cached, so `Sol`'s 71% whole-run gross reduction is a 42% fresh reduction and `Terra`'s 55% is 30% — any dollar claim must be made on fresh tokens or say that it is not. And `skill_delivery_observed` is false in all 219 cells of each, including every `C_strict` one, so the supported claim is that required Codemap *querying* produced the effect, not that the Skill file was read.
+
+Agentic, on the 16 shared blast-radius tasks, where both providers use the same arm labels and the same scorer:
+
+| Treatment arm | Provider | Model  | Paired n | Baseline accuracy | Treatment accuracy |          Gain | Input tokens | Cost | Elapsed |
+| ------------- | -------- | ------ | -------: | ----------------: | -----------------: | ------------: | -----------: | ---: | ------: |
+| C_strict      | Claude   | Haiku  |       16 |      18.8% (3/16) |      68.8% (11/16) | +50.0 pp (+8) |         −60% | −45% |    −46% |
+| C_strict      | Claude   | Sonnet |       15 |      53.3% (8/15) |      73.3% (11/15) | +20.0 pp (+3) |         −77% | −65% |    −82% |
+| C_strict      | Claude   | Opus   |       16 |     62.5% (10/16) |      68.8% (11/16) |  +6.2 pp (+1) |         −50% | −41% |    −73% |
+| C_strict      | Codex    | Luna   |       16 |     68.8% (11/16) |      81.2% (13/16) | +12.5 pp (+2) |         −45% |    — |    −49% |
+| C_strict      | Codex    | Terra  |       10 |      70.0% (7/10) |       80.0% (8/10) | +10.0 pp (+1) |         −14% |    — |    −27% |
+| C_strict      | Codex    | Sol    |       16 |     75.0% (12/16) |      93.8% (15/16) | +18.8 pp (+3) |         −21% |    — |    −43% |
+| B_auto        | Claude   | Haiku  |       16 |      18.8% (3/16) |      68.8% (11/16) | +50.0 pp (+8) |         −70% | −51% |    −53% |
+| B_auto        | Claude   | Sonnet |       15 |      53.3% (8/15) |      86.7% (13/15) | +33.3 pp (+5) |         −72% | −56% |    −76% |
+| B_auto        | Claude   | Opus   |       16 |     62.5% (10/16) |      87.5% (14/16) | +25.0 pp (+4) |         −43% | −51% |    −77% |
+| B_auto        | Codex    | Luna   |       16 |     68.8% (11/16) |       43.8% (7/16) | −25.0 pp (−4) |         −15% |    — |    −35% |
+| B_auto        | Codex    | Terra  |       16 |     68.8% (11/16) |       31.2% (5/16) | −37.5 pp (−6) |          +7% |    — |    −32% |
+| B_auto        | Codex    | Sol    |       16 |     75.0% (12/16) |       37.5% (6/16) | −37.5 pp (−6) |         +45% |    — |    −15% |
+
+One row per stratum, one execution per row. `Luna` is the 2026-09-07 execution that shares the repaired answer-format prompt with `Terra` and `Sol`, which is what makes the three comparable. Two further Luna executions of the same 16 tasks exist and are deliberately not listed: the 2026-09-06 run under the earlier prompt, and an isolated-worktree re-execution against a relocated copy of the locked index. They are separate studies of one model, not repetitions, so they are neither averaged in nor shown as rivals to it; the [benchmark results](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#results) report both in full. `Terra` and `Sol` are the first agentic studies of the other two declared strata, run the same day — three Luna studies exist at all only because the launcher's stratum selection reached the structural lane until then, so every earlier agentic run executed the default stratum whatever was selected.
+
+`Sol` is the strongest and cleanest strict-arm result here — fifteen of sixteen cells correct against twelve, every cell adherent, 21% fewer input tokens. `Terra` gains on the same cohort but keeps only ten pairs: its strict arm skipped the required query on six of sixteen cells, and a strict cell that explores by hand costs what a control costs, which is why its token saving is 14% rather than the 45% Luna shows on the same arm.
+
+Binary correctness is harsher than the semantic score the snapshots below report, so the large Haiku gains are movement from partially-right to exactly-right rather than from nothing. The excluded 2026-09-06 Luna study paired only 8 and 11 tasks because twelve of its cells lost the strict answer envelope — a prompt-contract defect, since fixed, which cost the four later runs zero cells and is why every Codex row here now pairs 16 except `Terra`'s strict arm. Codex remains the only row set where the optional-use arm regresses, and it now regresses in all five of its executions across all three strata — on `Sol` while reading 45% *more* input than its own baseline, with Codemap queried on every one of its sixteen cells. A command-level replay found no measurement fault behind that: the optional arm is additive, querying the index and then exploring by hand anyway, so it drags 19.0k tokens of command output into each cell against the baseline's 7.1k. The required arm does the opposite — 64% more commands than the baseline, but each returning a median 140–184 tokens against a grep's ~1,100, so it ends up reading less overall. Agentic elapsed figures are order-confounded: arms ran in fixed `A_plain` → `B_auto` → `C_strict` order with no provider cache reset. Full cohort, estimator, and caveat detail: [benchmark results](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#results).
+
+<a id="codex-structural-2026-08-07"></a> <a id="claude-structural-2026-09-06"></a>
+
+### Structural navigation snapshot — 2026-09-06
+
+Three Claude tiers ran 55 structural tasks across all three arms, 495 cells in one repetition against a frozen repository revision and a prebuilt index. `A_plain` is the no-Codemap baseline, `B_auto` makes Codemap optional, and `C_strict` requires the installed Skill. Accuracy is paired: each percentage pair is computed only over the tasks where both arms of that pair produced a scored, parsed answer, so both figures share one denominator, shown in parentheses as cells answered correctly. Gain is treatment minus baseline in percentage points, with the cell delta beside it. Input tokens, cost, and elapsed are per-task medians of treatment ÷ baseline restated as change against the baseline: negative means Codemap needed less.
+
+| Tier   | Pair                | Paired n | Baseline accuracy | Treatment accuracy |          Gain | Input tokens | Cost | Elapsed |
+| ------ | ------------------- | -------: | ----------------: | -----------------: | ------------: | -----------: | ---: | ------: |
+| Haiku  | A_plain vs C_strict |       47 |     74.5% (35/47) |      87.2% (41/47) | +12.7 pp (+6) |         −65% | −71% |    −54% |
+| Haiku  | A_plain vs B_auto   |       48 |     75.0% (36/48) |      85.4% (41/48) | +10.4 pp (+5) |         −48% | −52% |    −40% |
+| Sonnet | A_plain vs C_strict |       50 |     84.0% (42/50) |      92.0% (46/50) |  +8.0 pp (+4) |         −52% | −40% |    −46% |
+| Sonnet | A_plain vs B_auto   |       49 |     83.7% (41/49) |      95.9% (47/49) | +12.2 pp (+6) |         −52% | −43% |    −48% |
+| Opus   | A_plain vs C_strict |       50 |     88.0% (44/50) |      96.0% (48/50) |  +8.0 pp (+4) |         −21% | −11% |    −24% |
+| Opus   | A_plain vs B_auto   |       51 |     88.2% (45/51) |      94.1% (48/51) |  +5.9 pp (+3) |         −23% | −23% |    −25% |
+
+The lift is largest where unaided navigation is weakest and narrows as the tier strengthens, while the efficiency gap persists at every tier. On the safety-grade view — caller-enumeration answers with recall at or above 0.90 — the weakest tier moves from 10/14 unaided to 14/14 under the required Skill; the two stronger tiers already reach 14/14 in every arm.
+
+This run is descriptive and non-poolable: one repetition, one repository revision, one prebuilt index, and it retains contaminated, incomplete, and extraction-failed cells rather than filtering them. Twelve cells failed answer extraction and two baseline cells were dropped as contaminated, which is why the paired denominators vary. Two task defects found after the first execution were corrected and their cells re-measured; a third finding is a real gap in the tool's uncovered-symbol counting and is still scored as a miss rather than explained away. See the [canonical structural result and limitations](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#claude-multi-model--paired-accuracy-and-efficiency).
 
 <a id="codex-agentic-2026-08-07"></a>
 
 <details>
-<summary><strong>Agentic navigation snapshot — 2026-08-07</strong></summary>
+<summary><strong>Agentic navigation snapshot — 2026-09-06</strong></summary>
 
-The same host/runtime/model family completed 48 cells across 16 shared import-graph tasks and three arms. Here, quality is the mean semantic answer-component score; input/output/time use the same lower-is-better definitions as above. `C_strict` required one successful compact Codemap query; `B_auto` made Codemap optional.
+The same three tiers completed 144 cells across 16 shared import-graph tasks and the same three arms. Values are per-task median savings against `A_plain`; positive means the arm needed less.
 
-| Arm        | Mean semantic quality | Mean input | Mean output | Mean elapsed |
-| ---------- | --------------------: | ---------: | ----------: | -----------: |
-| `A_plain`  |                0.8931 |     426.2k |        7.8k |      171.3 s |
-| `B_auto`   |                0.9015 |     223.8k |        4.5k |      107.4 s |
-| `C_strict` |                0.9900 |     103.5k |        2.4k |       60.4 s |
+| Tier   | Arm      | Elapsed | Cost | Input tokens | Tool calls |
+| ------ | -------- | ------: | ---: | -----------: | ---------: |
+| Haiku  | C_strict |     46% |  45% |          60% |        62% |
+| Haiku  | B_auto   |     53% |  51% |          70% |        68% |
+| Sonnet | C_strict |     82% |  65% |          77% |        72% |
+| Sonnet | B_auto   |     76% |  56% |          72% |        62% |
+| Opus   | C_strict |     73% |  41% |          50% |        52% |
+| Opus   | B_auto   |     77% |  51% |          43% |        59% |
 
-Relative to `A_plain`, `C_strict` used paired geometric-mean ratios of `0.337×` input, `0.306×` output, and `0.359×` elapsed, with a mean-quality delta of `+0.0969`. This study is also exploratory and non-poolable: one repetition, one repository revision, optional adoption in the middle arm, diagnostic answer recoveries, fixed arm order, and provider-cache exposure. See the [canonical agentic result and measurement caveats](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#completed-combined-run-codex-agentic-study--2026-08-07).
+Evidence recall holds at parity or better in every Codemap cell, while the baseline drops below it on three tasks. Time spent inside tools moves the other way — an index call costs more than a single grep — so the saving comes from needing far fewer calls, not from faster ones. This study is exploratory and non-poolable for the same reasons as the structural one, plus fixed arm order and provider-cache exposure; one baseline cell hit its coordinate timeout and is excluded rather than scored as a loss. See the [canonical agentic result and measurement caveats](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#claude-multi-model--median-change-against-a_plain).
+
+</details>
+
+<a id="codex-structural-2026-09-06"></a> <a id="codex-agentic-2026-09-06"></a>
+
+<details>
+<summary><strong>Codex navigation snapshot — 2026-09-06</strong></summary>
+
+This is the first of three Codex strata measured; `gpt-5.6-sol` and `gpt-5.6-terra` have their own snapshots below. One `gpt-5.6-luna` study ran the same shared task contracts through the Codex CLI: 219 structural-family cells across all three arms, plus 48 agentic cells. Structural accuracy below is paired over the 45-task headline cohort, on the same denominator rule as the Claude table. This run's `B_auto` arm was executed under a prompt that required a Codemap query; the contract has since changed to optional-use to match Claude's `B_auto`, so a future Codex `B_auto` run must not be blended with these numbers.
+
+| Model | Pair                | Paired n | Baseline accuracy | Treatment accuracy |    Gain | Cells correct | Input tokens | Elapsed |
+| ----- | ------------------- | -------: | ----------------: | -----------------: | ------: | ------------: | -----------: | ------: |
+| Luna  | A_plain vs C_strict |       43 |             93.0% |              98.9% | +6.0 pp |       38 → 42 |         −53% |    −51% |
+| Luna  | A_plain vs B_auto   |       44 |             91.3% |              97.4% | +6.1 pp |       38 → 41 |         −42% |    −42% |
+
+Codex accuracy is the mean semantic quality score over the paired cells rather than a pass count, so the percentage and the correct-cell count move independently. Its token and elapsed figures are cohort totals restated as change against the baseline, where the Claude table above uses per-task medians.
+
+The four executable and extraction stages stay separate and nonpoolable. ReadCrop matches the Claude result — equal correctness, 37% less input under the required Skill. Fix-Single and Fix-Multi are the counterexample: identical correctness at 45% and 29% more input than the control, so a fully localized edit with no unresolved structural fact is not a Codemap workload. Patch is 5/5 unaided and 4/5 under the strict arm, the single loss being a wrong fix rather than a tooling failure.
+
+Agentically, the strict arm scores 0.960 against the control's 0.929 at 48% less input, answering 13 of 16 cells correctly against the control's 9, while the optional-use canary regresses to 0.860 and 6 of 16. Two defects in the measurement harness, both costing the treatment arms, were found in this run and are fixed prospectively rather than rescored. See the [canonical Codex result and limitations](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#codex-results--2026-09-06).
+
+</details>
+
+<details>
+<summary><strong>Codex <code>gpt-5.6-sol</code> snapshot — 2026-09-07</strong></summary>
+
+A second Codex stratum ran the same shared task contracts: 219 structural-family cells over 73 tasks in five stages, all three arms, one repetition per cell, Codex CLI 0.153.4 at high reasoning effort, against the same frozen repository revision and index as every other table here. Its `A_plain` and `C_strict` arm contracts are byte-identical to the `gpt-5.6-luna` run's; its `B_auto` contract is the newer optional-use one and is not the contract Luna's `B_auto` ran under. The observed CLI build is 0.153.4 against a reviewed 0.146.1, so this ran on a build the methodology had not reviewed.
+
+**Read this as one stratum, not as a Codex result.** The sibling `gpt-5.6-terra` stratum of the same launch ran no paid cell — its launcher refused on a paid-approval token before the first model call — so this launch is half complete. Terra was relaunched and completed on 2026-09-07; that is a separate study with its own snapshot below, never a second half of this one.
+
+Structural accuracy is in the cross-provider table above. On the run's own semantic-quality metric, over the 44 tasks where all three arms produced an admissible scored cell, mean quality is 0.9477 unaided, 0.9889 optional, and 0.9742 strict, with a median of exactly 1.000 in every arm and 36 of the 44 tasks scoring identically in all three. The strict arm is cheaper on 38 of those 44 tasks. Because the control is already saturated, this design can detect degradation and cannot detect improvement, and the quality effect is indistinguishable from zero at one repetition per cell with no significance testing.
+
+Per-task spread separates the two treatment arms where the medians do not. Against the unaided baseline, the input-token ratio for the strict arm runs 0.254–1.066 between the 10th and 90th percentiles and is cheaper on 38 of 44 tasks; the optional arm runs 0.535–1.951 and is cheaper on 19 of 44, with a worst task at 2.74× the baseline. The two distributions are about equally wide — the difference is that the strict arm's sits below parity while the optional arm's straddles it. Uptake does not explain the gap: 26 of the 44 optional cells did query Codemap, and their median ratio (0.974×) is barely below the cells that did not (1.016×), because the optional arm queries Codemap in addition to exploring the repository the ordinary way.
+
+The four executable and extraction stages stay separate and must not be averaged together — their token direction is not consistent:
+
+| Stage      | Cells | A_plain correct | B_auto correct | C_strict correct | B tokens | C tokens |
+| ---------- | ----: | --------------- | -------------- | ---------------- | -------: | -------: |
+| ReadCrop   |    18 | 5/6             | 5/6            | 5/6              |     +60% |     −34% |
+| Fix-Single |    12 | 4/4             | 4/4            | 4/4              |     +16% |     +15% |
+| Fix-Multi  |     9 | 3/3             | 3/3            | 3/3              |     −15% |     +34% |
+| Patch      |    15 | 5/5             | 5/5            | 4/5              |     −36% |     −67% |
+
+Token columns are cohort totals against `A_plain`. Requiring Codemap costs 15% more input on single-file edits and 34% more on multi-file edits for identical correctness, which is the same counterexample the Luna run produced and the reason production guidance skips Codemap for a fully localized edit with no unresolved structural fact. The single Patch loss is the strict arm failing a cell both other arms passed, at a quarter of their input — one task at one repetition supports no claim either way, but it is not evidence that requiring the tool is safer.
+
+The optional arm abandons the tool wherever code has to be modified: uptake is 5 of 6 ReadCrop cells and 35 of 55 structural cells, but 0 of 12 across Fix-Single, Fix-Multi, and Patch. An optional rollout should not be expected to reproduce the strict-arm result on editing work.
+
+Delivery is confounded with arm — the optional arm always used the direct CLI and the strict arm always the installed Skill — so no optional-versus-strict difference can be attributed to strictness alone. Full cohort, estimator, and caveat detail is in the benchmark record's `gpt-5.6-sol` Codex section.
+
+</details>
+
+<details>
+<summary><strong>Codex <code>gpt-5.6-terra</code> snapshot — 2026-09-07</strong></summary>
+
+The third Codex stratum ran the same shared task contracts: 219 structural-family cells over 73 tasks in five stages, all three arms, one repetition per cell, Codex CLI 0.153.4 at high reasoning effort, against the same frozen repository revision and index as every other table here. All three arm contracts are byte-identical to the `gpt-5.6-sol` run's, so this is the second study under the optional-use `B_auto` contract. As on Sol, the observed CLI build is 0.153.4 against a reviewed 0.146.1. This is the stratum whose first launch was refused on a paid-approval token; the relaunch is a separate study, not the missing half of the Sol launch.
+
+Structural accuracy is in the cross-provider table above. On the run's own semantic-quality metric over the headline cohort, mean quality is 91.6% unaided against 97.2% strict over 40 pairs, and 91.8% against 98.4% optional over 41 pairs. **Neither treatment arm turns a correct answer wrong**: the strict arm converts DI-01 and DI-02, the optional arm those two plus DI-06, and the only quality regression anywhere is BR-07 at −0.056 in both arms.
+
+The paired counts are 40 and 41 rather than 45 because four control cells were lost — `CQ-01` left a command item open, `FT-05` and `DI-05` exited non-zero with zero tokens, and `FT-03` failed answer extraction — plus one strict cell dropped for non-adherence. Every lost control cell is one the unaided arm failed to complete, so removing them raises the baseline and makes the gains above conservative.
+
+| Stage      | Cells | A_plain correct | B_auto correct | C_strict correct | B tokens | C tokens |
+| ---------- | ----: | --------------- | -------------- | ---------------- | -------: | -------: |
+| ReadCrop   |    18 | 5/6             | 6/6            | 6/6              |    +101% |     +10% |
+| Fix-Single |    12 | 4/4             | 4/4            | 4/4              |     −12% |      +3% |
+| Fix-Multi  |     9 | 2/3             | 3/3            | 3/3              |      −5% |      −2% |
+| Patch      |    15 | 3/5             | 3/5            | 4/5              |     −20% |      −9% |
+
+Token columns are cohort totals against `A_plain`. ReadCrop inverts here — the strict arm reads 10% more where Luna and Sol read 37% and 34% less — while converting the one cell the control got wrong. Editing stages sit near parity in both directions and support no claim at 3 to 5 tasks each. The one Patch task solved only under the strict arm, and the one failed by all three arms, are single observations that run opposite to Sol's single Patch loss.
+
+Optional uptake repeats the Sol pattern exactly: 4 of 6 ReadCrop cells, 48 of 55 structural cells, and 0 of 12 across the three editing stages. Delivery is again confounded with arm, and `skill_delivery_observed` is false in all 165 structural cells. Full cohort, estimator, and caveat detail is in the benchmark record's `gpt-5.6-terra` Codex section.
 
 </details>
 

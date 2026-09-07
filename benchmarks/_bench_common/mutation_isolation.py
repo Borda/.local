@@ -755,13 +755,107 @@ def _non_root_index_sha256(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
+def load_index_relocation(path: Path | str | None) -> dict[str, str] | None:
+    """Load one run's index relocation provenance, or return ``None`` when the run has none.
+
+    A canonical run at the managed clone carries no provenance: its index is admitted by byte
+    identity. A run in its own worktree carries the file the relocation wrote, and the admission
+    gate checks that instead, so a malformed or unreadable file has to fail here rather than
+    silently downgrade the run to an unverified index.
+
+    Args:
+        path: Path to the relocation provenance JSON, if this run has one.
+
+    Returns:
+        The provenance mapping, or ``None`` when no path was given.
+
+    Raises:
+        ValueError: If the file cannot be read or does not hold a JSON object of strings.
+
+    Examples:
+        >>> load_index_relocation(None) is None
+        True
+    """
+    if path is None:
+        return None
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read index relocation provenance {path}: {exc}") from exc
+    if not isinstance(payload, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) for key, value in payload.items()
+    ):
+        raise ValueError(f"index relocation provenance must be a JSON object of strings: {path}")
+    # The relocation writer adds the installed path for the operator; admission checks the digests.
+    return {key: value for key, value in payload.items() if key != "derived_index_path"}
+
+
+def verify_index_relocation(
+    index_relocation: Mapping[str, str],
+    *,
+    metadata: Mapping[str, Any],
+    index_sha256: str,
+    repo_path: Path,
+    frozen_index_sha256: str,
+) -> None:
+    """Prove a relocated index is the locked graph, moved and otherwise untouched.
+
+    A run outside the canonical clone cannot reproduce the locked byte hash, because those bytes
+    record that clone's own path. This is what every admission gate checks instead: the copy came
+    from the frozen index, the bytes on disk are the ones the relocation produced, the graph content
+    apart from its root is unchanged, and the root it now claims is the worktree being run in.
+
+    Args:
+        index_relocation: Provenance recorded when the frozen index was relocated.
+        metadata: Parsed index document found at the run's index path.
+        index_sha256: SHA-256 of the index bytes actually on disk.
+        repo_path: Worktree the run executes in.
+        frozen_index_sha256: The manifest-locked raw index hash.
+
+    Raises:
+        ValueError: If any part of the provenance fails to tie those bytes to the locked graph.
+
+    Examples:
+        >>> verify_index_relocation.__name__
+        'verify_index_relocation'
+    """
+    required_keys = {
+        "frozen_index_sha256",
+        "derived_index_sha256",
+        "non_root_content_sha256",
+        "source_scan_root",
+        "worktree_scan_root",
+    }
+    if set(index_relocation) != required_keys:
+        raise ValueError("canonical executable index relocation provenance is malformed")
+    if index_relocation["frozen_index_sha256"] != frozen_index_sha256:
+        raise ValueError("canonical executable index relocation has the wrong frozen source")
+    if index_relocation["derived_index_sha256"] != index_sha256:
+        raise ValueError("canonical executable index changed after relocation")
+    if index_relocation["worktree_scan_root"] != str(repo_path.resolve()):
+        raise ValueError("canonical executable index relocation has the wrong worktree root")
+    if metadata.get("scan_root") != str(repo_path.resolve()):
+        raise ValueError("canonical executable index scan_root does not match its worktree")
+    if _non_root_index_sha256(metadata) != index_relocation["non_root_content_sha256"]:
+        raise ValueError("canonical executable index relocation changed frozen graph content")
+
+
 def relocate_frozen_index_for_worktree(
-    frozen_bytes: bytes, *, source_root: Path, worktree_root: Path
+    frozen_bytes: bytes,
+    *,
+    source_root: Path,
+    worktree_root: Path,
+    frozen_index_sha256: str | None = None,
 ) -> tuple[bytes, dict[str, str]]:
     """Relocate only ``scan_root`` in a frozen index for a byte-identical worktree.
 
     This derived copy keeps the static graph immutable while allowing Codemap's root-mismatch completeness guard to
     evaluate the benchmark-owned checkout. The caller records both hashes and rejects a cell that modifies the copy.
+
+    ``frozen_index_sha256`` names the locked index this copy descends from. It is needed when the source bytes are
+    themselves a relocation — an isolated run's worktree index — because admission compares the recorded origin against
+    the manifest lock, which the intermediate copy no longer hashes to. Relocation moves only ``scan_root``, so the
+    graph content of every link in that chain is identical and the origin remains the honest answer.
     """
     try:
         frozen_payload = json.loads(frozen_bytes)
@@ -779,7 +873,7 @@ def relocate_frozen_index_for_worktree(
         raise RuntimeError("executable index relocation changed frozen graph content")
     derived_bytes = (json.dumps(derived_payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
     return derived_bytes, {
-        "frozen_index_sha256": hashlib.sha256(frozen_bytes).hexdigest(),
+        "frozen_index_sha256": frozen_index_sha256 or hashlib.sha256(frozen_bytes).hexdigest(),
         "derived_index_sha256": hashlib.sha256(derived_bytes).hexdigest(),
         "non_root_content_sha256": frozen_content_sha256,
         "source_scan_root": expected_root,
@@ -788,9 +882,18 @@ def relocate_frozen_index_for_worktree(
 
 
 def create_executable_agent_workspace(
-    source: Path, index_path: Path, baseline_commit: str, *, require_source_baseline: bool = True
+    source: Path,
+    index_path: Path,
+    baseline_commit: str,
+    *,
+    require_source_baseline: bool = True,
+    frozen_index_sha256: str | None = None,
 ) -> ExecutableAgentWorkspace:
-    """Create an editable worktree with a root-relocated immutable graph copy."""
+    """Create an editable worktree with a root-relocated immutable graph copy.
+
+    ``frozen_index_sha256`` carries the locked origin forward when ``index_path`` is itself a relocated copy, which is
+    the case for every stage of a run outside the canonical clone.
+    """
     source = source.resolve(strict=True)
     index_path = index_path.resolve(strict=True)
     if not index_path.is_relative_to(source):
@@ -806,7 +909,10 @@ def create_executable_agent_workspace(
         _workspace_git(source, "worktree", "add", "--detach", str(worktree), baseline_commit)
         copied_index.parent.mkdir(parents=True, exist_ok=True)
         derived_bytes, index_relocation = relocate_frozen_index_for_worktree(
-            index_path.read_bytes(), source_root=source, worktree_root=worktree
+            index_path.read_bytes(),
+            source_root=source,
+            worktree_root=worktree,
+            frozen_index_sha256=frozen_index_sha256,
         )
         copied_index.write_bytes(derived_bytes)
         if hashlib.sha256(copied_index.read_bytes()).hexdigest() != index_relocation["derived_index_sha256"]:

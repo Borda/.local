@@ -84,7 +84,12 @@ def test_manifest_locks_shared_scope_and_identity() -> None:
     """The default scope is the complete shared suite once in each canonical arm."""
     manifest = _load(MANIFEST)
     assert manifest["experiment_id"] == "codex-agentic"
-    assert manifest["model"] == {"name": "gpt-5.6-luna", "reasoning_effort": "high", "strict_config": True}
+    assert manifest["model"] == {
+        "name": "gpt-5.6-luna",
+        "additional_strata": ["gpt-5.6-terra", "gpt-5.6-sol"],
+        "reasoning_effort": "high",
+        "strict_config": True,
+    }
     assert tuple(task["id"] for task in manifest["tasks"]) == AGENTIC_TASK_IDS
     scope = manifest["preregistered_scope"]
     assert tuple(scope["task_ids"]) == AGENTIC_TASK_IDS

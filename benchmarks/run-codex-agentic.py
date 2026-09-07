@@ -13,6 +13,7 @@ definition.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib.util
 import json
@@ -30,8 +31,20 @@ _BENCHMARKS_DIR = Path(__file__).resolve().parent
 if str(_BENCHMARKS_DIR) not in sys.path:
     sys.path.insert(0, str(_BENCHMARKS_DIR))
 
-from _bench_common.presentation import fmt_time, fmt_tok  # noqa: E402
+from _bench_common.presentation import (  # noqa: E402
+    LEGEND_CLOSE_RULE,
+    LEGEND_OPEN_RULE,
+    benchmark_console,
+    fmt_time,
+    fmt_tok,
+    format_probe_row,
+    print_legend,
+)
 from _bench_codex import runtime as codex_runtime  # noqa: E402
+from _bench_common.mutation_isolation import (  # noqa: E402
+    load_index_relocation,
+    verify_index_relocation,
+)
 from _bench_common.agentic_contracts import (  # noqa: E402
     AGENTIC_ARMS,
     DEFAULT_REPETITIONS,
@@ -59,26 +72,27 @@ _MANIFEST_PATH = _BENCHMARKS_DIR / "manifests" / "codex-agentic.json"
 AGENTIC_DEFAULT_REPETITIONS = DEFAULT_REPETITIONS
 _NATIVE_HOME_ARM = {
     "A_plain": "A_plain",
-    "B_auto": "B_direct_required",
-    "C_strict": "C_skill_required",
+    "B_auto": "B_auto",
+    "C_strict": "C_strict",
 }
-_OUTPUT_LEGEND = (
-    "LEGEND\n"
+#: Legend body lines without their framing rules, so a terminal can panel them while the run log
+#: keeps the plain framed form it has always archived.
+_LEGEND_BODY = (
     "  treatments: A_plain=no Codemap, B_auto=CLI available and optional, "
-    "C_strict=installed Codemap Skill with compact query required\n"
-    "  metrics:\n"
-    "      SCORE: mean semantic answer-component score; n/a when no answer can be recovered (higher is better)\n"
-    "      EREC: expected-importer recall in all agent text (higher is better)\n"
-    "      RREC: expected-importer recall in the final report (higher is better)\n"
-    "      DEFF: unbounded expected-importer exposure hits per command (higher is better within the same task)\n"
-    "  answer: ✓ strict envelope, △ diagnostic bare-JSON recovery (not poolable), ✗ absent or invalid\n"
-    "  status: ✓ completed, ✗ failed\n"
-    "  progress: N completed cells / manifest-scoped planned cells\n"
-    "  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\n"
-    "  codemap-used: ✓ Codemap call observed; ✗ no call observed (A_plain expects none)\n"
-    "  input tokens: gross total; cached and fresh details remain in telemetry only (lower is better at equal quality)\n"
-    "END LEGEND"
+    "C_strict=installed Codemap Skill with compact query required",
+    "  metrics:",
+    "      SCORE: mean semantic answer-component score; n/a when no answer can be recovered (higher is better)",
+    "      EREC: expected-importer recall in all agent text (higher is better)",
+    "      RREC: expected-importer recall in the final report (higher is better)",
+    "      DEFF: unbounded expected-importer exposure hits per command (higher is better within the same task)",
+    "  answer: ✓ strict envelope, △ diagnostic bare-JSON recovery (not poolable), ✗ absent or invalid",
+    "  status: ✓ completed, ✗ failed",
+    "  progress: N completed cells / manifest-scoped planned cells",
+    "  treatment: ✓ assigned arm followed, ✗ assigned arm not followed",
+    "  codemap-used: ✓ Codemap call observed; ✗ no call observed (A_plain expects none)",
+    "  input tokens: gross total; cached and fresh details remain in telemetry only (lower is better at equal quality)",
 )
+_OUTPUT_LEGEND = "\n".join((LEGEND_OPEN_RULE, *_LEGEND_BODY, LEGEND_CLOSE_RULE))
 
 
 def _load_sibling(module_name: str, filename: str) -> ModuleType:
@@ -352,19 +366,55 @@ def _manifest_sha256(manifest_path: Path) -> str:
         raise ValueError("Codex agentic manifest is unavailable") from exc
 
 
+def resolve_agentic_model(manifest: Mapping[str, Any], manifest_path: Path, model: str | None) -> str | None:
+    """Return the declared stratum this run replaces the manifest default with, or ``None``.
+
+    The manifest names one default stratum and declares the others the same locked suite may run. Naming the default
+    explicitly is still the default, so one physical study never has two identities: only a different declared stratum
+    becomes an override, and only an override changes the scope hash and the approval the run demands.
+
+    Args:
+        manifest: Parsed Codex agentic manifest.
+        manifest_path: Path the declared strata are validated against.
+        model: Requested stratum name, or ``None`` to keep the manifest default.
+
+    Returns:
+        The overriding stratum name, or ``None`` when this run keeps the manifest default.
+
+    Raises:
+        ValueError: When the manifest lacks a model block, or the name is not a declared stratum.
+
+    Examples:
+        >>> resolve_agentic_model({"model": {"name": "gpt-x"}}, _MANIFEST_PATH, None) is None
+        True
+        >>> resolve_agentic_model({"model": {"name": "gpt-x"}}, _MANIFEST_PATH, "gpt-x") is None
+        True
+    """
+    configured = manifest.get("model")
+    if not isinstance(configured, Mapping) or not isinstance(configured.get("name"), str):
+        raise ValueError("Codex agentic manifest lacks a model stratum")
+    if model is None or model == configured["name"]:
+        return None
+    codex_runtime.validate_codex_stratum(str(model), str(configured.get("reasoning_effort", "")), Path(manifest_path))
+    return str(model)
+
+
 def resolve_agentic_scope(
     manifest_path: Path = _MANIFEST_PATH,
     *,
     task_ids: Sequence[str] | None = None,
     repetitions: int | None = None,
+    model: str | None = None,
 ) -> dict[str, Any]:
     """Resolve and hash one manifest-bound Codex agentic coordinate scope.
 
-    The manifest is the immutable source lock. A caller may explicitly narrow its ordered task set or increase positive
-    repetitions, but the derived scope hash binds every resulting coordinate and its per-cell timeout.
+    The manifest is the immutable source lock. A caller may explicitly narrow its ordered task set, increase positive
+    repetitions, or select another declared model stratum, but the derived scope hash binds every resulting coordinate,
+    its per-cell timeout, and the stratum that runs it.
     """
     manifest_path = Path(manifest_path)
     manifest = _read_agentic_manifest(manifest_path)
+    model_override = resolve_agentic_model(manifest, manifest_path, model)
     preregistered = manifest.get("preregistered_scope")
     if not isinstance(preregistered, Mapping):
         raise ValueError("Codex agentic manifest lacks preregistered scope")
@@ -394,6 +444,10 @@ def resolve_agentic_scope(
         "total_cells": total_cells,
         "nonpoolable": True,
     }
+    # The default stratum leaves the payload as the manifest locked it, so a run that selects nothing keeps the
+    # identity its manifest digest already authorizes; a selected stratum is a distinct study and hashes as one.
+    if model_override is not None:
+        payload["model"] = model_override
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return {**payload, "scope_sha256": hashlib.sha256(encoded).hexdigest()}
 
@@ -481,6 +535,9 @@ class AgenticCodexRunner:
     path.
     """
 
+    #: Relocation provenance for a run in its own worktree; ``None`` at the canonical managed clone.
+    index_relocation: dict[str, str] | None = None
+
     def __init__(
         self,
         *,
@@ -492,19 +549,25 @@ class AgenticCodexRunner:
         adapter_manifest_path: Path,
         agentic_manifest: Mapping[str, Any],
         agentic_manifest_path: Path | None = None,
+        index_relocation: Mapping[str, str] | None = None,
+        model_name: str | None = None,
         transport: Callable[..., str | bytes | Iterable[str | bytes]] | None = None,
     ) -> None:
         self.repo_path = Path(repo_path).resolve()
         self.index_path = Path(index_path).resolve()
         self.agentic_manifest = agentic_manifest
         self.agentic_manifest_path = Path(agentic_manifest_path or _MANIFEST_PATH)
+        self.index_relocation = dict(index_relocation) if index_relocation is not None else None
         self.transport = transport
         model = agentic_manifest.get("model")
         scope = agentic_manifest.get("preregistered_scope")
         if not isinstance(model, Mapping) or not isinstance(scope, Mapping):
             raise ValueError("Codex agentic manifest lacks model or per-cell timeout")
+        self.model_name = str(
+            resolve_agentic_model(agentic_manifest, self.agentic_manifest_path, model_name) or model["name"]
+        )
         self.adapter = _structural.CodexRunner(
-            str(model["name"]),
+            self.model_name,
             self.repo_path,
             reasoning_effort=str(model["reasoning_effort"]),
             index_path=self.index_path,
@@ -512,6 +575,7 @@ class AgenticCodexRunner:
             marketplace_root=marketplace_root,
             codemap_bin=codemap_bin,
             manifest_path=adapter_manifest_path,
+            index_relocation=self.index_relocation,
             auth_source=auth_source,
         )
 
@@ -528,7 +592,7 @@ class AgenticCodexRunner:
                 manifest_path=self.agentic_manifest_path,
                 invocation_launcher_path=_BENCHMARKS_DIR / "run-all.sh",
             )
-            for arm in ("B_direct_required", "C_skill_required"):
+            for arm in ("B_auto", "C_strict"):
                 home = self.adapter._prepare_verified_home(arm)
                 try:
                     _structural.probe_arm_home(home)
@@ -540,7 +604,7 @@ class AgenticCodexRunner:
     def _postflight(self, home: Any | None) -> str:
         """Return a concrete error when a native attempt changed locked runtime state."""
         try:
-            _validate_agentic_runtime(self.agentic_manifest, self.repo_path, self.index_path)
+            _validate_agentic_runtime(self.agentic_manifest, self.repo_path, self.index_path, self.index_relocation)
             if home is not None and home.coordination_path is not None:
                 _structural._validate_coordination_root(home.coordination_path)
         except ValueError as exc:
@@ -593,8 +657,8 @@ class AgenticCodexRunner:
                 self.adapter._bind_runtime_snapshot(
                     snapshot_root,
                     {
-                        "B_direct_required": {"direct-cli": snapshot_root / "B_auto" / "direct-cli"},
-                        "C_skill_required": {
+                        "B_auto": {"direct-cli": snapshot_root / "B_auto" / "direct-cli"},
+                        "C_strict": {
                             "codemap-py": snapshot_root / "C_strict" / "codemap-py",
                             "codex-rig": snapshot_root / "C_strict" / "codex-rig",
                         },
@@ -728,8 +792,17 @@ class AgenticCodexRunner:
         return result
 
 
-def _validate_agentic_runtime(manifest: Mapping[str, Any], repo_path: Path, index_path: Path) -> None:
-    """Check the agentic target and frozen index without treating it as structural policy."""
+def _validate_agentic_runtime(
+    manifest: Mapping[str, Any],
+    repo_path: Path,
+    index_path: Path,
+    index_relocation: Mapping[str, str] | None = None,
+) -> None:
+    """Check the agentic target and frozen index without treating it as structural policy.
+
+    ``index_relocation`` excuses the locked byte hash only: a run in its own worktree proves index identity through
+    relocation provenance, while every other admission stays exactly as strict.
+    """
     target = manifest.get("target_source")
     index = manifest.get("frozen_index_contract")
     if not isinstance(target, Mapping) or not isinstance(index, Mapping):
@@ -738,12 +811,23 @@ def _validate_agentic_runtime(manifest: Mapping[str, Any], repo_path: Path, inde
         raise ValueError("agentic Codex run requires the locked target commit")
     if _structural._git_porcelain_status(repo_path):
         raise ValueError("agentic Codex run requires a clean target worktree")
-    if not index_path.is_file() or hashlib.sha256(index_path.read_bytes()).hexdigest() != index.get("raw_sha256"):
+    if not index_path.is_file():
+        raise ValueError("agentic Codex run requires the locked frozen index bytes")
+    index_sha256 = hashlib.sha256(index_path.read_bytes()).hexdigest()
+    if index_relocation is None and index_sha256 != index.get("raw_sha256"):
         raise ValueError("agentic Codex run requires the locked frozen index bytes")
     try:
         metadata = json.loads(index_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError("agentic Codex frozen index is unavailable or malformed") from exc
+    if index_relocation is not None:
+        verify_index_relocation(
+            index_relocation,
+            metadata=metadata,
+            index_sha256=index_sha256,
+            repo_path=repo_path,
+            frozen_index_sha256=index.get("raw_sha256"),
+        )
     if metadata.get("git_sha") != index.get("git_sha") or metadata.get("scan_version") != index.get("scan_version"):
         raise ValueError("agentic Codex frozen index metadata drifted")
 
@@ -808,16 +892,24 @@ def _write_agentic_input_snapshot(
 
 
 def _format_probe(probe: ArmProbe) -> str:
-    """Render one deterministic no-model treatment probe."""
-    availability = "true" if probe.codemap_available else "false"
-    required = "true" if probe.skill_required else "false"
-    return f"PROBE   {probe.arm:<10} codemap={availability:<5} skill-required={required}"
+    """Render one deterministic no-model treatment probe.
+
+    ``codemap`` stays the measured probe result, so a missing binary still shows as a failure rather than being masked
+    by a word describing the contract. ``use`` states the arm's obligation beside it; it supersedes the former ``skill-
+    required`` field, which was true on exactly the arm that now reads ``use=required``.
+    """
+    return format_probe_row(probe.arm, {"codemap": probe.codemap_available, "use": codex_runtime.probe_use(probe.arm)})
 
 
 def _emit_output_legend(output: Any | None = None) -> None:
-    """Emit the agentic legend through the structural shared renderer."""
+    """Emit the agentic legend as a panel on a terminal and as framed plain rules elsewhere.
+
+    The plain branch of the shared helper writes through ``print``, so the destination is redirected for the duration of
+    the call; that is a no-op when the destination already is standard output.
+    """
     destination = sys.stdout if output is None else output
-    codex_runtime.render_result_rows(f"{_OUTPUT_LEGEND}\n".splitlines(keepends=True), destination)
+    with contextlib.redirect_stdout(destination):
+        print_legend(_LEGEND_BODY, console=benchmark_console(file=destination))
 
 
 def _format_plan(task_id: str, repetition: int, arm: str) -> str:
@@ -831,9 +923,10 @@ def dry_run(
     manifest_path: Path = _MANIFEST_PATH,
     task_ids: Sequence[str] | None = None,
     repetitions: int = AGENTIC_DEFAULT_REPETITIONS,
+    model: str | None = None,
 ) -> list[str]:
     """Validate one resolved scope and return its exact no-model cell plan."""
-    scope = resolve_agentic_scope(manifest_path, task_ids=task_ids, repetitions=repetitions)
+    scope = resolve_agentic_scope(manifest_path, task_ids=task_ids, repetitions=repetitions, model=model)
     tasks = load_agentic_tasks(tasks_path, manifest_path)
     tasks_by_id = {task["id"]: task for task in tasks}
     if set(AGENTIC_ARMS) != set(ARM_CONTRACTS):
@@ -925,7 +1018,7 @@ def _attest_runtime_isolation(path: Path) -> None:
         raise RuntimeError("runtime isolation evidence is unavailable or malformed") from exc
     if not any(
         isinstance(row, Mapping)
-        and row.get("arm") == "C_skill_required"
+        and row.get("arm") == "C_strict"
         and row.get("status") == "verified"
         and isinstance(expected := row.get("expected_plugin_identities"), Mapping)
         and isinstance(observed := row.get("observed_plugin_identities"), Mapping)
@@ -970,10 +1063,12 @@ def _initial_metadata(
     tasks: Sequence[Mapping[str, Any]],
     scope: Mapping[str, Any],
     invocation_launcher_path: Path,
+    model_name: str | None = None,
 ) -> dict[str, Any]:
     """Build compact provenance before the first paid coordinate is scheduled."""
     manifest = _read_agentic_manifest(manifest_path)
     model = manifest["model"]
+    executed_model = str(resolve_agentic_model(manifest, Path(manifest_path), model_name) or model["name"])
     coordinates = [
         {"task_id": task["id"], "repetition": repetition, "arm": arm}
         for task in tasks
@@ -992,7 +1087,7 @@ def _initial_metadata(
         "scope": dict(scope),
         "invocation_launcher": {"path": str(invocation_launcher_path.resolve())},
         "execution": {
-            "model": model["name"],
+            "model": executed_model,
             "reasoning_effort": model["reasoning_effort"],
             "codex_cli_observed_version": os.environ.get("CODEX_CLI_OBSERVED_VERSION"),
             "cell_wall_clock_seconds": scope["coordinate_timeout_seconds"],
@@ -1045,6 +1140,8 @@ def run_paid(
     task_ids: Sequence[str] | None = None,
     repetitions: int | None = None,
     scope_sha256: str | None = None,
+    model: str | None = None,
+    index_relocation: Mapping[str, str] | None = None,
     runner_factory: Callable[..., Any] | None = None,
 ) -> Path:
     """Execute one admitted shared-task scope with immutable partial evidence.
@@ -1056,10 +1153,14 @@ def run_paid(
         raise ValueError("paid Codex agentic execution requires an auth source")
     if invocation_launcher_path is None:
         raise ValueError("paid Codex agentic execution requires the invocation launcher path")
-    scope = resolve_agentic_scope(manifest_path, task_ids=task_ids, repetitions=repetitions)
+    scope = resolve_agentic_scope(manifest_path, task_ids=task_ids, repetitions=repetitions, model=model)
     repetitions = int(scope["repetitions"])
-    preregistered = _read_agentic_manifest(manifest_path)["preregistered_scope"]
-    is_default_scope = task_ids is None and repetitions == preregistered["repetitions"]
+    loaded_manifest = _read_agentic_manifest(manifest_path)
+    preregistered = loaded_manifest["preregistered_scope"]
+    model_override = resolve_agentic_model(loaded_manifest, Path(manifest_path), model)
+    # A selected stratum is as much a departure from the locked study as a task selection is, so it is admitted the
+    # same way: by the scope hash that binds it, never by the manifest digest that names another model.
+    is_default_scope = task_ids is None and repetitions == preregistered["repetitions"] and model_override is None
     if is_default_scope:
         manifest = validate_paid_admission(manifest_path, approval_sha256)
         if scope_sha256 is not None and scope_sha256 != scope["scope_sha256"]:
@@ -1070,7 +1171,7 @@ def run_paid(
             raise ValueError("nondefault agentic scope requires its exact derived scope SHA-256 approval")
     repo_path = Path(repo_path).resolve()
     index_path = Path(index_path).resolve()
-    _validate_agentic_runtime(manifest, repo_path, index_path)
+    _validate_agentic_runtime(manifest, repo_path, index_path, index_relocation)
     runtime = manifest.get("runtime_isolation")
     if not isinstance(runtime, Mapping) or not isinstance(runtime.get("manifest"), str):
         raise ValueError("Codex agentic manifest lacks a structural runtime adapter manifest")
@@ -1097,6 +1198,7 @@ def run_paid(
         tasks=tasks,
         scope=scope,
         invocation_launcher_path=invocation_launcher_path,
+        model_name=model,
     )
     _structural._write_run_metadata(metadata_path, metadata)
     _emit_output_legend()
@@ -1112,9 +1214,11 @@ def run_paid(
             marketplace_root=marketplace_root,
             codemap_bin=codemap_bin,
             auth_source=Path(auth_source),
+            index_relocation=index_relocation,
             adapter_manifest_path=adapter_manifest_path,
             agentic_manifest=manifest,
             agentic_manifest_path=Path(manifest_path),
+            model_name=model,
         )
         snapshot_builder = getattr(runner, "create_input_snapshot", None)
         if not callable(snapshot_builder):
@@ -1134,7 +1238,7 @@ def run_paid(
             for repetition in range(1, repetitions + 1):
                 for arm in AGENTIC_ARMS:
                     run = runner.run(task, arm, repetition=repetition, oracle=oracles[task["id"]])
-                    _validate_agentic_runtime(manifest, repo_path, index_path)
+                    _validate_agentic_runtime(manifest, repo_path, index_path, index_relocation)
                     _structural._validate_invocation_launcher(invocation_launcher_path, launcher_hash)
                     _append_telemetry(raw_path, run, int(metadata["persisted_cells"]))
                     metadata["persisted_cells"] = int(metadata["persisted_cells"]) + 1
@@ -1281,6 +1385,8 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     run_dir: Path | None = None,
     paid_approval: str | None = None,
     scope_sha256: str | None = None,
+    model: str | None = None,
+    index_relocation_path: Path | None = None,
 ) -> None:
     """Run a no-model scope preflight or a separately admitted paid study.
 
@@ -1301,6 +1407,10 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         run_dir: Empty run directory holding only that launcher snapshot (paid execution only).
         paid_approval: Exact SHA-256 of the reviewed admitted agentic manifest.
         scope_sha256: Exact SHA-256 of a nondefault resolved scope.
+        model: Declared model stratum to run instead of the manifest default; the resulting scope hash binds it and
+            is the approval a paid run of that stratum requires.
+        index_relocation_path: Relocation provenance written when this run's index was moved into an
+            isolated worktree; absent for a run at the canonical managed clone.
 
     Raises:
         SystemExit: When the invocation is rejected before any paid coordinate runs.
@@ -1315,8 +1425,13 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     repetitions = None if repetitions is None else int(repetitions)
     paid_approval = None if paid_approval is None else str(paid_approval)
     scope_sha256 = None if scope_sha256 is None else str(scope_sha256)
+    model = None if model is None else str(model)
     try:
-        scope = resolve_agentic_scope(manifest_path, task_ids=task_ids, repetitions=repetitions)
+        index_relocation = load_index_relocation(None if index_relocation_path is None else Path(index_relocation_path))
+    except ValueError as exc:
+        _cli_error(str(exc))
+    try:
+        scope = resolve_agentic_scope(manifest_path, task_ids=task_ids, repetitions=repetitions, model=model)
     except ValueError as exc:
         _cli_error(str(exc))
     repetitions = int(scope["repetitions"])
@@ -1354,6 +1469,8 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
                 adapter_manifest_path=adapter_manifest_path,
                 agentic_manifest=manifest,
                 agentic_manifest_path=manifest_path,
+                index_relocation=index_relocation,
+                model_name=model,
             )
             try:
                 runner.preflight_snapshot_bound_admission()
@@ -1367,8 +1484,9 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
             manifest_path=manifest_path,
             task_ids=task_ids,
             repetitions=repetitions,
+            model=model,
         ):
-            print(line)
+            codex_runtime.print_plan_row(line)
         return
     _require_paid_arguments(
         repo_path=repo_path,
@@ -1391,6 +1509,8 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         task_ids=task_ids,
         repetitions=repetitions,
         scope_sha256=scope_sha256,
+        model=model,
+        index_relocation=index_relocation,
     )
 
 

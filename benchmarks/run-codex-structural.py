@@ -18,8 +18,8 @@ experiment asks whether Codemap availability reduces model input and elapsed
 time without lowering task quality:
 
   A_plain    — Codemap absent; the locked index is inaccessible
-  B_direct_required — Codemap's compact CLI query is required
-  C_skill_required  — Codemap's installed query skill is required
+  B_auto     — Codemap's compact CLI query is available; using it is the model's choice
+  C_strict  — Codemap's installed query skill is required
 
 The task series are identical to ``run-claude-structural.py``:
 
@@ -44,11 +44,12 @@ fingerprinted arm envelope:
     Uses ``provider-parity-plain``. It has no Codemap plugin or writable path,
     and cannot read the locked index or copied authentication file.
 
-  B_direct_required
+  B_auto
     Uses ``provider-parity-codemap``. The direct ``$CODEMAP_BIN`` launcher and
-    locked index are available; one successful compact query is required.
+    locked index are available and the model decides whether to query, so a
+    cell that never queries has still followed this arm's contract.
 
-  C_skill_required
+  C_strict
     Uses the same treatment profile as B with the installed Codemap skill. It
     must use ``$codemap-py:query-code`` and complete one compact query;
     compliance and correctness are recorded separately.
@@ -180,10 +181,11 @@ else:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _bench_codex import runtime  # noqa: E402
+from _bench_codex import plugin_registration, runtime  # noqa: E402
 from _bench_common.mutation_isolation import (  # noqa: E402
     ExecutableAgentWorkspace,
-    _non_root_index_sha256,
+    load_index_relocation,
+    verify_index_relocation,
     create_executable_agent_workspace,
     patch_test_runtime_identity,
     relocate_frozen_index_for_worktree,
@@ -217,7 +219,7 @@ __all__ = (
 
 
 PARITY_MANIFEST_PATH = Path(__file__).parent / "manifests" / "codex-integration.json"
-CODEX_STRUCTURAL_ARMS = ("A_plain", "B_direct_required", "C_skill_required")
+CODEX_STRUCTURAL_ARMS = ("A_plain", "B_auto", "C_strict")
 _COUNTERBALANCED_ARM_ORDERS = tuple(itertools.permutations(CODEX_STRUCTURAL_ARMS))
 ARMS = CODEX_STRUCTURAL_ARMS
 PARITY_CODEX_MODEL = "gpt-5.6-luna"
@@ -557,25 +559,13 @@ def _validate_locked_runtime(
         if index_sha256 != expected_index["raw_sha256"]:
             raise ValueError("canonical Codex run requires the locked index bytes")
     else:
-        required_relocation_keys = {
-            "frozen_index_sha256",
-            "derived_index_sha256",
-            "non_root_content_sha256",
-            "source_scan_root",
-            "worktree_scan_root",
-        }
-        if set(index_relocation) != required_relocation_keys:
-            raise ValueError("canonical executable index relocation provenance is malformed")
-        if index_relocation["frozen_index_sha256"] != expected_index["raw_sha256"]:
-            raise ValueError("canonical executable index relocation has the wrong frozen source")
-        if index_relocation["derived_index_sha256"] != index_sha256:
-            raise ValueError("canonical executable index changed after relocation")
-        if index_relocation["worktree_scan_root"] != str(repo_path.resolve()):
-            raise ValueError("canonical executable index relocation has the wrong worktree root")
-        if metadata.get("scan_root") != str(repo_path.resolve()):
-            raise ValueError("canonical executable index scan_root does not match its worktree")
-        if _non_root_index_sha256(metadata) != index_relocation["non_root_content_sha256"]:
-            raise ValueError("canonical executable index relocation changed frozen graph content")
+        verify_index_relocation(
+            index_relocation,
+            metadata=metadata,
+            index_sha256=index_sha256,
+            repo_path=repo_path,
+            frozen_index_sha256=expected_index["raw_sha256"],
+        )
     if (
         metadata.get("git_sha") != expected_index["git_sha"]
         or metadata.get("scan_version") != expected_index["scan_version"]
@@ -619,18 +609,8 @@ def build_codex_command(
     ]
 
 
-def _validate_codex_stratum(model: str, reasoning_effort: str, manifest_path: Path) -> None:
-    """Reject execution outside the model and effort declared by the active manifest."""
-    try:
-        configured = json.loads(Path(manifest_path).read_text(encoding="utf-8"))["model"]
-        expected_model = configured["name"]
-        expected_effort = configured["reasoning_effort"]
-    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
-        raise ValueError("provider-parity model stratum is unavailable or malformed") from exc
-    if model != expected_model:
-        raise ValueError(f"Codex provider parity requires model {expected_model}")
-    if reasoning_effort != expected_effort:
-        raise ValueError(f"Codex provider-parity reasoning effort must be {expected_effort}")
+#: Manifest-bound model/effort gate; defined in the shared Codex runtime.
+_validate_codex_stratum = runtime.validate_codex_stratum
 
 
 def _manifest_revision(manifest: Mapping[str, Any]) -> str:
@@ -916,6 +896,7 @@ class ArmHome:
     codemap_context_path: Path | None = None
     codemap_context_sha256: str = ""
     denied_read_paths: tuple[Path, ...] = ()
+    host_plugin_names: tuple[str, ...] = ()
 
     def cleanup(self) -> None:
         """Remove the disposable home after a run."""
@@ -1510,10 +1491,10 @@ def prepare_arm_home(
         if auth_source is not None:
             _copy_auth_source(auth_source, home)
         verified = False
-        if arm == "B_direct_required":
+        if arm == "B_auto":
             _validated_direct_codemap_launcher(codemap_bin)
             verified = True
-        elif arm == "C_skill_required" and plugin_installer is not None:
+        elif arm == "C_strict" and plugin_installer is not None:
             verified = bool(plugin_installer(home))
         env = os.environ.copy()
         # Batch admission values belong to the parent orchestrator, not the
@@ -1536,7 +1517,7 @@ def prepare_arm_home(
             verified,
             auth_provisioned=auth_source is not None,
         )
-        if arm == "B_direct_required":
+        if arm == "B_auto":
             _configure_direct_codemap_launcher(arm_home, codemap_bin)
         return arm_home
     except BaseException:
@@ -1552,15 +1533,15 @@ def probe_arm_home(home: ArmHome | Path, arm: str | None = None) -> dict[str, An
     available = home.codemap_available if isinstance(home, ArmHome) else False
     if expected == "A_plain" and available:
         raise ValueError("A_plain Codex home unexpectedly contains Codemap")
-    if expected in {"B_direct_required", "C_skill_required"} and not (
+    if expected in {"B_auto", "C_strict"} and not (
         isinstance(home, ArmHome) and home.codemap_available and home.codemap_verified
     ):
         raise ValueError(f"{expected} Codex home requires verified Codemap delivery")
     if isinstance(home, ArmHome):
         skill_file = home.env.get("CODEMAP_SKILL_FILE")
-        if expected == "C_skill_required":
+        if expected == "C_strict":
             if home.codemap_skill_path is None or skill_file != str(home.codemap_skill_path.resolve()):
-                raise ValueError("C_skill_required requires the exact installed Skill binding")
+                raise ValueError("C_strict requires the exact installed Skill binding")
         elif skill_file is not None:
             raise ValueError(f"{expected} Codex home unexpectedly exposes CODEMAP_SKILL_FILE")
     return {
@@ -1572,50 +1553,45 @@ def probe_arm_home(home: ArmHome | Path, arm: str | None = None) -> dict[str, An
         "auth_provisioned": isinstance(home, ArmHome) and home.auth_provisioned,
         "authenticated": isinstance(home, ArmHome) and home.authenticated,
         "permission_profile": home.permission_profile if isinstance(home, ArmHome) else "",
+        "host_plugins": list(home.host_plugin_names) if isinstance(home, ArmHome) else [],
         "coordination_write_enabled": bool(isinstance(home, ArmHome) and home.coordination_path is not None),
         "codemap_python": (
-            home.env.get("CODEMAP_PYTHON")
-            if isinstance(home, ArmHome) and expected in {"B_direct_required", "C_skill_required"}
-            else None
+            home.env.get("CODEMAP_PYTHON") if isinstance(home, ArmHome) and expected in {"B_auto", "C_strict"} else None
         ),
         "codemap_launcher_path": (
             str(home.codemap_launcher_path)
-            if isinstance(home, ArmHome)
-            and expected in {"B_direct_required", "C_skill_required"}
-            and home.codemap_launcher_path
+            if isinstance(home, ArmHome) and expected in {"B_auto", "C_strict"} and home.codemap_launcher_path
             else None
         ),
         "codemap_launcher_sha256": (
-            home.codemap_launcher_sha256
-            if isinstance(home, ArmHome) and expected in {"B_direct_required", "C_skill_required"}
-            else ""
+            home.codemap_launcher_sha256 if isinstance(home, ArmHome) and expected in {"B_auto", "C_strict"} else ""
         ),
         "codemap_context_path": (
             str(home.codemap_context_path)
-            if isinstance(home, ArmHome) and expected == "C_skill_required" and home.codemap_context_path
+            if isinstance(home, ArmHome) and expected == "C_strict" and home.codemap_context_path
             else None
         ),
         "codemap_context_sha256": (
-            home.codemap_context_sha256 if isinstance(home, ArmHome) and expected == "C_skill_required" else ""
+            home.codemap_context_sha256 if isinstance(home, ArmHome) and expected == "C_strict" else ""
         ),
         "codemap_skill_path": (
             str(home.codemap_skill_path)
-            if isinstance(home, ArmHome) and expected == "C_skill_required" and home.codemap_skill_path
+            if isinstance(home, ArmHome) and expected == "C_strict" and home.codemap_skill_path
             else None
         ),
         "codemap_skill_sha256": (
-            home.codemap_skill_sha256 if isinstance(home, ArmHome) and expected == "C_skill_required" else ""
+            home.codemap_skill_sha256 if isinstance(home, ArmHome) and expected == "C_strict" else ""
         ),
         "codemap_skill_file": (
-            home.env.get("CODEMAP_SKILL_FILE") if isinstance(home, ArmHome) and expected == "C_skill_required" else None
+            home.env.get("CODEMAP_SKILL_FILE") if isinstance(home, ArmHome) and expected == "C_strict" else None
         ),
         "codex_rig_path": (
             str(home.codex_rig_path)
-            if isinstance(home, ArmHome) and expected == "C_skill_required" and home.codex_rig_path
+            if isinstance(home, ArmHome) and expected == "C_strict" and home.codex_rig_path
             else None
         ),
         "codex_rig_manifest_sha256": (
-            home.codex_rig_manifest_sha256 if isinstance(home, ArmHome) and expected == "C_skill_required" else ""
+            home.codex_rig_manifest_sha256 if isinstance(home, ArmHome) and expected == "C_strict" else ""
         ),
         "network_access": False,
         "config_mode": stat.S_IMODE(config.stat().st_mode),
@@ -1666,7 +1642,7 @@ def _verify_locked_codemap_python(
         scope = runtime["scope"]
     except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
         raise ValueError("provider-parity treatment runtime is unavailable or malformed") from exc
-    if required_major_minor != (3, 11) or scope != ["B_direct_required", "C_skill_required"]:
+    if required_major_minor != (3, 11) or scope != ["B_auto", "C_strict"]:
         raise ValueError("provider-parity treatment runtime contract does not match the active manifest")
     configured = runtime.get("environment", {}).get("CODEMAP_PYTHON")
     candidates = [
@@ -1821,36 +1797,18 @@ def _verify_authentication(
     home.authenticated = True
 
 
-def _enabled_plugin_names(plugin_json: str) -> set[str]:
-    """Return normalized enabled names from ``codex plugin list --json``."""
-    try:
-        payload = json.loads(plugin_json)
-    except json.JSONDecodeError:
-        return set()
-    if isinstance(payload, list):
-        entries = payload
-    elif isinstance(payload, dict):
-        entries = payload.get("plugins", payload.get("installed", []))
-    else:
-        entries = []
-    if not isinstance(entries, list):
-        return False
-    names: set[str] = set()
-    for entry in entries:
-        if isinstance(entry, str):
-            names.add(entry.lower())
-            continue
-        if not isinstance(entry, Mapping):
-            continue
-        name = str(entry.get("name", entry.get("id", ""))).lower()
-        if name and bool(entry.get("enabled", entry.get("active", True))):
-            names.add(name)
-    return names
+_enabled_plugin_names = plugin_registration.enabled_plugin_names
+_registered_plugin_tables = plugin_registration.registered_plugin_tables
 
 
 def _plugin_enabled(plugin_json: str, plugin_name: str) -> bool:
     """Return whether one exact plugin appears enabled in ``codex plugin list --json``."""
     return plugin_name.lower() in _enabled_plugin_names(plugin_json)
+
+
+def _plugin_listing_evidence(home: ArmHome, code: int, stdout: str, stderr: str) -> str:
+    """Summarize one ``codex plugin list`` result for a fail-closed registration error."""
+    return plugin_registration.plugin_listing_evidence(home.path / "config.toml", code, stdout, stderr)
 
 
 def _verify_installed_plugin_pair(
@@ -1859,14 +1817,18 @@ def _verify_installed_plugin_pair(
     codex_bin: str = _CODEX_BIN,
     command_runner: Callable[..., Any] | None = None,
 ) -> None:
-    """Require the exact C plugin pair after final permission composition."""
+    """Require the reviewed C plugin pair among this home's own registrations."""
     code, stdout, stderr = _invoke_plugin_command(
         [codex_bin, "plugin", "list", "--json"],
         home.env,
         command_runner,
     )
-    if code != 0 or _enabled_plugin_names(stdout) != {"codemap-py", "codex-rig"}:
-        raise RuntimeError(f"final Codex plugin registration is invalid: {stderr[:300]}")
+    admitted, host_plugins = plugin_registration.treatment_admission(home.path / "config.toml", code, stdout)
+    if not admitted:
+        raise RuntimeError(
+            f"final Codex plugin registration is invalid: {_plugin_listing_evidence(home, code, stdout, stderr)}"
+        )
+    home.host_plugin_names = host_plugins
 
 
 def _configure_codemap_launcher(home: ArmHome, install_json: str) -> None:
@@ -1992,7 +1954,7 @@ def _verify_treatment_artifact_locks(home: ArmHome, manifest_path: Path) -> None
     expected_launcher = hashes.get("codemap_runtime_cli") if isinstance(hashes, Mapping) else None
     if not isinstance(expected_launcher, str) or home.codemap_launcher_sha256 != expected_launcher:
         raise ValueError("Codemap launcher does not match the locked runtime artifact")
-    if home.arm == "B_direct_required":
+    if home.arm == "B_auto":
         try:
             runtime_lock = manifest["direct_cli_runtime"]
             expected_files = runtime_lock["files"]
@@ -2076,7 +2038,7 @@ def _admit_installed_skill_pair(
     command_runner: Callable[..., Any] | None = None,
 ) -> None:
     """Run the installed Codex Rig adapter once and persist verified C admission context."""
-    if home.arm != "C_skill_required" or home.codex_rig_adapter_path is None or home.codemap_plugin_path is None:
+    if home.arm != "C_strict" or home.codex_rig_adapter_path is None or home.codemap_plugin_path is None:
         raise ValueError("installed-skill admission requires a locked C skill home")
     if home.codemap_launcher_path is None or not home.env.get("CODEMAP_PYTHON"):
         raise ValueError("installed-skill admission requires locked Codemap runtime paths")
@@ -2161,7 +2123,7 @@ def _admit_staged_direct_cli(
     command_runner: Callable[..., Any] | None = None,
 ) -> None:
     """Execute one task-shaped compact query through B's staged CLI runtime."""
-    if home.arm != "B_direct_required" or home.codemap_launcher_path is None:
+    if home.arm != "B_auto" or home.codemap_launcher_path is None:
         raise ValueError("direct CLI admission requires a locked B runtime")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -2206,7 +2168,7 @@ def _admit_staged_direct_cli(
 def _validated_direct_codemap_launcher(codemap_bin: Path | None) -> Path:
     """Return a directly supplied regular Codemap launcher without plugin discovery."""
     if codemap_bin is None:
-        raise ValueError("B_direct_required requires --codemap-bin")
+        raise ValueError("B_auto requires --codemap-bin")
     launcher = Path(codemap_bin)
     if not launcher.is_absolute():
         raise ValueError("--codemap-bin must be an absolute path")
@@ -2440,7 +2402,7 @@ def _write_input_snapshot(
             _archive_snapshot_tree(
                 root, snapshot_root / arm / package_role, role=f"{arm}:{package_role}", entries=entries
             )
-        if arm == "C_skill_required":
+        if arm == "C_strict":
             _write_frozen_marketplace(snapshot_root, arm, entries)
 
     auth_metadata: dict[str, Any] | None = {"supplied": True, "archived": False} if auth_source is not None else None
@@ -2563,7 +2525,9 @@ def _install_codemap_plugin(
     _configure_codemap_launcher(home, install_json)
     code, stdout, stderr = _invoke_plugin_command(list_plugins, home.env, command_runner)
     if code != 0 or not _plugin_enabled(stdout, "codex-rig") or not _plugin_enabled(stdout, "codemap-py"):
-        raise RuntimeError(f"Codemap plugin verification failed: {stderr[:300]}")
+        raise RuntimeError(
+            f"Codemap plugin verification failed: {_plugin_listing_evidence(home, code, stdout, stderr)}"
+        )
     return True
 
 
@@ -2576,9 +2540,15 @@ def _verify_plain_plugin_absent(
     """Prove A has no Codemap plugin or Codemap binary exposed on PATH."""
     code, stdout, stderr = _invoke_plugin_command([codex_bin, "plugin", "list", "--json"], home.env, command_runner)
     if code != 0:
-        raise RuntimeError(f"A_plain plugin absence probe failed: {stderr[:300]}")
-    if _plugin_enabled(stdout, "codemap-py"):
-        raise RuntimeError("A_plain Codemap plugin unexpectedly enabled")
+        raise RuntimeError(
+            f"A_plain plugin absence probe failed: {_plugin_listing_evidence(home, code, stdout, stderr)}"
+        )
+    admitted, host_plugins = plugin_registration.control_admission(home.path / "config.toml", code, stdout)
+    if not admitted:
+        raise RuntimeError(
+            f"A_plain Codex home carries a treatment plugin: {_plugin_listing_evidence(home, code, stdout, stderr)}"
+        )
+    home.host_plugin_names = host_plugins
     path_dirs = home.env.get("PATH", "").split(os.pathsep)
     if any(
         (Path(directory) / candidate).exists() for directory in path_dirs for candidate in ("codemap-py", "scan-query")
@@ -2738,9 +2708,9 @@ def _arm_compliance(arm: str, evidence: runtime.CodexParseResult | CodexRun) -> 
     same ``$CODEMAP_BIN`` command. Never read C compliance as proof the Skill was
     read — ``skill_delivery_observed`` is the separate observational signal.
     """
-    if arm == "B_direct_required":
+    if arm == "B_auto":
         return evidence.codemap_direct_compact_successful_calls > 0
-    if arm == "C_skill_required":
+    if arm == "C_strict":
         return evidence.codemap_skill_compact_successful_calls > 0
     if arm == "A_plain":
         return None
@@ -2954,7 +2924,7 @@ def _pooling_ineligibility_reasons(run: CodexRun) -> tuple[str, ...]:
     # both providers, so a zero-query B cell is compliant and stays poolable; excluding it
     # here dropped exactly the cells where the model declined to query, which biased the
     # pooled B result toward the runs that happened to use Codemap.
-    if run.arm == "C_skill_required" and run.compliance is not True:
+    if run.arm == "C_strict" and run.compliance is not True:
         reasons.append("required_use_missing")
     return tuple(reasons)
 
@@ -3053,6 +3023,7 @@ class CodexRunner:
         marketplace_root: Path | None = None,
         codemap_bin: Path | None = None,
         manifest_path: Path = PARITY_MANIFEST_PATH,
+        index_relocation: Mapping[str, str] | None = None,
         auth_source: Path | None = None,
         plugin_installer: Callable[[Path], bool | None] | None = None,
         plugin_probe: Callable[[Path], bool] | None = None,
@@ -3069,6 +3040,10 @@ class CodexRunner:
         self.marketplace_root = marketplace_root.resolve() if marketplace_root else None
         self.codemap_bin = Path(codemap_bin) if codemap_bin else None
         self.manifest_path = Path(manifest_path)
+        # Off the canonical clone the locked graph arrives by relocation, not byte identity. The
+        # provenance is the run's, so every arm home admits against it; an executable stage still
+        # passes its own per-task relocation explicitly.
+        self.index_relocation = dict(index_relocation) if index_relocation is not None else None
         # Preserve the caller-supplied path so `_copy_auth_source` can reject a
         # symlink instead of silently dereferencing it during normalization.
         self.auth_source = Path(auth_source) if auth_source else None
@@ -3148,7 +3123,7 @@ class CodexRunner:
         bound_sources: dict[str, dict[str, Path]] = {}
         bound_marketplaces: dict[str, Path] = {}
         for arm, archives in arm_archives.items():
-            if arm not in {"B_direct_required", "C_skill_required"}:
+            if arm not in {"B_auto", "C_strict"}:
                 raise ValueError(f"runtime snapshot cannot bind unsupported arm {arm!r}")
             bound_sources[arm] = {}
             for role, source in archives.items():
@@ -3161,7 +3136,7 @@ class CodexRunner:
                     raise ValueError(f"runtime snapshot lacks identities for {arm}:{role}")
                 bound_sources[arm][role] = source_path
             marketplace = archives.get("marketplace")
-            if marketplace is None and arm == "C_skill_required":
+            if marketplace is None and arm == "C_strict":
                 plugin_root = bound_sources[arm].get("codemap-py")
                 if (
                     plugin_root is not None
@@ -3169,7 +3144,7 @@ class CodexRunner:
                 ):
                     marketplace = plugin_root.parent
             if marketplace is not None:
-                if arm != "C_skill_required":
+                if arm != "C_strict":
                     raise ValueError("only the C runtime snapshot can bind a frozen marketplace")
                 marketplace_path = Path(marketplace).resolve(strict=True)
                 if not marketplace_path.is_relative_to(snapshot_root):
@@ -3396,6 +3371,21 @@ class CodexRunner:
         """Run one Codex attempt and return its raw stream."""
         return self._subprocess(command, env, **kwargs)
 
+    def _admit_runtime(self, arm: str, diff_impact_stage: DiffImpactStageAdmission | None = None) -> None:
+        """Admit this run's target and index for one arm, carrying any relocation provenance.
+
+        Every admission routes through here, so a relocated index is proven the same way at each; reaching the module-
+        level check directly would demand byte identity a worktree cannot have.
+        """
+        _validate_locked_runtime(
+            self.repo_path,
+            self.index_path,
+            arm,
+            self.manifest_path,
+            diff_impact_stage,
+            self.index_relocation,
+        )
+
     def _prepare_verified_home(
         self,
         arm: str,
@@ -3412,13 +3402,16 @@ class CodexRunner:
         bound to a reviewed historical worktree and its relocated frozen index. All other callers retain the runtime
         contract from the active manifest.
         """
+        # A historical Patch coordinate names its own frozen index, which this run's relocation was
+        # never derived from, so only a relocation handed in with that coordinate may be used here.
+        run_relocation = None if historical_runtime_coordinate is not None else self.index_relocation
         _validate_locked_runtime(
             self.repo_path,
             self.index_path,
             arm,
             self.manifest_path,
             diff_impact_stage,
-            index_relocation,
+            index_relocation if index_relocation is not None else run_relocation,
             historical_runtime_coordinate,
         )
         auth_state = self._ensure_auth_state()
@@ -3429,10 +3422,10 @@ class CodexRunner:
         bound_sources = self._runtime_snapshot_sources.get(arm, {})
         home: ArmHome | None = None
         try:
-            if arm == "C_skill_required":
+            if arm == "C_strict":
                 runtime_plugin_sources = self._runtime_plugin_sources(arm)
                 runtime_marketplace = self._runtime_snapshot_marketplaces.get(arm)
-            runtime_codemap_bin = self._runtime_direct_launcher(arm) if arm == "B_direct_required" else self.codemap_bin
+            runtime_codemap_bin = self._runtime_direct_launcher(arm) if arm == "B_auto" else self.codemap_bin
             home = prepare_arm_home(
                 arm,
                 auth_source=None,
@@ -3462,7 +3455,7 @@ class CodexRunner:
                     "CODEMAP_LOGGING",
                 ):
                     home.env.pop(variable, None)
-            if arm == "C_skill_required":
+            if arm == "C_strict":
                 if runtime_plugin_sources is not None:
                     home.codemap_verified = _install_codemap_plugin(
                         home,
@@ -3483,16 +3476,16 @@ class CodexRunner:
                     raise RuntimeError("Codemap delivery is not verified")
                 home.codemap_available = True
                 _verify_treatment_artifact_locks(home, self.manifest_path)
-            if arm == "C_skill_required" and (
+            if arm == "C_strict" and (
                 home.codemap_skill_path is None
                 or not home.codemap_skill_sha256
                 or home.codex_rig_path is None
                 or not home.codex_rig_manifest_sha256
             ):
                 raise RuntimeError("installed Codemap skill and Codex Rig are not verified")
-            if arm == "C_skill_required":
+            if arm == "C_strict":
                 if self.index_path is None:
-                    raise ValueError("C_skill_required admission requires the locked index")
+                    raise ValueError("C_strict admission requires the locked index")
                 _admit_installed_skill_pair(
                     home,
                     self.repo_path,
@@ -3508,7 +3501,7 @@ class CodexRunner:
                 writable_workspace=writable_workspace,
                 denied_workspace=denied_workspace,
             )
-            if arm == "C_skill_required":
+            if arm == "C_strict":
                 _verify_installed_plugin_pair(home, command_runner=self.command_runner)
             _verify_permission_profile(
                 home,
@@ -3517,9 +3510,9 @@ class CodexRunner:
                 command_runner=self.command_runner,
                 writable_workspace=writable_workspace,
             )
-            if arm == "B_direct_required":
+            if arm == "B_auto":
                 if self.index_path is None:
-                    raise ValueError("B_direct_required admission requires the locked index")
+                    raise ValueError("B_auto admission requires the locked index")
                 _admit_staged_direct_cli(
                     home,
                     self.repo_path,
@@ -3549,14 +3542,14 @@ class CodexRunner:
 
     def preflight_expected_queries(self, tasks: Iterable[Mapping[str, Any]], arms: Iterable[str]) -> None:
         """Validate each unique locked query through B once before study setup."""
-        if not {"B_direct_required", "C_skill_required"}.intersection(arms):
+        if not {"B_auto", "C_strict"}.intersection(arms):
             return
         if self.index_path is None:
-            raise RuntimeError("B_direct_required query preflight lacks a locked index")
-        home = self._prepare_verified_home("B_direct_required")
+            raise RuntimeError("B_auto query preflight lacks a locked index")
+        home = self._prepare_verified_home("B_auto")
         try:
             if home.codemap_launcher_path is None:
-                raise RuntimeError("B_direct_required query preflight lacks a locked launcher")
+                raise RuntimeError("B_auto query preflight lacks a locked launcher")
             index_sha256 = hashlib.sha256(self.index_path.read_bytes()).hexdigest()
             profile = home.permission_profile or _CODEMAP_PERMISSION_PROFILE
             seen_queries: set[tuple[str, ...]] = set()
@@ -3564,16 +3557,16 @@ class CodexRunner:
                 task_id = str(task.get("id", "unknown"))
                 expected = task.get("expected_queries")
                 if not isinstance(expected, list) or not expected:
-                    raise RuntimeError(f"B_direct_required task {task_id} has no structured expected_queries")
+                    raise RuntimeError(f"B_auto task {task_id} has no structured expected_queries")
                 for query in expected:
                     if not isinstance(query, Mapping) or not isinstance(query.get("cmd"), str):
-                        raise RuntimeError(f"B_direct_required task {task_id} has malformed expected query")
+                        raise RuntimeError(f"B_auto task {task_id} has malformed expected query")
                     arguments = query.get("args", [])
                     if not isinstance(arguments, list) or not all(isinstance(value, str) for value in arguments):
-                        raise RuntimeError(f"B_direct_required task {task_id} has malformed expected query args")
+                        raise RuntimeError(f"B_auto task {task_id} has malformed expected query args")
                     normalized = _normalize_locked_query(str(query["cmd"]), arguments)
                     if normalized is None:
-                        raise RuntimeError(f"B_direct_required task {task_id} has malformed expected query")
+                        raise RuntimeError(f"B_auto task {task_id} has malformed expected query")
                     if normalized in seen_queries:
                         continue
                     seen_queries.add(normalized)
@@ -3599,9 +3592,9 @@ class CodexRunner:
                     )
                     if code != 0 or not runtime._canonical_query_output({"aggregated_output": stdout}):
                         detail = stderr.strip() or stdout.strip()
-                        raise RuntimeError(f"B_direct_required expected query failed for {task_id}: {detail[:300]}")
+                        raise RuntimeError(f"B_auto expected query failed for {task_id}: {detail[:300]}")
                     if hashlib.sha256(self.index_path.read_bytes()).hexdigest() != index_sha256:
-                        raise RuntimeError(f"B_direct_required expected query mutated the locked index for {task_id}")
+                        raise RuntimeError(f"B_auto expected query mutated the locked index for {task_id}")
         finally:
             try:
                 self._cleanup_coordination(home.coordination_path)
@@ -3640,11 +3633,11 @@ class CodexRunner:
                 home = self._prepare_verified_home(arm)
                 homes.append(home)
                 arm_files[arm] = {"config.toml": home.path / "config.toml"}
-                if arm == "B_direct_required":
+                if arm == "B_auto":
                     arm_archives[arm] = {"direct-cli": home.path / "direct-cli"}
-                elif arm == "C_skill_required":
+                elif arm == "C_strict":
                     if home.codemap_plugin_path is None or home.codex_rig_path is None:
-                        raise RuntimeError("C_skill_required package roots are not verified")
+                        raise RuntimeError("C_strict package roots are not verified")
                     arm_archives[arm] = {
                         "codemap-py": home.codemap_plugin_path,
                         "codex-rig": home.codex_rig_path,
@@ -3667,7 +3660,7 @@ class CodexRunner:
                 runtime_archives = {
                     arm: {
                         **{role: snapshot_root / arm / role for role in archives},
-                        **({"marketplace": snapshot_root / arm} if arm == "C_skill_required" else {}),
+                        **({"marketplace": snapshot_root / arm} if arm == "C_strict" else {}),
                     }
                     for arm, archives in arm_archives.items()
                 }
@@ -3710,7 +3703,7 @@ class CodexRunner:
             stager = _diff_impact_stager(self.repo_path, task)
             if stager is None:
                 continue
-            _validate_locked_runtime(self.repo_path, self.index_path, "A_plain", self.manifest_path)
+            self._admit_runtime("A_plain")
             entered = False
             try:
                 stager.__enter__()
@@ -3719,13 +3712,7 @@ class CodexRunner:
                 for arm in selected_arms:
                     home = self._prepare_verified_home(arm, diff_impact_stage=admission)
                     try:
-                        _validate_locked_runtime(
-                            self.repo_path,
-                            self.index_path,
-                            arm,
-                            self.manifest_path,
-                            admission,
-                        )
+                        self._admit_runtime(arm, admission)
                     finally:
                         try:
                             self._cleanup_coordination(home.coordination_path)
@@ -3736,7 +3723,7 @@ class CodexRunner:
                     if entered:
                         stager.__exit__(*sys.exc_info())
                 finally:
-                    _validate_locked_runtime(self.repo_path, self.index_path, "A_plain", self.manifest_path)
+                    self._admit_runtime("A_plain")
 
     def run(
         self,
@@ -3812,13 +3799,7 @@ class CodexRunner:
         run.scoreable = metadata.get("scoreable", task.get("scoreable", True)) is not False
         home: ArmHome | None = None
         if diff_impact_stage is not None:
-            _validate_locked_runtime(
-                self.repo_path,
-                self.index_path,
-                arm,
-                self.manifest_path,
-                diff_impact_stage,
-            )
+            self._admit_runtime(arm, diff_impact_stage)
         if self.transport is None:
             if diff_impact_stage is None:
                 home = self._prepare_verified_home(arm)
@@ -3856,13 +3837,7 @@ class CodexRunner:
                 attempt_events.append(parsed.raw_events)
                 if home is not None or diff_impact_stage is not None:
                     try:
-                        _validate_locked_runtime(
-                            self.repo_path,
-                            self.index_path,
-                            arm,
-                            self.manifest_path,
-                            diff_impact_stage,
-                        )
+                        self._admit_runtime(arm, diff_impact_stage)
                         if home is not None and home.coordination_path is not None:
                             _validate_coordination_root(home.coordination_path)
                     except ValueError as exc:
@@ -3938,9 +3913,9 @@ class CodexRunner:
             run.locked_query_endpoint_fitness = locked_query_fitness.endpoint
             run.locked_query_target_fitness = locked_query_fitness.target
             run.locked_query_option_fitness = locked_query_fitness.options
-        if arm == "B_direct_required" and run.compliance:
+        if arm == "B_auto" and run.compliance:
             run.codemap_delivery = "direct_cli"
-        elif arm == "C_skill_required" and run.compliance:
+        elif arm == "C_strict" and run.compliance:
             run.codemap_delivery = "installed_skill"
         run.contaminated = bool(postflight_error) or (arm == "A_plain" and run.codemap_observed_calls > 0)
         run.treatment_adherence = treatment_adherence(
@@ -4036,9 +4011,10 @@ def _arm_envelope(arm: str) -> str:
     """Return arm-only tool availability instructions."""
     if arm == "A_plain":
         return "Codemap is absent and inaccessible. Use ordinary provider tools only; do not invoke Codemap."
-    if arm == "B_direct_required":
+    if arm == "B_auto":
         return (
-            "Codemap is available only through the direct CLI. Before answering, complete a dedicated native "
+            "Codemap is available only through the direct CLI. Whether to use it is your choice, and "
+            "answering without it is valid. A query counts only as a dedicated native "
             'command item of the exact form "$CODEMAP_BIN" query --compact <subcommand> <arguments>. '
             "It must exit 0 and emit one JSON document whose index.query_complete and index.compact are true. "
             "The credited item contains only that query: do not prefix, assign, wrap, or combine it with shell work. "
@@ -4046,7 +4022,7 @@ def _arm_envelope(arm: str) -> str:
             'If discovery is needed, use "$CODEMAP_BIN" query --help; help is not a subcommand. '
             "Additional reads and shell work are allowed only as separate native items and are ignored for credit."
         )
-    if arm == "C_skill_required":
+    if arm == "C_strict":
         return (
             "Codemap's installed $codemap-py:query-code Skill is available through a runner-owned immutable binding. "
             "Use its smallest complete query guidance, then complete a dedicated native command item of the exact form "
@@ -4230,7 +4206,7 @@ def _load_frozen_rescore_inputs(
         entry
         for entry in files
         if isinstance(entry, Mapping)
-        and entry.get("role") == "C_skill_required:codemap-py"
+        and entry.get("role") == "C_strict:codemap-py"
         and entry.get("sha256") == skill_hash
         and str(entry.get("archived_path", "")).endswith("/codex-skills/query-code/SKILL.md")
     ]
@@ -4319,8 +4295,8 @@ def rescore_results(run_dir: Path) -> Path:
         seen_coordinates.add(coordinate)
         parsed = runtime.parse_codex_jsonl(
             (json.dumps(event, sort_keys=True) for event in raw_events),
-            skill_path=skill_path if arm == "C_skill_required" else None,
-            skill_sha256=skill_sha256 if arm == "C_skill_required" else "",
+            skill_path=skill_path if arm == "C_strict" else None,
+            skill_sha256=skill_sha256 if arm == "C_strict" else "",
         )
         evaluation = _default_evaluator(task_by_id[task_id], parsed.output_text)
         compliance = _arm_compliance(str(arm), parsed)
@@ -4513,6 +4489,7 @@ def main(
     arm: str = "all",
     dry_run: bool = False,
     show_legend: bool = True,
+    index_relocation_path: Path | None = None,
 ) -> None:
     """Validate, plan, and execute cells under the manifest's per-cell timeout."""
     manifest_path = Path(manifest_path)
@@ -4603,6 +4580,7 @@ def main(
         marketplace_root=marketplace_root,
         codemap_bin=codemap_bin,
         manifest_path=manifest_path,
+        index_relocation=load_index_relocation(index_relocation_path),
         auth_source=auth_source,
         targeted=explicit_selection,
         timeout=(
@@ -4612,14 +4590,21 @@ def main(
         ),
     )
     if show_legend:
-        runtime.render_result_rows(f"{runtime.STRUCTURAL_OUTPUT_LEGEND}\n".splitlines(keepends=True), sys.stdout)
+        runtime.print_structural_legend()
     if dry_run:
         try:
             for selected in ARMS if arm == "all" else (arm,):
                 evidence = runner.probe_arm(selected)
                 codemap_python = evidence.get("codemap_python") or "absent"
-                print(
-                    f"PROBE\t{selected}\tcodemap={str(evidence['codemap_available']).lower()}\tcodemap_python={codemap_python}"
+                runtime.print_plan_row(
+                    runtime.format_probe_row(
+                        selected,
+                        {
+                            "codemap": bool(evidence["codemap_available"]),
+                            "use": runtime.probe_use(selected),
+                            "codemap_python": codemap_python,
+                        },
+                    )
                 )
             selected_arms = ARMS if arm == "all" else (arm,)
             preflight = getattr(runner, "preflight_expected_queries", None)
@@ -4660,7 +4645,7 @@ def main(
         for task in tasks:
             for repetition in range(1, repetitions + 1):
                 for selected in task_arms[(task["id"], repetition)]:
-                    print(runtime.format_plan_row(task["id"], repetition, selected))
+                    runtime.print_plan_row(runtime.format_plan_row(task["id"], repetition, selected))
         return
     assert output_path is not None
     assert metadata_path is not None
@@ -4715,7 +4700,7 @@ def main(
             for repetition in range(1, repetitions + 1):
                 active_stager = _diff_impact_stager(Path(repo_path), task)
                 if active_stager is not None:
-                    _validate_locked_runtime(Path(repo_path), index_path, "A_plain", manifest_path)
+                    runner._admit_runtime("A_plain")
                     try:
                         active_stager.__enter__()
                         active_diff_impact_stage = _capture_diff_impact_stage(Path(repo_path), task)
@@ -4724,7 +4709,7 @@ def main(
                             active_stager.__exit__(*sys.exc_info())
                         finally:
                             active_stager = None
-                            _validate_locked_runtime(Path(repo_path), index_path, "A_plain", manifest_path)
+                            runner._admit_runtime("A_plain")
                         raise
                 pending_result_rows = []
                 for selected in task_arms[(task["id"], repetition)]:
@@ -4747,12 +4732,11 @@ def main(
                         ("contaminated", run.contaminated),
                         (
                             "compliance_failed",
-                            run.arm in {"B_direct_required", "C_skill_required"} and not run.compliance,
+                            run.arm in {"B_auto", "C_strict"} and not run.compliance,
                         ),
                         (
                             "locked_query_nonconforming",
-                            run.arm in {"B_direct_required", "C_skill_required"}
-                            and run.locked_query_conformance is False,
+                            run.arm in {"B_auto", "C_strict"} and run.locked_query_conformance is False,
                         ),
                         ("targeted", run.targeted),
                         ("token_accounting_inconsistent", run.token_accounting_inconsistent),
@@ -4826,7 +4810,7 @@ def main(
                     finally:
                         active_stager = None
                         active_diff_impact_stage = None
-                        _validate_locked_runtime(Path(repo_path), index_path, "A_plain", manifest_path)
+                        runner._admit_runtime("A_plain")
     except BaseException as exc:
         if active_stager is not None:
             try:
@@ -4834,7 +4818,7 @@ def main(
             finally:
                 active_stager = None
                 active_diff_impact_stage = None
-                _validate_locked_runtime(Path(repo_path), index_path, "A_plain", manifest_path)
+                runner._admit_runtime("A_plain")
         if pending_result_rows:
             printed_cells = _print_result_block(
                 pending_result_rows, printed_cells=printed_cells, planned_cells=planned_cells
@@ -5027,8 +5011,13 @@ def _resolve_execution_scope(
     reasoning_effort: str,
     manifest_path: Path,
     index_path: Path,
+    index_relocation: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Bind the selected stage partitions into one immutable execution scope."""
+    """Bind the selected stage partitions into one immutable execution scope.
+
+    ``index_relocation`` is present only for a run outside the canonical clone; each executable stage admits the
+    relocated graph on that provenance rather than on the byte hash the lock recorded.
+    """
     from _bench_codex.stage_fix import resolve_fix_stage_scope
     from _bench_codex.stage_readcrop import resolve_readcrop_stage_scope
 
@@ -5059,6 +5048,7 @@ def _resolve_execution_scope(
                 selected=set(task_ids),
                 model=model,
                 index_path=index_path,
+                index_relocation=index_relocation,
             )
         scoped_stages.append({**stage, "scope_sha256": child_scope["scope_sha256"]})
     aggregate = {
@@ -5109,12 +5099,20 @@ def _run_unified_execution(
     paid_approval: str | None,
     dry_run: bool,
     show_legend: bool,
+    index_relocation_path: Path | None = None,
+    show_paid_command: bool = True,
 ) -> None:
-    """Plan or execute the selected stage partitions under one authorization."""
+    """Plan or execute the selected stage partitions under one authorization.
+
+    ``index_relocation_path`` is present only for a run outside the canonical clone, whose index is the locked graph
+    with its scan root moved; admission then checks that provenance rather than the byte hash, which reproduces at the
+    canonical path alone.
+    """
     from _bench_codex.stage_fix import run_fix_stage
     from _bench_codex.stage_readcrop import run_stage as run_readcrop_stage
 
     paid_approval = None if paid_approval is None else str(paid_approval)
+    relocation = load_index_relocation(index_relocation_path)
     selection = resolve_task_selection(manifest_path, tasks)
     if not dry_run:
         missing = [
@@ -5143,6 +5141,7 @@ def _run_unified_execution(
         reasoning_effort=reasoning_effort,
         manifest_path=manifest_path,
         index_path=index_path,
+        index_relocation=relocation,
     )
     if not dry_run:
         if not paid_approval_matches(paid_approval, str(scope["scope_sha256"])):
@@ -5179,6 +5178,7 @@ def _run_unified_execution(
                 task_selectors=",".join(task_ids) if selected else None,
                 scope_sha256=stage["scope_sha256"] if selected else None,
                 repetitions=int(stage["repetitions"]),
+                index_relocation_path=index_relocation_path,
                 dry_run=dry_run,
                 show_legend=show_legend,
             )
@@ -5197,6 +5197,7 @@ def _run_unified_execution(
                 codemap_bin=codemap_bin,
                 structural_manifest_path=manifest_path,
                 emit_authorization=False,
+                index_relocation=relocation,
             )
         else:
             run_fix_stage(
@@ -5213,6 +5214,7 @@ def _run_unified_execution(
                 marketplace_root=marketplace_root,
                 codemap_bin=codemap_bin,
                 emit_authorization=False,
+                index_relocation=relocation,
             )
 
     if dry_run:
@@ -5220,21 +5222,23 @@ def _run_unified_execution(
             run_stage(stage, child_dir=None)
         print(f"DESIGN   {scope['total_tasks']} tasks × A/B/C = {scope['total_cells']} cells")
         print(f"SCOPE   {scope['scope_sha256']}")
-        runtime.print_unified_paid_command(
-            repo_path=repo_path,
-            manifest_path=manifest_path,
-            index_path=index_path,
-            marketplace_root=marketplace_root,
-            codemap_bin=codemap_bin,
-            model=model,
-            selectors=selection["selectors"],
-            scope_sha256=scope["scope_sha256"],
-            patch_pytest=(
-                str(patch_test_runtime_identity()["pytest_executable"])
-                if any(stage["stage_id"] == "patch" for stage in scope["stages"])
-                else None
-            ),
-        )
+        if show_paid_command:
+            runtime.print_unified_paid_command(
+                repo_path=repo_path,
+                manifest_path=manifest_path,
+                index_path=index_path,
+                marketplace_root=marketplace_root,
+                codemap_bin=codemap_bin,
+                model=model,
+                selectors=selection["selectors"],
+                scope_sha256=scope["scope_sha256"],
+                patch_pytest=(
+                    str(patch_test_runtime_identity()["pytest_executable"])
+                    if any(stage["stage_id"] == "patch" for stage in scope["stages"])
+                    else None
+                ),
+                index_relocation_path=index_relocation_path,
+            )
         return
 
     assert run_dir is not None
@@ -5249,7 +5253,7 @@ def _run_unified_execution(
     stage_design = ", ".join(
         f"{stage['stage_id']}={len(stage['task_ids'])} tasks/{stage['total_cells']} cells" for stage in scope["stages"]
     )
-    print("== CODEX UNIFIED A/B/C STUDY ==")
+    runtime.print_section_rule("CODEX UNIFIED A/B/C STUDY")
     print(f"→ aggregate: {scope['total_tasks']} tasks, {scope['total_cells']} cells")
     print(f"→ sequential stages: {stage_design}")
     run_dir.mkdir(parents=True, exist_ok=False)
@@ -5262,9 +5266,9 @@ def _run_unified_execution(
             stage_record = {"stage_id": stage_id, "status": "running", "path": stage_id}
             metadata["stages"].append(stage_record)
             _write_unified_metadata(metadata_path, metadata)
-            print(
-                f"== STAGE {stage_number}/{len(scope['stages'])}: {stage_id} "
-                f"({len(stage['task_ids'])} tasks, {stage['total_cells']} cells) =="
+            runtime.print_section_rule(
+                f"STAGE {stage_number}/{len(scope['stages'])}: {stage_id} "
+                f"({len(stage['task_ids'])} tasks, {stage['total_cells']} cells)"
             )
             try:
                 with runtime.progress_scope(
@@ -5312,12 +5316,14 @@ def cli(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag wi
     tasks: str | Sequence[str] | None = None,
     dry_run: bool = False,
     no_legend: bool = False,
+    no_paid_command: bool = False,
     run_dir: str | None = None,
     paid_approval: str | None = None,
     rescore_fix_run_dir: str | None = None,
     rescore_fix_output_dir: str | None = None,
     rescore_readcrop_run_dir: str | None = None,
     rescore_readcrop_output_dir: str | None = None,
+    index_relocation_path: str | None = None,
 ) -> None:
     """Dispatch one unified Codex benchmark, rendering, resolution, or rescore mode.
 
@@ -5358,6 +5364,7 @@ def cli(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag wi
             the complete 73-task suite.
         dry_run: Validate locked inputs and print the cell plan without a model call.
         no_legend: Suppress the output legend block.
+        no_paid_command: Suppress the dry run's PAID_COMMAND block; SCOPE still prints.
         run_dir: Fresh aggregate artifact directory required for model execution.
         paid_approval: Aggregate approval token printed by the matching dry run.
 
@@ -5445,8 +5452,10 @@ def cli(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag wi
         invocation_launcher_path=_optional_path(invocation_launcher_path),
         run_dir=_optional_path(run_dir),
         paid_approval=paid_approval,
+        index_relocation_path=_optional_path(index_relocation_path),
         dry_run=dry_run,
         show_legend=not no_legend,
+        show_paid_command=not no_paid_command,
     )
 
 

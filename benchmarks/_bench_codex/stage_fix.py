@@ -43,7 +43,7 @@ _MANAGED_PARITY_REPO = Path(
     or f"{os.sep}tmp{os.sep}{_MANAGED_PARITY_REPO_NAME}"  # portable-paths: canonical-target
 ).resolve()
 ARMS = ("A_plain", "B_auto", "C_strict")
-NATIVE_ARMS = {"A_plain": "A_plain", "B_auto": "B_direct_required", "C_strict": "C_skill_required"}
+NATIVE_ARMS = {"A_plain": "A_plain", "B_auto": "B_auto", "C_strict": "C_strict"}
 _FIX_SINGLE_QUERY_ARGUMENTS = {
     "FS-01": ("symbol", "EarlyStopping.__init__"),
     "FS-02": ("symbol", "EarlyStopping.__init__"),
@@ -109,7 +109,7 @@ from _bench_common.paid_lifecycle import (  # noqa: E402
     verify_checksums,
     write_checksums,
 )
-from _bench_common.presentation import format_quality  # noqa: E402
+from _bench_common.presentation import format_paid_command_block, format_quality  # noqa: E402
 from . import runtime  # noqa: E402
 from _bench_common.provider_parity_contracts import (  # noqa: E402
     fresh_input_tokens,
@@ -154,7 +154,7 @@ def _task_prompt(
         )
     elif arm == "C_strict":
         supplement = (
-            _structural().arm_envelope("C_skill_required")
+            _structural().arm_envelope("C_strict")
             + f' The required canonical query is exactly `"$CODEMAP_BIN" query --compact {shlex.join(query_arguments[task_id])}`.'
             + _executable_codemap_boundary()
         )
@@ -619,11 +619,20 @@ def _stage_input_recovery(repo_path: Path) -> str:
     return "Use the managed canonical repository and its manifest-locked index, then rerun this stage with --dry-run."
 
 
-def _stage_source_binding(repo_path: Path, index_path: Path) -> dict[str, str]:
-    """Validate and fingerprint the frozen source/index pair before paid admission."""
+def _stage_source_binding(
+    repo_path: Path, index_path: Path, index_relocation: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    """Validate and fingerprint the frozen source/index pair before paid admission.
+
+    A run in its own worktree carries the locked graph by relocation rather than by byte identity, so the provenance
+    travels into the same admission the canonical run uses. The fingerprint still records the bytes actually present,
+    which is what binds this stage's scope to this run's inputs.
+    """
     structural = _structural()
     try:
-        structural._validate_locked_runtime(repo_path, index_path, "C_skill_required", PARITY_MANIFEST_PATH)
+        structural._validate_locked_runtime(
+            repo_path, index_path, "C_strict", PARITY_MANIFEST_PATH, None, index_relocation
+        )
     except ValueError as exc:
         raise ValueError(
             f"executable-stage input preflight failed: {exc}\n"
@@ -783,19 +792,21 @@ def _print_paid_command(
     """Print the exact user-owned paid command admitted by a successful no-model preflight."""
     run_dir = _suggested_run_dir(study)
     tasks = ",".join(task_ids)
-    print("PAID_COMMAND")
     prefix = f"{PATCH_PYTEST_ENV}={shlex.quote(patch_pytest)} " if patch_pytest else ""
-    print(f"{prefix}python3 benchmarks/run-codex-structural.py \\")
-    print(f"  --repo-path {repo_path.resolve()} \\")
-    print(f"  --index-path {index_path.resolve()} \\")
-    print(f"  --marketplace-root {marketplace_root.resolve()} \\")
-    print(f"  --codemap-bin {codemap_bin.resolve()} \\")
-    print(f"  --model {model} \\")
+    lines = [
+        f"{prefix}python3 benchmarks/run-codex-structural.py \\",
+        f"  --repo-path {repo_path.resolve()} \\",
+        f"  --index-path {index_path.resolve()} \\",
+        f"  --marketplace-root {marketplace_root.resolve()} \\",
+        f"  --codemap-bin {codemap_bin.resolve()} \\",
+        f"  --model {model} \\",
+    ]
     if explicit_selection:
-        print(f"  --tasks {tasks} \\")
-    print('  --auth-source "$HOME/.codex/auth.json" \\')
-    print(f"  --run-dir {_repo_relative_argument(run_dir)} \\")
-    print(f"  --paid-approval {paid_approval_token(scope_sha256)}")
+        lines.append(f"  --tasks {tasks} \\")
+    lines.append('  --auth-source "$HOME/.codex/auth.json" \\')
+    lines.append(f"  --run-dir {_repo_relative_argument(run_dir)} \\")
+    lines.append(f"  --paid-approval {paid_approval_token(scope_sha256)}")
+    print(format_paid_command_block(lines))
 
 
 def resolve_fix_single_scope(
@@ -868,14 +879,19 @@ def resolve_fix_stage_scope(
     selected: set[str] | None,
     model: str,
     index_path: Path | None = None,
+    index_relocation: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Resolve one executable stage without constructing a model adapter."""
+    """Resolve one executable stage without constructing a model adapter.
+
+    ``index_relocation`` is present only for a run outside the canonical clone, whose index is the locked graph with its
+    scan root moved; scope resolution admits it the same way execution does.
+    """
     tasks, _, _, _, _ = _load_fix_stage(study, selected)
     index_path = index_path or repo_path / ".cache" / "codemap" / f"{repo_path.name}.json"
     source_binding = (
         _patch_stage_source_binding(repo_path, tasks)
         if study == "patch"
-        else _stage_source_binding(repo_path, index_path)
+        else _stage_source_binding(repo_path, index_path, index_relocation)
     )
     return _resolve_scope(tasks, model, source_binding)
 
@@ -916,11 +932,17 @@ def execute_executable_agent_cell(
     prompt: str,
     item: Mapping[str, Any],
     parser: Callable[..., dict[str, Any]],
+    index_relocation: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Run one writable agent cell and score the captured canonical Git diff."""
+    """Run one writable agent cell and score the captured canonical Git diff.
+
+    ``index_relocation`` is this run's own provenance when it works outside the canonical clone; it names the locked
+    origin the cell's disposable copy still descends from. A historical Patch baseline keeps its own locked index hash.
+    """
     structural = _structural()
     contract = item.get("contract")
     is_patch_task = isinstance(contract, EditTaskContract)
+    frozen_origin = None if index_relocation is None else str(index_relocation["frozen_index_sha256"])
     workspace = (
         create_executable_agent_workspace(
             source_repo,
@@ -929,7 +951,9 @@ def execute_executable_agent_cell(
             require_source_baseline=False,
         )
         if is_patch_task
-        else structural.create_executable_agent_workspace(source_repo, source_index, baseline_commit)
+        else structural.create_executable_agent_workspace(
+            source_repo, source_index, baseline_commit, frozen_index_sha256=frozen_origin
+        )
     )
     patch_workspace = None
     home = None
@@ -1029,19 +1053,26 @@ def preflight_executable_agent_workspace(
     historical_runtime_coordinate: Mapping[str, str] | None = None,
     patch_test_runtime: Mapping[str, str] | None = None,
     patch_contract: EditTaskContract | None = None,
+    index_relocation: Mapping[str, str] | None = None,
 ) -> None:
     """Validate writable-worktree permissions for every arm without a model call.
 
     Historical Patch preflight supplies the reviewed per-task baseline/index coordinate; ordinary executable stages
-    continue to use the active manifest.
+    continue to use the active manifest. ``index_relocation`` is this run's own provenance when it works outside the
+    canonical clone, and it names the locked origin the stage worktree's copy still descends from.
     """
     if patch_test_runtime is not None and dict(patch_test_runtime) != patch_test_runtime_identity():
         raise ValueError("Patch task pytest runtime changed after scope admission")
     structural = _structural()
+    frozen_origin = None if index_relocation is None else str(index_relocation["frozen_index_sha256"])
     workspace = (
+        # A historical Patch baseline carries its own locked index hash, which this run's relocation
+        # says nothing about, so that branch keeps hashing the bytes it was handed.
         create_executable_agent_workspace(source_repo, source_index, baseline_commit, require_source_baseline=False)
         if allow_historical_baseline
-        else structural.create_executable_agent_workspace(source_repo, source_index, baseline_commit)
+        else structural.create_executable_agent_workspace(
+            source_repo, source_index, baseline_commit, frozen_index_sha256=frozen_origin
+        )
     )
     try:
         for native_arm in NATIVE_ARMS.values():
@@ -1079,6 +1110,7 @@ def _preflight_stage_workspaces(
     default_index_path: Path,
     tasks: list[dict[str, Any]],
     report_progress: Callable[[int, int, str, str], None] | None = None,
+    index_relocation: Mapping[str, str] | None = None,
 ) -> None:
     """Preflight task baselines and every distinct workspace coordinate without a model call."""
     pairs: set[tuple[str, Path]] = set()
@@ -1104,6 +1136,7 @@ def _preflight_stage_workspaces(
             historical_runtime_coordinate=(item.get("historical_runtime_coordinate") if study == "patch" else None),
             patch_test_runtime=item.get("patch_test_runtime") if study == "patch" else None,
             patch_contract=contract if study == "patch" else None,
+            index_relocation=index_relocation,
         )
         if report_progress is not None:
             report_progress(position, len(coordinates), contract.task_id, "complete")
@@ -1124,6 +1157,7 @@ def run_fix_stage(
     marketplace_root: Path | None = None,
     codemap_bin: Path | None = None,
     emit_authorization: bool = True,
+    index_relocation: Mapping[str, str] | None = None,
 ) -> None:
     """Run one complete executable study or an explicitly selected task subset."""
     explicit_selection = selected is not None
@@ -1132,7 +1166,7 @@ def run_fix_stage(
     source_binding = (
         _patch_stage_source_binding(repo_path, tasks)
         if study == "patch"
-        else _stage_source_binding(repo_path, index_path)
+        else _stage_source_binding(repo_path, index_path, index_relocation)
     )
     if study == "patch":
         patch_coordinates = source_binding.get("patch_coordinates")
@@ -1173,6 +1207,7 @@ def run_fix_stage(
         marketplace_root=marketplace_root or ROOT,
         codemap_bin=codemap_bin or ROOT / "plugins/codemap-py/bin/codemap-py",
         auth_source=auth_source,
+        index_relocation=index_relocation,
     )
     if dry_run:
         try:
@@ -1193,12 +1228,13 @@ def run_fix_stage(
                 default_index_path=index_path,
                 tasks=tasks,
                 report_progress=report_preflight_progress,
+                index_relocation=index_relocation,
             )
         finally:
             adapter.close()
         for item in tasks:
             for arm in ARMS:
-                print(f"PLAN    {item['contract'].task_id} {arm}")
+                runtime.print_plan_row(f"PLAN    {item['contract'].task_id} {arm}")
         if emit_authorization:
             print(f"SCOPE   {admitted['scope_sha256']}")
             _print_paid_command(
@@ -1222,6 +1258,7 @@ def run_fix_stage(
             repo_path=repo_path,
             default_index_path=index_path,
             tasks=tasks,
+            index_relocation=index_relocation,
         )
     except BaseException:
         adapter.close()
@@ -1261,6 +1298,7 @@ def run_fix_stage(
             prompt=prompt(arm, item["task"]),
             item=item,
             parser=parser,
+            index_relocation=index_relocation,
         )
 
     def persist_metadata(path: Path, payload: Mapping[str, Any]) -> None:
@@ -1355,7 +1393,7 @@ def rescore_fix_stage(source_dir: Path, output_dir: Path, repo_path: Path, *, st
                 item = tasks[task_id]
                 _validate_stage_binding(study, item, source_row.get("provider_binding", {}))
                 skill_path = (
-                    source_dir / "inputs/C_skill_required/codemap-py/codex-skills/query-code/SKILL.md"
+                    source_dir / "inputs/C_strict/codemap-py/codex-skills/query-code/SKILL.md"
                     if arm == "C_strict"
                     else None
                 )

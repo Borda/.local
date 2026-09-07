@@ -250,7 +250,9 @@ def test_dry_run_emits_exact_paid_command_after_preflight(
     assert f"SCOPE   {FIXTURE_SCOPE_SHA}" in output
     assert "PAID_COMMAND" in output
     assert "--run-dir benchmarks/results/fresh-run" in output
-    assert output.splitlines()[-1] == f"  --paid-approval {FIXTURE_APPROVAL_TOKEN}"
+    # The command is framed, so its last flag sits above the closing rule rather than at the end.
+    assert output.splitlines()[-2] == f"  --paid-approval {FIXTURE_APPROVAL_TOKEN}"
+    assert output.splitlines()[-1] == "-" * 78
     assert "--tasks FS-01" in output
     assert "--study" not in output
     assert "--paid=True" not in output
@@ -514,8 +516,8 @@ def test_patch_preflight_admits_clean_context_before_staging_fixture(
 
     assert events == [
         "prepare:A_plain",
-        "prepare:B_direct_required",
-        "prepare:C_skill_required",
+        "prepare:B_auto",
+        "prepare:C_strict",
         "stage-fixture",
         "cleanup",
     ]
@@ -624,7 +626,7 @@ def test_executable_cells_and_preflight_keep_permission_verification_enabled(
             return ""
 
     structural = stage_fix._structural()
-    monkeypatch.setattr(structural, "create_executable_agent_workspace", lambda *_args: workspace)
+    monkeypatch.setattr(structural, "create_executable_agent_workspace", lambda *_args, **_kwargs: workspace)
     monkeypatch.setattr(structural, "bind_executable_agent_workspace", _bind_workspace)
     monkeypatch.setattr(structural, "_repo_sha", lambda _path: "baseline")
     monkeypatch.setattr(structural, "_git_porcelain_status", lambda _path: "")

@@ -47,21 +47,39 @@ ARM_CONTRACTS: Mapping[str, Mapping[str, str]] = MappingProxyType(
     }
 )
 
+# Every provider now runs the same three named arms. The contract text above is the use policy and
+# is shared; how a home makes Codemap reachable stays provider-native. A Codex ``C_strict`` home
+# offers only the installed Skill, so "use Codemap at least once" resolves to the Skill there
+# without needing a separate contract string, and a Claude home that also exposes the direct CLI
+# satisfies the same sentence by either route.
 COMPARISON_ARMS_BY_PROVIDER: Mapping[str, frozenset[str]] = MappingProxyType(
     {
         "claude": frozenset(ARM_CONTRACTS),
-        "codex": frozenset({"A_plain", "B_direct_required", "C_skill_required"}),
+        "codex": frozenset(ARM_CONTRACTS),
     }
 )
-COMPARISON_ARM_NAMES = frozenset(arm for provider_arms in COMPARISON_ARMS_BY_PROVIDER.values() for arm in provider_arms)
+CANONICAL_ARM_NAMES = frozenset(ARM_CONTRACTS)
 
-# The B arm of each provider is an optional-use canary: Codemap is made available and the
-# model decides whether to call it, so a zero-query B cell has followed its assigned
-# contract (README "B is an optional-use canary, so a no-query B cell is compliant";
-# AGENTS.md "B_auto is an optional-use canary"). Treating the Codex B arm as required-use
-# made zero-query Codex B cells non-adherent and therefore pooling-ineligible, dropping
-# exactly the cells where Codemap went unused and inflating the measured B benefit.
-_OPTIONAL_USE_ARMS = frozenset({"B_auto", "B_direct_required"})
+# Codex structural runs before the 2026-09-06 arm alignment recorded provider-native arm names.
+# Those artifacts are immutable, so the names survive in frozen telemetry and in every published
+# table describing those runs. Reading such a row canonicalizes it for grouping and pairing; it
+# never relabels what a frozen table displays, because the frozen run's prompt is what it was.
+LEGACY_ARM_ALIASES: Mapping[str, str] = MappingProxyType(
+    {
+        "B_direct_required": "B_auto",
+        "C_skill_required": "C_strict",
+    }
+)
+COMPARISON_ARM_NAMES = CANONICAL_ARM_NAMES | frozenset(LEGACY_ARM_ALIASES)
+
+# B is an optional-use canary on every provider: Codemap is made available and the model decides
+# whether to call it, so a zero-query B cell has followed its assigned contract (README "B is an
+# optional-use canary, so a no-query B cell is compliant"; AGENTS.md "B_auto is an optional-use
+# canary"). Treating the Codex B arm as required-use made zero-query Codex B cells non-adherent and
+# therefore pooling-ineligible, dropping exactly the cells where Codemap went unused and inflating
+# the measured B benefit. The Codex structural runner enforced a required query until the same
+# alignment removed it, which is why frozen Codex B rows measure a required-use arm.
+_OPTIONAL_USE_ARMS = frozenset({"B_auto"})
 
 
 @dataclass(frozen=True)
@@ -319,6 +337,32 @@ def fresh_input_tokens(input_tokens: int, cached_input_tokens: int) -> int | Non
     return input_tokens - cached_input_tokens
 
 
+def canonical_arm(arm: str) -> str:
+    """Return the canonical name of a benchmark arm, resolving pre-alignment Codex names.
+
+    Args:
+        arm: An arm name as recorded in a result row, canonical or legacy.
+
+    Returns:
+        The canonical arm name shared by every provider.
+
+    Raises:
+        ValueError: If the name is neither canonical nor a known legacy name.
+
+    Examples:
+        >>> canonical_arm("B_direct_required")
+        'B_auto'
+        >>> canonical_arm("C_strict")
+        'C_strict'
+    """
+    if arm in CANONICAL_ARM_NAMES:
+        return arm
+    try:
+        return LEGACY_ARM_ALIASES[arm]
+    except KeyError as exc:
+        raise ValueError(f"unknown benchmark arm {arm!r}") from exc
+
+
 def treatment_adherence(
     arm: str,
     *,
@@ -326,8 +370,7 @@ def treatment_adherence(
     contaminated: bool,
 ) -> bool:
     """Return whether a treatment arm followed its assigned availability rule."""
-    if arm not in COMPARISON_ARM_NAMES:
-        raise ValueError(f"unknown benchmark arm {arm!r}")
+    arm = canonical_arm(arm)
     if contaminated:
         return False
     if arm == "A_plain":

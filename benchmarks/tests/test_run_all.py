@@ -25,6 +25,10 @@ pytestmark = pytest.mark.skipif(
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
 SCRIPT = BENCHMARKS_DIR / "run-all.sh"
+sys.path.insert(0, str(BENCHMARKS_DIR))
+
+from _bench_common.presentation import LEGEND_CLOSE_RULE, LEGEND_OPEN_RULE  # noqa: E402
+
 REAL_GIT = shutil.which("git")
 ACTIVE_MANIFEST = BENCHMARKS_DIR / "manifests" / "codex-integration.json"
 ACTIVE_MANIFEST_SHA = hashlib.sha256(ACTIVE_MANIFEST.read_bytes()).hexdigest()
@@ -36,6 +40,9 @@ AGENTIC_CELL_TIMEOUT = AGENTIC_MANIFEST_DATA["preregistered_scope"]["coordinate_
 AGENTIC_SCOPE_SHA = "agentic-default-scope"
 AGENTIC_REPEAT_TWO_SCOPE_SHA = "agentic-repeat-two-scope"
 AGENTIC_SELECTED_SCOPE_SHA = "agentic-selected-scope"
+#: A selected stratum is a study of its own, so it resolves to its own scope and its own token.
+AGENTIC_STRATUM_SCOPE_SHA = "agentic-stratum-scope"
+AGENTIC_MANIFEST_MODEL = AGENTIC_MANIFEST_DATA["model"]["name"]
 AGENTIC_SELECTED_TASK_IDS = ("BA-02", "BA-04")
 AGENTIC_SELECTED_TOTAL_CELLS = len(AGENTIC_SELECTED_TASK_IDS) * 3
 METHODOLOGY_MANIFEST = BENCHMARKS_DIR / "manifests" / "provider-parity-methodology.json"
@@ -54,6 +61,22 @@ CONFIRMATORY_TASK_IDS = json.loads(ACTIVE_MANIFEST.read_text(encoding="utf-8"))[
 ]
 DEFAULT_SCOPE_SHA = "d" * 64
 SELECTED_SCOPE_SHA = "e" * 64
+#: A stratum's execution scope binds its own model, so every stratum after the first derives a scope
+#: the parent never saw. The stub mirrors that instead of answering one scope for every model.
+SECOND_STRATUM_SCOPE_SHA = "f" * 64
+#: Combined admission binds both child scopes into the one token the unified plan prints.
+COMBINED_SCOPE_SHA = hashlib.sha256(f"{DEFAULT_SCOPE_SHA}\n{AGENTIC_MANIFEST_SHA}\n".encode()).hexdigest()
+#: A one-model combined run prices that model's own execution scope in both halves, never the
+#: parent's default: the agentic lane runs the selected stratum too, so its half is that scope.
+COMBINED_SECOND_STRATUM_SCOPE_SHA = hashlib.sha256(
+    f"{SECOND_STRATUM_SCOPE_SHA}\n{AGENTIC_STRATUM_SCOPE_SHA}\n".encode()
+).hexdigest()
+#: Several strata bind the ordered model list into the structural half before the combined hash, and
+#: leave the agentic half on the manifest digest, because one agentic study cannot be several strata.
+MULTI_STRATUM_SCOPE_SHA = hashlib.sha256(f"{DEFAULT_SCOPE_SHA}\ngpt-5.6-sol gpt-5.6-terra\n".encode()).hexdigest()
+COMBINED_MULTI_STRATUM_SCOPE_SHA = hashlib.sha256(
+    f"{MULTI_STRATUM_SCOPE_SHA}\n{AGENTIC_MANIFEST_SHA}\n".encode()
+).hexdigest()
 SELECTED_TASK_IDS = ("DI-01", "GR-01")
 
 
@@ -152,11 +175,23 @@ def _batch_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
         bin_dir / "git",
         f'''if [ -n "${{FAIL_ON_GIT_FETCH:-}}" ] && [[ "$*" == *" fetch "* ]]; then exit 42; fi
 if [[ "$*" == *"ls-files --stage -- ."* ]]; then exec "{REAL_GIT}" "$@"; fi
+if [[ "$*" == *"worktree add"* ]]; then
+  target="${{@: -2:1}}"
+  mkdir -p "$target/.cache/codemap"
+  printf "gitdir: fixture\\n" > "$target/.git"
+  exit 0
+fi
+if [[ "$*" == *"worktree remove"* ]]; then
+  rm -rf "${{@: -1}}"
+  exit 0
+fi
 printf "fixture-head\\n"''',
     )
     _write_executable(
         bin_dir / "python3",
         f"""if [ "$1" = "-c" ]; then exec {sys.executable} "$@"; fi
+# Phase headers render through a CLI; answer with the redirected form and keep them out of the call log.
+if [[ "$*" == *"render_cli.py"* ]]; then printf "== %s ==\\n" "$3"; exit 0; fi
 printf "python %s\\n" "$*" >> "$CALL_LOG"
 if [[ "$*" == *"--resolve-tasks"* ]]; then
   if [[ "$*" == *"INVALID"* ]]; then
@@ -173,6 +208,8 @@ fi
 if [[ "$*" == *"run-codex-agentic.py"* && "$*" == *"--resolve-scope"* ]]; then
   if [[ "$*" == *"--task-id BA-02,BA-04"* ]]; then
     printf '{{"task_ids":["BA-02","BA-04"],"repetitions":1,"total_cells":{AGENTIC_SELECTED_TOTAL_CELLS},"arms":["A_plain","B_auto","C_strict"],"models":["gpt-5.6-luna"],"coordinate_timeout_seconds":600,"scope_sha256":"{AGENTIC_SELECTED_SCOPE_SHA}"}}\n'
+  elif [[ "$*" == *"--model "* ]]; then
+    printf '{{"task_ids":["BA-01","BA-02","BA-03","BA-04","BA-05","BA-06","BA-07","BA-08","BA-09","BA-10","BA-11","BA-12","BA-13","BA-14","BA-15","BA-16"],"repetitions":1,"total_cells":{AGENTIC_TOTAL_CELLS},"arms":["A_plain","B_auto","C_strict"],"models":["gpt-5.6-terra"],"coordinate_timeout_seconds":600,"scope_sha256":"{AGENTIC_STRATUM_SCOPE_SHA}"}}\n'
   elif [[ "$*" == *"--repetitions 2"* ]]; then
     printf '{{"task_ids":["BA-01","BA-02","BA-03","BA-04","BA-05","BA-06","BA-07","BA-08","BA-09","BA-10","BA-11","BA-12","BA-13","BA-14","BA-15","BA-16"],"repetitions":2,"total_cells":96,"arms":["A_plain","B_auto","C_strict"],"models":["gpt-5.6-luna"],"coordinate_timeout_seconds":600,"scope_sha256":"{AGENTIC_REPEAT_TWO_SCOPE_SHA}"}}\n'
   else
@@ -186,6 +223,22 @@ if [[ "$*" == *"run-claude-agentic.py"* && "$*" == *"--resolve-scope"* ]]; then
   else
     printf '{{"task_ids":["BA-01","BA-02","BA-03","BA-04","BA-05","BA-06","BA-07","BA-08","BA-09","BA-10","BA-11","BA-12","BA-13","BA-14","BA-15","BA-16"],"repetitions":1,"total_cells":{CLAUDE_AGENTIC_TOTAL_CELLS},"arms":["A_plain","B_auto","C_strict"],"models":["haiku","sonnet","opus"],"coordinate_timeout_seconds":600,"scope_sha256":"{CLAUDE_AGENTIC_SCOPE_SHA}"}}\n'
   fi
+  exit 0
+fi
+if [[ "$*" == *"prepare-codex-index.py"* && "$*" == *"--relocate-into"* ]]; then
+  source_index=""; worktree=""; provenance=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --index-path) source_index="$2"; shift 2;;
+      --relocate-into) worktree="$2"; shift 2;;
+      --provenance-path) provenance="$2"; shift 2;;
+      *) shift;;
+    esac
+  done
+  mkdir -p "$worktree/.cache/codemap"
+  cp "$source_index" "$worktree/.cache/codemap/$(basename "$worktree").json"
+  printf '{{"frozen_index_sha256":"{LOCKED_INDEX_SHA}"}}\n' > "$provenance"
+  printf '{{"frozen_index_sha256":"{LOCKED_INDEX_SHA}"}}\n'
   exit 0
 fi
 if [[ "$*" == *"prepare-codex-index.py"* && "$*" == *"--print-contract"* ]]; then
@@ -227,7 +280,7 @@ if [[ "$*" == *"--render-results"* ]]; then
   exec {sys.executable} "$@"
 fi
 if [[ "$*" == *"run-codex-structural.py"* && "$*" != *"--no-legend"* ]]; then
-  printf "LEGEND\n  treatments: A_plain=no Codemap, B_direct=direct Codemap required, C_skill=Codemap Skill required\nEND LEGEND\n"
+  printf "{LEGEND_OPEN_RULE}\n  treatments: A_plain=no Codemap, B_auto=direct Codemap required, C_strict=Codemap Skill required\n{LEGEND_CLOSE_RULE}\n"
 fi
 if [[ "$*" == *"run-codex-structural.py"* && "$*" == *"--dry-run"* ]]; then
   printf "PLAN    FN-02  rep=1  A_plain\\n"
@@ -235,6 +288,8 @@ if [[ "$*" == *"run-codex-structural.py"* && "$*" == *"--dry-run"* ]]; then
     printf "SCOPE   {SELECTED_SCOPE_SHA}\\n"
   elif [[ "$*" == *"--tasks PT-01"* ]]; then
     printf "SCOPE   {SELECTED_SCOPE_SHA}\\n"
+  elif [[ "$*" == *"--model gpt-5.6-terra"* ]]; then
+    printf "SCOPE   {SECOND_STRATUM_SCOPE_SHA}\\n"
   elif [[ "$*" != *"--tasks FN-02"* ]]; then
     printf "SCOPE   {DEFAULT_SCOPE_SHA}\\n"
   fi
@@ -248,7 +303,7 @@ if [[ "$*" == *"run-codex-agentic.py"* && "$*" == *"--auth-source"* ]]; then
     printf "agentic console artifact existed before paid Python admission\\n" >&2
     exit 49
   fi
-  printf "LEGEND\\n  treatments: A_plain=no Codemap, B_auto=CLI available and optional, C_strict=installed Codemap Skill with compact query required\\n  metrics:\\n      EREC: expected direct-importer recall\\n      RREC: final-report recall\\n      DEFF: expected dependencies exposed per tool call\\n  status: ✓ completed, ✗ failed\\n  progress: N completed cells / {AGENTIC_TOTAL_CELLS} planned cells\\n  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\\n  codemap-used: ✓ Codemap call observed; ✗ no call observed (A_plain expects none)\\n  input tokens: gross total; cached and fresh details remain in telemetry only\\nEND LEGEND\\n"
+  printf "{LEGEND_OPEN_RULE}\\n  treatments: A_plain=no Codemap, B_auto=CLI available and optional, C_strict=installed Codemap Skill with compact query required\\n  metrics:\\n      EREC: expected direct-importer recall\\n      RREC: final-report recall\\n      DEFF: expected dependencies exposed per tool call\\n  status: ✓ completed, ✗ failed\\n  progress: N completed cells / {AGENTIC_TOTAL_CELLS} planned cells\\n  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\\n  codemap-used: ✓ Codemap call observed; ✗ no call observed (A_plain expects none)\\n  input tokens: gross total; cached and fresh details remain in telemetry only\\n{LEGEND_CLOSE_RULE}\\n"
   printf "agentic raw\\n" > "$CODEX_RUN_DIR/telemetry.jsonl"
   printf "agentic canonical\\n" > "$CODEX_RUN_DIR/telemetry-canonical.jsonl"
   printf "{{}}\\n" > "$CODEX_RUN_DIR/run-metadata.json"
@@ -286,9 +341,28 @@ if [[ "$*" == *"realpath"* ]]; then printf "%s\\n" "$0"; exit 0; fi
 printf "Python 3.11.0\\n""",
     )
     _write_executable(bin_dir / "codex", 'printf "codex-cli 0.146.1\\n"')
+    for group in ("pytorch", "fabric"):
+        for kind in ("base", "test"):
+            requirement = repo / "requirements" / group / f"{kind}.txt"
+            requirement.parent.mkdir(parents=True, exist_ok=True)
+            requirement.write_text(f"# fixture {group} {kind}\n", encoding="utf-8")
+    _write_executable(bin_dir / "pytest", 'printf "pytest fixture\\n"')
+    _write_executable(
+        bin_dir / "uv",
+        """printf "uv %s\\n" "$*" >> "$CALL_LOG"
+if [ "$1" = "venv" ]; then
+  root="${!#}"
+  mkdir -p "$root/bin"
+  printf '#!/bin/sh\\nexit 0\\n' > "$root/bin/python"
+  printf '#!/bin/sh\\nexit 0\\n' > "$root/bin/pytest"
+  chmod +x "$root/bin/python" "$root/bin/pytest"
+fi""",
+    )
     _write_executable(
         bin_dir / "shasum",
-        f"""if [[ "$3" == "$REPO/"* && "$(sed -n '1p' "$3")" == *'"scan_version": {LOCKED_INDEX_SCAN_VERSION}'* && "$(sed -n '1p' "$3")" == *'"modules": []'* ]]; then
+        f"""if [ -z "${{3:-}}" ]; then
+  exec /usr/bin/shasum -a 256
+elif [[ "$3" == "$REPO/"* && "$(sed -n '1p' "$3")" == *'"scan_version": {LOCKED_INDEX_SCAN_VERSION}'* && "$(sed -n '1p' "$3")" == *'"modules": []'* ]]; then
   printf "{LOCKED_INDEX_SHA}  %s\\n" "$3"
 elif [[ "$3" == *"/benchmarks/manifests/codex-integration.json" ]]; then
   printf "{ACTIVE_MANIFEST_SHA}  %s\\n" "$3"
@@ -310,6 +384,8 @@ fi""",
         "CODEX_PAID_APPROVAL": DEFAULT_SCOPE_SHA,
         "CODEMAP_BIN": str(bin_dir / "codemap-py"),
         "REPO": str(repo),
+        "CODEMAP_BENCH_PATCH_PYTEST": str(bin_dir / "pytest"),
+        "CODEMAP_BENCH_PATCH_VENV": str(tmp_path / "patch-venv"),
     }
     _write_executable(
         bin_dir / "codemap-py",
@@ -328,6 +404,22 @@ def _run_batch(mode: str, env: dict[str, str], *args: str) -> subprocess.Complet
         text=True,
         check=False,
     )
+
+
+def _combined_scope(stdout: str) -> str:
+    """Return the combined Codex scope hash printed by a dry run's authorization block."""
+    for line in stdout.splitlines():
+        if line.startswith("COMBINED SCOPE"):
+            return line.split()[-1]
+    raise AssertionError(f"no combined scope in output: {stdout}")
+
+
+def _agentic_scope(stdout: str) -> str:
+    """Return the agentic scope hash printed by a dry run's authorization block."""
+    for line in stdout.splitlines():
+        if line.startswith("AGENTIC SCOPE"):
+            return line.split()[-1]
+    raise AssertionError(f"no agentic scope in output: {stdout}")
 
 
 def _run_batch_tty(mode: str, env: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:
@@ -708,8 +800,8 @@ def test_claude_agentic_launcher_rejects_invalid_or_duplicate_flags_before_setup
 @pytest.mark.parametrize(
     ("missing", "expected_error"),
     [
-        ("approval", "CODEX_AGENTIC_PAID_APPROVAL"),
-        ("auth", "CODEX_AUTH_SOURCE"),
+        ("approval", f"requires CODEX_PAID_APPROVAL={AGENTIC_MANIFEST_SHA[:16]}"),
+        ("auth", "requires CODEX_AUTH_SOURCE"),
     ],
     ids=["missing-approval", "missing-auth"],
 )
@@ -718,22 +810,27 @@ def test_codex_agentic_rejects_missing_paid_inputs_before_setup(
     missing: str,
     expected_error: str,
 ) -> None:
-    """Every required paid input fails before setup, auth access, or model dispatch."""
+    """Every required paid input fails before setup, auth access, or model dispatch.
+
+    The approval case removes both accepted token variables, because either one on its own now
+    admits the run; leaving the structural name populated would prove a wrong token is refused
+    rather than a missing one. The expected error is matched on the gate's own ERROR line, since the
+    guidance block below it names CODEX_PAID_APPROVAL in every rejection.
+    """
     env, call_log = batch_env
     env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
-    env.pop(
-        {
-            "approval": "CODEX_AGENTIC_PAID_APPROVAL",
-            "auth": "CODEX_AUTH_SOURCE",
-        }[missing]
-    )
+    for name in {
+        "approval": ("CODEX_AGENTIC_PAID_APPROVAL", "CODEX_PAID_APPROVAL"),
+        "auth": ("CODEX_AUTH_SOURCE",),
+    }[missing]:
+        env.pop(name, None)
 
     completed = _run_batch("codex", env, "--agentic")
 
     assert completed.returncode == 2
     assert expected_error in completed.stderr
     assert "bash benchmarks/run-all.sh codex --agentic --dry-run" in completed.stderr
-    assert f"CODEX_AGENTIC_PAID_APPROVAL={AGENTIC_MANIFEST_SHA}" in completed.stderr
+    assert f"CODEX_PAID_APPROVAL={AGENTIC_MANIFEST_SHA[:16]}" in completed.stderr
     assert "CODEX_AUTH_SOURCE=" in completed.stderr
     assert "CODEX_RUN_DIR only to choose another new path" in completed.stderr
     assert "CODEX_MAX_WALL_CLOCK_SECONDS" not in completed.stderr
@@ -757,7 +854,7 @@ def test_codex_agentic_rejects_reused_run_directory_before_setup(
     assert "Review the exact no-model shared agentic plan:" in completed.stderr
     assert "bash benchmarks/run-all.sh codex --agentic --dry-run" in completed.stderr
     assert f"Then launch the paid {AGENTIC_TOTAL_CELLS}-cell study with one scope-bound command:" in completed.stderr
-    assert f"CODEX_AGENTIC_PAID_APPROVAL={AGENTIC_MANIFEST_SHA}" in completed.stderr
+    assert f"CODEX_PAID_APPROVAL={AGENTIC_MANIFEST_SHA[:16]}" in completed.stderr
     assert 'CODEX_AUTH_SOURCE="$HOME/.codex/auth.json"' in completed.stderr
     assert "set CODEX_RUN_DIR only to choose another new path" in completed.stderr
     assert "CODEX_MAX_WALL_CLOCK_SECONDS" not in completed.stderr
@@ -799,14 +896,42 @@ def test_paid_codex_agentic_uses_snapshot_and_exact_runner_contract(
     assert launcher_snapshot.read_bytes() == SCRIPT.read_bytes()
     run_log = (Path(env["CODEX_RUN_DIR"]) / "run.log").read_text(encoding="utf-8")
     assert "\x1b[" not in run_log
-    assert run_log.count("END LEGEND") == 1
-    assert sum(line == "LEGEND" for line in run_log.splitlines()) == 1
+    assert run_log.count(LEGEND_CLOSE_RULE) == 1
+    assert sum(line == LEGEND_OPEN_RULE for line in run_log.splitlines()) == 1
     assert f"SUMMARY  status=completed  persisted_cells={AGENTIC_TOTAL_CELLS}/{AGENTIC_TOTAL_CELLS}" in run_log
     assert (Path(env["CODEX_RUN_DIR"]) / "checksums.sha256").is_file()
     assert "== CODEX SHARED AGENTIC A/B/C STUDY ==" in completed.stdout
-    assert sum(line == "LEGEND" for line in completed.stdout.splitlines()) == 1
-    assert sum(line == "END LEGEND" for line in completed.stdout.splitlines()) == 1
+    assert sum(line == LEGEND_OPEN_RULE for line in completed.stdout.splitlines()) == 1
+    assert sum(line == LEGEND_CLOSE_RULE for line in completed.stdout.splitlines()) == 1
     assert "PLAN " not in completed.stdout
+
+
+def test_paid_codex_agentic_admits_the_short_token_under_the_structural_variable(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A 16-character token exported as CODEX_PAID_APPROVAL admits the agentic study.
+
+    Scenario: the operator copies the short token the agentic plan prints and exports it under the
+    same variable name the structural lane uses. That paste was refused on a real paid run — the
+    gate demanded the whole 64-character digest under an agentic-only variable — even though the
+    token named this exact scope. Admission must follow, and the launcher must hand the runner the
+    full digest the prefix stands for rather than the shortened copy.
+    """
+    env, call_log = batch_env
+    env.pop("CODEX_AGENTIC_PAID_APPROVAL", None)
+    env["CODEX_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA[:16]
+    env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-agentic-short-token-run"))
+
+    completed = _run_batch("codex", env, "--agentic")
+
+    assert completed.returncode == 0, completed.stderr
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    paid_call = next(line for line in calls if "run-codex-agentic.py" in line and "--auth-source" in line)
+    assert f"--paid-approval {AGENTIC_MANIFEST_SHA}" in paid_call
+    assert "== CODEX SHARED AGENTIC A/B/C STUDY ==" in completed.stdout
+    assert f"SUMMARY  status=completed  persisted_cells={AGENTIC_TOTAL_CELLS}/{AGENTIC_TOTAL_CELLS}" in (
+        Path(env["CODEX_RUN_DIR"]) / "run.log"
+    ).read_text(encoding="utf-8")
 
 
 def test_paid_codex_agentic_final_checksums_exclude_archived_source_tree(
@@ -855,7 +980,7 @@ def test_paid_codex_agentic_failure_preserves_artifacts_and_prints_fresh_command
     assert completed.returncode == 41
     assert "Preserve the reported artifact for diagnosis" in completed.stderr
     assert "any retry requires a fresh CODEX_RUN_DIR" in completed.stderr
-    assert f"CODEX_AGENTIC_PAID_APPROVAL={AGENTIC_MANIFEST_SHA}" in completed.stderr
+    assert f"CODEX_PAID_APPROVAL={AGENTIC_MANIFEST_SHA[:16]}" in completed.stderr
     assert 'CODEX_AUTH_SOURCE="$HOME/.codex/auth.json"' in completed.stderr
     assert "set CODEX_RUN_DIR only to choose another new path" in completed.stderr
     assert "CODEX_MAX_WALL_CLOCK_SECONDS" not in completed.stderr
@@ -881,7 +1006,7 @@ def test_paid_codex_agentic_tty_output_uses_shared_renderer(
     assert "PLAN " not in completed.stdout
     run_log = (Path(env["CODEX_RUN_DIR"]) / "run.log").read_text(encoding="utf-8")
     assert "\x1b[" not in run_log
-    assert run_log.count("END LEGEND") == 1
+    assert run_log.count(LEGEND_CLOSE_RULE) == 1
 
 
 def test_codex_agentic_selected_dry_run_dispatches_resolved_scope(
@@ -990,6 +1115,93 @@ def test_patch_and_unified_codex_dry_runs_prepare_historical_patch_indexes(
     assert "--prepare-patch-bundle" in call_log.read_text(encoding="utf-8")
 
 
+@pytest.mark.parametrize(
+    ("mode", "args"),
+    [
+        ("smoke", ()),
+        ("claude", ("--struct", "--dry-run")),
+        ("codex", ("--agentic", "--dry-run")),
+        ("codex", ("--struct", "--tasks=DI,GR", "--dry-run")),
+    ],
+    ids=["smoke", "claude-structural", "codex-agentic", "codex-non-patch-selection"],
+)
+def test_non_patch_no_model_modes_do_not_prepare_the_patch_test_runtime(
+    batch_env: tuple[dict[str, str], Path],
+    mode: str,
+    args: tuple[str, ...],
+) -> None:
+    """Only a scope containing a PT task pays for the Lightning test environment.
+
+    Building it downloads torch, so a smoke check or a DI/GR selection that never runs the Patch
+    behavior oracle must not trigger that download as a side effect of running the launcher.
+    """
+    env, _ = batch_env
+    env.pop("CODEMAP_BENCH_PATCH_PYTEST", None)
+
+    completed = _run_batch(mode, env, *args)
+
+    assert completed.returncode == 0, completed.stderr
+    assert "PREPARE patch-stage test runtime" not in completed.stdout
+
+
+def test_patch_dry_run_builds_and_exports_the_patch_test_runtime(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A PT scope provisions its own pytest so the operator needs no separate preparation step.
+
+    The Patch oracle runs Lightning's tests against the disposable checkout, so the launcher builds
+    the environment from the target clone's own requirement files and exports its pytest.
+    """
+    env, call_log = batch_env
+    env.pop("CODEMAP_BENCH_PATCH_PYTEST", None)
+    venv_root = Path(env["CODEMAP_BENCH_PATCH_VENV"])
+
+    completed = _run_batch("codex", env, "--struct", "--tasks=PT-01", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    assert f"patch test runtime: {venv_root / 'bin' / 'pytest'}" in completed.stdout
+    calls = call_log.read_text(encoding="utf-8")
+    assert "uv pip install" in calls
+    assert "requirements/pytorch/base.txt" in calls
+    assert "requirements/fabric/test.txt" in calls
+
+
+def test_patch_dry_run_keeps_a_caller_supplied_pytest(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """An operator-provided interpreter is used verbatim rather than rebuilt.
+
+    Scope admission fingerprints the pytest launcher, so a caller who minted an approval with one
+    interpreter must be able to present that same interpreter for the paid execution.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--struct", "--tasks=PT-01", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    assert f"patch test runtime: {env['CODEMAP_BENCH_PATCH_PYTEST']} (caller supplied)" in completed.stdout
+    assert "uv venv" not in call_log.read_text(encoding="utf-8")
+
+
+def test_patch_dry_run_rejects_a_non_executable_pytest_override(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """A stale or misspelled override fails before setup instead of at the first PT cell.
+
+    Silently rebuilding over a bad override would swap the interpreter the caller's approval was
+    bound to, so the launcher stops and names the offending path.
+    """
+    env, _ = batch_env
+    missing = tmp_path / "no-such-pytest"
+    env["CODEMAP_BENCH_PATCH_PYTEST"] = str(missing)
+
+    completed = _run_batch("codex", env, "--struct", "--tasks=PT-01", "--dry-run")
+
+    assert completed.returncode != 0
+    assert str(missing) in completed.stderr
+
+
 def test_codex_rejects_removed_diagnostic_switch(
     batch_env: tuple[dict[str, str], Path],
 ) -> None:
@@ -1094,8 +1306,8 @@ def test_top_level_provider_invocation_emits_one_bounded_legend(
     completed = _run_batch(mode, env, *args)
 
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.count("END LEGEND") == 1
-    assert sum(line == "LEGEND" for line in completed.stdout.splitlines()) == 1
+    assert completed.stdout.count(LEGEND_CLOSE_RULE) == 1
+    assert sum(line == LEGEND_OPEN_RULE for line in completed.stdout.splitlines()) == 1
 
 
 @pytest.mark.parametrize(
@@ -1356,29 +1568,158 @@ def test_codex_paid_rejection_prints_actionable_launch_guidance(
     assert "reauthenticate after the run if needed" in completed.stderr
 
 
-@pytest.mark.parametrize(
-    "missing_approval",
-    ["CODEX_PAID_APPROVAL", "CODEX_AGENTIC_PAID_APPROVAL"],
-    ids=["structural-approval", "agentic-approval"],
-)
-def test_codex_default_paid_rejection_requires_both_scope_approvals_before_dispatch(
+def test_codex_default_paid_rejection_asks_only_for_the_combined_approval(
     batch_env: tuple[dict[str, str], Path],
-    missing_approval: str,
 ) -> None:
-    """Default paid Codex admission is all-or-nothing across its two study scopes."""
+    """Default paid Codex admission asks for one combined token covering both studies.
+
+    Both studies run from one command, so their authorization is one value; the guidance must not send the operator
+    looking for a separate agentic variable that combined mode no longer reads.
+    """
     env, call_log = batch_env
-    env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
-    env.pop(missing_approval)
+    env.pop("CODEX_PAID_APPROVAL")
 
     completed = _run_batch("codex", env)
 
     assert completed.returncode == 2
-    assert "CODEX_PAID_APPROVAL=<approval-token-printed-by-the-unified-dry-run>" in completed.stderr
-    assert f"CODEX_AGENTIC_PAID_APPROVAL={AGENTIC_MANIFEST_SHA}" in completed.stderr
+    assert "CODEX_PAID_APPROVAL=<combined-approval-token-printed-by-the-unified-dry-run>" in completed.stderr
+    assert "CODEX_AGENTIC_PAID_APPROVAL" not in completed.stderr
     assert "bash benchmarks/run-all.sh codex --dry-run" in completed.stderr
     assert "benchmarks/manifests/codex-integration.md" in completed.stderr
     assert "benchmarks/manifests/codex-agentic.md" in completed.stderr
     calls = call_log.read_text(encoding="utf-8").splitlines() if call_log.exists() else []
+    assert not any("run-codex-structural.py" in line and "--auth-source" in line for line in calls)
+    assert not any("run-codex-agentic.py" in line and "--auth-source" in line for line in calls)
+
+
+def test_codex_default_paid_run_accepts_the_combined_token_without_an_agentic_variable(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """One combined token authorizes the structural and agentic children together.
+
+    This is the contract the unified plan advertises: the operator copies a single command, and the launcher hands
+    each child the scope token that child's own gate expects.
+    """
+    env, call_log = batch_env
+    env["CODEX_PAID_APPROVAL"] = COMBINED_SCOPE_SHA[:16]
+    env.pop("CODEX_AGENTIC_PAID_APPROVAL", None)
+    env["CODEX_RESULTS_ROOT"] = str(tmp_path / "results")
+    env.pop("CODEX_RUN_DIR")
+
+    completed = _run_batch("codex", env)
+
+    assert completed.returncode == 0, completed.stderr
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    assert any("run-codex-structural.py" in line and "--auth-source" in line for line in calls)
+    assert any("run-codex-agentic.py" in line and "--auth-source" in line for line in calls)
+
+
+def test_combined_paid_run_carries_one_token_through_every_selected_stratum(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """A multi-stratum combined token admits the strata children and the agentic child alike.
+
+    Scenario: the operator pastes the one command the combined plan printed for two strata. The
+    structural child verifies the combined token, then each stratum runs as its own single-model
+    study whose gate expects the plain execution scope — an inherited combined expectation would
+    refuse the stratum after the parent had already been admitted.
+    """
+    env, call_log = batch_env
+    env["CODEX_PAID_APPROVAL"] = COMBINED_MULTI_STRATUM_SCOPE_SHA[:16]
+    env.pop("CODEX_AGENTIC_PAID_APPROVAL", None)
+    env["CODEX_RESULTS_ROOT"] = str(tmp_path / "results")
+    env.pop("CODEX_RUN_DIR")
+
+    completed = _run_batch("codex", env, "--models=gpt-5.6-sol,gpt-5.6-terra")
+
+    assert completed.returncode == 0, completed.stderr + completed.stdout
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    paid_structural = [line for line in calls if "run-codex-structural.py" in line and "--auth-source" in line]
+    assert any("--model gpt-5.6-sol" in line for line in paid_structural)
+    assert any("--model gpt-5.6-terra" in line for line in paid_structural)
+    assert any("run-codex-agentic.py" in line and "--auth-source" in line for line in calls)
+
+
+def test_multi_stratum_paid_run_admits_a_stratum_whose_scope_differs_from_the_parents(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """Every selected stratum runs, including the ones deriving their own execution scope.
+
+    Scenario: this is the defect that cost a real paid study half its data. A stratum's execution
+    scope binds its own model, so only the primary stratum can ever match the scope the parent
+    derived. The parent used to hand each child that parent scope, so `gpt-5.6-sol` ran its full 219
+    cells and `gpt-5.6-terra` was then refused for a token it could not have matched — after the
+    operator had already paid for the first half. The stub answers a distinct scope for the second
+    stratum, which is what makes this test able to fail.
+    """
+    env, call_log = batch_env
+    env["CODEX_PAID_APPROVAL"] = MULTI_STRATUM_SCOPE_SHA[:16]
+    env.pop("CODEX_AGENTIC_PAID_APPROVAL", None)
+    env["CODEX_RESULTS_ROOT"] = str(tmp_path / "results")
+    env.pop("CODEX_RUN_DIR")
+
+    completed = _run_batch("codex", env, "--struct", "--models=gpt-5.6-sol,gpt-5.6-terra")
+
+    assert completed.returncode == 0, completed.stderr + completed.stdout
+    assert "requires CODEX_PAID_APPROVAL" not in completed.stderr
+    paid_structural = [
+        line
+        for line in call_log.read_text(encoding="utf-8").splitlines()
+        if "run-codex-structural.py" in line and "--auth-source" in line
+    ]
+    assert any("--model gpt-5.6-sol" in line for line in paid_structural)
+    assert any("--model gpt-5.6-terra" in line for line in paid_structural)
+
+
+def test_a_stratum_token_does_not_admit_a_model_outside_the_authorized_selection(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """Parent-delegated authorization covers only the strata the operator actually approved.
+
+    Scenario: the child accepts a token it cannot re-derive alone, so the delegation has to stay
+    bound to the approved selection. A stratum child launched for a model outside that list must
+    still be refused, or the delegation would become a way to pay for an unapproved study.
+    """
+    env, call_log = batch_env
+    env["CODEX_PAID_APPROVAL"] = MULTI_STRATUM_SCOPE_SHA[:16]
+    env["CODEX_STRATUM_PARENT_SCOPE"] = DEFAULT_SCOPE_SHA
+    env["CODEX_STRATUM_MODELS"] = "gpt-5.6-sol gpt-5.6-terra"
+    env["CODEX_STRATUM_AGENTIC_APPROVAL"] = ""
+    env["CODEX_RESULTS_ROOT"] = str(tmp_path / "results")
+    env.pop("CODEX_RUN_DIR")
+
+    completed = _run_batch("codex", env, "--struct", "--models=gpt-5.6-luna")
+
+    assert completed.returncode != 0
+    assert not any(
+        "run-codex-structural.py" in line and "--auth-source" in line
+        for line in call_log.read_text(encoding="utf-8").splitlines()
+    )
+
+
+def test_codex_default_paid_run_rejects_a_token_bound_to_the_structural_scope_alone(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """A structural-only token is refused for a combined run before any paid cell.
+
+    The combined token binds both scopes, so the token minted for `--struct` must not silently authorize the agentic
+    study that a selector-free run also pays for.
+    """
+    env, call_log = batch_env
+    env["CODEX_PAID_APPROVAL"] = DEFAULT_SCOPE_SHA[:16]
+    env["CODEX_RESULTS_ROOT"] = str(tmp_path / "results")
+    env.pop("CODEX_RUN_DIR")
+
+    completed = _run_batch("codex", env)
+
+    assert completed.returncode != 0
+    assert f"CODEX_PAID_APPROVAL={COMBINED_SCOPE_SHA[:16]}" in completed.stdout
+    calls = call_log.read_text(encoding="utf-8").splitlines()
     assert not any("run-codex-structural.py" in line and "--auth-source" in line for line in calls)
     assert not any("run-codex-agentic.py" in line and "--auth-source" in line for line in calls)
 
@@ -1393,7 +1734,6 @@ def test_combined_paid_run_defers_exact_aggregate_match_until_structural_preflig
     """
     env, call_log = batch_env
     env["CODEX_PAID_APPROVAL"] = "a" * 64
-    env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
     env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-stale-combined-run"))
 
     completed = _run_batch("codex", env)
@@ -1402,7 +1742,7 @@ def test_combined_paid_run_defers_exact_aggregate_match_until_structural_preflig
     # Paid study output is intentionally merged into the persisted/rendered stream.
     # The completed preflight exposes the exact replacement approval before the
     # stale value is rejected; direct-runner tests cover the full PAID_COMMAND.
-    assert f"CODEX_PAID_APPROVAL={DEFAULT_SCOPE_SHA[:16]}" in completed.stdout
+    assert f"CODEX_PAID_APPROVAL={COMBINED_SCOPE_SHA[:16]}" in completed.stdout
     calls = call_log.read_text(encoding="utf-8").splitlines()
     assert any("run-codex-structural.py" in line and "--dry-run" in line for line in calls)
     assert not any("run-codex-structural.py" in line and "--auth-source" in line for line in calls)
@@ -1438,7 +1778,7 @@ def test_provider_modes_dispatch_only_the_selected_provider(
     assert "run-codex-structural.py" not in claude_calls
 
     call_log.unlink()
-    env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
+    env["CODEX_PAID_APPROVAL"] = COMBINED_SCOPE_SHA[:16]
     env["CODEX_RESULTS_ROOT"] = str(tmp_path / "results")
     env.pop("CODEX_RUN_DIR")
     codex = _run_batch("codex", env)
@@ -1590,8 +1930,8 @@ def test_paid_codex_noninteractive_output_and_artifact_log_remain_plain(
     run_log = (Path(env["CODEX_RUN_DIR"]) / "run.log").read_text(encoding="utf-8")
     assert "\x1b[" not in completed.stdout
     assert "\x1b[" not in run_log
-    assert run_log.count("END LEGEND") == 1
-    assert sum(line == "LEGEND" for line in run_log.splitlines()) == 1
+    assert run_log.count(LEGEND_CLOSE_RULE) == 1
+    assert sum(line == LEGEND_OPEN_RULE for line in run_log.splitlines()) == 1
     script = SCRIPT.read_text(encoding="utf-8")
     assert "PLAN " not in completed.stdout
     assert "PLAN " in run_log
@@ -1676,3 +2016,990 @@ def test_paid_codex_tee_failure_survives_the_artifact_pipeline(
     completed = _run_batch("codex", env, "--struct")
 
     assert completed.returncode == 44
+
+
+def _target_lock_dir(env: dict[str, str]) -> Path:
+    """Return the shared-clone lock directory the launcher derives for this environment."""
+    key = hashlib.sha256(env["REPO"].encode()).hexdigest()[:16]
+    return Path(env["TMPDIR"]) / f"codemap-bench-target-{key}.lock"
+
+
+def test_second_study_refuses_to_share_the_target_clone_with_a_live_run(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """A study started while another holds the target clone is refused before any paid work.
+
+    Scenario: a Codex study was launched while the Claude suite was still staging diff-impact edits in
+    the same clone. It ran 33 paid cells and then aborted on the other study's dirty worktree, so the
+    guard has to reject the second run up front rather than after the spend.
+    """
+    env, call_log = batch_env
+    lock_root = tmp_path / "lock-tmp"
+    lock_root.mkdir()
+    env["TMPDIR"] = str(lock_root)
+    lock = _target_lock_dir(env)
+    lock.mkdir()
+    (lock / "owner").write_text(f"{os.getpid()} run-all.sh claude\n", encoding="utf-8")
+
+    completed = _run_batch("codex", env, "--struct")
+
+    assert completed.returncode == 2
+    assert "already benchmarking" in completed.stderr
+    calls = call_log.read_text(encoding="utf-8") if call_log.exists() else ""
+    assert "run-codex-structural.py" not in calls
+    assert lock.is_dir()
+
+
+def test_stale_lock_from_a_dead_run_does_not_block_the_next_study(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """A lock left behind by a killed run is cleared instead of blocking every later study.
+
+    Scenario: a study is interrupted hard enough to skip its cleanup. Its lock must not become a
+    permanent gate that forces the operator to hunt for a stray directory in the temp tree.
+    """
+    env, _ = batch_env
+    lock_root = tmp_path / "lock-tmp"
+    lock_root.mkdir()
+    env["TMPDIR"] = str(lock_root)
+    lock = _target_lock_dir(env)
+    lock.mkdir()
+    (lock / "owner").write_text("2147483646 run-all.sh claude\n", encoding="utf-8")
+
+    completed = _run_batch("codex", env, "--struct")
+
+    assert completed.returncode == 0, completed.stderr
+    assert "clearing stale target lock" in completed.stdout
+    assert not lock.exists()
+
+
+def test_models_selection_restricts_and_orders_the_claude_tiers(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """--models runs the named declared tiers in the order given, and nothing else.
+
+    Scenario: a re-run only needs two of the three Claude tiers, in a specific order, so the
+    launcher must pass exactly those to the structural runner instead of its fixed triple.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("claude", env, "--struct", "--dry-run", "--models=opus,haiku")
+
+    assert completed.returncode == 0, completed.stderr
+    assert "→ models: opus haiku" in completed.stdout
+    calls = call_log.read_text(encoding="utf-8") if call_log.exists() else ""
+    invoked = [name for line in calls.splitlines() for name in ("haiku", "sonnet", "opus") if f"--model {name}" in line]
+    assert "sonnet" not in invoked
+    # The fixed-tier preflight runs first; the selection is the study that follows it.
+    assert invoked[-2:] == ["opus", "haiku"]
+
+
+def test_models_selection_rejects_a_model_the_provider_never_declared(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A model outside the provider's declared strata fails instead of running an unlocked tier.
+
+    Scenario: --models is a restriction, never an addition, so a typo or a Codex model name passed
+    to Claude has to stop the run before any study starts.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("claude", env, "--struct", "--dry-run", "--models=opus,gpt-5.6-luna")
+
+    assert completed.returncode == 2
+    assert "not a declared claude stratum" in completed.stderr
+    calls = call_log.read_text(encoding="utf-8") if call_log.exists() else ""
+    assert "--model gpt-5.6-luna" not in calls
+
+
+def test_models_selection_rejects_a_repeated_model(batch_env: tuple[dict[str, str], Path]) -> None:
+    """A duplicated name is a typo rather than a request to run a tier twice.
+
+    Scenario: --models exists to narrow a run; silently collapsing or silently repeating a duplicate
+    would make the printed model list disagree with what actually ran.
+    """
+    env, _ = batch_env
+
+    completed = _run_batch("claude", env, "--struct", "--dry-run", "--models=opus,opus")
+
+    assert completed.returncode == 2
+    assert "selected more than once" in completed.stderr
+
+
+def test_codex_multi_stratum_dry_run_discloses_the_full_design_and_its_own_token(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A two-stratum selection prints the summed cell count and a model-bound approval token.
+
+    Scenario: one token buying two studies must say so. The runner prices a single stratum, so
+    without this block the printed 219 cells would understate what the approval actually authorizes.
+    """
+    env, _ = batch_env
+
+    completed = _run_batch("codex", env, "--struct", "--dry-run", "--models=gpt-5.6-luna,gpt-5.6-terra")
+
+    assert completed.returncode == 0, completed.stderr
+    assert "CODEX MULTI-STRATUM AUTHORIZATION" in completed.stdout
+    assert "MODELS             gpt-5.6-luna gpt-5.6-terra" in completed.stdout
+    assert "2 strata" in completed.stdout
+    assert "--models=gpt-5.6-luna,gpt-5.6-terra" in completed.stdout
+
+
+def test_codex_multi_stratum_token_binds_the_ordered_model_list(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Reordering the strata changes the token, so an approval cannot be reused for a different run.
+
+    Scenario: the model list is part of what was disclosed, so it has to be part of what the token
+    commits to — otherwise one approval would silently cover any pair of strata at the same scope.
+    """
+    env, _ = batch_env
+
+    forward = _run_batch("codex", env, "--struct", "--dry-run", "--models=gpt-5.6-luna,gpt-5.6-terra")
+    reversed_order = _run_batch("codex", env, "--struct", "--dry-run", "--models=gpt-5.6-terra,gpt-5.6-luna")
+
+    def _token(output: str) -> str:
+        line = next(row for row in output.splitlines() if "CODEX_PAID_APPROVAL=" in row)
+        return line.split("CODEX_PAID_APPROVAL=", 1)[1].split()[0]
+
+    assert _token(forward.stdout) != _token(reversed_order.stdout)
+
+
+def test_codex_models_selection_runs_the_named_stratum(batch_env: tuple[dict[str, str], Path]) -> None:
+    """A single declared stratum reaches the structural runner as its --model argument.
+
+    Scenario: the second Codex tier is run as its own study, so the launcher must forward that name
+    rather than the manifest's primary stratum.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--struct", "--dry-run", "--models=gpt-5.6-terra")
+
+    assert completed.returncode == 0, completed.stderr
+    calls = call_log.read_text(encoding="utf-8") if call_log.exists() else ""
+    assert "--model gpt-5.6-terra" in calls
+
+
+def test_models_selection_accepts_a_stratum_nickname(batch_env: tuple[dict[str, str], Path]) -> None:
+    """A stratum's trailing nickname selects the declared full name it belongs to.
+
+    Scenario: the Codex strata differ only after the last dash, so an operator naming "terra" means
+    exactly one declared stratum. The runner still has to receive the full declared name, because
+    that name is what the manifest, the run directory, and the results are keyed by.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--struct", "--dry-run", "--models=terra")
+
+    assert completed.returncode == 0, completed.stderr
+    calls = call_log.read_text(encoding="utf-8") if call_log.exists() else ""
+    assert "--model gpt-5.6-terra" in calls
+
+
+def test_nickname_and_full_name_mint_the_same_multi_stratum_token(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Naming strata by nickname authorizes the same run as naming them in full.
+
+    Scenario: nicknames are a spelling of the selection, not a different selection, so an approval
+    minted from one spelling has to cover the other. A token that changed with the spelling would
+    force a second dry run for a run the operator already priced.
+    """
+    env, _ = batch_env
+
+    full = _run_batch("codex", env, "--struct", "--dry-run", "--models=gpt-5.6-luna,gpt-5.6-terra")
+    nicknamed = _run_batch("codex", env, "--struct", "--dry-run", "--models=luna,terra")
+
+    def _token(output: str) -> str:
+        line = next(row for row in output.splitlines() if "CODEX_PAID_APPROVAL=" in row)
+        return line.split("CODEX_PAID_APPROVAL=", 1)[1].split()[0]
+
+    assert nicknamed.returncode == 0, nicknamed.stderr
+    assert _token(nicknamed.stdout) == _token(full.stdout)
+    assert "MODELS             gpt-5.6-luna gpt-5.6-terra" in nicknamed.stdout
+
+
+def test_models_selection_rejects_a_stratum_named_twice_under_two_spellings(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A nickname and its full name are one stratum, so naming both is still a duplicate.
+
+    Scenario: canonicalizing before the duplicate check is what makes this fail; comparing the raw
+    spellings would let "luna,gpt-5.6-luna" through and run one stratum twice under one approval.
+    """
+    env, _ = batch_env
+
+    completed = _run_batch("codex", env, "--struct", "--dry-run", "--models=luna,gpt-5.6-luna")
+
+    assert completed.returncode == 2
+    assert "selected more than once" in completed.stderr
+
+
+def test_agentic_selector_runs_the_stratum_it_names(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """An agentic-only run executes the selected stratum instead of the manifest default.
+
+    Scenario: the agentic lane used to keep its manifest default whatever --models named, printing a
+    notice and running the default anyway. Operators who selected another stratum paid for further
+    studies of the default one and read them back as the stratum they had asked for, so the selection
+    now reaches the runner that executes it and appears in the block that mints the token.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--agentic", "--models=gpt-5.6-terra", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    assert "stratum           gpt-5.6-terra" in completed.stdout
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    agentic_calls = [line for line in calls if "run-codex-agentic.py" in line]
+    assert agentic_calls
+    assert all("--model gpt-5.6-terra" in line for line in agentic_calls)
+    assert all("run-codex-structural.py" not in line for line in calls)
+
+
+def test_agentic_selector_refuses_a_selection_one_study_cannot_run(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Two strata on an agentic-only run are refused rather than reduced to one.
+
+    Scenario: one agentic study executes one stratum. Honouring the first name and dropping the rest
+    would spend a full paid study on a selection the operator never made, which is the failure this
+    lane already had in its silent form; the refusal names the two ways to get what was asked for.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--agentic", "--models=gpt-5.6-terra,gpt-5.6-sol", "--dry-run")
+
+    assert completed.returncode == 2
+    assert "runs one stratum per study" in completed.stderr
+    calls = call_log.read_text(encoding="utf-8") if call_log.exists() else ""
+    assert "run-codex-agentic.py" not in calls
+
+
+def test_agentic_selection_of_the_manifest_default_stays_the_default_study(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Naming the manifest's own stratum keeps the token the unselected run already mints.
+
+    Scenario: one physical study must not have two valid approvals. Selecting the default explicitly
+    is the default, so it has to resolve to the manifest digest rather than to a second, scope-derived
+    token that would authorize the same 48 cells under a different name.
+    """
+    env, _ = batch_env
+
+    selected = _run_batch("codex", env, "--agentic", f"--models={AGENTIC_MANIFEST_MODEL}", "--dry-run")
+    unselected = _run_batch("codex", env, "--agentic", "--dry-run")
+
+    assert selected.returncode == 0, selected.stderr
+    assert unselected.returncode == 0, unselected.stderr
+    assert f"CODEX_PAID_APPROVAL={AGENTIC_MANIFEST_SHA[:16]}" in selected.stdout
+    assert "the locked agentic manifest digest (whole suite)" in selected.stdout
+    assert _agentic_scope(selected.stdout) == _agentic_scope(unselected.stdout)
+
+
+def test_agentic_selector_still_rejects_an_undeclared_model(batch_env: tuple[dict[str, str], Path]) -> None:
+    """A stratum the provider never declared fails on an agentic-only run too.
+
+    Scenario: accepting the pairing must not turn --models into free text on the lane that ignores
+    it; a typo caught here is a typo the operator would otherwise carry into the structural run.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--agentic", "--models=nope", "--dry-run")
+
+    assert completed.returncode == 2
+    assert "not a declared codex stratum" in completed.stderr
+    calls = call_log.read_text(encoding="utf-8") if call_log.exists() else ""
+    assert "run-codex-agentic.py" not in calls
+
+
+def test_combined_dry_run_prints_exactly_one_copyable_paid_command(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A combined no-model plan names one command, not one per lane it walks through.
+
+    Scenario: a combined run pays for both studies under a single token, so the two lane plans it
+    prints on the way must not each end in their own copyable command. Three blocks in one plan left
+    the operator choosing between commands, two of which authorize only half of what the run does.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.count("PAID_COMMAND:") == 1
+    assert "== CODEX COMBINED AUTHORIZATION" in completed.stdout
+    assert "== CODEX AGENTIC AUTHORIZATION" not in completed.stdout
+    lane_plans = [
+        line
+        for line in call_log.read_text(encoding="utf-8").splitlines()
+        if "run-codex-structural.py" in line and "--dry-run" in line and "--tasks FN-02" not in line
+    ]
+    assert lane_plans
+    assert all("--no-paid-command" in line for line in lane_plans)
+
+
+def test_structural_only_dry_run_keeps_the_command_its_own_lane_authorizes(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A structural-only plan names exactly one command, and the launcher is what names it.
+
+    Scenario: `--struct --dry-run` is the entire plan for a structural-only study, so it must still
+    end in a command the operator can run — naming nothing was the defect the agentic lane once had.
+    The runner's own command is suppressed because it is a python entrypoint carrying absolute paths
+    that bypasses the launcher; the launcher prints the invocation the operator typed instead.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--struct", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.count("PAID_COMMAND:") == 1
+    authorization = completed.stdout.split("== CODEX STRUCTURAL AUTHORIZATION", 1)[1]
+    assert "bash benchmarks/run-all.sh codex --struct\n" in authorization
+    lane_plans = [
+        line
+        for line in call_log.read_text(encoding="utf-8").splitlines()
+        if "run-codex-structural.py" in line and "--dry-run" in line and "--tasks FN-02" not in line
+    ]
+    assert lane_plans
+    assert all("--no-paid-command" in line for line in lane_plans)
+
+
+def test_environment_probe_runs_without_advertising_its_own_single_task_study(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """The one-task environment probe prints no copyable command of its own.
+
+    Scenario: every full run opens with an FN-02 dry run whose only job is proving the environment
+    works. It used to print a complete copyable command for that single-task study in the middle of
+    the run, which reads as the command the operator is meant to paste. Only the command is
+    suppressed — the probe still runs as a dry run whose SCOPE line the launcher parses.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("smoke", env)
+
+    assert completed.returncode == 0, completed.stderr
+    assert "PAID_COMMAND:" not in completed.stdout
+    probes = [
+        line
+        for line in call_log.read_text(encoding="utf-8").splitlines()
+        if "run-codex-structural.py" in line and "--tasks FN-02" in line
+    ]
+    assert probes
+    assert all("--dry-run" in line and "--no-paid-command" in line for line in probes)
+
+
+def test_plain_agentic_dry_run_names_the_command_it_authorizes(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A selector-free agentic plan ends in a copyable command instead of naming none.
+
+    Scenario: `codex --agentic --dry-run` used to walk an operator through every planned cell and
+    then name no way to run them, so the plan authorized nothing. The block also states what its
+    token binds, because a full-suite token is the locked manifest digest while the scope printed
+    directly above it is the run's own resolved scope — two different digests that would otherwise
+    read as a mismatch.
+    """
+    env, _ = batch_env
+
+    completed = _run_batch("codex", env, "--agentic", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    authorization = completed.stdout.split("== CODEX AGENTIC AUTHORIZATION", 1)[1]
+    assert AGENTIC_SCOPE_SHA in authorization
+    assert f"{AGENTIC_TOTAL_CELLS} cells" in authorization
+    assert f"stratum           {AGENTIC_MANIFEST_MODEL} (manifest default; select another with --models)" in (
+        authorization
+    )
+    assert "token binds" in authorization
+    assert "the locked agentic manifest digest (whole suite)" in authorization
+    assert "PAID_COMMAND:" in authorization
+    assert f"CODEX_PAID_APPROVAL={AGENTIC_MANIFEST_SHA[:16]}" in authorization
+    assert "bash benchmarks/run-all.sh codex --agentic" in authorization
+
+
+def test_combined_mode_binds_every_selected_stratum_into_one_authorization(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Several strata and both lanes mint a single combined token that carries the ordered list.
+
+    Scenario: `--models` is perpendicular to the lane selectors, so a combined invocation has to
+    authorize the whole selection at once. The structural half hashes the ordered model list, the
+    combined half wraps that with the agentic scope, and the reprinted command must carry both
+    strata — a copy that dropped one would re-derive a different scope and be refused.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--models=gpt-5.6-sol,gpt-5.6-terra", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    authorization = completed.stdout.split("== CODEX COMBINED AUTHORIZATION", 1)[1]
+    assert "strata            gpt-5.6-sol gpt-5.6-terra" in authorization
+    assert "bash benchmarks/run-all.sh codex --models=gpt-5.6-sol,gpt-5.6-terra" in authorization
+    assert "2 strata (separate, nonpoolable studies)" in authorization
+    # One combined token, so one copyable command: a structural-only block here would drop the
+    # agentic study from whatever the operator pastes.
+    assert "== CODEX MULTI-STRATUM AUTHORIZATION ==" not in completed.stdout
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    assert [line for line in calls if "run-codex-structural.py" in line]
+    assert [line for line in calls if "run-codex-agentic.py" in line]
+
+
+def test_combined_token_separates_a_multi_stratum_run_from_a_single_stratum_one(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """The ordered model list reaches the combined hash instead of being dropped after the plan.
+
+    Scenario: a token that ignored the selection would let a single-stratum approval pay for a
+    two-stratum study. Two dry runs differing only in their selection must therefore mint two
+    different combined scopes.
+    """
+    env, _ = batch_env
+
+    one = _run_batch("codex", env, "--models=gpt-5.6-terra", "--dry-run")
+    several = _run_batch("codex", env, "--models=gpt-5.6-sol,gpt-5.6-terra", "--dry-run")
+
+    assert one.returncode == 0, one.stderr
+    assert several.returncode == 0, several.stderr
+    assert _combined_scope(one.stdout) != _combined_scope(several.stdout)
+
+
+def test_combined_paid_command_carries_the_declared_name_of_the_selected_stratum(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """The combined approval block reprints the selection under its declared name.
+
+    Scenario: the stratum is hashed into the structural scope, so a copied command without the
+    selection would re-derive a different scope and be refused by the token this block just minted.
+    Naming the stratum in full also makes a nickname selection and its full spelling one command.
+    """
+    env, _ = batch_env
+
+    completed = _run_batch("codex", env, "--models=terra", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    authorization = completed.stdout.split("== CODEX COMBINED AUTHORIZATION", 1)[1]
+    assert "bash benchmarks/run-all.sh codex --models=gpt-5.6-terra" in authorization
+
+
+def test_combined_dry_run_runs_one_selected_stratum_in_both_lanes(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A selector-free Codex dry run with one stratum plans that stratum in the structural and agentic lanes.
+
+    Scenario: a combined invocation runs a structural child and an agentic child, and one named
+    stratum is a study each lane can run. Reaching only the structural child is what made a combined
+    terra run publish a terra structural study beside an agentic study of a different model.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--models=gpt-5.6-terra", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    authorization = completed.stdout.split("== CODEX COMBINED AUTHORIZATION", 1)[1]
+    assert "strata            gpt-5.6-terra (both lanes)" in authorization
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    structural_dry_run = [line for line in calls if "run-codex-structural.py" in line and "--dry-run" in line]
+    assert any("--model gpt-5.6-terra" in line for line in structural_dry_run)
+    agentic_dry_run = [line for line in calls if "run-codex-agentic.py" in line and "--dry-run" in line]
+    assert agentic_dry_run
+    assert all("--model gpt-5.6-terra" in line for line in agentic_dry_run)
+
+
+def test_combined_dry_run_names_the_agentic_stratum_a_multi_stratum_sweep_keeps(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Several strata sweep the structural lane, and the block names the one stratum the agentic lane runs.
+
+    Scenario: one agentic study is one stratum, so a longer selection cannot reach that lane. Leaving
+    that unsaid is what let an operator read a two-stratum combined run as two agentic studies; the
+    authorization block now names the stratum the agentic half will actually spend on.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--models=gpt-5.6-sol,gpt-5.6-terra", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    authorization = completed.stdout.split("== CODEX COMBINED AUTHORIZATION", 1)[1]
+    assert f"(structural lane; agentic lane runs {AGENTIC_MANIFEST_MODEL})" in authorization
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    agentic_dry_run = [line for line in calls if "run-codex-agentic.py" in line and "--dry-run" in line]
+    assert agentic_dry_run
+    assert all("--model " not in line for line in agentic_dry_run)
+
+
+def test_combined_dry_run_still_rejects_an_undeclared_model(batch_env: tuple[dict[str, str], Path]) -> None:
+    """A typo'd stratum fails fast even once the combined guard stops refusing the whole run.
+
+    Scenario: relaxing the combined-mode refusal must not weaken --models into silently accepting
+    an unlocked stratum name; the existing per-provider resolution still has to reject it.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--models=nope", "--dry-run")
+
+    assert completed.returncode == 2
+    assert "not a declared codex stratum" in completed.stderr
+    calls = call_log.read_text(encoding="utf-8") if call_log.exists() else ""
+    assert "run-codex-structural.py" not in calls
+    assert "run-codex-agentic.py" not in calls
+
+
+def test_combined_paid_run_forwards_one_selected_stratum_to_both_children(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """The paid combined run threads the selected stratum into the structural child and the agentic child.
+
+    Scenario: each child is a fresh nested invocation of this same script, so threading --models into
+    them must be a plain forwarded argument rather than a second, parallel resolution path. Selecting
+    one stratum binds that stratum's own execution scope, so the combined token here is derived from
+    the terra scope rather than the scope a selector-free run would price.
+    """
+    env, call_log = batch_env
+    env["CODEX_PAID_APPROVAL"] = COMBINED_SECOND_STRATUM_SCOPE_SHA[:16]
+    env.pop("CODEX_AGENTIC_PAID_APPROVAL", None)
+    env["CODEX_RESULTS_ROOT"] = str(tmp_path / "results")
+    env.pop("CODEX_RUN_DIR")
+
+    completed = _run_batch("codex", env, "--models=gpt-5.6-terra")
+
+    assert completed.returncode == 0, completed.stderr
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    paid_structural = [line for line in calls if "run-codex-structural.py" in line and "--auth-source" in line]
+    paid_agentic = [line for line in calls if "run-codex-agentic.py" in line and "--auth-source" in line]
+    assert any("--model gpt-5.6-terra" in line for line in paid_structural)
+    assert paid_agentic
+    assert all("--model gpt-5.6-terra" in line for line in paid_agentic)
+
+
+def test_isolated_refuses_to_share_the_run_with_an_operator_supplied_repo(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """--isolated and REPO= each name the tree to run in, so asking for both is refused.
+
+    Scenario: honouring one silently would put the study in a tree the operator did not expect —
+    either mutating a checkout they manage, or ignoring the one they explicitly named.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--struct", "--isolated", "--dry-run")
+
+    assert completed.returncode == 2
+    assert "--isolated creates this run's own worktree" in completed.stderr
+    calls = call_log.read_text(encoding="utf-8") if call_log.exists() else ""
+    assert "run-codex-structural.py" not in calls
+
+
+def test_isolated_run_uses_its_own_worktree_and_removes_it_when_the_study_succeeds(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """A successful isolated run works in a private worktree and leaves nothing behind.
+
+    Scenario: the point of the flag is a second study that can run beside the first, which needs a
+    tree of its own rather than the one shared checkout. A tree that outlived every successful run
+    would turn the feature into a disk leak, so the clean exit has to remove what it created.
+    """
+    env, call_log = batch_env
+    managed = tmp_path / "managed"
+    (managed / ".git").mkdir(parents=True)
+    frozen_index = managed / ".cache" / "codemap" / f"{managed.name}.json"
+    frozen_index.parent.mkdir(parents=True)
+    frozen_index.write_text(
+        json.dumps({"scan_version": LOCKED_INDEX_SCAN_VERSION, "scan_root": str(managed), "modules": []}),
+        encoding="utf-8",
+    )
+    env.pop("REPO")
+    env["BENCH_MANAGED_REPO"] = str(managed)
+
+    completed = _run_batch("codex", env, "--struct", "--isolated", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    assert "== PREPARE private run worktree ==" in completed.stdout
+    worktree = next(
+        line.split("→ run worktree: ", 1)[1].split(" ", 1)[0]
+        for line in completed.stdout.splitlines()
+        if line.startswith("→ run worktree: ")
+    )
+    assert not Path(worktree).exists()
+    calls = call_log.read_text(encoding="utf-8")
+    assert f"--repo-path {worktree}" in calls
+
+
+def test_isolated_run_keeps_its_worktree_when_the_study_fails(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """A failed isolated run names the worktree it kept instead of deleting the evidence.
+
+    Scenario: the tree holds the staged edit, half-applied patch, or rebuilt index that explains the
+    failure. Removing it on the way out would destroy exactly what a diagnosis needs, and leaving it
+    unnamed would make the operator hunt for it.
+    """
+    env, _ = batch_env
+    managed = tmp_path / "managed"
+    (managed / ".git").mkdir(parents=True)
+    frozen_index = managed / ".cache" / "codemap" / f"{managed.name}.json"
+    frozen_index.parent.mkdir(parents=True)
+    frozen_index.write_text(
+        json.dumps({"scan_version": LOCKED_INDEX_SCAN_VERSION, "scan_root": str(managed), "modules": []}),
+        encoding="utf-8",
+    )
+    env.pop("REPO")
+    env["BENCH_MANAGED_REPO"] = str(managed)
+    env["FAIL_WHEN_ARGS_CONTAIN"] = "run-codex-structural.py"
+
+    completed = _run_batch("codex", env, "--struct", "--isolated", "--dry-run")
+
+    assert completed.returncode != 0
+    assert "→ run worktree kept for diagnosis: " in completed.stderr
+    kept = completed.stderr.split("→ run worktree kept for diagnosis: ", 1)[1].splitlines()[0]
+    assert Path(kept).is_dir()
+
+
+def test_index_gate_off_the_canonical_clone_verifies_semantics_and_names_the_skipped_byte_check(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Away from the canonical clone the byte hash is skipped out loud, not demanded or dropped.
+
+    Scenario: the locked hash covers bytes that embed the canonical checkout's own path, so it can
+    only reproduce there. Demanding it elsewhere would reject every correct index a private worktree
+    builds; dropping it silently would leave the operator believing a check that never ran.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--struct", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    assert "raw byte-identity check skipped" in completed.stderr
+    calls = call_log.read_text(encoding="utf-8")
+    verify_calls = [line for line in calls.splitlines() if "prepare-codex-index.py" in line and "--verify" in line]
+    assert verify_calls
+    assert all("--require-hash" not in line for line in verify_calls)
+
+
+def test_isolated_run_relocates_the_locked_index_and_forwards_its_provenance(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """An isolated run installs the locked graph by relocation and tells the runner where its proof is.
+
+    Scenario: scanning the worktree would build a second graph with no link to the locked one, and
+    every admission gate would refuse it. The launcher must copy the frozen index instead and pass
+    the relocation provenance down, because that is what admission checks in place of the byte hash.
+    """
+    env, call_log = batch_env
+    managed = tmp_path / "managed"
+    (managed / ".git").mkdir(parents=True)
+    frozen_index = managed / ".cache" / "codemap" / f"{managed.name}.json"
+    frozen_index.parent.mkdir(parents=True)
+    frozen_index.write_text(
+        json.dumps({"scan_version": LOCKED_INDEX_SCAN_VERSION, "scan_root": str(managed), "modules": []}),
+        encoding="utf-8",
+    )
+    env.pop("REPO")
+    env["BENCH_MANAGED_REPO"] = str(managed)
+
+    completed = _run_batch("codex", env, "--struct", "--isolated", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    assert any("--relocate-into" in line for line in calls)
+    assert all("codemap-py index" not in line for line in calls)
+    # The relocated graph still records the canonical clone's module paths, so the semantic digest
+    # has to be taken against that root; hashing it against the worktree would leave them unstripped.
+    verify_calls = [line for line in calls if "prepare-codex-index.py" in line and "--verify" in line]
+    assert verify_calls
+    assert all(f"--source-root {managed}" in line for line in verify_calls)
+    structural = [line for line in calls if "run-codex-structural.py" in line]
+    assert structural
+    assert all("--index-relocation-path" in line for line in structural)
+
+
+def test_isolated_run_hands_every_lane_its_relocation_proof(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """Both Claude lanes receive the provenance, not the Codex structural lane alone.
+
+    Scenario: each runner re-checks the index it is handed against the lock. A lane launched
+    without the relocation provenance would refuse a perfectly valid isolated run, so `--isolated`
+    would work for one provider and fail for the other.
+    """
+    env, call_log = batch_env
+    managed = tmp_path / "managed"
+    (managed / ".git").mkdir(parents=True)
+    frozen_index = managed / ".cache" / "codemap" / f"{managed.name}.json"
+    frozen_index.parent.mkdir(parents=True)
+    frozen_index.write_text(
+        json.dumps({"scan_version": LOCKED_INDEX_SCAN_VERSION, "scan_root": str(managed), "modules": []}),
+        encoding="utf-8",
+    )
+    env.pop("REPO")
+    env["BENCH_MANAGED_REPO"] = str(managed)
+
+    completed = _run_batch("claude", env, "--isolated", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    # The scope resolver reads the manifest alone and never opens the index, so it needs no proof.
+    claude_runs = [
+        line
+        for line in calls
+        if ("run-claude-structural.py" in line or "run-claude-agentic.py" in line) and "--resolve-scope" not in line
+    ]
+    assert claude_runs
+    unproven = [line for line in claude_runs if "--index-relocation-path" not in line]
+    assert not unproven, unproven
+
+
+def test_isolated_paid_run_keeps_every_child_study_on_the_one_worktree(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """A paid isolated run creates its worktree once and every re-entry runs in that same tree.
+
+    Scenario: a paid run re-execs itself from its frozen launcher and then launches a child study
+    per stratum. Each re-entry parses `--isolated` again, so without inheritance it would cut a
+    second worktree, and a child re-deriving the managed clone would be handed a relocated index
+    belonging to a tree it is not running in.
+    """
+    env, call_log = batch_env
+    managed = tmp_path / "managed"
+    (managed / ".git").mkdir(parents=True)
+    frozen_index = managed / ".cache" / "codemap" / f"{managed.name}.json"
+    frozen_index.parent.mkdir(parents=True)
+    frozen_index.write_text(
+        json.dumps({"scan_version": LOCKED_INDEX_SCAN_VERSION, "scan_root": str(managed), "modules": []}),
+        encoding="utf-8",
+    )
+    env.pop("REPO")
+    env["BENCH_MANAGED_REPO"] = str(managed)
+    env["CODEX_PAID_APPROVAL"] = COMBINED_MULTI_STRATUM_SCOPE_SHA[:16]
+    env.pop("CODEX_AGENTIC_PAID_APPROVAL", None)
+    env["CODEX_RESULTS_ROOT"] = str(tmp_path / "results")
+    env.pop("CODEX_RUN_DIR")
+
+    completed = _run_batch("codex", env, "--isolated", "--models=gpt-5.6-sol,gpt-5.6-terra")
+
+    assert completed.returncode == 0, completed.stderr
+    created = [line for line in completed.stdout.splitlines() if line.startswith("→ run worktree: ")]
+    assert len(created) == 1, created
+    assert any(line.startswith("→ run worktree (inherited): ") for line in completed.stdout.splitlines())
+    worktree = created[0].split("→ run worktree: ", 1)[1].split(" ", 1)[0]
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    repo_paths = {line.split("--repo-path ", 1)[1].split()[0] for line in calls if "--repo-path " in line}
+    assert repo_paths == {worktree}
+
+
+def test_isolated_run_refuses_when_the_managed_clone_has_no_locked_index(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """Without a frozen index to relocate, the isolated run stops and says how to produce one.
+
+    Scenario: relocation is the only way an isolated run may obtain its graph. Falling back to a
+    scan would silently produce an index the admission gates cannot tie to the lock, so the refusal
+    has to arrive before the worktree is used for anything.
+    """
+    env, call_log = batch_env
+    managed = tmp_path / "managed"
+    (managed / ".git").mkdir(parents=True)
+    env.pop("REPO")
+    env["BENCH_MANAGED_REPO"] = str(managed)
+
+    completed = _run_batch("codex", env, "--struct", "--isolated", "--dry-run")
+
+    assert completed.returncode != 0
+    assert "--isolated relocates the locked index" in completed.stderr
+    calls = call_log.read_text(encoding="utf-8") if call_log.exists() else ""
+    assert "run-codex-structural.py" not in calls
+
+
+def _paid_command_blocks(stdout: str) -> list[str]:
+    """Return the body of every copyable PAID_COMMAND block, borders excluded.
+
+    A block opens with the `PAID_COMMAND:` label, is fenced by two border rules, and holds the exact
+    lines an operator is meant to copy — so it is the surface any claim about a printed command has
+    to be checked against, rather than the surrounding plan text.
+    """
+    blocks: list[str] = []
+    lines = stdout.splitlines()
+    for position, line in enumerate(lines):
+        if line.strip() != "PAID_COMMAND:":
+            continue
+        body: list[str] = []
+        for row in lines[position + 2 :]:
+            if row.startswith("---"):
+                break
+            body.append(row)
+        blocks.append("\n".join(body))
+    return blocks
+
+
+def _managed_clone_with_frozen_index(env: dict[str, str], tmp_path: Path) -> Path:
+    """Point the environment at a managed clone that already holds a relocatable frozen index.
+
+    An isolated run may only obtain its graph by relocating the locked index out of the managed
+    clone, so any test that lets `--isolated` reach the worktree step has to stage that clone first.
+    """
+    managed = tmp_path / "managed"
+    (managed / ".git").mkdir(parents=True)
+    frozen_index = managed / ".cache" / "codemap" / f"{managed.name}.json"
+    frozen_index.parent.mkdir(parents=True)
+    frozen_index.write_text(
+        json.dumps({"scan_version": LOCKED_INDEX_SCAN_VERSION, "scan_root": str(managed), "modules": []}),
+        encoding="utf-8",
+    )
+    env.pop("REPO", None)
+    env["BENCH_MANAGED_REPO"] = str(managed)
+    return managed
+
+
+def test_agentic_authorization_reprints_the_isolation_the_operator_asked_for(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """An agentic plan started with --isolated names --isolated in the command it authorizes.
+
+    Scenario: `--isolated` is not decoration — it cuts the run its own git worktree and relocates the
+    frozen index into it. A copied command that lost the flag runs the paid study against the shared
+    clone instead, which is a different run from the one the plan above it described. The flag used
+    to be dropped because the block rebuilt its command from a remembered subset of the invocation.
+    """
+    env, _ = batch_env
+    _managed_clone_with_frozen_index(env, tmp_path)
+
+    completed = _run_batch("codex", env, "--agentic", "--isolated", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    authorization = completed.stdout.split("== CODEX AGENTIC AUTHORIZATION", 1)[1]
+    assert "bash benchmarks/run-all.sh codex --agentic --isolated\n" in authorization
+
+
+def test_multi_stratum_authorization_reprints_the_isolation_the_operator_asked_for(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """A structural multi-stratum plan started with --isolated names --isolated in its paid command.
+
+    Scenario: the structural lane is the one that stages edits in the target tree, so running it
+    against the shared clone rather than the private worktree is exactly what `--isolated` exists to
+    prevent. The authorization block has to reprint the whole invocation, not the two flags it
+    happens to hash.
+    """
+    env, _ = batch_env
+    _managed_clone_with_frozen_index(env, tmp_path)
+
+    completed = _run_batch("codex", env, "--struct", "--isolated", "--models=gpt-5.6-sol,gpt-5.6-terra", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    authorization = completed.stdout.split("== CODEX MULTI-STRATUM AUTHORIZATION", 1)[1]
+    assert "bash benchmarks/run-all.sh codex --struct --isolated --models=gpt-5.6-sol,gpt-5.6-terra\n" in authorization
+
+
+def test_multi_stratum_authorization_keeps_the_task_selection_its_token_binds(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A task-narrowed multi-stratum plan reprints --tasks alongside the strata it names.
+
+    Scenario: the selection is hashed into the structural scope the multi-stratum token wraps, so a
+    command that named only the strata would re-derive the whole 73-task scope and be refused by the
+    token printed directly above it. Dropping it was the same defect as dropping --isolated: the
+    block listed the flags it remembered instead of reprinting the invocation.
+    """
+    env, _ = batch_env
+
+    completed = _run_batch("codex", env, "--struct", "--tasks=DI,GR", "--models=gpt-5.6-sol,gpt-5.6-terra", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    authorization = completed.stdout.split("== CODEX MULTI-STRATUM AUTHORIZATION", 1)[1]
+    assert (
+        "bash benchmarks/run-all.sh codex --struct --tasks=DI,GR --models=gpt-5.6-sol,gpt-5.6-terra\n" in authorization
+    )
+
+
+def test_agentic_authorization_reprints_an_inert_models_selection(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """An agentic plan echoes back a --models the lane ignores rather than quietly editing it out.
+
+    Scenario: `--models` restricts the structural strata and an agentic-only run says out loud that
+    it changes nothing there. Reprinting it keeps one rule with no exceptions — the command shown is
+    the command typed, minus --dry-run — so an operator never has to work out which of their flags
+    the launcher decided to keep. Silently dropping it would be the same edit that lost --isolated.
+    """
+    env, _ = batch_env
+
+    completed = _run_batch("codex", env, "--agentic", "--models=gpt-5.6-terra", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    authorization = completed.stdout.split("== CODEX AGENTIC AUTHORIZATION", 1)[1]
+    assert "bash benchmarks/run-all.sh codex --agentic --models=gpt-5.6-terra\n" in authorization
+
+
+def test_structural_paid_command_never_names_the_worktree_the_dry_run_removes(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """No PAID_COMMAND block names an ephemeral run worktree path.
+
+    Scenario: an isolated dry run cuts a private worktree and deletes it on success. The runner's own
+    copyable command named that worktree as --repo-path and --index-path, so an operator who copied
+    it was handed a command pointing at a repo and an index that no longer existed — not a different
+    study but an impossible one. Every printed command must survive the run that printed it.
+    """
+    env, _ = batch_env
+    _managed_clone_with_frozen_index(env, tmp_path)
+
+    completed = _run_batch("codex", env, "--struct", "--isolated", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    blocks = _paid_command_blocks(completed.stdout)
+    assert blocks
+    assert all("codemap-parity-run-" not in block for block in blocks), blocks
+
+
+def test_structural_authorization_reprints_the_isolation_the_operator_asked_for(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """A structural plan started with --isolated names --isolated in the command it authorizes.
+
+    Scenario: the structural lane stages edits in the target tree, so running it against the shared
+    clone rather than the private worktree is what `--isolated` exists to prevent. Reprinting the
+    flag lets the paid run cut its own fresh worktree instead of being pointed at a stale one.
+    """
+    env, _ = batch_env
+    _managed_clone_with_frozen_index(env, tmp_path)
+
+    completed = _run_batch("codex", env, "--struct", "--isolated", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    authorization = completed.stdout.split("== CODEX STRUCTURAL AUTHORIZATION", 1)[1]
+    assert "bash benchmarks/run-all.sh codex --struct --isolated\n" in authorization
+
+
+def test_multi_stratum_dry_run_prints_exactly_one_copyable_paid_command(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A multi-stratum structural plan names one command, not one per stratum it walks through.
+
+    Scenario: the runner prices a single stratum, so its own command authorized only the primary one
+    while the multi-stratum block beside it authorized the whole ordered list. Two blocks in one plan
+    left the operator choosing between commands, one of which silently pays for less than the plan.
+    """
+    env, _ = batch_env
+
+    completed = _run_batch("codex", env, "--struct", "--models=gpt-5.6-sol,gpt-5.6-terra", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.count("PAID_COMMAND:") == 1
+    assert "== CODEX MULTI-STRATUM AUTHORIZATION" in completed.stdout
+    assert "== CODEX STRUCTURAL AUTHORIZATION" not in completed.stdout

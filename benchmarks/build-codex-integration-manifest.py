@@ -152,7 +152,7 @@ def _arms() -> dict[str, dict[str, Any]]:
             "requirement": "Codemap is absent; solve with ordinary Codex tools.",
             "treatment": "plain",
         },
-        "B_direct_required": {
+        "B_auto": {
             "installed_packages": [],
             "requirement": (
                 "Run at least one successful compact direct query in its own native command item containing exactly "
@@ -161,7 +161,7 @@ def _arms() -> dict[str, dict[str, Any]]:
             ),
             "treatment": "direct_cli",
         },
-        "C_skill_required": {
+        "C_strict": {
             "installed_packages": ["codemap-py", "codex-rig"],
             "requirement": (
                 "Use the immutable installed $codemap-py:query-code Skill binding and complete one successful "
@@ -177,20 +177,20 @@ def _codex_permission_profiles(source: dict[str, Any]) -> dict[str, Any]:
     """Rewrite the frozen permission contract for direct-CLI and skill treatments."""
     profiles = copy.deepcopy(source["codex_permission_profiles"])
     host_roots = ["<host-home>/.agents", "<host-home>/.claude", "<host-home>/.codex"]
-    profiles["treatment"]["arms"] = ["B_direct_required", "C_skill_required"]
-    profiles["treatment_runtime"]["scope"] = ["B_direct_required", "C_skill_required"]
+    profiles["treatment"]["arms"] = ["B_auto", "C_strict"]
+    profiles["treatment_runtime"]["scope"] = ["B_auto", "C_strict"]
     profiles["plain"]["filesystem_overrides"].update({root: "deny" for root in [*host_roots, "<marketplace-root>"]})
     profiles["treatment"]["filesystem_overrides"].update({root: "deny" for root in host_roots})
     profiles["host_tooling_isolation"] = {
         "access": "deny",
-        "arms": ["A_plain", "B_direct_required", "C_skill_required"],
+        "arms": ["A_plain", "B_auto", "C_strict"],
         "roots": host_roots,
         "verification": "no-model directory enumeration must fail without emitting entries",
     }
     profiles["marketplace_source_access"] = {
         "A_plain": "deny",
-        "B_direct_required": "deny after the locked direct runtime is staged inside its disposable home",
-        "C_skill_required": "deny",
+        "B_auto": "deny after the locked direct runtime is staged inside its disposable home",
+        "C_strict": "deny",
     }
     profiles["preflight"] = [
         "record the observed Codex CLI identity without version-based admission",
@@ -224,8 +224,7 @@ def _execution_controls(source: dict[str, Any]) -> dict[str, Any]:
         "home; C uses the installed package pair."
     )
     controls["codex_transport"] = (
-        "run-codex-structural.py with A_plain, B_direct_required, and C_skill_required; "
-        "no Codex agentic adapter is registered"
+        "run-codex-structural.py with A_plain, B_auto, and C_strict; no Codex agentic adapter is registered"
     )
     controls["coordinate_timeout_scope"] = (
         "one total 600-second budget shared by the initial attempt and at most two eligible retries"
@@ -257,7 +256,7 @@ def _telemetry_admission() -> dict[str, Any]:
             "Raw JSONL cells are immutable. Parser corrections produce a separately versioned derived evaluation."
         ),
         "skill_binding": {
-            "arm": "C_skill_required",
+            "arm": "C_strict",
             "environment_binding": ("runner-owned immutable exact installed query Skill path; absent from A and B"),
             "manual_read_telemetry": "skill_delivery_observed is diagnostic-only and never a query-credit prerequisite",
         },
@@ -276,8 +275,8 @@ def _telemetry_admission() -> dict[str, Any]:
             "semantics": "Conformance is exact tuple agreement; fitness is continuous component-level Jaccard similarity.",
         },
         "treatment_attribution": {
-            "B_direct_required": "at least one successful compact direct CLI query",
-            "C_skill_required": "at least one successful canonical compact query in the immutable installed-Skill treatment",
+            "B_auto": "direct CLI reachable; the model decides whether to query",
+            "C_strict": "at least one successful canonical compact query in the immutable installed-Skill treatment",
         },
         "rejected_evidence": [
             "launcher inspection without query execution",
@@ -400,6 +399,7 @@ def _build_manifest() -> dict[str, Any]:
     implementation_contract["artifact_sha256"] = artifact_sha256
     implementation_contract["codex_model_stratum"] = {
         "model": "gpt-5.6-luna",
+        "additional_strata": ["gpt-5.6-terra", "gpt-5.6-sol"],
         "reasoning_effort": "high",
         "strict_config": True,
     }
@@ -441,9 +441,9 @@ def _build_manifest() -> dict[str, Any]:
         "direct_cli_runtime": _direct_cli_runtime(),
         "evaluation_contract": source["evaluation_contract"],
         "estimands": {
-            "C_skill_required-A_plain": "product effect",
-            "B_direct_required-A_plain": "direct CLI effect",
-            "C_skill_required-B_direct_required": "integration effect",
+            "C_strict-A_plain": "product effect",
+            "B_auto-A_plain": "direct CLI availability effect",
+            "C_strict-B_auto": "integration effect",
         },
         "experiment_id": EXPERIMENT_ID,
         "experiment_revision": EXPERIMENT_REVISION,
@@ -453,6 +453,13 @@ def _build_manifest() -> dict[str, Any]:
         "index": source["index"],
         "model": {
             "name": "gpt-5.6-luna",
+            # Additional strata are run as separate, nonpoolable studies, exactly as Claude runs
+            # haiku/sonnet/opus. "name" stays the default so a single-model invocation is unchanged.
+            # This list and the methodology manifest's models_by_provider["codex"] are the same
+            # declaration read from two sides: --models resolves a name against the methodology
+            # list, and the runner admits a stratum against this one, so a name missing here fails
+            # at the preflight after the selection already resolved.
+            "additional_strata": ["gpt-5.6-terra", "gpt-5.6-sol"],
             "reasoning_effort": "high",
             "strict_config": True,
         },
@@ -538,15 +545,15 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "## Arms",
         "",
         "- `A_plain`: no Codemap package or query access.",
-        f"- `B_direct_required`: one dedicated successful `{CANONICAL_QUERY_FORM}` command item.",
-        "- `C_skill_required`: immutable installed Skill binding and one dedicated canonical compact query item.",
+        f"- `B_auto`: one dedicated successful `{CANONICAL_QUERY_FORM}` command item.",
+        "- `C_strict`: immutable installed Skill binding and one dedicated canonical compact query item.",
         "- B/C may use additional reads and shell commands as separate items; those actions are ignored for attribution.",
         "",
         "## Estimands",
         "",
-        "- `C_skill_required-A_plain`: product effect.",
-        "- `B_direct_required-A_plain`: direct CLI effect.",
-        "- `C_skill_required-B_direct_required`: integration effect.",
+        "- `C_strict-A_plain`: product effect.",
+        "- `B_auto-A_plain`: direct CLI availability effect.",
+        "- `C_strict-B_auto`: integration effect.",
         "",
         "## Execution controls",
         "",
